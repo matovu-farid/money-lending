@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+/private_docs
+
 
 # next.js
 /.next/
