@@ -41,7 +41,63 @@ Establish the database schema, Better Auth with 3-tier RBAC, customer CRUD, loan
   2. Collateral: Nature (land title, vehicle log book, etc.) — one item per loan
   3. Review & Confirm: Calculated summary + final confirmation
 - **Collateral:** Captured on the loan form (Step 2), not pre-registered on the customer. One collateral item per loan.
+- **Loan is perpetual:** No fixed maturity date, no `term_days`, no `due_date` columns. The loan rolls forward indefinitely in 30-day billing cycles until fully repaid.
 - **Detailed UI/UX design:** Deferred to `/frontend-design` skill.
+
+### Loan Ledger Model (CRITICAL — governs schema, interest engine, and all downstream phases)
+
+**Core principle:** The payment table IS the rate-period table. Each payment that reduces principal creates a new rate period. No separate rate-periods or daily-accrual table.
+
+**Daily rate formula:** `daily_rate = current_principal × monthly_rate / 30`
+- Changes only when a payment reduces principal
+- Constant between principal-changing payments
+
+**Minimum interest rule (LOAN-10):**
+- Within first 30 days of any payment period: always charge 30 days minimum
+- After 30 days: prorated to actual days elapsed
+- Formula: `interest_days = max(days_elapsed_since_last_payment, 30)`
+
+**Payment allocation (interest-first):**
+1. Calculate interest owed: `max(days_since_last_payment, 30) × daily_rate`
+2. Plus any carried-forward unpaid interest from prior partial payments
+3. Payment applied: interest first, remainder reduces principal
+4. If payment < total interest owed: all goes to interest, principal unchanged, unpaid interest carries forward
+
+**Payment table columns (source of truth for all calculations):**
+
+| Column | Purpose |
+|---|---|
+| `payment_date` | When this period ends / next begins |
+| `amount` | Total cash received |
+| `interest_portion` | How much went to interest |
+| `principal_portion` | How much went to principal |
+| `principal_balance_before` | Principal that governed this period's rate |
+| `principal_balance_after` | Principal that governs the next period's rate |
+
+**Days overdue formula (watchlist — RISK-01, RISK-02):**
+```
+unpaid_interest = cumulative_interest_accrued − cumulative_interest_paid
+days_overdue = unpaid_interest / current_daily_rate
+Flag when days_overdue ≥ 30
+```
+- Day 0 (loan just issued): unpaid = 0, days_overdue = 0 → not flagged
+- Day 30 (no payment): unpaid = 1 month interest, days_overdue = 30 → flagged
+
+**Reference implementation table (loan officer sees this per customer):**
+Shows payment events + periodic snapshots (every 15 days or on payment, whichever comes first):
+
+| # | Event | Day | Princ. before | Princ. after | Daily rate | Days in period | Interest accrued (period) | Interest accrued (cumul.) | Interest paid (event) | Interest paid (cumul.) | Unpaid interest | Days overdue | Flagged |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | Loan issued | 0 | — | 1,000,000 | 3,333 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | No |
+| 2 | Dashboard | 15 | 1,000,000 | 1,000,000 | 3,333 | 15 | 50,000 | 50,000 | 0 | 0 | 50,000 | 15 | No |
+| 3 | Pay 250K | 30 | 1,000,000 | 850,000 | 2,833 | 30 | 100,000 | 100,000 | 100,000 | 100,000 | 0 | 0 | No |
+| 4 | Dashboard | 45 | 850,000 | 850,000 | 2,833 | 15 | 42,500 | 142,500 | 0 | 100,000 | 42,500 | 15 | No |
+| 5 | Pay 50K | 60 | 850,000 | 850,000 | 2,833 | 30 | 85,000 | 185,000 | 50,000 | 150,000 | 35,000 | 12 | No |
+| 6 | Dashboard | 75 | 850,000 | 850,000 | 2,833 | 15 | 42,500 | 227,500 | 0 | 150,000 | 77,500 | 27 | No |
+| 7 | Pay 200K | 90 | 850,000 | 770,000 | 2,567 | 30 | 85,000 | 270,000 | 120,000 | 270,000 | 0 | 0 | No |
+| 8 | Dashboard | 105 | 770,000 | 770,000 | 2,567 | 15 | 38,500 | 308,500 | 0 | 270,000 | 38,500 | 15 | No |
+
+**How to reconstruct any loan's full history:** Replay all payments from the payment table. Each row gives `principal_balance_before` (→ daily rate for that period) and `principal_balance_after` (→ daily rate for next period). Interest is never stored as a balance — always calculated on demand.
 
 ### Interest Calculation Preview (Review Step)
 - The Review step (Step 3) of loan issuance shows a calculated summary before the user confirms:
@@ -137,6 +193,7 @@ Establish the database schema, Better Auth with 3-tier RBAC, customer CRUD, loan
 - Data table column sorting and filtering on customer list — Phase 3 (CUST-05)
 - Customer status change (Active/Blacklisted/Inactive) — Phase 3 (CUST-06)
 - Full customer loan history view — Phase 3 (CUST-07)
+- Loan ledger UI table (per-customer payment history with 15-day snapshots) — Phase 2/3 UI; the engine and payment schema are Phase 1/2
 
 </deferred>
 

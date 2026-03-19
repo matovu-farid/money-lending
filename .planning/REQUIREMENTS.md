@@ -42,15 +42,15 @@
 ### Loan Engine (LOAN)
 
 - [ ] **LOAN-01**: User can create a loan application: Amount, Date, Interest Rate (default 10%/month, minimum), linked Security
-- [ ] **LOAN-02**: Loan has a 30-day default term with payment due at end of term
-- [ ] **LOAN-03**: System calculates interest on reducing balance using a formula: `interest = outstanding_balance × daily_rate × days_elapsed` — computed on-demand from loan start date and payment history, no daily accrual records needed
+- [ ] **LOAN-02**: Loan is open-ended (perpetual) — no fixed maturity date. Interest accrues on the outstanding principal in 30-day billing cycles. The loan rolls forward indefinitely until the balance reaches zero. Default interest rate is 10%/month (minimum).
+- [ ] **LOAN-03**: System calculates interest on reducing balance using: `daily_rate = outstanding_principal × monthly_rate / 30`; `interest = daily_rate × days_elapsed` — computed on-demand from payment history, no daily accrual records needed. The daily rate changes only when a payment reduces principal.
 - [ ] **LOAN-04**: All interest calculations use a BigNumber library for precision (no native float arithmetic)
 - [ ] **LOAN-05**: Loan status transitions through lifecycle: Pending → Active → Partially Paid → Fully Paid → Defaulted
 - [ ] **LOAN-06**: Loan officer can manually record a customer payment (amount, date) — payments happen off-app (cash, mobile money, etc.) and are entered into the system by staff
 - [ ] **LOAN-07**: Loan officer can edit or delete a recorded payment — every create, update, and delete is written to the audit log with the acting user, timestamp, and before/after values
 - [ ] **LOAN-08**: System allocates payments interest-first, then applies remainder to principal
 - [ ] **LOAN-09**: System accepts any payment amount (no minimum repayment)
-- [ ] **LOAN-10**: System enforces a 30-day minimum interest period — borrower pays at least 30 days interest even if repaid early
+- [ ] **LOAN-10**: System enforces a 30-day minimum interest period — within the first 30 days, borrower always pays 30 days of interest regardless of when they repay. After 30 days, interest is prorated to actual days elapsed. Formula: `interest_days = max(days_elapsed, 30)`
 - [ ] **LOAN-11**: Admin can override the minimum interest period and default interest rate per loan or globally
 
 ### Receipts (RCPT)
@@ -61,8 +61,8 @@
 
 ### Monitoring & Risk (RISK)
 
-- [ ] **RISK-01**: System displays how many days a borrower has remaining based on current balance and daily interest rate
-- [ ] **RISK-02**: System auto-flags borrowers with fewer than 30 days remaining on a watchlist
+- [ ] **RISK-01**: System displays "days overdue" per loan: `days_overdue = unpaid_interest / current_daily_rate` where `unpaid_interest = cumulative_interest_accrued − cumulative_interest_paid`. Shown on loan officer dashboard as a loan ledger table (see CONTEXT.md Loan Ledger Specification)
+- [ ] **RISK-02**: System auto-flags borrowers with days_overdue ≥ 30 on a watchlist — meaning they have not paid enough to cover their interest obligations for a full billing cycle
 - [ ] **RISK-03**: User can simulate repayments: "If borrower pays X amount, how many days will they have left?"
 - [ ] **RISK-04**: Repayment simulator uses the same calculation engine as the cron (not a separate implementation)
 
