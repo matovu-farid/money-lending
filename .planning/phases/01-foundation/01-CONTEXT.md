@@ -46,9 +46,9 @@ Establish the database schema, Better Auth with 3-tier RBAC, customer CRUD, loan
 ### Interest Calculation Preview (Review Step)
 - The Review step (Step 3) of loan issuance shows a calculated summary before the user confirms:
   - Daily interest amount (UGX)
-  - Total interest at 30 days
-  - Total owed at 30 days (principal + interest)
-  - Minimum interest period reminder ("30-day minimum interest applies even if repaid early")
+  - Total interest at minimum interest period (`totalInterestAtMinPeriod`) — default 30 days, overridable per loan (LOAN-11)
+  - Total owed at minimum interest period (`totalOwedAtMinPeriod`) — principal + interest
+  - Minimum interest period reminder ("Minimum interest period applies even if repaid early", showing actual period days)
 - Calculated client-side using the Interest Engine (same function as server). Not real-time on keystroke — shown when user reaches the Review step.
 
 ### Component Library
@@ -69,6 +69,11 @@ Establish the database schema, Better Auth with 3-tier RBAC, customer CRUD, loan
 - Form field ordering within each step
 - Error message copy and toast notification design
 - Color scheme and typography (beyond Tailwind defaults) — handled by `/frontend-design`
+
+### Effect Service Layer Injection (INFR-06 Deferral)
+- Services return `Effect<S, E, never>` with `db` closed over from module scope in Phase 1
+- Full `Context.Tag` / `Layer` wiring deferred to Phase 2 to reduce initial complexity
+- Rationale: RESEARCH.md recommends skipping Layers for Phase 1; all service functions still satisfy typed error channels and BigNumber arithmetic requirements
 
 </decisions>
 
