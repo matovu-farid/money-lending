@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: planning
-stopped_at: Phase 1 planned — 7 plans across 4 waves, verification passed
+stopped_at: Phase 1 plans need re-sync — loan model changed (perpetual loans, remove term_days/due_date from schema)
 last_updated: "2026-03-19T18:00:00.000Z"
 last_activity: 2026-03-19 — Phase 1 Foundation planned; 7 plans created and verified (2 revision rounds)
 progress:
