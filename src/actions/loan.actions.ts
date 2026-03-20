@@ -9,6 +9,7 @@ import {
   IncompleteLoanRequirements,
 } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole, type CreateLoanInput } from "@/types"
+import { sendAdminNotification } from "@/lib/email"
 
 export async function listLoansAction() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -64,6 +65,13 @@ export async function createLoanAction(input: CreateLoanInput) {
     const data = await Effect.runPromise(
       createLoan(loanInput, session.user.id)
     )
+    void sendAdminNotification("loan.disbursed", {
+      actorName: session.user.name ?? "Unknown",
+      actorEmail: session.user.email,
+      loanRef: `LOAN-${data.id.slice(0, 8).toUpperCase()}`,
+      amount: input.principalAmount,
+      timestamp: new Date(),
+    })
     return { data }
   } catch (error) {
     if (error instanceof CustomerNotFound) {

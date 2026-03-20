@@ -11,6 +11,7 @@ import { eq } from "drizzle-orm"
 import { PaymentNotFound, LoanNotFound } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput } from "@/types"
+import { sendAdminNotification } from "@/lib/email"
 
 /**
  * Records a new payment against a loan.
@@ -42,6 +43,13 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
   try {
     const data = await Effect.runPromise(recordPayment(input, session.user.id))
     revalidatePath(`/loans/${input.loanId}`)
+    void sendAdminNotification("payment.created", {
+      actorName: session.user.name ?? "Unknown",
+      actorEmail: session.user.email,
+      loanRef: `LOAN-${input.loanId.slice(0, 8).toUpperCase()}`,
+      amount: input.amount,
+      timestamp: new Date(),
+    })
     return { data }
   } catch (error) {
     if (error instanceof LoanNotFound) {
@@ -92,6 +100,13 @@ export async function editPaymentAction(input: EditPaymentInput) {
   try {
     const data = await Effect.runPromise(editPayment(input, session.user.id))
     revalidatePath(`/loans/${data.loanId}`)
+    void sendAdminNotification("payment.updated", {
+      actorName: session.user.name ?? "Unknown",
+      actorEmail: session.user.email,
+      loanRef: `LOAN-${data.loanId.slice(0, 8).toUpperCase()}`,
+      amount: data.amount,
+      timestamp: new Date(),
+    })
     return { data }
   } catch (error) {
     if (error instanceof PaymentNotFound) {
@@ -145,6 +160,13 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
   try {
     const data = await Effect.runPromise(deletePayment(input, session.user.id))
     revalidatePath(`/loans/${data.loanId}`)
+    void sendAdminNotification("payment.deleted", {
+      actorName: session.user.name ?? "Unknown",
+      actorEmail: session.user.email,
+      loanRef: `LOAN-${data.loanId.slice(0, 8).toUpperCase()}`,
+      amount: data.amount,
+      timestamp: new Date(),
+    })
     return { data }
   } catch (error) {
     if (error instanceof PaymentNotFound) {
