@@ -57,7 +57,7 @@ Declared values (must be multiples of 4). Source: established in Phase 1 codebas
 
 Exceptions:
 - Empty state vertical padding: `py-16` (64px top + bottom) — matches Phase 1 loans page pattern exactly
-- Touch targets for action buttons in payment table rows: minimum 44px height — use `h-11` on inline action triggers
+- Touch targets for action buttons in payment table rows: minimum 48px height — use `h-12` on inline action triggers (satisfies WCAG 2.5.5 touch target minimum)
 - Print receipt layout: spacing tokens are irrelevant on `@media print` — receipt uses fixed `pt-8 pb-4` print margins
 
 ---
@@ -131,12 +131,14 @@ Components required for Phase 2 flows, mapped to requirements.
 | Dialog | installed | Confirmation modal for edit and delete |
 | Textarea | `npx shadcn add textarea` | Reason/note field — required before confirming |
 | Button (destructive) | installed | Delete confirmation button — use `variant="destructive"` |
-| Button (outline) | installed | Cancel button |
+| Button (outline) | installed | Cancel button — context-specific label per dialog (see Copywriting Contract) |
 | dropdown-menu | installed | Action menu on each payment row (Edit / Delete) |
 
 **Reason field:** Textarea, minimum 1 character, maximum 500 characters. Label: "Reason for edit" / "Reason for deletion". Required — submit button remains disabled until filled. This is the CONTEXT.md accountability requirement.
 
 **Delete confirmation copy:** See Copywriting Contract below.
+
+**DropdownMenuTrigger accessibility:** The three-dot icon button that opens the per-row action menu must carry `aria-label="Payment actions"` on the DropdownMenuTrigger element. No visible label is rendered — the aria-label is the sole text alternative for screen readers.
 
 ### Payment List on Loan Detail Page (LOAN-06, LOAN-07)
 
@@ -149,6 +151,8 @@ Components required for Phase 2 flows, mapped to requirements.
 **Soft-deleted rows:** Render with `opacity-60 line-through` on all cell text. Still visible — never hidden. Action menu on deleted rows shows only a disabled "Restore" placeholder (v2 feature) — no active actions.
 
 **Table columns:** Date | Amount (UGX) | Interest Paid (UGX) | Principal Paid (UGX) | Balance After (UGX) | Recorded By | Actions
+
+**Focal point — `/loans/[loanId]`:** The outstanding balance figure is the primary focal point of this screen. It must be rendered above the payments table at display scale (`text-2xl font-semibold`) with a supporting label (`text-xs text-muted-foreground` — "Outstanding Balance"). No other element on the page may share this typographic weight at this position. The payments table is subordinate and appears directly below.
 
 ### Disbursement Receipt Page — `/receipts/disbursement/[loanId]` (RCPT-01, RCPT-03)
 
@@ -245,7 +249,8 @@ Source: Claude's Discretion (CONTEXT.md) — all copy below is prescribed, not e
 | Edit reason field label | Reason for edit |
 | Edit reason placeholder | Explain what is being corrected and why |
 | Confirm delete button | Delete Payment |
-| Cancel button (all dialogs) | Cancel |
+| Cancel button — delete confirmation dialog | Keep Payment |
+| Cancel button — edit dialog | Discard Changes |
 | Receipt blocked — missing fields | Cannot print receipt. The following required details are missing: {field list}. Update the loan or customer record to enable printing. |
 | Receipt blocked — print button tooltip | Receipt cannot be printed until all required details are complete |
 | Disbursement receipt title | Loan Disbursement Receipt |
