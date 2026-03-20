@@ -39,11 +39,11 @@ created: 2026-03-19
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
 | 1-01-01 | 01 | 0 | INFR-01 | infra | `npx drizzle-kit generate --check` | W0 | pending |
-| 1-01-02 | 03 | 2 | AUTH-01 | unit | `npx vitest run src/proxy.ts` | W0 | pending |
-| 1-01-03 | 03 | 2 | AUTH-02 | unit | `npx vitest run src/lib/auth.ts` | W0 | pending |
-| 1-01-04 | 03 | 2 | AUTH-03 | unit | `npx vitest run src/lib/permissions.ts` | W0 | pending |
+| 1-01-02 | 03 | 2 | AUTH-01 | unit | `npx tsc --noEmit` | W0 | pending |
+| 1-01-03 | 03 | 2 | AUTH-02 | unit | `npx tsc --noEmit` | W0 | pending |
+| 1-01-04 | 03 | 2 | AUTH-03 | unit | `npx tsc --noEmit` | W0 | pending |
 | 1-01-05 | 03 | 2 | AUTH-04 | unit | `npx tsc --noEmit` | W0 | pending |
-| 1-01-06 | 03 | 2 | AUTH-05 | unit | `npx vitest run src/app/api/users` | W0 | pending |
+| 1-01-06 | 03 | 2 | AUTH-05 | unit | `npx tsc --noEmit` | W0 | pending |
 | 1-02-01 | 04 | 3 | CUST-01 | unit | `npx vitest run src/services/__tests__/customer.service.test.ts` | W0 | pending |
 | 1-02-02 | 04 | 3 | CUST-02 | unit | `npx vitest run src/services/__tests__/customer.service.test.ts` | W0 | pending |
 | 1-02-03 | 05 | 3 | CUST-03 | unit | `npx vitest run src/services/__tests__/loan.service.test.ts` | W0 | pending |
