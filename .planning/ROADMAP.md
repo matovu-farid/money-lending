@@ -13,7 +13,7 @@ A greenfield Next.js 16 monolith built in four phases that follow the system's n
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation** - Database schema, Better Auth with RBAC, customer CRUD, loan issuance engine, and the Interest Engine that everything downstream depends on (completed 2026-03-20)
-- [ ] **Phase 2: Loan Operations** - Payment processing with interest-first allocation, minimum period enforcement, disbursement and repayment receipt generation, and email alerts on every financial event
+- [x] **Phase 2: Loan Operations** - Payment processing with interest-first allocation, minimum period enforcement, disbursement and repayment receipt generation, and email alerts on every financial event (completed 2026-03-20)
 - [ ] **Phase 3: Operational Management** - Executive dashboard, customer search and filtering, borrower watchlist, repayment simulator, balance-to-days converter, and in-app due-date alerts
 - [ ] **Phase 4: Financial Reporting** - Creditor capital tracking, expense and income ledger, Profit and Loss statement, Balance Sheet, and PDF/Excel report export
 
@@ -50,7 +50,7 @@ Plans:
   3. A disbursement receipt is generated immediately when a loan is issued and is printable; the receipt is blocked (with a clear error) if any required customer, loan, or collateral detail is missing
   4. A repayment receipt is generated for each recorded payment; the receipt reflects the correct allocation (interest paid, principal paid, outstanding balance) at the moment of that payment
   5. An email notification is sent to Admin on every payment creation, update, or deletion and on every loan disbursement — the email includes the actor, loan reference, amount, and timestamp
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 02-01-PLAN.md — TDD allocatePayment engine, payment service with CRUD/soft-delete/recalculation cascade
@@ -90,6 +90,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/7 | Complete   | 2026-03-20 |
-| 2. Loan Operations | 3/4 | In Progress|  |
+| 2. Loan Operations | 4/4 | Complete   | 2026-03-20 |
 | 3. Operational Management | 0/TBD | Not started | - |
 | 4. Financial Reporting | 0/TBD | Not started | - |

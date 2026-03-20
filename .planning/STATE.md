@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 02-04-PLAN.md
-last_updated: "2026-03-20T21:49:22.106Z"
+stopped_at: Completed 02-02-PLAN.md
+last_updated: "2026-03-20T21:51:37.029Z"
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 11
-  completed_plans: 10
+  completed_plans: 11
 ---
 
 # Project State
@@ -52,6 +52,7 @@ Plan: 1 of 4
 | Phase 02-loan-operations P01 | 7 | 2 tasks | 10 files |
 | Phase 02-loan-operations P03 | 3 | 2 tasks | 5 files |
 | Phase 02-loan-operations P04 | 8 | 2 tasks | 5 files |
+| Phase 02-loan-operations P02 | 6 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -90,6 +91,8 @@ Recent decisions affecting current work:
 - [Phase 02-loan-operations]: Repayment receipt imports PrintButton from disbursement folder — single source of truth for print trigger
 - [Phase 02-loan-operations]: sendAdminNotification is fire-and-forget (void, never await) -- email failure never blocks user Server Action
 - [Phase 02-loan-operations]: Cron endpoint /api/cron/overdue is detection-only (no DB writes) -- Phase 3 stores flagged results for watchlist UI
+- [Phase 02-loan-operations]: Server component + client island: page.tsx fetches via Effect.runPromise, passes props to LoanDetailClient
+- [Phase 02-loan-operations]: base-ui MenuItem uses onClick not onSelect -- DropdownMenuItems use onClick handler
 
 ### Pending Todos
 
@@ -104,6 +107,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T21:49:22.104Z
-Stopped at: Completed 02-04-PLAN.md
+Last session: 2026-03-20T21:51:37.022Z
+Stopped at: Completed 02-02-PLAN.md
 Resume file: None
