@@ -55,9 +55,9 @@
 
 ### Receipts (RCPT)
 
-- [ ] **RCPT-01**: System auto-generates a printable disbursement receipt when a loan is issued (Loan Amount, Date, Interest Rate) — blocked if any detail is incomplete
-- [ ] **RCPT-02**: System generates a printable repayment receipt for each payment received
-- [ ] **RCPT-03**: System blocks receipt printing if any customer, loan, or payment detail is missing or incorrect
+- [x] **RCPT-01**: System auto-generates a printable disbursement receipt when a loan is issued (Loan Amount, Date, Interest Rate) — blocked if any detail is incomplete
+- [x] **RCPT-02**: System generates a printable repayment receipt for each payment received
+- [x] **RCPT-03**: System blocks receipt printing if any customer, loan, or payment detail is missing or incorrect
 
 ### Monitoring & Risk (RISK)
 
@@ -158,9 +158,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LOAN-09     | Phase 2 | Complete |
 | LOAN-10     | Phase 1 | Complete |
 | LOAN-11     | Phase 1 | Complete |
-| RCPT-01     | Phase 2 | Pending |
-| RCPT-02     | Phase 2 | Pending |
-| RCPT-03     | Phase 2 | Pending |
+| RCPT-01     | Phase 2 | Complete |
+| RCPT-02     | Phase 2 | Complete |
+| RCPT-03     | Phase 2 | Complete |
 | RISK-01     | Phase 3 | Pending |
 | RISK-02     | Phase 3 | Pending |
 | RISK-03     | Phase 3 | Pending |
