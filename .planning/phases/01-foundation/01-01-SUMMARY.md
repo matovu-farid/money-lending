@@ -169,6 +169,10 @@ None — no external service configuration required beyond what's already in .en
 - Drizzle config ready for `pnpm db:generate` once Better Auth schema is generated (Plan 01-03)
 - Effect.js error types ready to import in all service layer functions (Plans 01-04, 01-05)
 
+## Self-Check: PASSED
+
+All 16 expected files found. Both task commits verified (083b129, 0f1385e). Final metadata commit: 85ddf4c.
+
 ---
 *Phase: 01-foundation*
 *Completed: 2026-03-20*
