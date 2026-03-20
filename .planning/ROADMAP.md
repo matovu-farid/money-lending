@@ -50,7 +50,13 @@ Plans:
   3. A disbursement receipt is generated immediately when a loan is issued and is printable; the receipt is blocked (with a clear error) if any required customer, loan, or collateral detail is missing
   4. A repayment receipt is generated for each recorded payment; the receipt reflects the correct allocation (interest paid, principal paid, outstanding balance) at the moment of that payment
   5. An email notification is sent to Admin on every payment creation, update, or deletion and on every loan disbursement — the email includes the actor, loan reference, amount, and timestamp
-**Plans**: TBD
+**Plans:** 4 plans
+
+Plans:
+- [ ] 02-01-PLAN.md — TDD allocatePayment engine, payment service with CRUD/soft-delete/recalculation cascade
+- [ ] 02-02-PLAN.md — Loan detail page with payments table, record payment form, edit/delete dialogs
+- [ ] 02-03-PLAN.md — Disbursement and repayment receipt pages with @media print and RCPT-03 guard
+- [ ] 02-04-PLAN.md — Email notifications for admin alerts and INFR-04 overdue detection cron
 
 ### Phase 3: Operational Management
 **Goal**: Staff can monitor the loan portfolio, surface at-risk borrowers, and simulate repayment outcomes without leaving the system
@@ -84,6 +90,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 7/7 | Complete   | 2026-03-20 |
-| 2. Loan Operations | 0/TBD | Not started | - |
+| 2. Loan Operations | 0/4 | Planning complete | - |
 | 3. Operational Management | 0/TBD | Not started | - |
 | 4. Financial Reporting | 0/TBD | Not started | - |
