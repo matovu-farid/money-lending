@@ -27,3 +27,16 @@ export const ROLE_LEVELS = {
 export type UserRole = keyof typeof ROLE_LEVELS
 
 export type ApiResponse<T> = { data: T } | { error: string; details?: unknown }
+
+// --- Customer input types ---
+export interface CreateCustomerInput {
+  fullName: string
+  contact: string
+  address: string
+}
+
+export interface UpdateCustomerInput {
+  fullName?: string
+  contact?: string
+  address?: string
+}
