@@ -98,7 +98,7 @@
 
 - [ ] **INFR-01**: PostgreSQL database with NUMERIC(15,2) monetary columns (UGX), audit log table (records every payment CUD with actor, timestamp, before/after values), and schema migrations
 - [x] **INFR-02**: RESTful API (Next.js Route Handlers) with Zod input validation and consistent error handling
-- [ ] **INFR-03**: Responsive frontend for desktop and tablet (not mobile-first); all monetary values displayed in UGX
+- [x] **INFR-03**: Responsive frontend for desktop and tablet (not mobile-first); all monetary values displayed in UGX
 - [ ] **INFR-04**: Scheduled job (lightweight cron) for overdue loan detection and predictive alerts only — not for financial calculations
 - [ ] **INFR-05**: All monetary arithmetic in TypeScript/JavaScript uses a BigNumber library (bignumber.js or decimal.js) — no native float operations on money values
 - [ ] **INFR-06**: Effect.js used throughout the service layer — all service functions return `Effect<Success, Error, Dependencies>`, errors are typed and exhaustive, dependencies injected via Layer
@@ -183,7 +183,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RPTS-05     | Phase 4 | Pending |
 | INFR-01     | Phase 1 | In Progress (schema + audit table defined in 01-01) |
 | INFR-02     | Phase 1 | Complete |
-| INFR-03     | Phase 1 | Pending |
+| INFR-03     | Phase 1 | Complete |
 | INFR-04     | Phase 2 | Pending |
 | INFR-05     | Phase 1 | In Progress (bignumber.js installed, no-float pattern enforced in schema design, 01-01) |
 | INFR-06     | Phase 1 | In Progress (Effect.js error types defined in 01-01; full service layer in 01-04/05) |
