@@ -12,7 +12,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:test:setup": "npx tsx scripts/setup-test-db.ts",
+    "test:e2e": "CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST next dev -p 3001 & sleep 5 && cypress run; kill %1 2>/dev/null",
+    "test:e2e:open": "CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST next dev -p 3001 & cypress open; kill %1 2>/dev/null",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run"
   },
   "dependencies": {
     "@base-ui/react": "^1.3.0",
@@ -28,6 +33,7 @@
     "postgres": "^3.4.8",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "resend": "^6.9.4",
     "shadcn": "^4.1.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.5.0",
@@ -37,16 +43,28 @@
     "@tailwindcss/postcss": "^4",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
+    "@types/dotenv": "^8.2.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.0.1",
     "babel-plugin-react-compiler": "1.0.0",
+    "cypress": "^15.12.0",
+    "dotenv": "^17.3.1",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.0"
+  },
+  "pnpm": {
+    "executionEnv": {
+      "nodeVersion": "22.16.0"
+    },
+    "onlyBuiltDependencies": [
+      "cypress",
+      "msw"
+    ]
   }
 }
