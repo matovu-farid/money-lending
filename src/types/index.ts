@@ -40,3 +40,21 @@ export interface UpdateCustomerInput {
   contact?: string
   address?: string
 }
+
+// --- Collateral input type ---
+export interface CollateralInput {
+  nature: string
+  description?: string
+}
+
+// --- Loan input types ---
+export interface CreateLoanInput {
+  customerId: string
+  principalAmount: string   // string for NUMERIC precision -- no float
+  interestRate: string      // string decimal e.g. "0.10" for 10%/month, defaults to "0.10"
+  minInterestDays: number   // defaults to 30
+  startDate: string         // ISO 8601 datetime string
+  collateral: CollateralInput
+  interestRateOverride?: string | null  // admin-only override
+  minPeriodOverride?: number | null     // admin-only override
+}
