@@ -58,3 +58,23 @@ export interface CreateLoanInput {
   interestRateOverride?: string | null  // admin-only override
   minPeriodOverride?: number | null     // admin-only override
 }
+
+// --- Payment input types ---
+export interface RecordPaymentInput {
+  loanId: string
+  paymentDate: string  // ISO 8601
+  amount: string       // NUMERIC string
+  note?: string
+}
+
+export interface EditPaymentInput {
+  paymentId: string
+  amount?: string
+  paymentDate?: string
+  reason: string       // required for audit
+}
+
+export interface DeletePaymentInput {
+  paymentId: string
+  reason: string       // required for audit
+}

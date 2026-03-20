@@ -6,6 +6,7 @@ import {
   calculateLoanSummary,
   calculateDaysOverdue,
   formatAmount,
+  allocatePayment,
 } from "../engine"
 
 describe("Interest Engine", () => {
@@ -95,5 +96,106 @@ describe("Interest Engine", () => {
     expect(result.toFixed(4)).toBe(expected.toFixed(4))
     // Approximately 30 days
     expect(result.toNumber()).toBeCloseTo(30, 0)
+  })
+})
+
+describe("allocatePayment", () => {
+  // Test 1: Payment < interest owed — all goes to interest, principal unchanged (LOAN-08, LOAN-09)
+  it("payment of 50000 against balance 1000000 at 10%/month after 30 days: all to interest, zero principal reduction (LOAN-08)", () => {
+    // interest = 1000000 * (0.10/30) * 30 = 100000; payment 50000 < 100000
+    const result = allocatePayment({
+      paymentAmount: "50000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 30,
+      minInterestDays: 30,
+    })
+    expect(result.interestPortion).toBe("50000.00")
+    expect(result.principalPortion).toBe("0.00")
+    expect(result.principalBalanceBefore).toBe("1000000")
+    expect(result.principalBalanceAfter).toBe("1000000")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // Test 2: Payment > interest owed — excess reduces principal (LOAN-08)
+  it("payment of 150000 against balance 1000000 at 10%/month after 30 days: 100000 interest + 50000 principal (LOAN-08)", () => {
+    // interest = 100000; payment = 150000; principal portion = 50000; balance after = 950000
+    const result = allocatePayment({
+      paymentAmount: "150000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 30,
+      minInterestDays: 30,
+    })
+    expect(result.interestPortion).toBe("100000.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceBefore).toBe("1000000")
+    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // Test 3: Payment exceeds total owed — principal balance goes to zero, loan fully paid (LOAN-08)
+  it("payment of 1100000 against balance 1000000 at 10%/month after 30 days: fully paid", () => {
+    // interest = 100000; principal portion = 1000000; balance after = 0
+    const result = allocatePayment({
+      paymentAmount: "1100000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 30,
+      minInterestDays: 30,
+    })
+    expect(result.interestPortion).toBe("100000.00")
+    expect(result.principalPortion).toBe("1000000.00")
+    expect(result.principalBalanceBefore).toBe("1000000")
+    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.loanFullyPaid).toBe(true)
+  })
+
+  // Test 4: Minimum period enforcement — payment after 15 days still uses 30-day interest (LOAN-10)
+  it("payment after 15 days with 30-day minimum charges full 30-day interest", () => {
+    // interest = 1000000 * (0.10/30) * 30 = 100000 (not 15 days)
+    const result = allocatePayment({
+      paymentAmount: "150000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 15,
+      minInterestDays: 30,
+    })
+    expect(result.interestPortion).toBe("100000.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // Test 5: Any amount accepted — payment of 1.00 works without error (LOAN-09)
+  it("any amount accepted — payment of 1.00 allocates entirely to interest without error (LOAN-09)", () => {
+    const result = allocatePayment({
+      paymentAmount: "1.00",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 30,
+      minInterestDays: 30,
+    })
+    expect(result.interestPortion).toBe("1.00")
+    expect(result.principalPortion).toBe("0.00")
+    expect(result.principalBalanceBefore).toBe("1000000")
+    expect(result.principalBalanceAfter).toBe("1000000")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // Test 6: Custom minInterestDays override — 45-day minimum computes correctly
+  it("custom minInterestDays of 45 — payment after 20 days still charges 45-day interest", () => {
+    // interest = 1000000 * (0.10/30) * 45 = 150000
+    const result = allocatePayment({
+      paymentAmount: "200000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 20,
+      minInterestDays: 45,
+    })
+    expect(result.interestPortion).toBe("150000.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.loanFullyPaid).toBe(false)
   })
 })

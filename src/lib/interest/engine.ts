@@ -84,3 +84,63 @@ export function calculateDaysOverdue(
 export function formatAmount(amount: BigNumber): string {
   return amount.toFixed(2)
 }
+
+/**
+ * Allocation result from a single payment.
+ * All monetary fields are NUMERIC(15,2) strings.
+ */
+export type PaymentAllocation = {
+  interestPortion: string
+  principalPortion: string
+  principalBalanceBefore: string
+  principalBalanceAfter: string
+  loanFullyPaid: boolean
+}
+
+/**
+ * Allocates a payment interest-first, then applies remainder to principal.
+ * Pure function — no DB calls, no side effects.
+ *
+ * If payment <= interest owed: all goes to interest, principal unchanged.
+ * If payment > interest owed: excess reduces principal.
+ * If principal balance reaches zero: loanFullyPaid = true.
+ *
+ * LOAN-08: Interest-first allocation.
+ * LOAN-09: Any amount accepted — no minimum.
+ * LOAN-10: Minimum period enforced via calculateInterest (minInterestDays).
+ */
+export function allocatePayment(params: {
+  paymentAmount: string
+  principalBalanceBefore: string
+  monthlyRateDecimal: string
+  daysElapsed: number
+  minInterestDays: number
+}): PaymentAllocation {
+  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays } = params
+  const payment = new BigNumber(paymentAmount)
+  const interestOwed = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
+
+  if (payment.isLessThanOrEqualTo(interestOwed)) {
+    return {
+      interestPortion: formatAmount(payment),
+      principalPortion: "0.00",
+      principalBalanceBefore,
+      principalBalanceAfter: principalBalanceBefore,
+      loanFullyPaid: false,
+    }
+  }
+
+  const principalPortion = payment.minus(interestOwed)
+  const principalBalanceAfter = BigNumber.max(
+    new BigNumber(principalBalanceBefore).minus(principalPortion),
+    0
+  )
+
+  return {
+    interestPortion: formatAmount(interestOwed),
+    principalPortion: formatAmount(principalPortion),
+    principalBalanceBefore,
+    principalBalanceAfter: formatAmount(principalBalanceAfter),
+    loanFullyPaid: principalBalanceAfter.isZero(),
+  }
+}

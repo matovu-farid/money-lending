@@ -8,3 +8,5 @@ export class IncompleteLoanRequirements extends Data.TaggedError("IncompleteLoan
 export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{ reason: string }> {}
 export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{ action: string; role: string }> {}
 export class DuplicateError extends Data.TaggedError("DuplicateError")<{ entity: string; field: string }> {}
+export class PaymentNotFound extends Data.TaggedError("PaymentNotFound")<{ id: string }> {}
+export class ReceiptBlockedError extends Data.TaggedError("ReceiptBlockedError")<{ missing: string[] }> {}

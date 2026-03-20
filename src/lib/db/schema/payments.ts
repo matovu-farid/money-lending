@@ -11,6 +11,10 @@ export const payments = pgTable("payments", {
   principalBalanceBefore: numeric("principal_balance_before", { precision: 15, scale: 2 }).notNull(),
   principalBalanceAfter: numeric("principal_balance_after", { precision: 15, scale: 2 }).notNull(),
   recordedBy: text("recorded_by").notNull(),
+  editReason: text("edit_reason"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: text("deleted_by"),
+  deleteReason: text("delete_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 })
