@@ -181,12 +181,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RPTS-03     | Phase 4 | Pending |
 | RPTS-04     | Phase 4 | Pending |
 | RPTS-05     | Phase 4 | Pending |
-| INFR-01     | Phase 1 | Pending |
+| INFR-01     | Phase 1 | In Progress (schema + audit table defined in 01-01) |
 | INFR-02     | Phase 1 | Pending |
 | INFR-03     | Phase 1 | Pending |
 | INFR-04     | Phase 2 | Pending |
-| INFR-05     | Phase 1 | Pending |
-| INFR-06     | Phase 1 | Pending |
+| INFR-05     | Phase 1 | In Progress (bignumber.js installed, no-float pattern enforced in schema design, 01-01) |
+| INFR-06     | Phase 1 | In Progress (Effect.js error types defined in 01-01; full service layer in 01-04/05) |
 
 **Coverage:**
 

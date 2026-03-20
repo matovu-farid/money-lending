@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: unknown
-stopped_at: Phase 1 plans re-synced — ready to execute
-last_updated: "2026-03-20T10:34:58.182Z"
+status: executing
+stopped_at: Completed 01-01-PLAN.md
+last_updated: "2026-03-20T10:40:38.000Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 7
-  completed_plans: 0
+  completed_plans: 1
 ---
 
 # Project State
@@ -24,26 +24,26 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 1 of 7
+Plan: 2 of 7 (completed: 01-01)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0
-- Average duration: -
-- Total execution time: 0 hours
+- Total plans completed: 1
+- Average duration: 5 min
+- Total execution time: 0.1 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 01-foundation | 1 | 5 min | 5 min |
 
 **Recent Trend:**
 
-- Last 5 plans: -
-- Trend: -
+- Last 5 plans: 5 min
+- Trend: on track
 
 *Updated after each plan completion*
 
@@ -58,6 +58,9 @@ Recent decisions affecting current work:
 - [Pre-phase]: Interest is calculated on-demand from loan history (no daily accrual rows) — cron handles overdue detection and alerts only, not financial math
 - [Pre-phase]: All monetary arithmetic uses BigNumber library — no native JS float operations on money values anywhere in the codebase
 - [Phase 1]: Loans are perpetual — no term_days, no due_date. Payment table is the rate-period source of truth with principal_balance_before/after columns.
+- [01-01]: No Zod installed — Server Actions use TypeScript types; only Better Auth catch-all Route Handler handles its own validation.
+- [01-01]: Collateral is a separate table (collateral.ts) with loanId FK, not inline columns on loans.
+- [01-01]: INFR-06 Layer deferral — services return Effect<S,E,never> with db closed over module scope; full Context.Tag/Layer wiring deferred to Phase 2.
 
 ### Pending Todos
 
@@ -66,12 +69,12 @@ None yet.
 ### Blockers/Concerns
 
 - [Phase 1]: Better Auth RBAC plugin API must be verified against current docs before implementing role-enforcement middleware — training data may be stale
-- [Phase 1]: Drizzle ORM current version and migration API must be confirmed on npmjs.com before writing schema tasks
 - [Phase 2]: @react-pdf/renderer React 19 compatibility is unverified — must test in the actual Next.js 16 + React 19 environment before committing to it for receipt generation
-- [Pre-phase]: Client's operating timezone must be confirmed (likely Africa/Kampala) before setting the BUSINESS_TIMEZONE constant used by cron and date arithmetic
+- RESOLVED [Pre-phase]: Client's operating timezone confirmed as Africa/Kampala — set in .env and .env.example
+- RESOLVED [Phase 1]: Drizzle ORM version confirmed as 0.45.1 and migration API confirmed — schema written
 
 ## Session Continuity
 
-Last session: 2026-03-20T10:00:00.000Z
-Stopped at: Phase 1 plans re-synced — ready to execute
-Resume file: .planning/phases/01-foundation/01-CONTEXT.md
+Last session: 2026-03-20T10:40:38Z
+Stopped at: Completed 01-01-PLAN.md — ready for 01-02 (Interest Engine)
+Resume file: .planning/phases/01-foundation/01-02-PLAN.md

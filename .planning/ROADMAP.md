@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans:** 7 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Install dependencies, DB schema, Vitest, Effect.js error types
+- [x] 01-01-PLAN.md — Install dependencies, DB schema, Vitest, Effect.js error types
 - [ ] 01-02-PLAN.md — Interest Engine TDD (pure BigNumber calculation functions)
 - [ ] 01-03-PLAN.md — Better Auth setup, RBAC, proxy.ts auth gate, role assignment
 - [ ] 01-04-PLAN.md — Customer CRUD service layer and API routes
@@ -83,7 +83,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 0/7 | Planned | - |
+| 1. Foundation | 1/7 | Executing | - |
 | 2. Loan Operations | 0/TBD | Not started | - |
 | 3. Operational Management | 0/TBD | Not started | - |
 | 4. Financial Reporting | 0/TBD | Not started | - |
