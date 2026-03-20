@@ -12,7 +12,19 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ### Validated
 
-(None yet — ship to validate)
+**Loan Engine** (Validated in Phase 2: Loan Operations)
+- [x] Payment allocation: interest first, remainder to principal
+- [x] No minimum repayment amount
+- [x] Daily interest calculation on reducing balance
+
+**Receipts** (Validated in Phase 2: Loan Operations)
+- [x] Loan disbursement receipt (auto-generated, printable) — blocked if details incomplete
+- [x] Repayment receipt on each payment received
+- [x] Receipt safeguard: block printing if any detail is missing or incorrect
+
+**Alerts & Notifications** (Validated in Phase 2: Loan Operations)
+- [x] Email notification to admin on every money-in and money-out
+- [x] Overdue loan auto-flagging
 
 ### Active
 
@@ -102,7 +114,8 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 ## Context
 
 - Requirements document: `private_docs/Money_Lending_App_Requirements.docx` (v1.0, Feb 16 2026)
-- Codebase is a fresh Next.js 16 scaffold — no application code yet (see `.planning/codebase/`)
+- Phase 1 (Foundation) complete — auth, customers, loans, interest engine
+- Phase 2 (Loan Operations) complete — payments, receipts, email alerts, overdue cron
 - Client will provide branding assets for receipts and reports
 - UAT will involve maximum 3 client-side testers
 - Hosting and domain costs are separate from this engagement
@@ -132,4 +145,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | 30-day minimum interest period | Business rule: borrower pays at least 30 days even if repaid early | — Pending |
 
 ---
-*Last updated: 2026-03-19 after initialization*
+*Last updated: 2026-03-21 after Phase 2 completion*
