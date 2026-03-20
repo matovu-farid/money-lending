@@ -110,17 +110,22 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ## Constraints
 
-- **Auth:** Clerk — all authentication, session management, password recovery
+- **Auth:** Better Auth — all authentication, session management, password recovery, RBAC
+- **Roles:** 3-tier hierarchy — Super Admin (system owner, assigns Admins) → Admin (assigns Loan Officers, manages operations) → Loan Officer (daily work). New signups default to Unassigned (no permissions) until granted a role
 - **Database:** PostgreSQL — no alternatives
+- **Currency:** Ugandan Shillings (UGX) — single currency, no conversion
+- **Arithmetic:** All monetary calculations in TypeScript/JavaScript must use a BigNumber library (e.g., bignumber.js or decimal.js) — native floats are forbidden for financial math
+- **Error handling:** Effect.js used throughout — typed errors, dependency injection via Layer, no untyped throws
 - **Frontend:** React + Next.js — responsive, desktop and tablet (no mobile-first)
-- **Scheduled jobs:** Cron-based daily interest calculation (runs once per day)
+- **Interest calculation:** Formula-based on-demand from loan history (no daily accrual cron) — `interest = balance × daily_rate × days`
+- **Scheduled jobs:** Lightweight cron for overdue detection and alerts only — no financial calculations in cron
 - **Platform:** Web-only — no native mobile
 
 ## Key Decisions
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Clerk for auth | Client requirement; handles registration, sessions, password reset | — Pending |
+| Better Auth for auth | Switched from Clerk — self-hosted, open source, built-in RBAC plugin, no vendor lock-in | — Pending |
 | PostgreSQL | Client requirement; relational model suits financial data | — Pending |
 | Daily cron for interest | Interest calculated once daily, not in real-time | — Pending |
 | Payment allocates interest first | Core business rule — non-negotiable | — Pending |

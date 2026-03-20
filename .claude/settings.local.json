@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(gsd:discuss-phase)",
+      "Skill(gsd:plan-phase)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "WebFetch(domain:www.better-auth.com)",
+      "Bash(node:*)",
+      "Skill(gsd:execute-phase)"
+    ]
+  }
+}

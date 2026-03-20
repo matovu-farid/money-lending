@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "jujutsu": {
+      "source": "knoopx/pi",
+      "sourceType": "github",
+      "computedHash": "674dc67b5da9f13ad2b58a5830dbe65b5028197e2565907b1e9801d66e112363"
+    }
+  }
+}
