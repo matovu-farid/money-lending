@@ -31,8 +31,8 @@
 
 ### Customer Management (CUST)
 
-- [ ] **CUST-01**: User can register a customer with Full Name, Contact (phone/email), and Physical Address
-- [ ] **CUST-02**: User can view and edit a customer's profile
+- [x] **CUST-01**: User can register a customer with Full Name, Contact (phone/email), and Physical Address
+- [x] **CUST-02**: User can view and edit a customer's profile
 - [ ] **CUST-03**: User can capture security/collateral details per loan (nature: land title, vehicle log book, etc.)
 - [ ] **CUST-04**: System blocks loan issuance if required customer or collateral details are incomplete
 - [ ] **CUST-05**: User can search and filter customers by name, status, loan status, and days remaining — with pagination
@@ -97,7 +97,7 @@
 ### Infrastructure (INFR)
 
 - [ ] **INFR-01**: PostgreSQL database with NUMERIC(15,2) monetary columns (UGX), audit log table (records every payment CUD with actor, timestamp, before/after values), and schema migrations
-- [ ] **INFR-02**: RESTful API (Next.js Route Handlers) with Zod input validation and consistent error handling
+- [x] **INFR-02**: RESTful API (Next.js Route Handlers) with Zod input validation and consistent error handling
 - [ ] **INFR-03**: Responsive frontend for desktop and tablet (not mobile-first); all monetary values displayed in UGX
 - [ ] **INFR-04**: Scheduled job (lightweight cron) for overdue loan detection and predictive alerts only — not for financial calculations
 - [ ] **INFR-05**: All monetary arithmetic in TypeScript/JavaScript uses a BigNumber library (bignumber.js or decimal.js) — no native float operations on money values
@@ -140,8 +140,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-03     | Phase 1 | Complete |
 | AUTH-04     | Phase 1 | Complete |
 | AUTH-05     | Phase 1 | Complete |
-| CUST-01     | Phase 1 | Pending |
-| CUST-02     | Phase 1 | Pending |
+| CUST-01     | Phase 1 | Complete |
+| CUST-02     | Phase 1 | Complete |
 | CUST-03     | Phase 1 | Pending |
 | CUST-04     | Phase 1 | Pending |
 | CUST-05     | Phase 3 | Pending |
@@ -182,7 +182,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RPTS-04     | Phase 4 | Pending |
 | RPTS-05     | Phase 4 | Pending |
 | INFR-01     | Phase 1 | In Progress (schema + audit table defined in 01-01) |
-| INFR-02     | Phase 1 | Pending |
+| INFR-02     | Phase 1 | Complete |
 | INFR-03     | Phase 1 | Pending |
 | INFR-04     | Phase 2 | Pending |
 | INFR-05     | Phase 1 | In Progress (bignumber.js installed, no-float pattern enforced in schema design, 01-01) |

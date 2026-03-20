@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 01-03-PLAN.md
-last_updated: "2026-03-20T11:05:00.000Z"
+stopped_at: Completed 01-04-PLAN.md
+last_updated: "2026-03-20T11:15:02.000Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 7
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -24,21 +24,21 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 01 (foundation) — EXECUTING
-Plan: 4 of 7 (completed: 01-01, 01-02, 01-03)
+Plan: 5 of 7 (completed: 01-01, 01-02, 01-03, 01-04)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 3
-- Average duration: 8 min
-- Total execution time: 0.4 hours
+- Total plans completed: 4
+- Average duration: 7 min
+- Total execution time: 0.45 hours
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 01-foundation | 3 | 25 min | 8 min |
+| 01-foundation | 4 | 27 min | 7 min |
 
 **Recent Trend:**
 
@@ -68,6 +68,8 @@ Recent decisions affecting current work:
 - [01-03]: proxy.ts uses auth.api.getSession (full DB lookup) not cookie-only — required for session.user.role check; cookieCache (5-min) mitigates cost.
 - [01-03]: AUTH-04 satisfied by Better Auth session table — each login creates a row with userId and createdAt; no extra audit hook needed.
 - [01-03]: RESOLVED — Better Auth RBAC plugin API verified; unassignedRole requires 'as any' cast for empty newRole({}) due to TypeScript Subset<never> inference.
+- [01-04]: writeAuditLog is plain async (not Effect) — Effect.runPromise inside Drizzle tx callbacks causes runtime errors (RESEARCH.md Pitfall 7).
+- [01-04]: No Zod in customer Server Actions — TypeScript types + runtime string guards satisfy INFR-02 per user decision.
 
 ### Pending Todos
 
@@ -82,6 +84,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T11:05:00Z
-Stopped at: Completed 01-03-PLAN.md — ready for 01-04 (Auth UI pages)
-Resume file: .planning/phases/01-foundation/01-04-PLAN.md
+Last session: 2026-03-20T11:15:02Z
+Stopped at: Completed 01-04-PLAN.md — ready for 01-05 (Loan Service)
+Resume file: .planning/phases/01-foundation/01-05-PLAN.md
