@@ -33,25 +33,25 @@
 
 - [x] **CUST-01**: User can register a customer with Full Name, Contact (phone/email), and Physical Address
 - [x] **CUST-02**: User can view and edit a customer's profile
-- [ ] **CUST-03**: User can capture security/collateral details per loan (nature: land title, vehicle log book, etc.)
-- [ ] **CUST-04**: System blocks loan issuance if required customer or collateral details are incomplete
+- [x] **CUST-03**: User can capture security/collateral details per loan (nature: land title, vehicle log book, etc.)
+- [x] **CUST-04**: System blocks loan issuance if required customer or collateral details are incomplete
 - [ ] **CUST-05**: User can search and filter customers by name, status, loan status, and days remaining — with pagination
 - [ ] **CUST-06**: User can set customer status: Active, Blacklisted, or Inactive
 - [ ] **CUST-07**: User can view a customer's full loan history — all past and current loans with payment breakdown
 
 ### Loan Engine (LOAN)
 
-- [ ] **LOAN-01**: User can create a loan application: Amount, Date, Interest Rate (default 10%/month, minimum), linked Security
-- [ ] **LOAN-02**: Loan is open-ended (perpetual) — no fixed maturity date. Interest accrues on the outstanding principal in 30-day billing cycles. The loan rolls forward indefinitely until the balance reaches zero. Default interest rate is 10%/month (minimum).
+- [x] **LOAN-01**: User can create a loan application: Amount, Date, Interest Rate (default 10%/month, minimum), linked Security
+- [x] **LOAN-02**: Loan is open-ended (perpetual) — no fixed maturity date. Interest accrues on the outstanding principal in 30-day billing cycles. The loan rolls forward indefinitely until the balance reaches zero. Default interest rate is 10%/month (minimum).
 - [x] **LOAN-03**: System calculates interest on reducing balance using: `daily_rate = outstanding_principal × monthly_rate / 30`; `interest = daily_rate × days_elapsed` — computed on-demand from payment history, no daily accrual records needed. The daily rate changes only when a payment reduces principal.
 - [x] **LOAN-04**: All interest calculations use a BigNumber library for precision (no native float arithmetic)
-- [ ] **LOAN-05**: Loan status transitions through lifecycle: Pending → Active → Partially Paid → Fully Paid → Defaulted
+- [x] **LOAN-05**: Loan status transitions through lifecycle: Pending → Active → Partially Paid → Fully Paid → Defaulted
 - [ ] **LOAN-06**: Loan officer can manually record a customer payment (amount, date) — payments happen off-app (cash, mobile money, etc.) and are entered into the system by staff
 - [ ] **LOAN-07**: Loan officer can edit or delete a recorded payment — every create, update, and delete is written to the audit log with the acting user, timestamp, and before/after values
 - [ ] **LOAN-08**: System allocates payments interest-first, then applies remainder to principal
 - [ ] **LOAN-09**: System accepts any payment amount (no minimum repayment)
 - [x] **LOAN-10**: System enforces a 30-day minimum interest period — within the first 30 days, borrower always pays 30 days of interest regardless of when they repay. After 30 days, interest is prorated to actual days elapsed. Formula: `interest_days = max(days_elapsed, 30)`
-- [ ] **LOAN-11**: Admin can override the minimum interest period and default interest rate per loan or globally
+- [x] **LOAN-11**: Admin can override the minimum interest period and default interest rate per loan or globally
 
 ### Receipts (RCPT)
 
@@ -142,22 +142,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUTH-05     | Phase 1 | Complete |
 | CUST-01     | Phase 1 | Complete |
 | CUST-02     | Phase 1 | Complete |
-| CUST-03     | Phase 1 | Pending |
-| CUST-04     | Phase 1 | Pending |
+| CUST-03     | Phase 1 | Complete |
+| CUST-04     | Phase 1 | Complete |
 | CUST-05     | Phase 3 | Pending |
 | CUST-06     | Phase 3 | Pending |
 | CUST-07     | Phase 3 | Pending |
-| LOAN-01     | Phase 1 | Pending |
-| LOAN-02     | Phase 1 | Pending |
+| LOAN-01     | Phase 1 | Complete |
+| LOAN-02     | Phase 1 | Complete |
 | LOAN-03     | Phase 1 | Complete |
 | LOAN-04     | Phase 1 | Complete |
-| LOAN-05     | Phase 1 | Pending |
+| LOAN-05     | Phase 1 | Complete |
 | LOAN-06     | Phase 2 | Pending |
 | LOAN-07     | Phase 2 | Pending |
 | LOAN-08     | Phase 2 | Pending |
 | LOAN-09     | Phase 2 | Pending |
 | LOAN-10     | Phase 1 | Complete |
-| LOAN-11     | Phase 1 | Pending |
+| LOAN-11     | Phase 1 | Complete |
 | RCPT-01     | Phase 2 | Pending |
 | RCPT-02     | Phase 2 | Pending |
 | RCPT-03     | Phase 2 | Pending |

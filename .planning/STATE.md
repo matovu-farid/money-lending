@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 01-04-PLAN.md
-last_updated: "2026-03-20T11:15:02.000Z"
+status: unknown
+stopped_at: Completed 01-05-PLAN.md
+last_updated: "2026-03-20T11:20:40.538Z"
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -46,6 +46,7 @@ Plan: 5 of 7 (completed: 01-01, 01-02, 01-03, 01-04)
 - Trend: on track
 
 *Updated after each plan completion*
+| Phase 01-foundation P05 | 5 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,8 @@ Recent decisions affecting current work:
 - [01-03]: RESOLVED — Better Auth RBAC plugin API verified; unassignedRole requires 'as any' cast for empty newRole({}) due to TypeScript Subset<never> inference.
 - [01-04]: writeAuditLog is plain async (not Effect) — Effect.runPromise inside Drizzle tx callbacks causes runtime errors (RESEARCH.md Pitfall 7).
 - [01-04]: No Zod in customer Server Actions — TypeScript types + runtime string guards satisfy INFR-02 per user decision.
+- [Phase 01-foundation]: LOAN-11 vs AUTH-03 resolved: per-loan overrides are admin+, global system defaults require superAdmin per AUTH-03 capability table
+- [Phase 01-foundation]: [01-05]: writeAuditLog called with direct await inside db.transaction -- not Effect.runPromise to avoid Pitfall 7
 
 ### Pending Todos
 
@@ -84,6 +87,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T11:15:02Z
-Stopped at: Completed 01-04-PLAN.md — ready for 01-05 (Loan Service)
-Resume file: .planning/phases/01-foundation/01-05-PLAN.md
+Last session: 2026-03-20T11:20:40.536Z
+Stopped at: Completed 01-05-PLAN.md
+Resume file: None
