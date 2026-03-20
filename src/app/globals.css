@@ -128,3 +128,22 @@
     @apply font-sans;
   }
 }
+
+@media print {
+  .print-hidden {
+    display: none !important;
+  }
+  body {
+    background: white;
+    color: black;
+  }
+  .receipt-body {
+    max-width: 100%;
+    font-family: var(--font-geist-sans), sans-serif;
+    padding: 2rem;
+  }
+  .receipt-body * {
+    box-shadow: none !important;
+    border-color: #ccc !important;
+  }
+}
