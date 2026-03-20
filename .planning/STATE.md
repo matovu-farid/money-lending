@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 2 context gathered
-last_updated: "2026-03-20T20:19:06.538Z"
+stopped_at: Completed 02-01-PLAN.md
+last_updated: "2026-03-20T21:41:52.220Z"
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 11
+  completed_plans: 8
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 01 — foundation
+**Current focus:** Phase 02 — loan-operations
 
 ## Current Position
 
-Phase: 01 (foundation) — EXECUTING
-Plan: 1 of 7
+Phase: 02 (loan-operations) — EXECUTING
+Plan: 1 of 4
 
 ## Performance Metrics
 
@@ -49,6 +49,7 @@ Plan: 1 of 7
 | Phase 01-foundation P05 | 5 | 2 tasks | 5 files |
 | Phase 01-foundation P06 | 6 | 2 tasks | 22 files |
 | Phase 01-foundation P07 | 18 | 2 tasks | 6 files |
+| Phase 02-loan-operations P01 | 7 | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -80,6 +81,9 @@ Recent decisions affecting current work:
 - [Phase 01-foundation]: buttonVariants used with Link for link-button elements — base-ui Button has no asChild prop
 - [Phase 01-foundation]: Admin page uses authClient.admin.listUsers with result.data cast via (result.data as any)?.users due to Better Auth type complexity
 - [Phase 01-foundation]: Email verification enabled via Better Auth requireEmailVerification + Resend integration — registration flow requires email verification before login; CYPRESS=true bypasses to in-memory store for E2E tests
+- [Phase 02-loan-operations]: allocatePayment takes params object (not positional args) for clarity with 5 inputs
+- [Phase 02-loan-operations]: recalculateFromPayment is internal (not exported) — called only from editPayment and deletePayment
+- [Phase 02-loan-operations]: deletePayment reverts loan to pending if no active payments remain after deletion
 
 ### Pending Todos
 
@@ -94,6 +98,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T20:19:06.536Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-loan-operations/02-CONTEXT.md
+Last session: 2026-03-20T21:41:52.218Z
+Stopped at: Completed 02-01-PLAN.md
+Resume file: None

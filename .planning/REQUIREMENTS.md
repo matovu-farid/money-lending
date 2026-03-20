@@ -46,10 +46,10 @@
 - [x] **LOAN-03**: System calculates interest on reducing balance using: `daily_rate = outstanding_principal × monthly_rate / 30`; `interest = daily_rate × days_elapsed` — computed on-demand from payment history, no daily accrual records needed. The daily rate changes only when a payment reduces principal.
 - [x] **LOAN-04**: All interest calculations use a BigNumber library for precision (no native float arithmetic)
 - [x] **LOAN-05**: Loan status transitions through lifecycle: Pending → Active → Fully Paid. **DEVIATION (v1):** Reduced from 5 statuses to 3 by user decision — `partially_paid` and `defaulted` removed for v1 simplicity. Overdue detection handled by watchlist (Phase 3) instead of a status flag.
-- [ ] **LOAN-06**: Loan officer can manually record a customer payment (amount, date) — payments happen off-app (cash, mobile money, etc.) and are entered into the system by staff
-- [ ] **LOAN-07**: Loan officer can edit or delete a recorded payment — every create, update, and delete is written to the audit log with the acting user, timestamp, and before/after values
-- [ ] **LOAN-08**: System allocates payments interest-first, then applies remainder to principal
-- [ ] **LOAN-09**: System accepts any payment amount (no minimum repayment)
+- [x] **LOAN-06**: Loan officer can manually record a customer payment (amount, date) — payments happen off-app (cash, mobile money, etc.) and are entered into the system by staff
+- [x] **LOAN-07**: Loan officer can edit or delete a recorded payment — every create, update, and delete is written to the audit log with the acting user, timestamp, and before/after values
+- [x] **LOAN-08**: System allocates payments interest-first, then applies remainder to principal
+- [x] **LOAN-09**: System accepts any payment amount (no minimum repayment)
 - [x] **LOAN-10**: System enforces a 30-day minimum interest period — within the first 30 days, borrower always pays 30 days of interest regardless of when they repay. After 30 days, interest is prorated to actual days elapsed. Formula: `interest_days = max(days_elapsed, 30)`
 - [x] **LOAN-11**: Admin can override the minimum interest period and default interest rate per loan or globally
 
@@ -152,10 +152,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | LOAN-03     | Phase 1 | Complete |
 | LOAN-04     | Phase 1 | Complete |
 | LOAN-05     | Phase 1 | Complete |
-| LOAN-06     | Phase 2 | Pending |
-| LOAN-07     | Phase 2 | Pending |
-| LOAN-08     | Phase 2 | Pending |
-| LOAN-09     | Phase 2 | Pending |
+| LOAN-06     | Phase 2 | Complete |
+| LOAN-07     | Phase 2 | Complete |
+| LOAN-08     | Phase 2 | Complete |
+| LOAN-09     | Phase 2 | Complete |
 | LOAN-10     | Phase 1 | Complete |
 | LOAN-11     | Phase 1 | Complete |
 | RCPT-01     | Phase 2 | Pending |
