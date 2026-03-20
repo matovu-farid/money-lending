@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-stopped_at: Phase 1 plans need re-sync — loan model changed (perpetual loans, remove term_days/due_date from schema)
-last_updated: "2026-03-19T18:00:00.000Z"
-last_activity: 2026-03-19 — Phase 1 Foundation planned; 7 plans created and verified (2 revision rounds)
+status: ready
+stopped_at: Phase 1 plans re-synced with perpetual loan model — ready to execute
+last_updated: "2026-03-20T10:00:00.000Z"
+last_activity: 2026-03-20 — Phase 1 plans re-synced with perpetual loan model (payment schema added, terminology fixed)
 progress:
   total_phases: 4
   completed_phases: 0
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 Phase: 1 of 4 (Foundation)
 Plan: 0 of 7 in current phase
 Status: Ready to execute
-Last activity: 2026-03-19 — Phase 1 Foundation planned; 7 plans created and verified (2 revision rounds)
+Last activity: 2026-03-20 — Phase 1 plans re-synced with perpetual loan model (payment schema added, terminology fixed)
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -63,6 +63,7 @@ Recent decisions affecting current work:
 - [Pre-phase]: Better Auth replaces Clerk — self-hosted RBAC plugin, no vendor lock-in; all auth middleware must use Better Auth session API
 - [Pre-phase]: Interest is calculated on-demand from loan history (no daily accrual rows) — cron handles overdue detection and alerts only, not financial math
 - [Pre-phase]: All monetary arithmetic uses BigNumber library — no native JS float operations on money values anywhere in the codebase
+- [Phase 1]: Loans are perpetual — no term_days, no due_date. Payment table is the rate-period source of truth with principal_balance_before/after columns.
 
 ### Pending Todos
 
@@ -77,6 +78,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-19T16:09:08.983Z
-Stopped at: Phase 1 context gathered
+Last session: 2026-03-20T10:00:00.000Z
+Stopped at: Phase 1 plans re-synced — ready to execute
 Resume file: .planning/phases/01-foundation/01-CONTEXT.md
