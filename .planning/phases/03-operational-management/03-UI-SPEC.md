@@ -1,7 +1,8 @@
 ---
 phase: 3
 slug: operational-management
-status: draft
+status: approved
+reviewed_at: 2026-03-21
 shadcn_initialized: true
 preset: base-nova / neutral / cssVariables
 created: 2026-03-21
