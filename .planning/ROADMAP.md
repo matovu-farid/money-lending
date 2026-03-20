@@ -29,7 +29,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. A loan can be issued with a principal amount, start date, interest rate (defaulting to 10%/month), and the system computes the correct reducing-balance interest for any number of elapsed days using BigNumber arithmetic — results are reproducible and match manual calculation
   4. All monetary columns in the database are NUMERIC(15,2); every service function returns an Effect type with a typed error channel; no native float operations appear anywhere in the financial calculation path
   5. The audit log table exists and a row is written in the same database transaction as every financial mutation — the row captures the acting user, timestamp, and before/after values
-**Plans:** 2/7 plans executed
+**Plans:** 3/7 plans executed
 
 Plans:
 - [x] 01-01-PLAN.md — Install dependencies, DB schema, Vitest, Effect.js error types
@@ -83,7 +83,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 2/7 | In Progress|  |
+| 1. Foundation | 3/7 | In Progress|  |
 | 2. Loan Operations | 0/TBD | Not started | - |
 | 3. Operational Management | 0/TBD | Not started | - |
 | 4. Financial Reporting | 0/TBD | Not started | - |

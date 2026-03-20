@@ -7,9 +7,9 @@
 
 ### Authentication & Access (AUTH)
 
-- [ ] **AUTH-01**: User can register, log in, reset password, and maintain sessions via Better Auth
-- [ ] **AUTH-02**: New user accounts default to **Unassigned** on signup — zero permissions until a role is explicitly granted
-- [ ] **AUTH-03**: System enforces a 3-tier role hierarchy via Better Auth roles plugin:
+- [x] **AUTH-01**: User can register, log in, reset password, and maintain sessions via Better Auth
+- [x] **AUTH-02**: New user accounts default to **Unassigned** on signup — zero permissions until a role is explicitly granted
+- [x] **AUTH-03**: System enforces a 3-tier role hierarchy via Better Auth roles plugin:
 
   | Capability | Super Admin | Admin | Loan Officer | Unassigned |
   |------------|:-----------:|:-----:|:------------:|:----------:|
@@ -26,8 +26,8 @@
   | View dashboard & reports | ✓ | ✓ | ✓ | — |
   | Export reports (PDF/Excel) | ✓ | ✓ | — | — |
 
-- [ ] **AUTH-04**: System records login activity per user (session history stored internally)
-- [ ] **AUTH-05**: A user can only assign roles at or below their own level — Admins cannot create Super Admins
+- [x] **AUTH-04**: System records login activity per user (session history stored internally)
+- [x] **AUTH-05**: A user can only assign roles at or below their own level — Admins cannot create Super Admins
 
 ### Customer Management (CUST)
 
@@ -135,11 +135,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase   | Status  |
 | ----------- | ------- | ------- |
-| AUTH-01     | Phase 1 | Pending |
-| AUTH-02     | Phase 1 | Pending |
-| AUTH-03     | Phase 1 | Pending |
-| AUTH-04     | Phase 1 | Pending |
-| AUTH-05     | Phase 1 | Pending |
+| AUTH-01     | Phase 1 | Complete |
+| AUTH-02     | Phase 1 | Complete |
+| AUTH-03     | Phase 1 | Complete |
+| AUTH-04     | Phase 1 | Complete |
+| AUTH-05     | Phase 1 | Complete |
 | CUST-01     | Phase 1 | Pending |
 | CUST-02     | Phase 1 | Pending |
 | CUST-03     | Phase 1 | Pending |
