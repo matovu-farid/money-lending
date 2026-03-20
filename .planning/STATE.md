@@ -79,6 +79,7 @@ Recent decisions affecting current work:
 - [Phase 01-foundation]: Better Auth password reset client method is authClient.requestPasswordReset (not forgetPassword)
 - [Phase 01-foundation]: buttonVariants used with Link for link-button elements — base-ui Button has no asChild prop
 - [Phase 01-foundation]: Admin page uses authClient.admin.listUsers with result.data cast via (result.data as any)?.users due to Better Auth type complexity
+- [Phase 01-foundation]: Email verification enabled via Better Auth requireEmailVerification + Resend integration — registration flow requires email verification before login; CYPRESS=true bypasses to in-memory store for E2E tests
 
 ### Pending Todos
 
