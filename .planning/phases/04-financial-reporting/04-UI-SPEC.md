@@ -272,7 +272,7 @@ Each hub card: icon + title + description + "View Report" button.
 | Delete confirmation (dialog title) | Delete expense? |
 | Delete confirmation (dialog body) | This expense entry will be permanently removed. This cannot be undone. |
 | Delete confirmation (confirm button) | Delete expense |
-| Delete confirmation (cancel button) | Cancel |
+| Delete confirmation (cancel button) | Keep expense |
 | Category add success (toast) | Category added |
 | Category delete blocked (tooltip) | Category has transactions and cannot be deleted |
 
@@ -288,7 +288,7 @@ Each hub card: icon + title + description + "View Report" button.
 | Delete confirmation (dialog title) | Delete income entry? |
 | Delete confirmation (dialog body) | This income entry will be permanently removed. This cannot be undone. |
 | Delete confirmation (confirm button) | Delete entry |
-| Delete confirmation (cancel button) | Cancel |
+| Delete confirmation (cancel button) | Keep entry |
 
 ### Transaction Log
 
