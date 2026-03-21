@@ -5,6 +5,7 @@ import type { collateral } from "@/lib/db/schema/collateral"
 import type { payments } from "@/lib/db/schema/payments"
 import type { auditLog } from "@/lib/db/schema/audit"
 import type { notifications } from "@/lib/db/schema/notifications"
+import type { creditors, creditorInvestments, creditorRepayments, transactionCategories, transactions, financialSnapshots } from "@/lib/db/schema"
 
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
@@ -100,7 +101,7 @@ export interface DashboardKPIs {
   interestEarned: string
   activeBorrowers: number
   overdueCount: number
-  capitalInSystem: string    // "0.00" until Phase 4
+  capitalInSystem: string    // Aggregated from creditor investments
 }
 
 export interface WatchlistEntry {
@@ -127,4 +128,121 @@ export interface ChangeStatusInput {
   customerId: string
   newStatus: CustomerStatus
   reason: string
+}
+
+// Phase 4: Creditor types
+export type Creditor = InferSelectModel<typeof creditors>
+export type NewCreditor = InferInsertModel<typeof creditors>
+export type CreditorInvestment = InferSelectModel<typeof creditorInvestments>
+export type NewCreditorInvestment = InferInsertModel<typeof creditorInvestments>
+export type CreditorRepayment = InferSelectModel<typeof creditorRepayments>
+export type NewCreditorRepayment = InferInsertModel<typeof creditorRepayments>
+
+// Phase 4: Transaction types
+export type TransactionCategory = InferSelectModel<typeof transactionCategories>
+export type NewTransactionCategory = InferInsertModel<typeof transactionCategories>
+export type Transaction = InferSelectModel<typeof transactions>
+export type NewTransaction = InferInsertModel<typeof transactions>
+export type FinancialSnapshot = InferSelectModel<typeof financialSnapshots>
+
+// Phase 4: Input types
+export interface CreateCreditorInput {
+  name: string
+  contact: string
+  address: string
+}
+
+export interface UpdateCreditorInput {
+  name?: string
+  contact?: string
+  address?: string
+}
+
+export interface AddInvestmentInput {
+  creditorId: string
+  amount: string
+  interestRateMonthly: string
+  investmentDate: string
+}
+
+export interface RecordCreditorRepaymentInput {
+  investmentId: string
+  amount: string
+  repaymentDate: string
+}
+
+export interface CreateExpenseInput {
+  categoryId: string
+  amount: string
+  transactionDate: string
+  notes?: string
+}
+
+export interface CreateIncomeInput {
+  categoryId: string
+  amount: string
+  transactionDate: string
+  notes?: string
+}
+
+export interface CreateCategoryInput {
+  name: string
+  type: "expense" | "income"
+}
+
+export type CategoryType = "expense" | "income"
+export type TransactionType = "credit" | "debit"
+
+// Phase 4: Dashboard types
+export interface CreditorDashboard {
+  totalInvested: string
+  interestAccrued: string
+  repaymentsMade: string
+  outstandingBalance: string
+  investments: CreditorInvestmentSummary[]
+}
+
+export interface CreditorInvestmentSummary {
+  id: string
+  amount: string
+  interestRateMonthly: string
+  investmentDate: Date
+  principalBalance: string
+  interestAccrued: string
+  totalRepaid: string
+}
+
+// Phase 4: Report types
+export interface PnlData {
+  period: string
+  income: { category: string; amount: string }[]
+  totalIncome: string
+  expenses: { category: string; amount: string }[]
+  totalExpenses: string
+  netProfit: string
+}
+
+export interface BalanceSheetData {
+  asOf: string
+  assets: { totalLoansOutstanding: string }
+  liabilities: { totalCreditorBalances: string }
+  equity: { shareCapital: string; retainedEarnings: string; totalEquity: string }
+}
+
+export interface PortfolioEntry {
+  loanId: string
+  customerName: string
+  principalAmount: string
+  outstandingBalance: string
+  interestAccrued: string
+  daysOverdue: string
+  status: string
+  riskFlag: boolean
+}
+
+export interface TransactionLogFilters {
+  type?: TransactionType
+  categoryId?: string
+  dateFrom?: string
+  dateTo?: string
 }

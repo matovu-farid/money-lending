@@ -11,3 +11,9 @@ export class DuplicateError extends Data.TaggedError("DuplicateError")<{ entity:
 export class PaymentNotFound extends Data.TaggedError("PaymentNotFound")<{ id: string }> {}
 export class ReceiptBlockedError extends Data.TaggedError("ReceiptBlockedError")<{ missing: string[] }> {}
 export class NotificationNotFound extends Data.TaggedError("NotificationNotFound")<{ id: string }> {}
+export class CreditorNotFound extends Data.TaggedError("CreditorNotFound")<{ id: string }> {}
+export class InvestmentNotFound extends Data.TaggedError("InvestmentNotFound")<{ id: string }> {}
+export class CategoryInUseError extends Data.TaggedError("CategoryInUseError")<{ categoryId: string }> {}
+export class SnapshotNotFound extends Data.TaggedError("SnapshotNotFound")<{ period: string }> {}
+export class CategoryNotFound extends Data.TaggedError("CategoryNotFound")<{ id: string }> {}
+export class TransactionNotFound extends Data.TaggedError("TransactionNotFound")<{ id: string }> {}
