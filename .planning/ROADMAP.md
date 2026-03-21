@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation** - Database schema, Better Auth with RBAC, customer CRUD, loan issuance engine, and the Interest Engine that everything downstream depends on (completed 2026-03-20)
 - [x] **Phase 2: Loan Operations** - Payment processing with interest-first allocation, minimum period enforcement, disbursement and repayment receipt generation, and email alerts on every financial event (completed 2026-03-20)
 - [x] **Phase 3: Operational Management** - Executive dashboard, customer search and filtering, borrower watchlist, repayment simulator, balance-to-days converter, and in-app due-date alerts (completed 2026-03-21)
-- [ ] **Phase 4: Financial Reporting** - Creditor capital tracking, expense and income ledger, Profit and Loss statement, Balance Sheet, and PDF/Excel report export
+- [x] **Phase 4: Financial Reporting** - Creditor capital tracking, expense and income ledger, Profit and Loss statement, Balance Sheet, and PDF/Excel report export (completed 2026-03-21)
 
 ## Phase Details
 
@@ -86,7 +86,7 @@ Plans:
   3. Expenses and income can be recorded with configurable categories; every entry appears in the transaction log as a debit or credit; the log is the single source of truth for the P&L calculation
   4. The monthly Profit and Loss statement (interest income plus other income minus all expenses) and the Balance Sheet (loan book assets, creditor liabilities, equity) are auto-generated and show correct figures that reconcile with the transaction log
   5. Any report — loan portfolio, P&L, Balance Sheet — can be exported to PDF and to Excel with formatting intact; the exported file can be opened and printed by the client without additional software configuration
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans complete
 
 Plans:
 - [ ] 04-01-PLAN.md — Install deps, create all Phase 4 schema files, error types, TypeScript types
@@ -108,4 +108,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Foundation | 7/7 | Complete   | 2026-03-20 |
 | 2. Loan Operations | 4/4 | Complete   | 2026-03-20 |
 | 3. Operational Management | 4/4 | Complete   | 2026-03-21 |
-| 4. Financial Reporting | 7/8 | In Progress|  |
+| 4. Financial Reporting | 8/8 | Complete   | 2026-03-21 |

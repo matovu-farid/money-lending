@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-07-PLAN.md
-last_updated: "2026-03-21T08:36:53.265Z"
+stopped_at: Checkpoint in 04-08-PLAN.md — awaiting human verification of Phase 4 system
+last_updated: "2026-03-21T08:39:52.123Z"
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -63,6 +63,7 @@ Plan: 2 of 8
 | Phase 04-financial-reporting P06 | 4 | 2 tasks | 3 files |
 | Phase 04-financial-reporting P04 | 18 | 3 tasks | 8 files |
 | Phase 04-financial-reporting P07 | 15 | 2 tasks | 13 files |
+| Phase 04-financial-reporting P08 | 3 | 1 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -127,6 +128,8 @@ Recent decisions affecting current work:
 - [Phase 04-financial-reporting]: Profile page fetches investments+repayments from DB alongside dashboard to populate tabs without additional service methods
 - [Phase 04-financial-reporting]: Buffer wrapped as Uint8Array for Route Handler Response body — Node Buffer not assignable to Web API BodyInit
 - [Phase 04-financial-reporting]: buttonVariants + Link pattern used in reports hub — base-ui Button has no asChild prop
+- [Phase 04-financial-reporting]: Month-end cron uses POST not GET — data-modifying operation (snapshot insertion)
+- [Phase 04-financial-reporting]: capitalInSystem shows totalOutstanding from getSystemCapital() — principal + accrued creditor interest
 
 ### Pending Todos
 
@@ -141,6 +144,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T08:36:53.263Z
-Stopped at: Completed 04-07-PLAN.md
+Last session: 2026-03-21T08:39:52.121Z
+Stopped at: Checkpoint in 04-08-PLAN.md — awaiting human verification of Phase 4 system
 Resume file: None
