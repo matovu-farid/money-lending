@@ -73,18 +73,18 @@
 
 ### Creditor Management (CRED)
 
-- [ ] **CRED-01**: User can register a creditor with Name, Address, Contact, Amount invested, and Interest rate
+- [x] **CRED-01**: User can register a creditor with Name, Address, Contact, Amount invested, and Interest rate
 - [ ] **CRED-02**: User can view and edit a creditor's profile and full investment history
 - [ ] **CRED-03**: System calculates daily interest on creditor funds using the same reducing-balance engine as borrower loans
-- [ ] **CRED-04**: User can record repayments made back to creditors
+- [x] **CRED-04**: User can record repayments made back to creditors
 - [ ] **CRED-05**: System displays creditor dashboard: capital invested, interest accrued, repayments made, outstanding balance
 - [ ] **CRED-06**: System displays system-wide capital view: total funds from all creditors combined
 
 ### Financial Transactions (FINC)
 
-- [ ] **FINC-01**: System maintains a transaction log of all debit and credit entries across the business
-- [ ] **FINC-02**: User can record expenses with configurable categories (Rent, Salaries, Office Expenses, Interest Payments, DStv, custom)
-- [ ] **FINC-03**: User can record income with configurable categories (Share Capital, Bonuses, Interest Earned, custom)
+- [x] **FINC-01**: System maintains a transaction log of all debit and credit entries across the business
+- [x] **FINC-02**: User can record expenses with configurable categories (Rent, Salaries, Office Expenses, Interest Payments, DStv, custom)
+- [x] **FINC-03**: User can record income with configurable categories (Share Capital, Bonuses, Interest Earned, custom)
 
 ### Reports & Dashboard (RPTS)
 
@@ -167,15 +167,15 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RISK-04     | Phase 3 | Complete |
 | ALRT-01     | Phase 3 | Complete |
 | ALRT-02     | Phase 2 | Complete |
-| CRED-01     | Phase 4 | Pending |
+| CRED-01     | Phase 4 | Complete |
 | CRED-02     | Phase 4 | Pending |
 | CRED-03     | Phase 4 | Pending |
-| CRED-04     | Phase 4 | Pending |
+| CRED-04     | Phase 4 | Complete |
 | CRED-05     | Phase 4 | Pending |
 | CRED-06     | Phase 4 | Pending |
-| FINC-01     | Phase 4 | Pending |
-| FINC-02     | Phase 4 | Pending |
-| FINC-03     | Phase 4 | Pending |
+| FINC-01     | Phase 4 | Complete |
+| FINC-02     | Phase 4 | Complete |
+| FINC-03     | Phase 4 | Complete |
 | RPTS-01     | Phase 3 | Complete |
 | RPTS-02     | Phase 4 | Pending |
 | RPTS-03     | Phase 4 | Pending |
