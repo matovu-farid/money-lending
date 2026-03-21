@@ -1,17 +1,40 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { getCustomerAction, updateCustomerAction } from "@/actions/customer.actions"
+import { ChevronDown, ChevronUp } from "lucide-react"
+import { getCustomerAction, updateCustomerAction, changeCustomerStatusAction } from "@/actions/customer.actions"
 import { listLoansAction } from "@/actions/loan.actions"
-import type { Customer, Loan } from "@/types"
+import { getPaymentsByLoanAction } from "@/actions/payment.actions"
+import { OverdueBadge } from "@/components/watchlist/overdue-badge"
+import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
+import BigNumber from "bignumber.js"
+import type { Customer, Loan, Payment, CustomerStatus } from "@/types"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { cn } from "@/lib/utils"
 
 function formatUGX(amount: string | number): string {
@@ -37,13 +60,34 @@ function loanStatusVariant(status: string): "default" | "secondary" | "outline" 
   return "outline"
 }
 
+function loanStatusLabel(status: string): string {
+  if (status === "fully_paid") return "Fully Paid"
+  return status.charAt(0).toUpperCase() + status.slice(1)
+}
+
+function formatDate(date: Date | string): string {
+  return new Date(date).toLocaleDateString("en-UG", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  })
+}
+
+interface LoanWithPayments {
+  loan: Loan
+  payments: Payment[]
+  expanded: boolean
+  loadingPayments: boolean
+  daysOverdue: number
+}
+
 export default function CustomerProfilePage() {
   const params = useParams()
   const router = useRouter()
   const customerId = params.id as string
 
   const [customer, setCustomer] = useState<Customer | null>(null)
-  const [loans, setLoans] = useState<Loan[]>([])
+  const [loanItems, setLoanItems] = useState<LoanWithPayments[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -53,6 +97,12 @@ export default function CustomerProfilePage() {
   const [editContact, setEditContact] = useState("")
   const [editAddress, setEditAddress] = useState("")
   const [saving, setSaving] = useState(false)
+
+  // Status change state
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [pendingStatus, setPendingStatus] = useState<CustomerStatus | null>(null)
+  const [statusReason, setStatusReason] = useState("")
+  const [statusSaving, setStatusSaving] = useState(false)
 
   useEffect(() => {
     async function fetchData() {
@@ -77,7 +127,33 @@ export default function CustomerProfilePage() {
         const customerLoans = loansResult.data.filter(
           (l) => l.customerId === customerId
         )
-        setLoans(customerLoans)
+
+        const now = new Date()
+
+        const items: LoanWithPayments[] = customerLoans.map((loan) => {
+          const totalDaysElapsed = Math.floor(
+            (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
+          )
+          const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+          const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
+          const totalInterestAccrued = calculateInterest(
+            loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
+          )
+          const dailyRate = calculateDailyRate(effectiveRate)
+          const daysOverdueBN = calculateDaysOverdue(
+            totalInterestAccrued.toFixed(2), "0", dailyRate.toFixed(10)
+          )
+
+          return {
+            loan,
+            payments: [],
+            expanded: false,
+            loadingPayments: false,
+            daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
+          }
+        })
+
+        setLoanItems(items)
       }
 
       setLoading(false)
@@ -120,7 +196,101 @@ export default function CustomerProfilePage() {
     toast.success("Customer updated successfully")
   }
 
-  const activeLoan = loans.find((l) => l.status === "active")
+  function handleStatusSelect(newStatus: string | null) {
+    if (!newStatus || !customer) return
+    if (newStatus === customer.status) return
+    setPendingStatus(newStatus as CustomerStatus)
+    setStatusReason("")
+    setStatusDialogOpen(true)
+  }
+
+  async function handleStatusConfirm() {
+    if (!customer || !pendingStatus || statusReason.trim().length < 10) return
+    setStatusSaving(true)
+    const result = await changeCustomerStatusAction({
+      customerId: customer.id,
+      newStatus: pendingStatus,
+      reason: statusReason,
+    })
+    setStatusSaving(false)
+    if ("error" in result) {
+      toast.error(result.error)
+      return
+    }
+    setCustomer(result.data)
+    setStatusDialogOpen(false)
+    toast.success(`${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`)
+    setPendingStatus(null)
+    setStatusReason("")
+  }
+
+  function handleStatusCancel() {
+    setStatusDialogOpen(false)
+    setPendingStatus(null)
+    setStatusReason("")
+  }
+
+  async function handleToggleLoan(index: number) {
+    const item = loanItems[index]
+    if (!item) return
+
+    if (item.expanded) {
+      setLoanItems((prev) =>
+        prev.map((li, i) => (i === index ? { ...li, expanded: false } : li))
+      )
+      return
+    }
+
+    if (item.payments.length === 0) {
+      setLoanItems((prev) =>
+        prev.map((li, i) => (i === index ? { ...li, loadingPayments: true, expanded: true } : li))
+      )
+
+      const result = await getPaymentsByLoanAction(item.loan.id)
+      if ("data" in result && result.data) {
+        const fetchedPayments = result.data
+        const now = new Date()
+        const loan = item.loan
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
+        const totalDaysElapsed = Math.floor(
+          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
+        )
+        const totalInterestAccrued = calculateInterest(
+          loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
+        )
+        const activePayments = fetchedPayments.filter((p) => !p.deletedAt)
+        const totalInterestPaid = activePayments.reduce(
+          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
+        )
+        const dailyRate = calculateDailyRate(effectiveRate)
+        const daysOverdueBN = calculateDaysOverdue(
+          totalInterestAccrued.toFixed(2), totalInterestPaid.toFixed(2), dailyRate.toFixed(10)
+        )
+
+        setLoanItems((prev) =>
+          prev.map((li, i) =>
+            i === index
+              ? {
+                  ...li,
+                  payments: fetchedPayments,
+                  loadingPayments: false,
+                  daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
+                }
+              : li
+          )
+        )
+      } else {
+        setLoanItems((prev) =>
+          prev.map((li, i) => (i === index ? { ...li, loadingPayments: false } : li))
+        )
+      }
+    } else {
+      setLoanItems((prev) =>
+        prev.map((li, i) => (i === index ? { ...li, expanded: true } : li))
+      )
+    }
+  }
 
   if (loading) {
     return (
@@ -140,6 +310,11 @@ export default function CustomerProfilePage() {
       </div>
     )
   }
+
+  const isBlacklisted = pendingStatus === "blacklisted"
+  const dialogTitle = isBlacklisted
+    ? `Blacklist ${customer.fullName}?`
+    : `Change status to ${pendingStatus ? statusLabel(pendingStatus) : ""}?`
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
@@ -226,59 +401,169 @@ export default function CustomerProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Status Badge */}
+      {/* Status — interactive dropdown */}
       <Card>
         <CardHeader>
           <CardTitle>Status</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Badge variant={statusVariant(customer.status)}>
-            {statusLabel(customer.status)}
-          </Badge>
-          <p className="text-xs text-muted-foreground mt-2">
-            Status management is available in a future update.
-          </p>
+        <CardContent className="space-y-2">
+          <Select value={customer.status} onValueChange={handleStatusSelect}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="blacklisted">Blacklisted</SelectItem>
+              <SelectItem value="inactive">Inactive</SelectItem>
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 
-      {/* Active Loan Summary */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Active Loan</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {activeLoan ? (
-            <dl className="space-y-3 text-sm">
-              <div>
-                <dt className="text-muted-foreground">Principal Amount</dt>
-                <dd className="font-medium">UGX {formatUGX(activeLoan.principalAmount)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Outstanding Balance</dt>
-                <dd className="font-medium">UGX {formatUGX(activeLoan.principalAmount)}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Status</dt>
-                <dd>
-                  <Badge variant={loanStatusVariant(activeLoan.status)}>
-                    {activeLoan.status === "fully_paid"
-                      ? "Fully Paid"
-                      : activeLoan.status.charAt(0).toUpperCase() + activeLoan.status.slice(1)}
-                  </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Interest Rate</dt>
-                <dd className="font-medium">
-                  {(parseFloat(activeLoan.interestRate) * 100).toFixed(0)}% per month
-                </dd>
-              </div>
-            </dl>
-          ) : (
-            <p className="text-sm text-muted-foreground">No active loans.</p>
-          )}
-        </CardContent>
-      </Card>
+      {/* Status change confirmation dialog */}
+      <Dialog open={statusDialogOpen} onOpenChange={(open) => { if (!open) handleStatusCancel() }}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle className={isBlacklisted ? "text-destructive" : undefined}>
+              {dialogTitle}
+            </DialogTitle>
+            {isBlacklisted && (
+              <DialogDescription>
+                This will prevent {customer.fullName} from receiving new loans. Active loans will continue. Provide a reason.
+              </DialogDescription>
+            )}
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="status-reason">Reason (min 10 characters)</Label>
+            <Textarea
+              id="status-reason"
+              value={statusReason}
+              onChange={(e) => setStatusReason(e.target.value)}
+              placeholder="Provide a reason for this status change..."
+              disabled={statusSaving}
+            />
+            {statusReason.trim().length > 0 && statusReason.trim().length < 10 && (
+              <p className="text-xs text-destructive">Reason must be at least 10 characters</p>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={handleStatusCancel} disabled={statusSaving}>
+              Cancel
+            </Button>
+            <Button
+              variant={isBlacklisted ? "destructive" : "default"}
+              onClick={handleStatusConfirm}
+              disabled={statusSaving || statusReason.trim().length < 10}
+            >
+              {statusSaving ? "Saving..." : "Confirm"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Loan History */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold">Loan History</h2>
+
+        {loanItems.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No loans on record for this customer.</p>
+        ) : (
+          loanItems.map((item, index) => (
+            <Card key={item.loan.id}>
+              <CardHeader>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-mono text-muted-foreground">
+                        LOAN-{item.loan.id.slice(0, 8).toUpperCase()}
+                      </span>
+                      <Badge variant={loanStatusVariant(item.loan.status)}>
+                        {loanStatusLabel(item.loan.status)}
+                      </Badge>
+                      {item.loan.status === "active" && item.daysOverdue > 0 && (
+                        <OverdueBadge daysOverdue={Math.round(item.daysOverdue)} />
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Issued {formatDate(item.loan.startDate)}
+                    </p>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => handleToggleLoan(index)}
+                    aria-label={item.expanded ? "Collapse" : "Expand"}
+                  >
+                    {item.expanded ? (
+                      <ChevronUp className="h-4 w-4" />
+                    ) : (
+                      <ChevronDown className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-1">
+                  <p className="text-2xl font-semibold">
+                    UGX {formatUGX(item.loan.principalAmount)}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {(parseFloat(item.loan.interestRate) * 100).toFixed(0)}% per month
+                  </p>
+                </div>
+
+                {item.expanded && (
+                  <div className="mt-4">
+                    {item.loadingPayments ? (
+                      <p className="text-sm text-muted-foreground">Loading payments...</p>
+                    ) : item.payments.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No payments recorded.</p>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead className="text-right">Interest</TableHead>
+                            <TableHead className="text-right">Principal</TableHead>
+                            <TableHead className="text-right">Balance After</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {item.payments.map((payment) => (
+                            <TableRow
+                              key={payment.id}
+                              className={cn(payment.deletedAt && "opacity-60")}
+                            >
+                              <TableCell className={cn(payment.deletedAt && "line-through text-muted-foreground")}>
+                                {formatDate(payment.paymentDate)}
+                              </TableCell>
+                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                                UGX {formatUGX(payment.amount)}
+                              </TableCell>
+                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                                UGX {formatUGX(payment.interestPortion)}
+                              </TableCell>
+                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                                UGX {formatUGX(payment.principalPortion)}
+                              </TableCell>
+                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                                UGX {formatUGX(payment.principalBalanceAfter)}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </div>
     </div>
   )
 }

@@ -4,6 +4,10 @@ import { admin } from "better-auth/plugins"
 import { db } from "./db"
 import { ac, superAdminRole, adminRole, loanOfficerRole, unassignedRole } from "./permissions"
 
+// In-memory store for Cypress E2E tests: maps email -> verification URL
+// Only populated when CYPRESS=true (sendVerificationEmail is skipped, URL stored here)
+export const pendingVerifications = new Map<string, string>()
+
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg" }),
   emailAndPassword: { enabled: true },

@@ -178,3 +178,25 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
     return { error: "Internal server error" }
   }
 }
+
+/**
+ * Lists all payments for a given loan (including soft-deleted).
+ * Used in customer profile loan history to show payment breakdown.
+ */
+export async function getPaymentsByLoanAction(loanId: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  try {
+    const rows = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.loanId, loanId))
+      .orderBy(payments.paymentDate)
+    return { data: rows }
+  } catch (error) {
+    return { error: "Internal server error" }
+  }
+}
