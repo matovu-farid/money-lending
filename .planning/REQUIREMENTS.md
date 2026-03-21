@@ -36,8 +36,8 @@
 - [x] **CUST-03**: User can capture security/collateral details per loan (nature: land title, vehicle log book, etc.)
 - [x] **CUST-04**: System blocks loan issuance if required customer or collateral details are incomplete
 - [x] **CUST-05**: User can search and filter customers by name, status, loan status, and days remaining — with pagination
-- [ ] **CUST-06**: User can set customer status: Active, Blacklisted, or Inactive
-- [ ] **CUST-07**: User can view a customer's full loan history — all past and current loans with payment breakdown
+- [x] **CUST-06**: User can set customer status: Active, Blacklisted, or Inactive
+- [x] **CUST-07**: User can view a customer's full loan history — all past and current loans with payment breakdown
 
 ### Loan Engine (LOAN)
 
@@ -63,8 +63,8 @@
 
 - [x] **RISK-01**: System displays "days overdue" per loan: `days_overdue = unpaid_interest / current_daily_rate` where `unpaid_interest = cumulative_interest_accrued − cumulative_interest_paid`. Shown on loan officer dashboard as a loan ledger table (see CONTEXT.md Loan Ledger Specification)
 - [x] **RISK-02**: System auto-flags borrowers with days_overdue ≥ 30 on a watchlist — meaning they have not paid enough to cover their interest obligations for a full billing cycle
-- [ ] **RISK-03**: User can simulate repayments: "If borrower pays X amount, how many days will they have left?"
-- [ ] **RISK-04**: Repayment simulator uses the same calculation engine as the cron (not a separate implementation)
+- [x] **RISK-03**: User can simulate repayments: "If borrower pays X amount, how many days will they have left?"
+- [x] **RISK-04**: Repayment simulator uses the same calculation engine as the cron (not a separate implementation)
 
 ### Alerts & Notifications (ALRT)
 
@@ -145,8 +145,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CUST-03     | Phase 1 | Complete |
 | CUST-04     | Phase 1 | Complete |
 | CUST-05     | Phase 3 | Complete |
-| CUST-06     | Phase 3 | Pending |
-| CUST-07     | Phase 3 | Pending |
+| CUST-06     | Phase 3 | Complete |
+| CUST-07     | Phase 3 | Complete |
 | LOAN-01     | Phase 1 | Complete |
 | LOAN-02     | Phase 1 | Complete |
 | LOAN-03     | Phase 1 | Complete |
@@ -163,8 +163,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RCPT-03     | Phase 2 | Complete |
 | RISK-01     | Phase 3 | Complete |
 | RISK-02     | Phase 3 | Complete |
-| RISK-03     | Phase 3 | Pending |
-| RISK-04     | Phase 3 | Pending |
+| RISK-03     | Phase 3 | Complete |
+| RISK-04     | Phase 3 | Complete |
 | ALRT-01     | Phase 3 | Complete |
 | ALRT-02     | Phase 2 | Complete |
 | CRED-01     | Phase 4 | Pending |
