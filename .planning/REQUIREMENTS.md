@@ -62,7 +62,7 @@
 ### Monitoring & Risk (RISK)
 
 - [x] **RISK-01**: System displays "days overdue" per loan: `days_overdue = unpaid_interest / current_daily_rate` where `unpaid_interest = cumulative_interest_accrued − cumulative_interest_paid`. Shown on loan officer dashboard as a loan ledger table (see CONTEXT.md Loan Ledger Specification)
-- [ ] **RISK-02**: System auto-flags borrowers with days_overdue ≥ 30 on a watchlist — meaning they have not paid enough to cover their interest obligations for a full billing cycle
+- [x] **RISK-02**: System auto-flags borrowers with days_overdue ≥ 30 on a watchlist — meaning they have not paid enough to cover their interest obligations for a full billing cycle
 - [ ] **RISK-03**: User can simulate repayments: "If borrower pays X amount, how many days will they have left?"
 - [ ] **RISK-04**: Repayment simulator uses the same calculation engine as the cron (not a separate implementation)
 
@@ -162,7 +162,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RCPT-02     | Phase 2 | Complete |
 | RCPT-03     | Phase 2 | Complete |
 | RISK-01     | Phase 3 | Complete |
-| RISK-02     | Phase 3 | Pending |
+| RISK-02     | Phase 3 | Complete |
 | RISK-03     | Phase 3 | Pending |
 | RISK-04     | Phase 3 | Pending |
 | ALRT-01     | Phase 3 | Complete |

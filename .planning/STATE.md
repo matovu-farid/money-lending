@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-01-PLAN.md
-last_updated: "2026-03-21T06:19:56.962Z"
+stopped_at: Completed 03-03-PLAN.md
+last_updated: "2026-03-21T06:27:29.455Z"
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 15
-  completed_plans: 12
+  completed_plans: 13
 ---
 
 # Project State
@@ -96,6 +96,9 @@ Recent decisions affecting current work:
 - [Phase 02-loan-operations]: base-ui MenuItem uses onClick not onSelect -- DropdownMenuItems use onClick handler
 - [Phase 03-operational-management]: Migration applied via psql directly — drizzle-kit migrate hangs on pooled Neon connection; unpooled URL used for psql; migration records inserted into drizzle.__drizzle_migrations manually
 - [Phase 03-operational-management]: tsconfig.json excludes cypress/ directory to prevent Next.js TypeScript build from checking Cypress specs (it.todo is Cypress-only API)
+- [Phase 03]: Outstanding balance calculated per-loan via principalBalanceAfter of last payment — matches loan detail page pattern and payment table source of truth
+- [Phase 03]: Watchlist >= 30 day threshold uses identical calculateDaysOverdue engine calls as cron endpoint for RISK-04 compliance — no calculation drift
+- [Phase 03]: capitalInSystem hardcoded to 0.00 with Phase 4 subtitle — creditor data not yet available
 
 ### Pending Todos
 
@@ -110,6 +113,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T06:19:56.960Z
-Stopped at: Completed 03-01-PLAN.md
+Last session: 2026-03-21T06:27:29.451Z
+Stopped at: Completed 03-03-PLAN.md
 Resume file: None
