@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { toast } from "sonner"
 import { getCustomerAction } from "@/actions/customer.actions"
@@ -30,7 +30,7 @@ function todayISODate(): string {
 
 const COLLATERAL_NATURES = ["Land Title", "Vehicle Log Book", "Other"]
 
-export default function NewLoanPage() {
+function NewLoanPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
@@ -383,5 +383,13 @@ export default function NewLoanPage() {
         </Card>
       )}
     </div>
+  )
+}
+
+export default function NewLoanPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Loading...</div>}>
+      <NewLoanPageInner />
+    </Suspense>
   )
 }
