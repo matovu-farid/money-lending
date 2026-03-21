@@ -78,7 +78,7 @@
 - [x] **CRED-03**: System calculates daily interest on creditor funds using the same reducing-balance engine as borrower loans
 - [x] **CRED-04**: User can record repayments made back to creditors
 - [x] **CRED-05**: System displays creditor dashboard: capital invested, interest accrued, repayments made, outstanding balance
-- [ ] **CRED-06**: System displays system-wide capital view: total funds from all creditors combined
+- [x] **CRED-06**: System displays system-wide capital view: total funds from all creditors combined
 
 ### Financial Transactions (FINC)
 
@@ -172,7 +172,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CRED-03     | Phase 4 | Complete |
 | CRED-04     | Phase 4 | Complete |
 | CRED-05     | Phase 4 | Complete |
-| CRED-06     | Phase 4 | Pending |
+| CRED-06     | Phase 4 | Complete |
 | FINC-01     | Phase 4 | Complete |
 | FINC-02     | Phase 4 | Complete |
 | FINC-03     | Phase 4 | Complete |

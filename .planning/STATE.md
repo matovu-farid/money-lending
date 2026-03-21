@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-06-PLAN.md
-last_updated: "2026-03-21T08:26:31.214Z"
+stopped_at: Completed 04-04-PLAN.md
+last_updated: "2026-03-21T08:27:58.311Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 23
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -61,6 +61,7 @@ Plan: 2 of 8
 | Phase 04-financial-reporting P02 | 4 | 3 tasks | 3 files |
 | Phase 04-financial-reporting P05 | 3 | 2 tasks | 6 files |
 | Phase 04-financial-reporting P06 | 4 | 2 tasks | 3 files |
+| Phase 04-financial-reporting P04 | 18 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -121,6 +122,8 @@ Recent decisions affecting current work:
 - [Phase 04-financial-reporting]: Transaction Log filters use URL searchParams server component re-fetch pattern for shareable/bookmarkable filter state
 - [Phase 04-financial-reporting]: report.service.ts uses Effect.runPromise() to call getSystemCapital() — acceptable for report queries (not inside db.transaction)
 - [Phase 04-financial-reporting]: retainedEarnings = total credits - total debits up to asOf date (cumulative P&L from transaction log)
+- [Phase 04-financial-reporting]: Creditor list and profile use Server Components with direct Effect.runPromise calls — no client search/filter needed
+- [Phase 04-financial-reporting]: Profile page fetches investments+repayments from DB alongside dashboard to populate tabs without additional service methods
 
 ### Pending Todos
 
@@ -135,6 +138,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T08:26:31.212Z
-Stopped at: Completed 04-06-PLAN.md
+Last session: 2026-03-21T08:27:58.309Z
+Stopped at: Completed 04-04-PLAN.md
 Resume file: None
