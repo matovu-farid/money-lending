@@ -6,6 +6,7 @@ import { toast } from "sonner"
 import { MoreHorizontal, Loader2 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
 import type { Loan, Payment } from "@/types"
+import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -296,6 +297,14 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
           </Table>
         )}
       </div>
+
+      {/* Repayment Simulator */}
+      {loan.status === "active" && (
+        <SimulatorPanel
+          loan={loan}
+          payments={payments.filter(p => !p.deletedAt)}
+        />
+      )}
 
       {/* Edit Dialog */}
       <Dialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closeEditDialog() }}>
