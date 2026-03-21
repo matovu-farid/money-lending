@@ -2,10 +2,13 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
+import { transactions } from "@/lib/db/schema/transactions"
 import { eq, asc, and, isNull } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment } from "@/lib/interest/engine"
+import { autoPostInterestEarned } from "./transaction.service"
+import BigNumber from "bignumber.js"
 import type {
   RecordPaymentInput,
   EditPaymentInput,
@@ -192,6 +195,16 @@ export const recordPayment = (
           afterValue: newPayment,
         })
 
+        // Auto-post interest earned to transaction log (FINC-01)
+        if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+          await autoPostInterestEarned(tx, {
+            amount: allocation.interestPortion,
+            loanId: input.loanId,
+            paymentDate: input.paymentDate,
+            actorId,
+          })
+        }
+
         return newPayment
       })
     },
@@ -298,6 +311,26 @@ export const editPayment = (
           beforeValue,
           afterValue: { ...updatedPayment, reason: input.reason },
         })
+
+        // Clean up old auto-posted interest transaction and re-post with updated interest
+        await tx
+          .delete(transactions)
+          .where(
+            and(
+              eq(transactions.referenceType, "payment"),
+              eq(transactions.referenceId, payment.loanId)
+            )
+          )
+
+        const newInterestPortion = updatedPayment.interestPortion
+        if (new BigNumber(newInterestPortion).isGreaterThan(0)) {
+          await autoPostInterestEarned(tx, {
+            amount: newInterestPortion,
+            loanId: payment.loanId,
+            paymentDate: updatedPayment.paymentDate.toISOString(),
+            actorId,
+          })
+        }
 
         return updatedPayment
       })
@@ -411,6 +444,16 @@ export const deletePayment = (
           beforeValue: payment,
           afterValue: softDeletedPayment,
         })
+
+        // Delete auto-posted interest transaction for this payment (referenceType="payment", referenceId=loanId)
+        await tx
+          .delete(transactions)
+          .where(
+            and(
+              eq(transactions.referenceType, "payment"),
+              eq(transactions.referenceId, payment.loanId)
+            )
+          )
 
         // Return the soft-deleted payment row
         const [deletedRow] = await tx
