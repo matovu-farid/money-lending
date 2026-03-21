@@ -2,7 +2,10 @@ import { drizzle } from "drizzle-orm/postgres-js"
 import postgres from "postgres"
 import * as schema from "./schema"
 
-const connectionString = process.env.DATABASE_URL ?? ""
+const connectionString =
+  (process.env.CYPRESS === "true" && process.env.DATABASE_URL_TEST)
+    ? process.env.DATABASE_URL_TEST
+    : (process.env.DATABASE_URL ?? "")
 
 // Extract search_path from URL if present (used for test schema isolation)
 const url = connectionString ? new URL(connectionString) : null

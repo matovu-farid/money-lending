@@ -6,7 +6,7 @@ dotenv.config()
 
 export default defineConfig({
   e2e: {
-    baseUrl: "http://localhost:3001",
+    baseUrl: "http://localhost:3000",
     supportFile: "cypress/support/e2e.ts",
     specPattern: "cypress/e2e/**/*.cy.ts",
     setupNodeEvents(on) {
@@ -15,6 +15,12 @@ export default defineConfig({
       on("task", {
         async "db:reset"() {
           await sql.unsafe(`
+            DELETE FROM test.financial_snapshots;
+            DELETE FROM test.transactions;
+            DELETE FROM test.transaction_categories;
+            DELETE FROM test.creditor_repayments;
+            DELETE FROM test.creditor_investments;
+            DELETE FROM test.creditors;
             DELETE FROM test.session;
             DELETE FROM test.account;
             DELETE FROM test.verification;
@@ -42,6 +48,11 @@ export default defineConfig({
           await sql`
             UPDATE test."user" SET role = ${role} WHERE email = ${email}
           `
+          // Invalidate existing sessions so fresh login picks up new role
+          const users = await sql`SELECT id FROM test."user" WHERE email = ${email}`
+          if (users.length > 0) {
+            await sql`DELETE FROM test.session WHERE user_id = ${users[0].id}`
+          }
           return null
         },
 

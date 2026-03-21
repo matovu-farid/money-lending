@@ -4,7 +4,7 @@ declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Cypress {
     interface Chainable {
-      /** Register a new user, verify email, and sign in. Returns the email used. */
+      /** Register a new user, promote to superAdmin if needed, and land on dashboard. Returns email. */
       registerAndLogin(opts?: {
         name?: string
         email?: string
@@ -18,18 +18,6 @@ declare global {
       promoteUser(email: string, role: string): Chainable<null>
     }
   }
-}
-
-function getVerificationUrl(email: string): Cypress.Chainable<string> {
-  return cy
-    .request({
-      url: `/api/test/verification-url?email=${encodeURIComponent(email)}`,
-      retryOnStatusCodeFailure: true,
-    })
-    .then((res) => {
-      const fullUrl = res.body.url as string
-      return fullUrl.replace("http://localhost:3000", "")
-    })
 }
 
 Cypress.Commands.add(
@@ -46,18 +34,25 @@ Cypress.Commands.add(
     cy.get("#confirmPassword").type(password)
     cy.get("button[type=submit]").click()
 
-    cy.url({ timeout: 15000 }).should("include", "/verify-email")
+    // Registration redirects to /pending-approval.
+    // First user is auto-promoted to superAdmin by databaseHook, so proxy bounces to /dashboard.
+    // Subsequent users stay at /pending-approval until promoted.
+    cy.url({ timeout: 15000 }).should("satisfy", (url: string) =>
+      url.includes("/dashboard") || url.includes("/pending-approval")
+    )
 
-    getVerificationUrl(email).then((url) => {
-      cy.visit(url)
+    // If user landed on /pending-approval, promote them and re-login
+    cy.url().then((url) => {
+      if (url.includes("/pending-approval")) {
+        cy.task("db:promoteUser", { email, role: "superAdmin" })
+        cy.clearCookies()
+        cy.visit("/login")
+        cy.get("#email").type(email)
+        cy.get("#password").type(password)
+        cy.get("button[type=submit]").click()
+        cy.url({ timeout: 15000 }).should("include", "/dashboard")
+      }
     })
-
-    cy.visit("/login")
-    cy.get("#email").type(email)
-    cy.get("#password").type(password)
-    cy.get("button[type=submit]").click()
-
-    cy.url({ timeout: 15000 }).should("not.include", "/login")
 
     cy.wrap(email)
   }
