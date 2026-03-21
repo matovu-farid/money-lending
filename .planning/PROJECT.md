@@ -60,15 +60,15 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - [ ] Automated daily interest via scheduled cron job
 
 **Monitoring & Risk**
-- [ ] Balance-to-days converter (remaining days based on balance and daily interest)
-- [ ] Borrower watchlist: auto-flag borrowers with fewer than 30 days remaining
-- [ ] Repayment simulator: "If borrower pays X, how many days left?"
-- [ ] Customer search, filtering, and pagination
-- [ ] Customer status management: Active, Blacklisted, Inactive
-- [ ] Full customer loan history
+- [x] Balance-to-days converter (remaining days based on balance and daily interest)
+- [x] Borrower watchlist: auto-flag borrowers with fewer than 30 days remaining
+- [x] Repayment simulator: "If borrower pays X, how many days left?"
+- [x] Customer search, filtering, and pagination
+- [x] Customer status management: Active, Blacklisted, Inactive
+- [x] Full customer loan history
 
 **Alerts & Notifications**
-- [ ] Predictive in-app alert: 5 days before loan due date
+- [x] Predictive in-app alert: 5 days before loan due date
 - [ ] Email notification to admin on every money-in and money-out
 - [ ] Overdue loan auto-flagging
 
@@ -91,7 +91,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - [ ] Income tracking with configurable categories (Share Capital, Bonuses, Interest Earned, custom)
 
 **Dashboard & Reports**
-- [ ] Executive dashboard: loans outstanding, repayments, interest earned, capital, active borrowers, overdue count
+- [x] Executive dashboard: loans outstanding, repayments, interest earned, capital, active borrowers, overdue count
 - [ ] Loan portfolio report: active loans with days remaining, interest accrued, status, risk flags
 - [ ] Profit & Loss statement (auto-generated monthly)
 - [ ] Balance Sheet (auto-generated: Assets, Liabilities, Equity)
@@ -116,6 +116,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - Requirements document: `private_docs/Money_Lending_App_Requirements.docx` (v1.0, Feb 16 2026)
 - Phase 1 (Foundation) complete — auth, customers, loans, interest engine
 - Phase 2 (Loan Operations) complete — payments, receipts, email alerts, overdue cron
+- Phase 3 (Operational Management) complete — customer search/filter/status, dashboard KPIs, watchlist, simulator, notifications
 - Client will provide branding assets for receipts and reports
 - UAT will involve maximum 3 client-side testers
 - Hosting and domain costs are separate from this engagement
@@ -145,4 +146,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | 30-day minimum interest period | Business rule: borrower pays at least 30 days even if repaid early | — Pending |
 
 ---
-*Last updated: 2026-03-21 after Phase 2 completion*
+*Last updated: 2026-03-21 after Phase 3 completion*
