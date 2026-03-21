@@ -91,7 +91,6 @@ export default function DashboardPage() {
           label="Capital in System"
           value={loading ? "—" : formatUGX(kpis?.capitalInSystem ?? "0")}
           icon={Landmark}
-          subtitle="Creditor data available in Phase 4"
         />
       </div>
 

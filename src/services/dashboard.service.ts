@@ -6,6 +6,7 @@ import { auditLog } from "@/lib/db/schema/audit"
 import { eq, isNull, sum, desc, and, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
+import { getSystemCapital } from "@/services/creditor.service"
 import BigNumber from "bignumber.js"
 import type { DashboardKPIs, ActivityFeedItem } from "@/types"
 
@@ -74,7 +75,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
         interestEarned: new BigNumber(paymentStats?.totalInterestEarned ?? "0").toFixed(2),
         activeBorrowers,
         overdueCount,
-        capitalInSystem: "0.00", // Phase 4 — creditor data not yet available
+        capitalInSystem: (await Effect.runPromise(getSystemCapital())).totalOutstanding,
       }
     },
     catch: (e) => new DatabaseError({ cause: e }),
