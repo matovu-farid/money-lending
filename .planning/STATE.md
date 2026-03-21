@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-01-PLAN.md
-last_updated: "2026-03-21T08:11:42.658Z"
+stopped_at: Completed 04-03-PLAN.md
+last_updated: "2026-03-21T08:18:49.385Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 23
-  completed_plans: 16
+  completed_plans: 18
 ---
 
 # Project State
@@ -57,6 +57,8 @@ Plan: 1 of 8
 | Phase 03-operational-management P04 | 9 | 2 tasks | 7 files |
 | Phase 03-operational-management P02 | 25 | 3 tasks | 8 files |
 | Phase 04-financial-reporting P01 | 4 | 3 tasks | 13 files |
+| Phase 04-financial-reporting P03 | 4 | 2 tasks | 7 files |
+| Phase 04-financial-reporting P02 | 4 | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -108,6 +110,10 @@ Recent decisions affecting current work:
 - [Phase 03-operational-management]: getPaymentsByLoanAction added for customer profile loan history lazy-load (includes soft-deleted payments)
 - [Phase 04-financial-reporting]: date-picker not in base-nova shadcn registry; calendar + popover is the correct composition pattern
 - [Phase 04-financial-reporting]: drizzle .defaultFalse() does not exist; corrected to .default(false) for boolean columns
+- [Phase 04-financial-reporting]: autoPost* functions are plain async not Effect — called inside db.transaction where Effect.runPromise is unsafe (Pitfall 7)
+- [Phase 04-financial-reporting]: CategoryInUseError returned (not DB FK constraint) for clean user-facing error when deleting categories with transactions
+- [Phase 04-financial-reporting]: BigNumber DECIMAL_PLACES=10 precision: 10M * 0.10/30 * 30 = 999999.99 — test assertions match actual engine output, not idealized math
+- [Phase 04-financial-reporting]: creditor.service.ts uses ESM top-level imports for engine functions — require() is CJS-only and fails in vitest node environment
 
 ### Pending Todos
 
@@ -122,6 +128,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T08:11:42.655Z
-Stopped at: Completed 04-01-PLAN.md
+Last session: 2026-03-21T08:18:39.196Z
+Stopped at: Completed 04-03-PLAN.md
 Resume file: None
