@@ -9,6 +9,7 @@ import {
   CustomerNotFound,
   LoanNotFound,
   IncompleteLoanRequirements,
+  ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import type { CreateLoanInput, Loan } from "@/types"
@@ -52,6 +53,11 @@ export const createLoan = (
         .where(eq(customers.id, input.customerId))
 
       if (!customer) throw { _tag: "CustomerNotFound", id: input.customerId }
+
+      // Blacklist safeguard (CUST-06): Blacklisted customers cannot receive new loans
+      if (customer.status === "blacklisted") {
+        throw new ValidationError({ message: "This customer is blacklisted and cannot receive new loans.", field: "customerId" })
+      }
 
       const missingFields = checkCustomerCompleteness(customer)
       if (missingFields.length > 0) {
