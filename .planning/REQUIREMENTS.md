@@ -92,7 +92,7 @@
 - [x] **RPTS-02**: System generates loan portfolio report: active loans with days remaining, interest accrued, status, risk flags
 - [x] **RPTS-03**: System auto-generates monthly Profit & Loss statement (Interest Income + Other Income minus all Expenses)
 - [x] **RPTS-04**: System auto-generates Balance Sheet: Assets (loans outstanding), Liabilities (creditor balances), Equity (share capital)
-- [ ] **RPTS-05**: User can export all reports to PDF and Excel formats
+- [x] **RPTS-05**: User can export all reports to PDF and Excel formats
 
 ### Infrastructure (INFR)
 
@@ -180,7 +180,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RPTS-02     | Phase 4 | Complete |
 | RPTS-03     | Phase 4 | Complete |
 | RPTS-04     | Phase 4 | Complete |
-| RPTS-05     | Phase 4 | Pending |
+| RPTS-05     | Phase 4 | Complete |
 | INFR-01     | Phase 1 | In Progress (schema + audit table defined in 01-01) |
 | INFR-02     | Phase 1 | Complete |
 | INFR-03     | Phase 1 | Complete |
