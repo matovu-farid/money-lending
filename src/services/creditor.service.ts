@@ -10,6 +10,7 @@ import {
   InvestmentNotFound,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
+import { autoPostInterestExpense } from "@/services/transaction.service"
 import {
   calculateInterest,
   allocatePayment,
@@ -293,6 +294,16 @@ export const recordCreditorRepayment = (
           },
           afterValue: repayment,
         })
+
+        // Auto-post interest expense to transaction log (FINC-01)
+        if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+          await autoPostInterestExpense(tx, {
+            amount: allocation.interestPortion,
+            investmentId: input.investmentId,
+            repaymentDate: input.repaymentDate,
+            actorId,
+          })
+        }
 
         return repayment
       })
