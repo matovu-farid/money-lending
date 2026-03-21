@@ -86,7 +86,17 @@ Plans:
   3. Expenses and income can be recorded with configurable categories; every entry appears in the transaction log as a debit or credit; the log is the single source of truth for the P&L calculation
   4. The monthly Profit and Loss statement (interest income plus other income minus all expenses) and the Balance Sheet (loan book assets, creditor liabilities, equity) are auto-generated and show correct figures that reconcile with the transaction log
   5. Any report — loan portfolio, P&L, Balance Sheet — can be exported to PDF and to Excel with formatting intact; the exported file can be opened and printed by the client without additional software configuration
-**Plans**: TBD
+**Plans:** 8 plans
+
+Plans:
+- [ ] 04-01-PLAN.md — Install deps, create all Phase 4 schema files, error types, TypeScript types
+- [ ] 04-02-PLAN.md — TDD creditor service (CRUD, interest accrual, repayment allocation, dashboard)
+- [ ] 04-03-PLAN.md — Transaction/category service, auto-posting hooks into payment service
+- [ ] 04-04-PLAN.md — Creditor UI pages (list, register, profile with KPI dashboard, dialogs)
+- [ ] 04-05-PLAN.md — Expense/income pages with category management, transaction log with filters
+- [ ] 04-06-PLAN.md — Report service (P&L, Balance Sheet, Portfolio), creditor auto-posting
+- [ ] 04-07-PLAN.md — Report UI pages, PDF/Excel export services, Route Handlers
+- [ ] 04-08-PLAN.md — Dashboard wiring (capitalInSystem), month-end cron, end-to-end checkpoint
 
 ## Progress
 
@@ -98,4 +108,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 1. Foundation | 7/7 | Complete   | 2026-03-20 |
 | 2. Loan Operations | 4/4 | Complete   | 2026-03-20 |
 | 3. Operational Management | 4/4 | Complete   | 2026-03-21 |
-| 4. Financial Reporting | 0/TBD | Not started | - |
+| 4. Financial Reporting | 0/8 | Not started | - |
