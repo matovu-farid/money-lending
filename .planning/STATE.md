@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 04-02-PLAN.md
-last_updated: "2026-03-21T08:18:54.555Z"
+stopped_at: Completed 04-05-PLAN.md
+last_updated: "2026-03-21T08:26:28.016Z"
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 23
-  completed_plans: 18
+  completed_plans: 20
 ---
 
 # Project State
@@ -59,6 +59,8 @@ Plan: 2 of 8
 | Phase 04-financial-reporting P01 | 4 | 3 tasks | 13 files |
 | Phase 04-financial-reporting P03 | 4 | 2 tasks | 7 files |
 | Phase 04-financial-reporting P02 | 4 | 3 tasks | 3 files |
+| Phase 04-financial-reporting P05 | 3 | 2 tasks | 6 files |
+| Phase 04-financial-reporting P06 | 4 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -114,6 +116,11 @@ Recent decisions affecting current work:
 - [Phase 04-financial-reporting]: CategoryInUseError returned (not DB FK constraint) for clean user-facing error when deleting categories with transactions
 - [Phase 04-financial-reporting]: BigNumber DECIMAL_PLACES=10 precision: 10M * 0.10/30 * 30 = 999999.99 — test assertions match actual engine output, not idealized math
 - [Phase 04-financial-reporting]: creditor.service.ts uses ESM top-level imports for engine functions — require() is CJS-only and fails in vitest node environment
+- [Phase 04-financial-reporting]: Select onValueChange in base-ui returns string | null — guard with if (value !== null) before setState
+- [Phase 04-financial-reporting]: PopoverTrigger has no asChild prop in base-ui — render prop pattern required (same as TooltipTrigger)
+- [Phase 04-financial-reporting]: Transaction Log filters use URL searchParams server component re-fetch pattern for shareable/bookmarkable filter state
+- [Phase 04-financial-reporting]: report.service.ts uses Effect.runPromise() to call getSystemCapital() — acceptable for report queries (not inside db.transaction)
+- [Phase 04-financial-reporting]: retainedEarnings = total credits - total debits up to asOf date (cumulative P&L from transaction log)
 
 ### Pending Todos
 
@@ -128,6 +135,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T08:18:54.553Z
-Stopped at: Completed 04-02-PLAN.md
+Last session: 2026-03-21T08:26:19.311Z
+Stopped at: Completed 04-05-PLAN.md
 Resume file: None
