@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 03-03-PLAN.md
-last_updated: "2026-03-21T06:27:29.455Z"
+stopped_at: Completed 03-02-PLAN.md
+last_updated: "2026-03-21T06:32:14.717Z"
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 15
-  completed_plans: 13
+  completed_plans: 15
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 03 (operational-management) — EXECUTING
-Plan: 1 of 4
+Plan: 4 of 4 (COMPLETE)
 
 ## Performance Metrics
 
@@ -54,6 +54,8 @@ Plan: 1 of 4
 | Phase 02-loan-operations P04 | 8 | 2 tasks | 5 files |
 | Phase 02-loan-operations P02 | 6 | 2 tasks | 7 files |
 | Phase 03-operational-management P01 | 15 | 3 tasks | 18 files |
+| Phase 03-operational-management P04 | 9 | 2 tasks | 7 files |
+| Phase 03-operational-management P02 | 25 | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -99,6 +101,10 @@ Recent decisions affecting current work:
 - [Phase 03]: Outstanding balance calculated per-loan via principalBalanceAfter of last payment — matches loan detail page pattern and payment table source of truth
 - [Phase 03]: Watchlist >= 30 day threshold uses identical calculateDaysOverdue engine calls as cron endpoint for RISK-04 compliance — no calculation drift
 - [Phase 03]: capitalInSystem hardcoded to 0.00 with Phase 4 subtitle — creditor data not yet available
+- [Phase 03-operational-management]: SimulatorPanel uses allocatePayment and calculateDaysOverdue from engine.ts directly — same implementation as real payment recording (RISK-04 compliance)
+- [Phase 03-operational-management]: createNotificationsForLoan is plain async (not Effect) — called from Route Handler, same pattern as writeAuditLog [01-04]
+- [Phase 03-operational-management]: Notification dedup: check userId + loanId + dueDate before insert prevents duplicate alerts on repeated cron runs
+- [Phase 03-operational-management]: getPaymentsByLoanAction added for customer profile loan history lazy-load (includes soft-deleted payments)
 
 ### Pending Todos
 
@@ -113,6 +119,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-21T06:27:29.451Z
-Stopped at: Completed 03-03-PLAN.md
+Last session: 2026-03-21T06:32:14.714Z
+Stopped at: Completed 03-02-PLAN.md
 Resume file: None
