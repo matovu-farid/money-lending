@@ -35,7 +35,7 @@
 - [x] **CUST-02**: User can view and edit a customer's profile
 - [x] **CUST-03**: User can capture security/collateral details per loan (nature: land title, vehicle log book, etc.)
 - [x] **CUST-04**: System blocks loan issuance if required customer or collateral details are incomplete
-- [ ] **CUST-05**: User can search and filter customers by name, status, loan status, and days remaining — with pagination
+- [x] **CUST-05**: User can search and filter customers by name, status, loan status, and days remaining — with pagination
 - [ ] **CUST-06**: User can set customer status: Active, Blacklisted, or Inactive
 - [ ] **CUST-07**: User can view a customer's full loan history — all past and current loans with payment breakdown
 
@@ -61,14 +61,14 @@
 
 ### Monitoring & Risk (RISK)
 
-- [ ] **RISK-01**: System displays "days overdue" per loan: `days_overdue = unpaid_interest / current_daily_rate` where `unpaid_interest = cumulative_interest_accrued − cumulative_interest_paid`. Shown on loan officer dashboard as a loan ledger table (see CONTEXT.md Loan Ledger Specification)
+- [x] **RISK-01**: System displays "days overdue" per loan: `days_overdue = unpaid_interest / current_daily_rate` where `unpaid_interest = cumulative_interest_accrued − cumulative_interest_paid`. Shown on loan officer dashboard as a loan ledger table (see CONTEXT.md Loan Ledger Specification)
 - [ ] **RISK-02**: System auto-flags borrowers with days_overdue ≥ 30 on a watchlist — meaning they have not paid enough to cover their interest obligations for a full billing cycle
 - [ ] **RISK-03**: User can simulate repayments: "If borrower pays X amount, how many days will they have left?"
 - [ ] **RISK-04**: Repayment simulator uses the same calculation engine as the cron (not a separate implementation)
 
 ### Alerts & Notifications (ALRT)
 
-- [ ] **ALRT-01**: System sends in-app alert to Admin and Loan Officer 5 days before a loan's due date
+- [x] **ALRT-01**: System sends in-app alert to Admin and Loan Officer 5 days before a loan's due date
 - [x] **ALRT-02**: System sends email notification to Admin on every payment CUD operation (created, updated, or deleted) and on loan disbursement — includes actor, loan reference, amount, and timestamp
 
 ### Creditor Management (CRED)
@@ -88,7 +88,7 @@
 
 ### Reports & Dashboard (RPTS)
 
-- [ ] **RPTS-01**: System displays executive dashboard: total loans outstanding, repayments collected, interest earned, capital in system, active borrowers, overdue count
+- [x] **RPTS-01**: System displays executive dashboard: total loans outstanding, repayments collected, interest earned, capital in system, active borrowers, overdue count
 - [ ] **RPTS-02**: System generates loan portfolio report: active loans with days remaining, interest accrued, status, risk flags
 - [ ] **RPTS-03**: System auto-generates monthly Profit & Loss statement (Interest Income + Other Income minus all Expenses)
 - [ ] **RPTS-04**: System auto-generates Balance Sheet: Assets (loans outstanding), Liabilities (creditor balances), Equity (share capital)
@@ -144,7 +144,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | CUST-02     | Phase 1 | Complete |
 | CUST-03     | Phase 1 | Complete |
 | CUST-04     | Phase 1 | Complete |
-| CUST-05     | Phase 3 | Pending |
+| CUST-05     | Phase 3 | Complete |
 | CUST-06     | Phase 3 | Pending |
 | CUST-07     | Phase 3 | Pending |
 | LOAN-01     | Phase 1 | Complete |
@@ -161,11 +161,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RCPT-01     | Phase 2 | Complete |
 | RCPT-02     | Phase 2 | Complete |
 | RCPT-03     | Phase 2 | Complete |
-| RISK-01     | Phase 3 | Pending |
+| RISK-01     | Phase 3 | Complete |
 | RISK-02     | Phase 3 | Pending |
 | RISK-03     | Phase 3 | Pending |
 | RISK-04     | Phase 3 | Pending |
-| ALRT-01     | Phase 3 | Pending |
+| ALRT-01     | Phase 3 | Complete |
 | ALRT-02     | Phase 2 | Complete |
 | CRED-01     | Phase 4 | Pending |
 | CRED-02     | Phase 4 | Pending |
@@ -176,7 +176,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FINC-01     | Phase 4 | Pending |
 | FINC-02     | Phase 4 | Pending |
 | FINC-03     | Phase 4 | Pending |
-| RPTS-01     | Phase 3 | Pending |
+| RPTS-01     | Phase 3 | Complete |
 | RPTS-02     | Phase 4 | Pending |
 | RPTS-03     | Phase 4 | Pending |
 | RPTS-04     | Phase 4 | Pending |

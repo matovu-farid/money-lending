@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Phase 3 context gathered
-last_updated: "2026-03-20T22:51:51.182Z"
+stopped_at: Completed 03-01-PLAN.md
+last_updated: "2026-03-21T06:19:56.962Z"
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 11
-  completed_plans: 11
+  total_plans: 15
+  completed_plans: 12
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-19)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 02 — loan-operations
+**Current focus:** Phase 03 — operational-management
 
 ## Current Position
 
-Phase: 02 (loan-operations) — EXECUTING
+Phase: 03 (operational-management) — EXECUTING
 Plan: 1 of 4
 
 ## Performance Metrics
@@ -53,6 +53,7 @@ Plan: 1 of 4
 | Phase 02-loan-operations P03 | 3 | 2 tasks | 5 files |
 | Phase 02-loan-operations P04 | 8 | 2 tasks | 5 files |
 | Phase 02-loan-operations P02 | 6 | 2 tasks | 7 files |
+| Phase 03-operational-management P01 | 15 | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,8 @@ Recent decisions affecting current work:
 - [Phase 02-loan-operations]: Cron endpoint /api/cron/overdue is detection-only (no DB writes) -- Phase 3 stores flagged results for watchlist UI
 - [Phase 02-loan-operations]: Server component + client island: page.tsx fetches via Effect.runPromise, passes props to LoanDetailClient
 - [Phase 02-loan-operations]: base-ui MenuItem uses onClick not onSelect -- DropdownMenuItems use onClick handler
+- [Phase 03-operational-management]: Migration applied via psql directly — drizzle-kit migrate hangs on pooled Neon connection; unpooled URL used for psql; migration records inserted into drizzle.__drizzle_migrations manually
+- [Phase 03-operational-management]: tsconfig.json excludes cypress/ directory to prevent Next.js TypeScript build from checking Cypress specs (it.todo is Cypress-only API)
 
 ### Pending Todos
 
@@ -107,6 +110,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-20T22:51:51.180Z
-Stopped at: Phase 3 context gathered
-Resume file: .planning/phases/03-operational-management/03-CONTEXT.md
+Last session: 2026-03-21T06:19:56.960Z
+Stopped at: Completed 03-01-PLAN.md
+Resume file: None
