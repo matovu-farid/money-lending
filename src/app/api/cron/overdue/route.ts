@@ -2,8 +2,10 @@ import { type NextRequest } from "next/server"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
-import { eq, and, isNull } from "drizzle-orm"
+import { customers } from "@/lib/db/schema/customers"
+import { eq, and, isNull, asc, sql } from "drizzle-orm"
 import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
+import { createNotificationsForLoan } from "@/services/notification.service"
 import BigNumber from "bignumber.js"
 
 export async function GET(request: NextRequest) {
@@ -20,15 +22,27 @@ export async function GET(request: NextRequest) {
       .from(loans)
       .where(eq(loans.status, "active"))
 
+    const now = new Date()
     const results: { loanId: string; daysOverdue: string }[] = []
+    const alertResults: { loanId: string; daysUntilDue: number }[] = []
 
-    // 2. For each active loan, calculate days overdue
+    // ALRT-01: Get all users with staff roles for notification targeting
+    // Better Auth stores role in the "user" table's "role" column
+    const targetUsersResult = await db.execute(
+      sql`SELECT id FROM "user" WHERE role IN ('admin', 'loanOfficer', 'superAdmin')`
+    )
+    const targetUserIds = (targetUsersResult as unknown as Array<{ id: string }>).map(
+      (r) => r.id
+    )
+
+    // 2. For each active loan, calculate days overdue and check upcoming due dates
     for (const loan of activeLoans) {
-      // Fetch active (non-deleted) payments for this loan
+      // Fetch active (non-deleted) payments for this loan, ordered by date
       const loanPayments = await db
         .select()
         .from(payments)
         .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+        .orderBy(asc(payments.paymentDate))
 
       // Calculate total interest paid from payment records
       const totalInterestPaid = loanPayments.reduce(
@@ -37,7 +51,6 @@ export async function GET(request: NextRequest) {
       )
 
       // Calculate total days elapsed since loan start
-      const now = new Date()
       const totalDaysElapsed = Math.floor(
         (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
       )
@@ -69,13 +82,48 @@ export async function GET(request: NextRequest) {
           daysOverdue: daysOverdue.toFixed(0),
         })
       }
+
+      // ALRT-01: Generate in-app alerts for loans due within 5 days
+      // "Due date" = last payment date + 30 days, or loan start + 30 if no payments
+      const lastPayment = loanPayments.at(-1)
+      const referenceDate = lastPayment
+        ? new Date(lastPayment.paymentDate)
+        : new Date(loan.startDate)
+
+      const nextDueDate = new Date(referenceDate)
+      nextDueDate.setDate(nextDueDate.getDate() + 30)
+
+      const daysUntilDue = Math.floor(
+        (nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+      )
+
+      if (daysUntilDue >= 0 && daysUntilDue <= 5) {
+        // Fetch customer name for message
+        const [customer] = await db
+          .select()
+          .from(customers)
+          .where(eq(customers.id, loan.customerId))
+
+        const message = `Loan for ${customer?.fullName ?? "Unknown"} — due in ${daysUntilDue} days`
+
+        await createNotificationsForLoan(
+          loan.id,
+          message,
+          nextDueDate,
+          targetUserIds
+        )
+
+        alertResults.push({ loanId: loan.id, daysUntilDue })
+      }
     }
 
     return Response.json({
       processed: activeLoans.length,
       flagged: results.length,
       flaggedLoans: results,
-      timestamp: new Date().toISOString(),
+      alerts: alertResults.length,
+      alertedLoans: alertResults,
+      timestamp: now.toISOString(),
     })
   } catch (error) {
     console.error("[Cron] Overdue detection failed:", error)

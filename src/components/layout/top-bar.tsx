@@ -1,5 +1,6 @@
 import { Menu } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { NotificationBell } from "@/components/notifications/notification-bell"
 
 interface TopBarProps {
   onMenuClick?: () => void
@@ -21,6 +22,9 @@ export function TopBar({ onMenuClick }: TopBarProps) {
           </Button>
         )}
         <span className="font-semibold text-lg tracking-tight">Lending Manager</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <NotificationBell />
       </div>
     </header>
   )
