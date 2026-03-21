@@ -74,10 +74,10 @@
 ### Creditor Management (CRED)
 
 - [x] **CRED-01**: User can register a creditor with Name, Address, Contact, Amount invested, and Interest rate
-- [ ] **CRED-02**: User can view and edit a creditor's profile and full investment history
-- [ ] **CRED-03**: System calculates daily interest on creditor funds using the same reducing-balance engine as borrower loans
+- [x] **CRED-02**: User can view and edit a creditor's profile and full investment history
+- [x] **CRED-03**: System calculates daily interest on creditor funds using the same reducing-balance engine as borrower loans
 - [x] **CRED-04**: User can record repayments made back to creditors
-- [ ] **CRED-05**: System displays creditor dashboard: capital invested, interest accrued, repayments made, outstanding balance
+- [x] **CRED-05**: System displays creditor dashboard: capital invested, interest accrued, repayments made, outstanding balance
 - [ ] **CRED-06**: System displays system-wide capital view: total funds from all creditors combined
 
 ### Financial Transactions (FINC)
@@ -168,10 +168,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | ALRT-01     | Phase 3 | Complete |
 | ALRT-02     | Phase 2 | Complete |
 | CRED-01     | Phase 4 | Complete |
-| CRED-02     | Phase 4 | Pending |
-| CRED-03     | Phase 4 | Pending |
+| CRED-02     | Phase 4 | Complete |
+| CRED-03     | Phase 4 | Complete |
 | CRED-04     | Phase 4 | Complete |
-| CRED-05     | Phase 4 | Pending |
+| CRED-05     | Phase 4 | Complete |
 | CRED-06     | Phase 4 | Pending |
 | FINC-01     | Phase 4 | Complete |
 | FINC-02     | Phase 4 | Complete |
