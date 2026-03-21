@@ -10,3 +10,4 @@ export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{ action:
 export class DuplicateError extends Data.TaggedError("DuplicateError")<{ entity: string; field: string }> {}
 export class PaymentNotFound extends Data.TaggedError("PaymentNotFound")<{ id: string }> {}
 export class ReceiptBlockedError extends Data.TaggedError("ReceiptBlockedError")<{ missing: string[] }> {}
+export class NotificationNotFound extends Data.TaggedError("NotificationNotFound")<{ id: string }> {}

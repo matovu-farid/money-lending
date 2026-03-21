@@ -4,6 +4,7 @@ import type { loans } from "@/lib/db/schema/loans"
 import type { collateral } from "@/lib/db/schema/collateral"
 import type { payments } from "@/lib/db/schema/payments"
 import type { auditLog } from "@/lib/db/schema/audit"
+import type { notifications } from "@/lib/db/schema/notifications"
 
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
@@ -77,4 +78,53 @@ export interface EditPaymentInput {
 export interface DeletePaymentInput {
   paymentId: string
   reason: string       // required for audit
+}
+
+// --- Phase 3 types ---
+
+export type Notification = InferSelectModel<typeof notifications>
+export type NewNotification = InferInsertModel<typeof notifications>
+
+export interface CustomerSearchParams {
+  name?: string
+  status?: CustomerStatus[]
+  loanStatus?: LoanStatus[]
+  daysRemainingFilter?: "any" | "due_within_30" | "overdue_30_plus"
+  page?: number
+  pageSize?: number
+}
+
+export interface DashboardKPIs {
+  loansOutstanding: string   // BigNumber string
+  repaymentsCollected: string
+  interestEarned: string
+  activeBorrowers: number
+  overdueCount: number
+  capitalInSystem: string    // "0.00" until Phase 4
+}
+
+export interface WatchlistEntry {
+  customerId: string
+  customerName: string
+  loanId: string
+  loanAmount: string
+  outstandingBalance: string
+  daysOverdue: string
+  dailyRate: string
+  lastPaymentDate: Date | null
+}
+
+export interface ActivityFeedItem {
+  id: string
+  type: "payment_received" | "loan_issued" | "overdue_flagged"
+  description: string
+  timestamp: Date
+  loanId?: string
+  customerId?: string
+}
+
+export interface ChangeStatusInput {
+  customerId: string
+  newStatus: CustomerStatus
+  reason: string
 }
