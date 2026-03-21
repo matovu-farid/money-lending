@@ -58,14 +58,14 @@ const navGroups: NavGroup[] = [
   {
     label: "Capital",
     items: [
-      { label: "Creditors", href: "/creditors", icon: Landmark, disabled: true },
-      { label: "Expenses & Income", href: "/expenses", icon: Receipt, disabled: true },
+      { label: "Creditors", href: "/creditors", icon: Landmark },
+      { label: "Expenses & Income", href: "/expenses", icon: Receipt },
     ],
   },
   {
     label: "Insights",
     items: [
-      { label: "Reports", href: "/reports", icon: BarChart3, disabled: true },
+      { label: "Reports", href: "/reports", icon: BarChart3 },
     ],
   },
   {
