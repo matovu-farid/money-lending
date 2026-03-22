@@ -1,21 +1,10 @@
 import { defineConfig } from "cypress"
 import postgres, { type Sql } from "postgres"
-import dotenv from "dotenv"
 
-dotenv.config()
+const PGLITE_URL = "postgres://localhost:5488/postgres"
 
-/**
- * Creates a fresh postgres connection per invocation to avoid
- * ECONNRESET / EADDRNOTAVAIL errors when the long-lived connection
- * to the remote Neon DB drops after many test resets.
- */
 function freshSql(): Sql {
-  return postgres(process.env.DATABASE_URL_TEST_UNPOOLED!, {
-    idle_timeout: 10,
-    max_lifetime: 60,
-    connect_timeout: 15,
-    max: 1,
-  })
+  return postgres(PGLITE_URL, { max: 1 })
 }
 
 /** Run a callback with a disposable connection that is always closed afterwards. */
@@ -30,14 +19,13 @@ async function withSql<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
 
 export default defineConfig({
   e2e: {
-    baseUrl: "http://localhost:3000",
+    baseUrl: "http://localhost:3001",
     supportFile: "cypress/support/e2e.ts",
     specPattern: "cypress/e2e/**/*.cy.ts",
     setupNodeEvents(on) {
       on("task", {
         async "db:reset"() {
           return withSql(async (sql) => {
-            // Clean test schema
             await sql.unsafe(`
               DELETE FROM test.financial_snapshots;
               DELETE FROM test.transactions;
@@ -57,19 +45,6 @@ export default defineConfig({
               DELETE FROM test.system_settings;
               DELETE FROM test."user";
             `)
-            // Also clean test-generated users from public schema (the app
-            // may write there if search_path isn't correctly set to test).
-            // Only delete test users (identified by @fidexa.org email domain)
-            // to avoid wiping production data.
-            await sql.unsafe(`
-              DELETE FROM public.session WHERE user_id IN (
-                SELECT id FROM public."user" WHERE email LIKE '%@fidexa.org'
-              );
-              DELETE FROM public.account WHERE user_id IN (
-                SELECT id FROM public."user" WHERE email LIKE '%@fidexa.org'
-              );
-              DELETE FROM public."user" WHERE email LIKE '%@fidexa.org';
-            `).catch(() => {})
             return null
           })
         },
@@ -87,17 +62,11 @@ export default defineConfig({
 
         async "db:promoteUser"({ email, role }: { email: string; role: string }) {
           return withSql(async (sql) => {
-            // Update both schemas since the app may use either
-            await sql`UPDATE test."user" SET role = ${role}, email_verified = true WHERE email = ${email}`.catch(() => {})
-            await sql`UPDATE public."user" SET role = ${role}, email_verified = true WHERE email = ${email}`.catch(() => {})
-            // Invalidate sessions in both schemas
-            const testUsers = await sql`SELECT id FROM test."user" WHERE email = ${email}`.catch(() => [] as any[])
-            for (const u of testUsers) {
-              await sql`DELETE FROM test.session WHERE user_id = ${u.id}`.catch(() => {})
-            }
-            const pubUsers = await sql`SELECT id FROM public."user" WHERE email = ${email}`.catch(() => [] as any[])
-            for (const u of pubUsers) {
-              await sql`DELETE FROM public.session WHERE user_id = ${u.id}`.catch(() => {})
+            await sql`UPDATE test."user" SET role = ${role}, email_verified = true WHERE email = ${email}`
+            // Invalidate sessions so the user picks up the new role
+            const users = await sql`SELECT id FROM test."user" WHERE email = ${email}`
+            for (const u of users) {
+              await sql`DELETE FROM test.session WHERE user_id = ${u.id}`
             }
             return null
           })
@@ -105,8 +74,7 @@ export default defineConfig({
 
         async "db:promoteUserKeepSession"({ email, role }: { email: string; role: string }) {
           return withSql(async (sql) => {
-            await sql`UPDATE test."user" SET role = ${role}, email_verified = true WHERE email = ${email}`.catch(() => {})
-            await sql`UPDATE public."user" SET role = ${role}, email_verified = true WHERE email = ${email}`.catch(() => {})
+            await sql`UPDATE test."user" SET role = ${role}, email_verified = true WHERE email = ${email}`
             return null
           })
         },
