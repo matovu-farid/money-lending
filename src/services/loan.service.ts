@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
+import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
 import { eq } from "drizzle-orm"
 import {
@@ -12,7 +13,7 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import type { CreateLoanInput, Loan } from "@/types"
+import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan } from "@/types"
 
 /**
  * Validates that a customer has all required fields for loan issuance (CUST-04).
@@ -134,4 +135,105 @@ export const listLoans = (): Effect.Effect<Loan[], DatabaseError> =>
   Effect.tryPromise({
     try: () => db.select().from(loans),
     catch: (e) => new DatabaseError({ cause: e }),
+  })
+
+/**
+ * Updates a loan's principal amount, interest rate, and/or start date with audit log.
+ * INFR-01: Audit log written in same transaction.
+ */
+export const updateLoan = (
+  input: UpdateLoanInput,
+  actorId: string
+): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      // Fetch existing loan
+      const [existingLoan] = await db
+        .select()
+        .from(loans)
+        .where(eq(loans.id, input.loanId))
+
+      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
+
+      // Build the set object from only provided fields
+      const setObj: Partial<typeof loans.$inferInsert> & { updatedAt: Date } = {
+        updatedAt: new Date(),
+      }
+      if (input.principalAmount !== undefined) {
+        setObj.principalAmount = input.principalAmount
+      }
+      if (input.interestRate !== undefined) {
+        setObj.interestRate = input.interestRate
+      }
+      if (input.startDate !== undefined) {
+        setObj.startDate = new Date(input.startDate)
+      }
+
+      return await db.transaction(async (tx) => {
+        const [updatedLoan] = await tx
+          .update(loans)
+          .set(setObj)
+          .where(eq(loans.id, input.loanId))
+          .returning()
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "loan.update",
+          entityType: "loan",
+          entityId: input.loanId,
+          beforeValue: existingLoan,
+          afterValue: { ...setObj, reason: input.reason },
+        })
+
+        return updatedLoan
+      })
+    },
+    catch: (e: any) => {
+      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+      return new DatabaseError({ cause: e })
+    },
+  })
+
+/**
+ * Hard-deletes a loan and its related payments and collateral with audit log.
+ * Deletes in order: payments -> collateral -> loan (FK dependency order).
+ * INFR-01: Audit log written in same transaction.
+ */
+export const deleteLoan = (
+  input: DeleteLoanInput,
+  actorId: string
+): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      // Fetch existing loan
+      const [existingLoan] = await db
+        .select()
+        .from(loans)
+        .where(eq(loans.id, input.loanId))
+
+      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
+
+      return await db.transaction(async (tx) => {
+        // Write audit log BEFORE deletion so we have the entity data
+        await writeAuditLog(tx, {
+          actorId,
+          action: "loan.delete",
+          entityType: "loan",
+          entityId: input.loanId,
+          beforeValue: existingLoan,
+          afterValue: { reason: input.reason },
+        })
+
+        // Delete in FK dependency order: payments -> collateral -> loan
+        await tx.delete(payments).where(eq(payments.loanId, input.loanId))
+        await tx.delete(collateral).where(eq(collateral.loanId, input.loanId))
+        await tx.delete(loans).where(eq(loans.id, input.loanId))
+
+        return existingLoan
+      })
+    },
+    catch: (e: any) => {
+      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+      return new DatabaseError({ cause: e })
+    },
   })

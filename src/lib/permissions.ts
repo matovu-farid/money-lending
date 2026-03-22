@@ -3,7 +3,7 @@ import { defaultStatements, adminAc } from "better-auth/plugins/admin/access"
 
 const statement = {
   ...defaultStatements,
-  loan: ["create", "read", "update"],
+  loan: ["create", "read", "update", "delete"],
   customer: ["create", "read", "update"],
   payment: ["create", "read", "update", "delete"],
   role: ["assign-loan-officer", "assign-admin", "assign-super-admin"],
@@ -16,7 +16,7 @@ export const ac = createAccessControl(statement)
 export const unassignedRole = ac.newRole({} as any)
 
 export const loanOfficerRole = ac.newRole({
-  loan: ["create", "read", "update"],
+  loan: ["create", "read", "update", "delete"],
   customer: ["create", "read", "update"],
   payment: ["create", "read", "update", "delete"],
 })

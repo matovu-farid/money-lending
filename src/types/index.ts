@@ -61,6 +61,19 @@ export interface CreateLoanInput {
   minPeriodOverride?: number | null     // admin-only override
 }
 
+export interface UpdateLoanInput {
+  loanId: string
+  principalAmount?: string    // NUMERIC string
+  interestRate?: string       // decimal string e.g. "0.10"
+  startDate?: string          // ISO 8601
+  reason: string              // required for audit
+}
+
+export interface DeleteLoanInput {
+  loanId: string
+  reason: string              // required for audit
+}
+
 // --- Payment input types ---
 export interface RecordPaymentInput {
   loanId: string
