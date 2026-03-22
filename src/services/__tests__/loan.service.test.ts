@@ -40,7 +40,7 @@ const mockLoan = {
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-03-19T00:00:00.000Z"),
-  status: "pending",
+  status: "active",
   interestRateOverride: null,
   minPeriodOverride: null,
   issuedBy: "actor-1",

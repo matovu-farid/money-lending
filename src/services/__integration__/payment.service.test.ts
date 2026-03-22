@@ -66,10 +66,10 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
   // =========================================================================
 
   describe("recordPayment", () => {
-    it("1. first payment activates a pending loan", async () => {
+    it("1. first payment on active loan keeps it active", async () => {
       const customer = await makeCustomer()
       const loan = await makeLoan(customer.id)
-      expect(loan.status).toBe("pending")
+      expect(loan.status).toBe("active")
 
       await Effect.runPromise(
         recordPayment(
@@ -356,7 +356,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       expect(recalcP2.principalBalanceAfter).toBe("1000000.00")
     })
 
-    it("12. deleting only payment reverts loan to pending", async () => {
+    it("12. deleting only payment keeps loan active", async () => {
       const customer = await makeCustomer()
       const loan = await makeLoan(customer.id)
 
@@ -367,7 +367,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         )
       )
 
-      // Loan should be active after first payment
+      // Loan is active after first payment
       const [active] = await testDb
         .select()
         .from(loans)
@@ -381,11 +381,12 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         )
       )
 
-      const [reverted] = await testDb
+      // Loan stays active after deleting the only payment (disbursement happened off-app)
+      const [afterDelete] = await testDb
         .select()
         .from(loans)
         .where(eq(loans.id, loan.id))
-      expect(reverted.status).toBe("pending")
+      expect(afterDelete.status).toBe("active")
     })
   })
 

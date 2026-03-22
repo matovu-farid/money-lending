@@ -32,7 +32,7 @@ const mockLoan = {
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-02-20T00:00:00.000Z"),
-  status: "pending",
+  status: "active",
   interestRateOverride: null,
   minPeriodOverride: null,
   issuedBy: "actor-1",
@@ -194,13 +194,13 @@ describe("Payment Service", () => {
       )
     })
 
-    it("recordPayment: transitions loan status pending -> active on first payment (Pitfall 6)", async () => {
+    it("recordPayment: first payment on active loan keeps it active (no status transition unless fully paid)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
-      // Mock loan with pending status
+      // Loan already starts as active (no pending status anymore)
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ ...mockLoan, status: "pending" }]),
+          where: vi.fn().mockResolvedValue([{ ...mockLoan, status: "active" }]),
         }),
       })
 
@@ -232,20 +232,20 @@ describe("Payment Service", () => {
       )
 
       const { recordPayment } = await import("@/services/payment.service")
-      await Effect.runPromise(
+      const result = await Effect.runPromise(
         recordPayment(
           { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "150000" },
           "actor-1"
         )
       )
 
-      // Verify loan status was updated to "active"
-      expect(mockTx.update).toHaveBeenCalled()
+      // Payment completes successfully — loan remains active (no status update called)
+      expect(result.id).toBe("pay-1")
       const setCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
       const setCallArgs = setCalls.map((setFn: any) => setFn.mock.calls[0]?.[0]).filter(Boolean)
-      const activeStatusUpdate = setCallArgs.find((arg: any) => arg.status === "active")
-      expect(activeStatusUpdate).toBeDefined()
-      expect(activeStatusUpdate.status).toBe("active")
+      // No status transition to "fully_paid" since balance is not zero
+      const fullyPaidUpdate = setCallArgs.find((arg: any) => arg.status === "fully_paid")
+      expect(fullyPaidUpdate).toBeUndefined()
     })
 
     it("recordPayment: transitions loan status to fully_paid when balance reaches zero (LOAN-08)", async () => {

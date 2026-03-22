@@ -51,7 +51,7 @@ describe("Loan Service — Integration", () => {
     expect(result.interestRate).toBe("0.1000")
     expect(result.minInterestDays).toBe(30)
     expect(result.startDate).toEqual(new Date("2026-04-01T00:00:00.000Z"))
-    expect(result.status).toBe("pending")
+    expect(result.status).toBe("active")
     expect(result.issuedBy).toBe(ACTOR_ID)
   })
 
@@ -177,7 +177,7 @@ describe("Loan Service — Integration", () => {
     expect(fetched.id).toBe(created.id)
     expect(fetched.customerId).toBe(customer.id)
     expect(fetched.principalAmount).toBe("1000000.00")
-    expect(fetched.status).toBe("pending")
+    expect(fetched.status).toBe("active")
   })
 
   // 9. getLoan not found
