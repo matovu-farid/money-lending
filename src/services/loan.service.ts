@@ -79,7 +79,7 @@ export const createLoan = (
             interestRate: input.interestRate,
             minInterestDays: input.minInterestDays,
             startDate,
-            status: "pending",
+            status: "active",
             interestRateOverride: input.interestRateOverride ?? null,
             minPeriodOverride: input.minPeriodOverride ?? null,
             issuedBy: actorId,

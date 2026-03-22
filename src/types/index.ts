@@ -17,7 +17,7 @@ export type Payment = InferSelectModel<typeof payments>
 export type NewPayment = InferInsertModel<typeof payments>
 export type AuditLogEntry = InferSelectModel<typeof auditLog>
 
-export type LoanStatus = "pending" | "active" | "fully_paid"
+export type LoanStatus = "active" | "fully_paid"
 export type CustomerStatus = "active" | "blacklisted" | "inactive"
 
 export const ROLE_LEVELS = {
@@ -122,6 +122,7 @@ export interface ActivityFeedItem {
   timestamp: Date
   loanId?: string
   customerId?: string
+  detail?: Record<string, string | number | null | undefined>
 }
 
 export interface ChangeStatusInput {

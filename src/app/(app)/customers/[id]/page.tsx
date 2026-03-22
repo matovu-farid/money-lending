@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useEffect, useState, useTransition, useRef } from "react"
 import { useParams, useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { toast } from "sonner"
 import { ChevronDown, ChevronUp, Loader2 } from "lucide-react"
@@ -35,7 +36,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string | number): string {
   const num = typeof amount === "string" ? parseFloat(amount) : amount
@@ -54,9 +55,8 @@ function statusLabel(status: string): string {
   return "Inactive"
 }
 
-function loanStatusVariant(status: string): "default" | "secondary" | "outline" {
+function loanStatusVariant(status: string): "default" | "outline" {
   if (status === "active") return "default"
-  if (status === "pending") return "secondary"
   return "outline"
 }
 
@@ -65,13 +65,6 @@ function loanStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-UG", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
 
 interface LoanWithPayments {
   loan: Loan
@@ -84,12 +77,68 @@ interface LoanWithPayments {
 export default function CustomerProfilePage() {
   const params = useParams()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const customerId = params.id as string
 
-  const [customer, setCustomer] = useState<Customer | null>(null)
+  // Fetch customer via useQuery — cached for 60s (provider staleTime),
+  // so navigating away (e.g. /loans/new) and back serves from cache instantly.
+  const { data: customer, isLoading: customerLoading, isError: notFound } = useQuery<Customer>({
+    queryKey: ["customer", customerId],
+    queryFn: async () => {
+      const result = await getCustomerAction(customerId)
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
+
+  // Fetch this customer's loans via useQuery
+  const { data: fetchedLoanItems, isLoading: loansLoading } = useQuery<LoanWithPayments[]>({
+    queryKey: ["customer-loans", customerId],
+    queryFn: async () => {
+      const loansResult = await listLoansAction()
+      if (!("data" in loansResult) || !loansResult.data) return []
+      const customerLoans = loansResult.data.filter((l) => l.customerId === customerId)
+      const now = new Date()
+      return customerLoans.map((loan) => {
+        const totalDaysElapsed = Math.floor(
+          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
+        )
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
+        const totalInterestAccrued = calculateInterest(
+          loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
+        )
+        const dailyRate = calculateDailyRate(effectiveRate)
+        const daysOverdueBN = calculateDaysOverdue(
+          totalInterestAccrued.toFixed(2), "0", dailyRate.toFixed(10)
+        )
+        return {
+          loan,
+          payments: [],
+          expanded: false,
+          loadingPayments: false,
+          daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
+        }
+      })
+    },
+  })
+
+  // Local state for expansion/payment tracking — synced from query data
   const [loanItems, setLoanItems] = useState<LoanWithPayments[]>([])
-  const [loading, setLoading] = useState(true)
-  const [notFound, setNotFound] = useState(false)
+  useEffect(() => {
+    if (!fetchedLoanItems) return
+    setLoanItems((prev) => {
+      // Preserve expanded/payments state for items that already exist
+      const prevMap = new Map(prev.map((li) => [li.loan.id, li]))
+      return fetchedLoanItems.map((item) => {
+        const existing = prevMap.get(item.loan.id)
+        if (existing) return { ...item, payments: existing.payments, expanded: existing.expanded, loadingPayments: existing.loadingPayments }
+        return item
+      })
+    })
+  }, [fetchedLoanItems])
+
+  const loading = customerLoading || loansLoading
 
   // Edit state
   const [editing, setEditing] = useState(false)
@@ -98,69 +147,22 @@ export default function CustomerProfilePage() {
   const [editAddress, setEditAddress] = useState("")
   const [isEditPending, startEditTransition] = useTransition()
 
+  // Init edit form fields when customer data arrives
+  const editInitRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (customer && editInitRef.current !== customer.id) {
+      editInitRef.current = customer.id
+      setEditFullName(customer.fullName)
+      setEditContact(customer.contact)
+      setEditAddress(customer.address)
+    }
+  }, [customer])
+
   // Status change state
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [pendingStatus, setPendingStatus] = useState<CustomerStatus | null>(null)
   const [statusReason, setStatusReason] = useState("")
   const [isStatusPending, startStatusTransition] = useTransition()
-
-  useEffect(() => {
-    async function fetchData() {
-      const [customerResult, loansResult] = await Promise.all([
-        getCustomerAction(customerId),
-        listLoansAction(),
-      ])
-
-      if ("error" in customerResult) {
-        setNotFound(true)
-        setLoading(false)
-        return
-      }
-
-      const fetchedCustomer = customerResult.data
-      setCustomer(fetchedCustomer)
-      setEditFullName(fetchedCustomer.fullName)
-      setEditContact(fetchedCustomer.contact)
-      setEditAddress(fetchedCustomer.address)
-
-      if ("data" in loansResult && loansResult.data) {
-        const customerLoans = loansResult.data.filter(
-          (l) => l.customerId === customerId
-        )
-
-        const now = new Date()
-
-        const items: LoanWithPayments[] = customerLoans.map((loan) => {
-          const totalDaysElapsed = Math.floor(
-            (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-          )
-          const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-          const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
-          const totalInterestAccrued = calculateInterest(
-            loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
-          )
-          const dailyRate = calculateDailyRate(effectiveRate)
-          const daysOverdueBN = calculateDaysOverdue(
-            totalInterestAccrued.toFixed(2), "0", dailyRate.toFixed(10)
-          )
-
-          return {
-            loan,
-            payments: [],
-            expanded: false,
-            loadingPayments: false,
-            daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
-          }
-        })
-
-        setLoanItems(items)
-      }
-
-      setLoading(false)
-    }
-
-    fetchData()
-  }, [customerId])
 
   function handleEditStart() {
     if (!customer) return
@@ -188,7 +190,7 @@ export default function CustomerProfilePage() {
         return
       }
 
-      setCustomer(result.data)
+      queryClient.setQueryData(["customer", customerId], result.data)
       setEditing(false)
       toast.success("Customer updated successfully")
     })
@@ -214,7 +216,7 @@ export default function CustomerProfilePage() {
         toast.error(result.error)
         return
       }
-      setCustomer(result.data)
+      queryClient.setQueryData(["customer", customerId], result.data)
       setStatusDialogOpen(false)
       toast.success(`${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`)
       setPendingStatus(null)

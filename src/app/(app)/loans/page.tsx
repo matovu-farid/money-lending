@@ -14,16 +14,15 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
   const num = parseFloat(amount)
   return new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)
 }
 
-function loanStatusVariant(status: string): "default" | "secondary" | "outline" {
+function loanStatusVariant(status: string): "default" | "outline" {
   if (status === "active") return "default"
-  if (status === "pending") return "secondary"
   return "outline"
 }
 
@@ -103,7 +102,7 @@ export default function LoansPage() {
                   </Badge>
                 </TableCell>
                 <TableCell>
-                  {new Date(loan.startDate).toLocaleDateString("en-UG")}
+                  {formatDate(loan.startDate)}
                 </TableCell>
               </TableRow>
             ))}

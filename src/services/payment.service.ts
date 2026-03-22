@@ -108,7 +108,7 @@ async function recalculateFromPayment(
  * Records a new payment for a loan.
  * - Fetches loan, determines prior balance and days elapsed
  * - Allocates payment interest-first via allocatePayment()
- * - Transitions loan status: pending -> active, or active -> fully_paid
+ * - Transitions loan status: active -> fully_paid when principal is fully repaid
  * - Writes audit log inside the same transaction (Pitfall 7 pattern)
  *
  * LOAN-06: Manual payment recording.
@@ -172,16 +172,11 @@ export const recordPayment = (
           })
           .returning()
 
-        // Loan status transitions (Pitfall 6: pending -> active on first payment)
+        // Loan status transition: active -> fully_paid when principal is fully repaid
         if (allocation.loanFullyPaid) {
           await tx
             .update(loans)
             .set({ status: "fully_paid", updatedAt: new Date() })
-            .where(eq(loans.id, input.loanId))
-        } else if (loan.status === "pending") {
-          await tx
-            .update(loans)
-            .set({ status: "active", updatedAt: new Date() })
             .where(eq(loans.id, input.loanId))
         }
 
@@ -416,10 +411,10 @@ export const deletePayment = (
 
         // Update loan status based on final balance
         if (refreshed.length === 0) {
-          // No active payments remain — revert to pending
+          // No active payments remain — keep active (loan was disbursed, just no recorded payments)
           await tx
             .update(loans)
-            .set({ status: "pending", updatedAt: now })
+            .set({ status: "active", updatedAt: now })
             .where(eq(loans.id, payment.loanId))
         } else {
           const lastBalance = refreshed[refreshed.length - 1].principalBalanceAfter

@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -49,21 +49,14 @@ function formatUGX(amount: string | null | undefined): string {
   return new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)
 }
 
-function formatDate(date: Date | string | null | undefined): string {
-  if (!date) return "—"
-  const d = typeof date === "string" ? new Date(date) : date
-  return d.toLocaleDateString("en-UG")
-}
-
 function formatDateForInput(date: Date | string | null | undefined): string {
   if (!date) return ""
   const d = typeof date === "string" ? new Date(date) : date
   return d.toISOString().split("T")[0]
 }
 
-function loanStatusVariant(status: string): "default" | "secondary" | "outline" {
+function loanStatusVariant(status: string): "default" | "outline" {
   if (status === "active") return "default"
-  if (status === "pending") return "secondary"
   return "outline"
 }
 
