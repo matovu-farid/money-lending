@@ -54,6 +54,25 @@ describe("Income CRUD", () => {
     cy.contains("Loan Interest").should("be.visible")
   })
 
+  it.skip("disables add button while mutation is pending", () => {
+    // Fill in income form
+    cy.visit("/income")
+    cy.contains("button", "Add Income", { timeout: 15000 })
+      .scrollIntoView()
+      .click()
+    cy.get("#income-date").type("2026-03-21")
+    cy.contains("+ Add Category").click()
+    cy.get("#new-income-category-name").type("Test Category")
+    cy.contains("button", "Add").click()
+    cy.get("#income-amount").type("10000")
+    // Click submit
+    cy.contains("button", "Record Income").click()
+    // Assert button has disabled attribute
+    cy.contains("button", "Record Income").should("be.disabled")
+    // Assert Loader2 spinner is visible
+    cy.get("[data-testid='spinner']").should("be.visible")
+  })
+
   it("can delete an income entry", () => {
     // First create an income entry
     cy.visit("/income")

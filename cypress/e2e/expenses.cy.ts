@@ -57,6 +57,25 @@ describe("Expense CRUD", () => {
     cy.contains("Office Supplies").should("be.visible");
   });
 
+  it.skip("disables add button while mutation is pending", () => {
+    // Fill in expense form
+    cy.visit("/expenses")
+    cy.contains("button", "Add Expense", { timeout: 15000 })
+      .scrollIntoView()
+      .click()
+    cy.get("#expense-date").type("2026-03-21")
+    cy.contains("+ Add Category").click()
+    cy.get("#new-category-name").type("Test Category")
+    cy.contains("button", "Add").click()
+    cy.get("#expense-amount").type("10000")
+    // Click submit
+    cy.contains("button", "Record Expense").click()
+    // Assert button has disabled attribute
+    cy.contains("button", "Record Expense").should("be.disabled")
+    // Assert Loader2 spinner is visible
+    cy.get("[data-testid='spinner']").should("be.visible")
+  })
+
   it("can delete an expense", () => {
     // First create an expense
     cy.visit("/expenses");
