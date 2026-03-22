@@ -115,7 +115,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 **Goal:** Every form in the app provides instant visual feedback — loading spinners on submit, optimistic list updates for add/delete, and TanStack Query for expense/income cache management
 **Requirements**: UX-01, UX-02, UX-03, UX-04, UX-05
 **Depends on:** Phase 4
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 05-01-PLAN.md — Install TanStack Query, create Providers/Spinner components, loading skeleton

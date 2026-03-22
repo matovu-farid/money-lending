@@ -96,8 +96,8 @@
 
 ### User Experience (UX)
 
-- [ ] **UX-01**: Loading spinners on all form submit buttons — every submit button shows a spinning icon and pending text while the Server Action or auth call is in progress
-- [ ] **UX-02**: All forms use React 19 `useTransition` instead of `useState(submitting)` — scheduler-aware pending state, no manual `setSubmitting(true/false)` boilerplate
+- [x] **UX-01**: Loading spinners on all form submit buttons — every submit button shows a spinning icon and pending text while the Server Action or auth call is in progress
+- [x] **UX-02**: All forms use React 19 `useTransition` instead of `useState(submitting)` — scheduler-aware pending state, no manual `setSubmitting(true/false)` boilerplate
 - [x] **UX-03**: Optimistic add/delete for expense and income lists — new rows appear instantly before server confirms; deleted rows disappear instantly; failed mutations rollback and show error toast
 - [x] **UX-04**: TanStack Query infrastructure — `QueryClientProvider` wraps the `(app)` route group via a `Providers` component; `useMutation` used for optimistic list operations
 - [x] **UX-05**: Page-level loading skeleton — `loading.tsx` in the `(app)` route group renders an `animate-pulse` skeleton during page transitions

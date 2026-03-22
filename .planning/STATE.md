@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-04-PLAN.md
-last_updated: "2026-03-22T02:06:20.681Z"
+stopped_at: Completed 05-03-PLAN.md
+last_updated: "2026-03-22T02:08:26Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 27
-  completed_plans: 26
+  completed_plans: 27
 ---
 
 # Project State
@@ -24,7 +24,7 @@ See: .planning/PROJECT.md (updated 2026-03-19)
 ## Current Position
 
 Phase: 05 (add-optimistic-updates-for-form-submits-loading-animations-and-tanstack-query-integration) — EXECUTING
-Plan: 1 of 4
+Plan: 3 of 4
 
 ## Performance Metrics
 
@@ -65,6 +65,8 @@ Plan: 1 of 4
 | Phase 04-financial-reporting P07 | 15 | 2 tasks | 13 files |
 | Phase 04-financial-reporting P08 | 3 | 1 tasks | 3 files |
 | Phase 05 P01 | 2 | 3 tasks | 9 files |
+| Phase 05 P02 | 3 | 2 tasks | 7 files |
+| Phase 05 P03 | 3 | 2 tasks | 5 files |
 | Phase 05 P04 | 5 | 2 tasks | 2 files |
 
 ## Accumulated Context
@@ -137,6 +139,8 @@ Recent decisions affecting current work:
 - [Phase 04-financial-reporting]: Month-end cron uses POST not GET — data-modifying operation (snapshot insertion)
 - [Phase 04-financial-reporting]: capitalInSystem shows totalOutstanding from getSystemCapital() — principal + accrued creditor interest
 - [Phase 05]: TanStack Query staleTime set to 60s; QueryClientProvider wraps AppShell; Spinner adds data-testid for Cypress; loading.tsx is zero-JS CSS-only skeleton
+- [05-02]: useTransition replaces useState(loading/submitting) in all 7 navigate-away and auth forms — React 19 scheduler-aware pending; client-side validation runs outside startTransition for synchronous early return
+- [05-02]: creditors/new: window.location.href replaced with router.push for correct transition tracking inside startTransition
 - [Phase 05]: Server Actions return void (throw on error) — onSuccess has no error-in-result guard; rollback only in onError
 - [Phase 05]: Optimistic row removed in onSuccess (not replaced) — revalidatePath handles real data refresh on next navigation
 
