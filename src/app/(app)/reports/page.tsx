@@ -1,3 +1,5 @@
+"use client"
+
 import Link from "next/link"
 import { FileText, TrendingUp, Scale, ScrollText } from "lucide-react"
 import {

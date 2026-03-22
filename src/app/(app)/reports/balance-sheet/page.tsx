@@ -1,6 +1,7 @@
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { getBalanceSheetData } from "@/services/report.service"
 import { BalanceSheetClient } from "./BalanceSheetClient"
+import type { BalanceSheetData } from "@/types"
 
 function getLastCompletedMonth(): string {
   const now = new Date()
@@ -18,7 +19,15 @@ export default async function BalanceSheetPage({
   const params = await searchParams
   const period = params.period ?? getLastCompletedMonth()
 
-  const data = await Effect.runPromise(getBalanceSheetData(period))
+  const exit = await Effect.runPromiseExit(getBalanceSheetData(period))
+  const data: BalanceSheetData = Exit.isSuccess(exit)
+    ? exit.value
+    : {
+        asOf: period,
+        assets: { totalLoansOutstanding: "0" },
+        liabilities: { totalCreditorBalances: "0" },
+        equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },
+      }
 
   return (
     <div className="space-y-6 p-6">

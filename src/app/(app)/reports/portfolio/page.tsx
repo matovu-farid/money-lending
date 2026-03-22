@@ -1,9 +1,11 @@
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { getPortfolioData } from "@/services/report.service"
 import { PortfolioClient } from "./PortfolioClient"
+import type { PortfolioEntry } from "@/types"
 
 export default async function PortfolioReportPage() {
-  const data = await Effect.runPromise(getPortfolioData())
+  const exit = await Effect.runPromiseExit(getPortfolioData())
+  const data: PortfolioEntry[] = Exit.isSuccess(exit) ? exit.value : []
 
   return (
     <div className="space-y-6 p-6">

@@ -1,6 +1,7 @@
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { getPnlData } from "@/services/report.service"
 import { PnlClient } from "./PnlClient"
+import type { PnlData } from "@/types"
 
 function getLastCompletedMonth(): string {
   const now = new Date()
@@ -16,7 +17,10 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
   const params = await searchParams
   const period = params.period ?? getLastCompletedMonth()
 
-  const data = await Effect.runPromise(getPnlData(period))
+  const exit = await Effect.runPromiseExit(getPnlData(period))
+  const data: PnlData = Exit.isSuccess(exit)
+    ? exit.value
+    : { period, income: [], totalIncome: "0", expenses: [], totalExpenses: "0", netProfit: "0" }
 
   return (
     <div className="space-y-6 p-6">

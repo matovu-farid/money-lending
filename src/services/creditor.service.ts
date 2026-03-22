@@ -1,22 +1,22 @@
-import { Effect } from "effect"
-import { db } from "@/lib/db"
-import { creditors } from "@/lib/db/schema/creditors"
-import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
-import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
-import { eq, asc, sum } from "drizzle-orm"
+import { Effect } from "effect";
+import { db } from "@/lib/db";
+import { creditors } from "@/lib/db/schema/creditors";
+import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
+import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
+import { eq, asc } from "drizzle-orm";
 import {
   DatabaseError,
   CreditorNotFound,
   InvestmentNotFound,
-} from "@/lib/errors"
-import { writeAuditLog } from "./audit.service"
-import { autoPostInterestExpense } from "@/services/transaction.service"
+} from "@/lib/errors";
+import { writeAuditLog } from "./audit.service";
+import { autoPostInterestExpense } from "@/services/transaction.service";
 import {
   calculateInterest,
   allocatePayment,
   formatAmount,
-} from "@/lib/interest/engine"
-import BigNumber from "bignumber.js"
+} from "@/lib/interest/engine";
+import BigNumber from "bignumber.js";
 import type {
   Creditor,
   CreditorInvestment,
@@ -27,14 +27,14 @@ import type {
   RecordCreditorRepaymentInput,
   CreditorDashboard,
   CreditorInvestmentSummary,
-} from "@/types"
+} from "@/types";
 
 /**
  * Computes integer calendar days between two dates.
  * Math.floor is acceptable for non-monetary integer day-count.
  */
 function daysBetween(from: Date, to: Date): number {
-  return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 /**
@@ -45,7 +45,7 @@ function daysBetween(from: Date, to: Date): number {
  */
 export const createCreditor = (
   input: CreateCreditorInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<Creditor, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -57,7 +57,7 @@ export const createCreditor = (
             contact: input.contact,
             address: input.address,
           })
-          .returning()
+          .returning();
 
         await writeAuditLog(tx, {
           actorId,
@@ -66,13 +66,13 @@ export const createCreditor = (
           entityId: creditor.id,
           beforeValue: null,
           afterValue: creditor,
-        })
+        });
 
-        return creditor
-      })
+        return creditor;
+      });
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 /**
  * Updates an existing creditor's details.
@@ -84,31 +84,31 @@ export const createCreditor = (
 export const updateCreditor = (
   id: string,
   input: UpdateCreditorInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<Creditor, CreditorNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [existing] = await db
         .select()
         .from(creditors)
-        .where(eq(creditors.id, id))
-      if (!existing) throw { _tag: "CreditorNotFound", id }
+        .where(eq(creditors.id, id));
+      if (!existing) throw { _tag: "CreditorNotFound", id };
 
-      const beforeValue = { ...existing }
+      const beforeValue = { ...existing };
 
       return await db.transaction(async (tx) => {
         const updates: Partial<typeof existing> & { updatedAt: Date } = {
           updatedAt: new Date(),
-        }
-        if (input.name !== undefined) updates.name = input.name
-        if (input.contact !== undefined) updates.contact = input.contact
-        if (input.address !== undefined) updates.address = input.address
+        };
+        if (input.name !== undefined) updates.name = input.name;
+        if (input.contact !== undefined) updates.contact = input.contact;
+        if (input.address !== undefined) updates.address = input.address;
 
         const [updated] = await tx
           .update(creditors)
           .set(updates)
           .where(eq(creditors.id, id))
-          .returning()
+          .returning();
 
         await writeAuditLog(tx, {
           actorId,
@@ -117,38 +117,40 @@ export const updateCreditor = (
           entityId: id,
           beforeValue,
           afterValue: updated,
-        })
+        });
 
-        return updated
-      })
+        return updated;
+      });
     },
     catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound") return new CreditorNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+      if (e?._tag === "CreditorNotFound")
+        return new CreditorNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * Fetches a single creditor by ID.
  * Returns CreditorNotFound if not found.
  */
 export const getCreditor = (
-  id: string
+  id: string,
 ): Effect.Effect<Creditor, CreditorNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [creditor] = await db
         .select()
         .from(creditors)
-        .where(eq(creditors.id, id))
-      if (!creditor) throw { _tag: "CreditorNotFound", id }
-      return creditor
+        .where(eq(creditors.id, id));
+      if (!creditor) throw { _tag: "CreditorNotFound", id };
+      return creditor;
     },
     catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound") return new CreditorNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+      if (e?._tag === "CreditorNotFound")
+        return new CreditorNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * Lists all creditors ordered alphabetically by name.
@@ -156,10 +158,10 @@ export const getCreditor = (
 export const listCreditors = (): Effect.Effect<Creditor[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      return await db.select().from(creditors).orderBy(asc(creditors.name))
+      return await db.select().from(creditors).orderBy(asc(creditors.name));
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 /**
  * Adds an investment for a creditor.
@@ -170,7 +172,7 @@ export const listCreditors = (): Effect.Effect<Creditor[], DatabaseError> =>
  */
 export const addInvestment = (
   input: AddInvestmentInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<CreditorInvestment, CreditorNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -178,8 +180,8 @@ export const addInvestment = (
       const [creditor] = await db
         .select()
         .from(creditors)
-        .where(eq(creditors.id, input.creditorId))
-      if (!creditor) throw { _tag: "CreditorNotFound", id: input.creditorId }
+        .where(eq(creditors.id, input.creditorId));
+      if (!creditor) throw { _tag: "CreditorNotFound", id: input.creditorId };
 
       return await db.transaction(async (tx) => {
         const [investment] = await tx
@@ -193,7 +195,7 @@ export const addInvestment = (
             principalBalance: input.amount,
             recordedBy: actorId,
           })
-          .returning()
+          .returning();
 
         await writeAuditLog(tx, {
           actorId,
@@ -202,17 +204,17 @@ export const addInvestment = (
           entityId: investment.id,
           beforeValue: null,
           afterValue: investment,
-        })
+        });
 
-        return investment
-      })
+        return investment;
+      });
     },
     catch: (e: any) => {
       if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+        return new CreditorNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * Records a repayment against a creditor investment.
@@ -225,7 +227,7 @@ export const addInvestment = (
  */
 export const recordCreditorRepayment = (
   input: RecordCreditorRepaymentInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<CreditorRepayment, InvestmentNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -233,8 +235,9 @@ export const recordCreditorRepayment = (
       const [investment] = await db
         .select()
         .from(creditorInvestments)
-        .where(eq(creditorInvestments.id, input.investmentId))
-      if (!investment) throw { _tag: "InvestmentNotFound", id: input.investmentId }
+        .where(eq(creditorInvestments.id, input.investmentId));
+      if (!investment)
+        throw { _tag: "InvestmentNotFound", id: input.investmentId };
 
       return await db.transaction(async (tx) => {
         // Determine days elapsed since last repayment or investment date
@@ -242,14 +245,22 @@ export const recordCreditorRepayment = (
           .select()
           .from(creditorRepayments)
           .where(eq(creditorRepayments.investmentId, input.investmentId))
-          .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
+          .orderBy(
+            asc(creditorRepayments.repaymentDate),
+            asc(creditorRepayments.createdAt),
+          );
 
         const prevDate =
           existingRepayments.length === 0
             ? new Date(investment.investmentDate)
-            : new Date(existingRepayments[existingRepayments.length - 1].repaymentDate)
+            : new Date(
+                existingRepayments[existingRepayments.length - 1].repaymentDate,
+              );
 
-        const daysElapsed = daysBetween(prevDate, new Date(input.repaymentDate))
+        const daysElapsed = daysBetween(
+          prevDate,
+          new Date(input.repaymentDate),
+        );
 
         // Allocate payment interest-first with minInterestDays=0 (creditors have no minimum)
         const allocation = allocatePayment({
@@ -258,7 +269,7 @@ export const recordCreditorRepayment = (
           monthlyRateDecimal: investment.interestRateMonthly,
           daysElapsed,
           minInterestDays: 0,
-        })
+        });
 
         // Insert creditor repayment row
         const [repayment] = await tx
@@ -273,7 +284,7 @@ export const recordCreditorRepayment = (
             principalBalanceAfter: allocation.principalBalanceAfter,
             recordedBy: actorId,
           })
-          .returning()
+          .returning();
 
         // Update investment's principalBalance
         await tx
@@ -282,7 +293,7 @@ export const recordCreditorRepayment = (
             principalBalance: allocation.principalBalanceAfter,
             updatedAt: new Date(),
           })
-          .where(eq(creditorInvestments.id, input.investmentId))
+          .where(eq(creditorInvestments.id, input.investmentId));
 
         await writeAuditLog(tx, {
           actorId,
@@ -293,7 +304,7 @@ export const recordCreditorRepayment = (
             principalBalance: investment.principalBalance,
           },
           afterValue: repayment,
-        })
+        });
 
         // Auto-post interest expense to transaction log (FINC-01)
         if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
@@ -302,18 +313,18 @@ export const recordCreditorRepayment = (
             investmentId: input.investmentId,
             repaymentDate: input.repaymentDate,
             actorId,
-          })
+          });
         }
 
-        return repayment
-      })
+        return repayment;
+      });
     },
     catch: (e: any) => {
       if (e?._tag === "InvestmentNotFound")
-        return new InvestmentNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+        return new InvestmentNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * Computes the creditor dashboard KPIs.
@@ -323,7 +334,7 @@ export const recordCreditorRepayment = (
  * CRED-05: Dashboard with totalInvested, interestAccrued, repaymentsMade, outstandingBalance.
  */
 export const getCreditorDashboard = (
-  creditorId: string
+  creditorId: string,
 ): Effect.Effect<CreditorDashboard, CreditorNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -331,56 +342,59 @@ export const getCreditorDashboard = (
       const [creditor] = await db
         .select()
         .from(creditors)
-        .where(eq(creditors.id, creditorId))
-      if (!creditor) throw { _tag: "CreditorNotFound", id: creditorId }
+        .where(eq(creditors.id, creditorId));
+      if (!creditor) throw { _tag: "CreditorNotFound", id: creditorId };
 
       // Fetch all investments for this creditor
       const investments = await db
         .select()
         .from(creditorInvestments)
         .where(eq(creditorInvestments.creditorId, creditorId))
-        .orderBy(asc(creditorInvestments.investmentDate))
+        .orderBy(asc(creditorInvestments.investmentDate));
 
-      const now = new Date()
-      let totalInvested = new BigNumber(0)
-      let totalInterestAccrued = new BigNumber(0)
-      let totalRepaymentsMade = new BigNumber(0)
+      const now = new Date();
+      let totalInvested = new BigNumber(0);
+      let totalInterestAccrued = new BigNumber(0);
+      let totalRepaymentsMade = new BigNumber(0);
 
-      const investmentSummaries: CreditorInvestmentSummary[] = []
+      const investmentSummaries: CreditorInvestmentSummary[] = [];
 
       for (const investment of investments) {
-        totalInvested = totalInvested.plus(investment.amount)
+        totalInvested = totalInvested.plus(investment.amount);
 
         // Fetch repayments for this investment
         const repayments = await db
           .select()
           .from(creditorRepayments)
           .where(eq(creditorRepayments.investmentId, investment.id))
-          .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
+          .orderBy(
+            asc(creditorRepayments.repaymentDate),
+            asc(creditorRepayments.createdAt),
+          );
 
         // Calculate total repaid for this investment
         const totalRepaid = repayments.reduce(
           (acc, r) => acc.plus(r.amount),
-          new BigNumber(0)
-        )
-        totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid)
+          new BigNumber(0),
+        );
+        totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid);
 
         // Calculate days elapsed since last repayment (or investment date)
         const prevDate =
           repayments.length === 0
             ? new Date(investment.investmentDate)
-            : new Date(repayments[repayments.length - 1].repaymentDate)
+            : new Date(repayments[repayments.length - 1].repaymentDate);
 
-        const daysElapsed = daysBetween(prevDate, now)
+        const daysElapsed = daysBetween(prevDate, now);
 
         // Interest accrues on current principalBalance with minInterestDays=0
         const interestAccrued = calculateInterest(
           investment.principalBalance,
           investment.interestRateMonthly,
           daysElapsed,
-          0 // creditors have no minimum interest period
-        )
-        totalInterestAccrued = totalInterestAccrued.plus(interestAccrued)
+          0, // creditors have no minimum interest period
+        );
+        totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
 
         investmentSummaries.push({
           id: investment.id,
@@ -390,7 +404,7 @@ export const getCreditorDashboard = (
           principalBalance: investment.principalBalance,
           interestAccrued: formatAmount(interestAccrued),
           totalRepaid: formatAmount(totalRepaid),
-        })
+        });
       }
 
       // outstandingBalance = principal + interest accrued - repayments
@@ -398,9 +412,10 @@ export const getCreditorDashboard = (
       // outstandingBalance = sum(principalBalance) + totalInterestAccrued
       const totalPrincipalBalance = investments.reduce(
         (acc, inv) => acc.plus(inv.principalBalance),
-        new BigNumber(0)
-      )
-      const outstandingBalance = totalPrincipalBalance.plus(totalInterestAccrued)
+        new BigNumber(0),
+      );
+      const outstandingBalance =
+        totalPrincipalBalance.plus(totalInterestAccrued);
 
       return {
         totalInvested: formatAmount(totalInvested),
@@ -408,14 +423,14 @@ export const getCreditorDashboard = (
         repaymentsMade: formatAmount(totalRepaymentsMade),
         outstandingBalance: formatAmount(outstandingBalance),
         investments: investmentSummaries,
-      }
+      };
     },
     catch: (e: any) => {
       if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+        return new CreditorNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * Aggregates capital data across ALL creditors.
@@ -425,75 +440,73 @@ export const getCreditorDashboard = (
  */
 export const getSystemCapital = (): Effect.Effect<
   {
-    totalInvested: string
-    totalInterestAccrued: string
-    totalRepaymentsMade: string
-    totalOutstanding: string
+    totalInvested: string;
+    totalInterestAccrued: string;
+    totalRepaymentsMade: string;
+    totalOutstanding: string;
   },
   DatabaseError
 > =>
   Effect.tryPromise({
     try: async () => {
-      const allCreditors = await db.select().from(creditors)
-      const now = new Date()
+      const allCreditors = await db.select().from(creditors);
+      const now = new Date();
 
-      let totalInvested = new BigNumber(0)
-      let totalInterestAccrued = new BigNumber(0)
-      let totalRepaymentsMade = new BigNumber(0)
+      let totalInvested = new BigNumber(0);
+      let totalInterestAccrued = new BigNumber(0);
+      let totalRepaymentsMade = new BigNumber(0);
+      let totalPrincipal = new BigNumber(0);
 
       for (const creditor of allCreditors) {
         const investments = await db
           .select()
           .from(creditorInvestments)
-          .where(eq(creditorInvestments.creditorId, creditor.id))
+          .where(eq(creditorInvestments.creditorId, creditor.id));
 
         for (const investment of investments) {
-          totalInvested = totalInvested.plus(investment.amount)
+          totalInvested = totalInvested.plus(investment.amount);
+          totalPrincipal = totalPrincipal.plus(investment.principalBalance);
 
           const repayments = await db
             .select()
             .from(creditorRepayments)
             .where(eq(creditorRepayments.investmentId, investment.id))
-            .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
+            .orderBy(
+              asc(creditorRepayments.repaymentDate),
+              asc(creditorRepayments.createdAt),
+            );
 
           const totalRepaid = repayments.reduce(
             (acc, r) => acc.plus(r.amount),
-            new BigNumber(0)
-          )
-          totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid)
+            new BigNumber(0),
+          );
+          totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid);
 
           const prevDate =
             repayments.length === 0
               ? new Date(investment.investmentDate)
-              : new Date(repayments[repayments.length - 1].repaymentDate)
+              : new Date(repayments[repayments.length - 1].repaymentDate);
 
-          const daysElapsed = daysBetween(prevDate, now)
+          const daysElapsed = daysBetween(prevDate, now);
 
           const interestAccrued = calculateInterest(
             investment.principalBalance,
             investment.interestRateMonthly,
             daysElapsed,
-            0
-          )
-          totalInterestAccrued = totalInterestAccrued.plus(interestAccrued)
+            0,
+          );
+          totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
         }
       }
 
-      const totalPrincipalBalance = await db
-        .select({ total: sum(creditorInvestments.principalBalance) })
-        .from(creditorInvestments)
-
-      const totalPrincipal = new BigNumber(
-        totalPrincipalBalance[0]?.total ?? "0"
-      )
-      const totalOutstanding = totalPrincipal.plus(totalInterestAccrued)
+      const totalOutstanding = totalPrincipal.plus(totalInterestAccrued);
 
       return {
         totalInvested: formatAmount(totalInvested),
         totalInterestAccrued: formatAmount(totalInterestAccrued),
         totalRepaymentsMade: formatAmount(totalRepaymentsMade),
         totalOutstanding: formatAmount(totalOutstanding),
-      }
+      };
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });

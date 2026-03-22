@@ -1,7 +1,6 @@
-import { Effect } from "effect"
-import Link from "next/link"
+import { Effect, Exit } from "effect"
 import { listCreditors, getSystemCapital } from "@/services/creditor.service"
-import { buttonVariants } from "@/components/ui/button"
+import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import {
   Table,
@@ -11,7 +10,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { cn } from "@/lib/utils"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 
 function formatUGX(amount: string): string {
@@ -20,19 +18,29 @@ function formatUGX(amount: string): string {
   return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
 }
 
+const defaultCapital = {
+  totalInvested: "0.00",
+  totalInterestAccrued: "0.00",
+  totalRepaymentsMade: "0.00",
+  totalOutstanding: "0.00",
+}
+
 export default async function CreditorsPage() {
-  const [creditors, capital] = await Promise.all([
-    Effect.runPromise(listCreditors()),
-    Effect.runPromise(getSystemCapital()),
+  const [creditorsExit, capitalExit] = await Promise.all([
+    Effect.runPromiseExit(listCreditors()),
+    Effect.runPromiseExit(getSystemCapital()),
   ])
+
+  const creditors = Exit.isSuccess(creditorsExit) ? creditorsExit.value : []
+  const capital = Exit.isSuccess(capitalExit) ? capitalExit.value : defaultCapital
 
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Creditors</h1>
-        <Link href="/creditors/new" className={cn(buttonVariants())}>
+        <ButtonLink href="/creditors/new">
           Add Creditor
-        </Link>
+        </ButtonLink>
       </div>
 
       {/* System Capital KPIs — CRED-06 */}
@@ -65,9 +73,9 @@ export default async function CreditorsPage() {
           <p className="text-muted-foreground">
             Register your first creditor to start tracking invested capital.
           </p>
-          <Link href="/creditors/new" className={cn(buttonVariants())}>
+          <ButtonLink href="/creditors/new">
             Add Creditor
-          </Link>
+          </ButtonLink>
         </div>
       ) : (
         <Table>
@@ -90,12 +98,13 @@ export default async function CreditorsPage() {
                   {new Date(creditor.createdAt).toLocaleDateString("en-UG")}
                 </TableCell>
                 <TableCell>
-                  <Link
+                  <ButtonLink
                     href={`/creditors/${creditor.id}`}
-                    className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+                    variant="outline"
+                    size="sm"
                   >
                     View
-                  </Link>
+                  </ButtonLink>
                 </TableCell>
               </TableRow>
             ))}

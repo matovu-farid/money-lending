@@ -65,7 +65,7 @@ export default function NewCreditorPage() {
         investmentDate,
       })
 
-      router.push("/creditors")
+      window.location.href = "/creditors"
     } catch (err: any) {
       toast.error(err?.message ?? "Failed to register creditor")
       setSubmitting(false)

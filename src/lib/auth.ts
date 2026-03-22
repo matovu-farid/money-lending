@@ -13,7 +13,7 @@ export const auth = betterAuth({
   emailAndPassword: { enabled: true },
   session: {
     cookieCache: {
-      enabled: true,
+      enabled: false,
       maxAge: 5 * 60, // 5 minutes
     },
   },
