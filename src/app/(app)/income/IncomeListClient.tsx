@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useMutation } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   Table,
   TableBody,
@@ -62,6 +64,7 @@ type Transaction = {
   referenceType: string | null
   referenceId: string | null
   createdAt: Date
+  isOptimistic?: boolean
 }
 
 type Category = {
@@ -94,8 +97,9 @@ export function IncomeListClient({ transactions: initialTransactions, categories
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
-  const [categories] = useState<Category[]>(initialCategories)
-  const [isPending, startTransition] = useTransition()
+  const [categories, setCategories] = useState<Category[]>(initialCategories)
+  const [localTransactions, setLocalTransactions] = useState<Transaction[]>(initialTransactions)
+  const [_isCategoryPending, startCategoryTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
   // Form state
@@ -112,6 +116,62 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     setError(null)
   }
 
+  const addMutation = useMutation({
+    mutationFn: (input: CreateIncomeInput) => recordIncomeAction(input),
+    onMutate: async (input) => {
+      const category = categories.find((c) => c.id === input.categoryId)
+      const optimistic: Transaction = {
+        id: `optimistic-${Date.now()}`,
+        type: "credit",
+        amount: input.amount,
+        categoryId: input.categoryId,
+        categoryName: category?.name ?? "Unknown",
+        description: input.notes ?? null,
+        transactionDate: new Date(input.transactionDate),
+        recordedBy: "",
+        referenceType: null,
+        referenceId: null,
+        createdAt: new Date().toISOString() as unknown as Date,
+        isOptimistic: true,
+      }
+      const previous = [...localTransactions]
+      setLocalTransactions((prev) => [optimistic, ...prev])
+      return { previous, optimisticId: optimistic.id }
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) setLocalTransactions(context.previous)
+      toast.error("Failed to record income")
+    },
+    onSuccess: (_result, _input, context) => {
+      // Remove the optimistic row — page revalidation will bring in the real data
+      if (context?.optimisticId) {
+        setLocalTransactions((prev) =>
+          prev.filter((t) => t.id !== context.optimisticId)
+        )
+      }
+      toast.success("Income recorded")
+      setIsSheetOpen(false)
+      resetForm()
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (transactionId: string) => deleteIncomeAction(transactionId),
+    onMutate: async (transactionId) => {
+      const previous = [...localTransactions]
+      setLocalTransactions((prev) => prev.filter((t) => t.id !== transactionId))
+      setDeleteTarget(null)
+      return { previous }
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) setLocalTransactions(context.previous)
+      toast.error("Failed to delete income")
+    },
+    onSuccess: () => {
+      toast.success("Income deleted")
+    },
+  })
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!formDate || !formCategoryId || !formAmount) {
@@ -124,39 +184,29 @@ export function IncomeListClient({ transactions: initialTransactions, categories
       transactionDate: formDate,
       notes: formNotes || undefined,
     }
-    startTransition(async () => {
-      try {
-        await recordIncomeAction(input)
-        setIsSheetOpen(false)
-        resetForm()
-        window.location.reload()
-      } catch {
-        setError("Failed to record income. Please try again.")
-      }
-    })
+    addMutation.mutate(input)
   }
 
   async function handleDelete() {
     if (!deleteTarget) return
-    startTransition(async () => {
-      try {
-        await deleteIncomeAction(deleteTarget)
-        setDeleteTarget(null)
-        window.location.reload()
-      } catch {
-        setError("Failed to delete income entry. Please try again.")
-      }
-    })
+    deleteMutation.mutate(deleteTarget)
   }
 
   async function handleAddCategory() {
     if (!newCategoryName.trim()) return
-    startTransition(async () => {
+    startCategoryTransition(async () => {
       try {
         await createIncomeCategoryAction({ name: newCategoryName.trim(), type: "income" })
+        // Optimistically add to local categories list
+        const newCat: Category = {
+          id: `temp-${Date.now()}`,
+          name: newCategoryName.trim(),
+          type: "income",
+          isDefault: false,
+        }
+        setCategories((prev) => [...prev, newCat])
         setNewCategoryName("")
         setIsAddCategoryOpen(false)
-        window.location.reload()
       } catch {
         setError("Failed to add category.")
       }
@@ -168,18 +218,24 @@ export function IncomeListClient({ transactions: initialTransactions, categories
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Income</h1>
-          <Button onClick={() => { resetForm(); setIsSheetOpen(true) }}>
+          <Button
+            onClick={() => { resetForm(); setIsSheetOpen(true) }}
+            disabled={addMutation.isPending}
+          >
             Add Income
           </Button>
         </div>
 
-        {initialTransactions.length === 0 ? (
+        {localTransactions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <p className="text-lg font-medium">No income recorded</p>
             <p className="text-muted-foreground">
               Record your first income entry to start tracking inflows.
             </p>
-            <Button onClick={() => { resetForm(); setIsSheetOpen(true) }}>
+            <Button
+              onClick={() => { resetForm(); setIsSheetOpen(true) }}
+              disabled={addMutation.isPending}
+            >
               Add Income
             </Button>
           </div>
@@ -195,8 +251,11 @@ export function IncomeListClient({ transactions: initialTransactions, categories
               </TableRow>
             </TableHeader>
             <TableBody>
-              {initialTransactions.map((tx) => (
-                <TableRow key={tx.id}>
+              {localTransactions.map((tx) => (
+                <TableRow
+                  key={tx.id}
+                  className={tx.isOptimistic ? "opacity-50" : ""}
+                >
                   <TableCell>{formatDate(tx.transactionDate)}</TableCell>
                   <TableCell>{tx.categoryName}</TableCell>
                   <TableCell>{formatAmount(tx.amount)}</TableCell>
@@ -207,6 +266,11 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                       size="sm"
                       className="text-destructive hover:text-destructive"
                       onClick={() => setDeleteTarget(tx.id)}
+                      disabled={
+                        tx.isOptimistic ||
+                        deleteMutation.isPending ||
+                        (deleteMutation.variables === tx.id && deleteMutation.isPending)
+                      }
                     >
                       Delete
                     </Button>
@@ -273,7 +337,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                         type="button"
                         size="sm"
                         onClick={handleAddCategory}
-                        disabled={!newCategoryName.trim() || isPending}
+                        disabled={!newCategoryName.trim() || _isCategoryPending}
                       >
                         Add
                       </Button>
@@ -315,8 +379,8 @@ export function IncomeListClient({ transactions: initialTransactions, categories
               {error && <p className="text-sm text-destructive">{error}</p>}
 
               <SheetFooter>
-                <Button type="submit" disabled={isPending} className="w-full">
-                  {isPending ? "Saving..." : "Record Income"}
+                <Button type="submit" disabled={addMutation.isPending} className="w-full">
+                  {addMutation.isPending ? "Saving..." : "Record Income"}
                 </Button>
               </SheetFooter>
             </form>
@@ -336,16 +400,16 @@ export function IncomeListClient({ transactions: initialTransactions, categories
               <Button
                 variant="outline"
                 onClick={() => setDeleteTarget(null)}
-                disabled={isPending}
+                disabled={deleteMutation.isPending}
               >
                 Keep entry
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleDelete}
-                disabled={isPending}
+                disabled={deleteMutation.isPending}
               >
-                {isPending ? "Deleting..." : "Delete entry"}
+                {deleteMutation.isPending ? "Deleting..." : "Delete entry"}
               </Button>
             </DialogFooter>
           </DialogContent>
