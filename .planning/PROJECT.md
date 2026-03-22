@@ -146,4 +146,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | 30-day minimum interest period | Business rule: borrower pays at least 30 days even if repaid early | — Pending |
 
 ---
-*Last updated: 2026-03-21 after Phase 3 completion*
+*Last updated: 2026-03-22 after Phase 5 completion — optimistic updates, loading spinners, and TanStack Query integration across all forms*
