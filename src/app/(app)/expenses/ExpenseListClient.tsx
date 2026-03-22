@@ -43,16 +43,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from "@/components/ui/tooltip"
 import {
   recordExpenseAction,
   deleteExpenseAction,
   createExpenseCategoryAction,
-  deleteExpenseCategoryAction,
 } from "./actions"
 import type { CreateExpenseInput } from "@/types"
 

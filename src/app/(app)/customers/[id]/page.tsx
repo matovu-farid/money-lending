@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
