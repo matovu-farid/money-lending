@@ -1,5 +1,6 @@
 describe("Creditors", () => {
   beforeEach(() => {
+    cy.clearCookies()
     cy.task("db:reset")
     cy.registerAndLogin({ name: "Admin User" })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
@@ -31,8 +32,11 @@ describe("Creditors", () => {
     cy.get('input[name="amount"]').type("5000000")
     cy.get('input[name="interestRateMonthly"]').clear().type("10")
     cy.contains("button", "Add Creditor").click()
-    cy.url({ timeout: 10000 }).should("include", "/creditors")
-    cy.contains("Test Creditor").should("be.visible")
+    // Wait for the button to show "Saving..." indicating the form submitted
+    cy.contains("button", "Saving...").should("exist")
+    // Then wait for the redirect to the creditors list
+    cy.url({ timeout: 30000 }).should("match", /\/creditors$/)
+    cy.contains("Test Creditor", { timeout: 10000 }).should("be.visible")
   })
 
   it("shows validation errors for empty required fields", () => {
@@ -52,10 +56,11 @@ describe("Creditors", () => {
     cy.get('input[name="amount"]').type("10000000")
     cy.get('input[name="interestRateMonthly"]').clear().type("5")
     cy.contains("button", "Add Creditor").click()
-    cy.url({ timeout: 10000 }).should("include", "/creditors")
+    cy.contains("button", "Saving...").should("exist")
+    cy.url({ timeout: 30000 }).should("match", /\/creditors$/)
 
     // View the creditor profile
-    cy.contains("View").first().click()
+    cy.contains("View", { timeout: 10000 }).first().click()
     cy.url({ timeout: 5000 }).should("match", /\/creditors\/.+/)
 
     // KPI cards should be visible

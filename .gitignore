@@ -13,6 +13,8 @@
 # testing
 /coverage
 /private_docs
+cypress/screenshots
+cypress/videos
 
 
 # next.js

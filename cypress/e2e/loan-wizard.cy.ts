@@ -39,8 +39,9 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("Step 2 of 3")
     cy.contains("Collateral")
     // Select collateral nature
-    cy.get("#collateralNature").closest("[data-slot=control]").click()
-    cy.contains("Land Title").click()
+    cy.get("#collateralNature").click()
+    cy.get("[role=option]").contains("Land Title").click()
+    cy.get("[data-base-ui-inert]").should("not.exist")
     cy.get("#collateralDescription").type("Plot 42, Nakawa Division")
     cy.contains("button", "Next").click()
 
@@ -57,8 +58,9 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("button", "Next").click()
 
     // Step 2
-    cy.get("#collateralNature").closest("[data-slot=control]").click()
-    cy.contains("Land Title").click()
+    cy.get("#collateralNature").click()
+    cy.get("[role=option]").contains("Land Title").click()
+    cy.get("[data-base-ui-inert]").should("not.exist")
     cy.contains("button", "Next").click()
 
     // Step 3 — verify interest preview
@@ -87,8 +89,9 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("button", "Next").click()
 
     // Step 2
-    cy.get("#collateralNature").closest("[data-slot=control]").click()
-    cy.contains("Vehicle Log Book").click()
+    cy.get("#collateralNature").click()
+    cy.get("[role=option]").contains("Vehicle Log Book").click()
+    cy.get("[data-base-ui-inert]").should("not.exist")
     cy.contains("button", "Next").click()
 
     // Step 3 — submit
@@ -136,8 +139,9 @@ describe("Loan Issuance Wizard", () => {
 
     // Go forward to Step 3
     cy.contains("button", "Next").click()
-    cy.get("#collateralNature").closest("[data-slot=control]").click()
-    cy.contains("Land Title").click()
+    cy.get("#collateralNature").click()
+    cy.get("[role=option]").contains("Land Title").click()
+    cy.get("[data-base-ui-inert]").should("not.exist")
     cy.contains("button", "Next").click()
     cy.contains("Step 3 of 3")
 

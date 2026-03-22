@@ -74,8 +74,8 @@ describe("Customer CRUD", () => {
       cy.contains("Jane Smith")
       cy.contains("0787654321")
       cy.contains("Entebbe, Uganda")
-      // Status badge should be visible (default: active)
-      cy.contains("Active").should("be.visible")
+      // Status is shown via a Select dropdown — the trigger displays "Active"
+      cy.get("[data-slot='select-trigger']").should("contain.text", "Active")
     })
 
     it("shows Issue New Loan button linking to loan wizard", () => {
@@ -115,7 +115,7 @@ describe("Customer CRUD", () => {
     })
 
     it("shows 'No active loans' when customer has no loans", () => {
-      cy.contains("No active loans").should("be.visible")
+      cy.contains("No loans on record for this customer.").should("be.visible")
     })
   })
 

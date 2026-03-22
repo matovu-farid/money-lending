@@ -34,8 +34,9 @@ describe("Loans List", () => {
       cy.get("#principalAmount").type("2000000")
       cy.contains("button", "Next").click()
 
-      cy.get("#collateralNature").closest("[data-slot=control]").click()
-      cy.contains("Land Title").click()
+      cy.get("#collateralNature").click()
+      cy.get("[role=option]").contains("Land Title").click()
+      cy.get("[data-base-ui-inert]").should("not.exist")
       cy.contains("button", "Next").click()
 
       cy.contains("button", "Issue Loan").click()

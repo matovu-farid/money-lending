@@ -31,24 +31,39 @@ describe("Auth Gate (proxy.ts)", () => {
   })
 
   it("unassigned user redirects to /pending-approval", () => {
-    // Register but don't promote — second user stays unassigned
-    // First, create the first user (superAdmin)
+    // First user becomes superAdmin
     cy.registerAndLogin({ name: "First Admin" })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
     cy.clearCookies()
 
-    // Second user stays unassigned
-    cy.registerAndLogin({ name: "Unassigned User" })
+    // Register second user manually (don't use registerAndLogin which auto-promotes)
+    const email = `unassigned-${Date.now()}@fidexa.org`
+    cy.visit("/register")
+    cy.get("#name").type("Unassigned User")
+    cy.get("#email").type(email)
+    cy.get("#password").type("TestPass123!")
+    cy.get("#confirmPassword").type("TestPass123!")
+    cy.get("button[type=submit]").click()
+
     cy.url({ timeout: 15000 }).should("include", "/pending-approval")
     cy.contains("Pending Approval")
   })
 
   it("unassigned user on /pending-approval cannot navigate to /dashboard", () => {
+    // First user becomes superAdmin
     cy.registerAndLogin({ name: "First Admin" })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
     cy.clearCookies()
 
-    cy.registerAndLogin({ name: "Blocked User" })
+    // Register second user manually
+    const email = `blocked-${Date.now()}@fidexa.org`
+    cy.visit("/register")
+    cy.get("#name").type("Blocked User")
+    cy.get("#email").type(email)
+    cy.get("#password").type("TestPass123!")
+    cy.get("#confirmPassword").type("TestPass123!")
+    cy.get("button[type=submit]").click()
+
     cy.url({ timeout: 15000 }).should("include", "/pending-approval")
 
     // Try navigating to dashboard
@@ -57,9 +72,7 @@ describe("Auth Gate (proxy.ts)", () => {
   })
 
   it("assigned user visiting /login redirects to /dashboard", () => {
-    const password = "TestPass123!"
-
-    cy.registerAndLogin({ name: "Active User", password })
+    cy.registerAndLogin({ name: "Active User" })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
 
     // Try visiting login — should redirect back to dashboard

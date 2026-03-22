@@ -6,7 +6,7 @@ describe("Admin User Management", () => {
     cy.task("db:reset")
 
     // Register first user (superAdmin)
-    cy.registerAndLogin({ name: "Super Admin" }).then((email) => {
+    cy.registerAndLogin({ name: "Super Admin", password }).then((email) => {
       adminEmail = email
     })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
@@ -33,25 +33,29 @@ describe("Admin User Management", () => {
 
   it("shows Last Active date column (AUTH-04)", () => {
     cy.visit("/admin")
-    // The Last Active column should contain a formatted date
+    // en-UG locale formats dates as "21 Mar 2026" (day month year)
     cy.get("table tbody tr")
       .first()
       .find("td")
       .last()
       .invoke("text")
-      .should("match", /\w{3} \d{1,2}, \d{4}/)
+      .should("match", /\d{1,2} \w{3} \d{4}/)
   })
 
   describe("Role Management", () => {
     let userEmail: string
 
     beforeEach(() => {
-      // Sign out and register a second user
+      // Sign out and register a second user manually (don't auto-promote)
       cy.clearCookies()
 
-      cy.registerAndLogin({ name: "Regular User" }).then((email) => {
-        userEmail = email
-      })
+      userEmail = `regular-${Date.now()}@fidexa.org`
+      cy.visit("/register")
+      cy.get("#name").type("Regular User")
+      cy.get("#email").type(userEmail)
+      cy.get("#password").type(password)
+      cy.get("#confirmPassword").type(password)
+      cy.get("button[type=submit]").click()
 
       // Second user lands on pending-approval (unassigned)
       cy.url({ timeout: 15000 }).should("include", "/pending-approval")
@@ -68,7 +72,7 @@ describe("Admin User Management", () => {
       // Find the row for the regular user and change role
       cy.contains("tr", "Regular User").within(() => {
         // Should have a role dropdown for unassigned users
-        cy.get("[data-slot=control]").click()
+        cy.get("[data-slot=select-trigger]").click()
       })
 
       // Select loanOfficer from dropdown
@@ -87,7 +91,7 @@ describe("Admin User Management", () => {
       // The admin user's row should NOT have a dropdown (same level as viewer cannot assign)
       cy.contains("tr", "Regular User").within(() => {
         // SuperAdmin sees admin user but can't change admin to superAdmin (only lower roles)
-        cy.get("[data-slot=control]").should("not.exist")
+        cy.get("[data-slot=select-trigger]").should("not.exist")
       })
     })
   })
@@ -96,15 +100,25 @@ describe("Admin User Management", () => {
     it("loanOfficer users see access denied on admin page", () => {
       cy.clearCookies()
 
-      // Register second user
-      cy.registerAndLogin({ name: "No Access User" }).then((email) => {
-        // Promote to loanOfficer (below admin threshold)
-        cy.task("db:promoteUser", { email, role: "loanOfficer" })
+      // Register second user manually
+      const loEmail = `lo-${Date.now()}@fidexa.org`
+      cy.visit("/register")
+      cy.get("#name").type("No Access User")
+      cy.get("#email").type(loEmail)
+      cy.get("#password").type(password)
+      cy.get("#confirmPassword").type(password)
+      cy.get("button[type=submit]").click()
+      cy.url({ timeout: 15000 }).should("include", "/pending-approval")
 
-        // Visit admin page — should show access denied
-        cy.visit("/admin")
-        cy.contains("Access denied")
-      })
+      // Promote to loanOfficer via DB, then re-login to pick up role
+      cy.task("db:promoteUser", { email: loEmail, role: "loanOfficer" })
+      cy.clearCookies()
+      cy.login(loEmail, password)
+      cy.url({ timeout: 15000 }).should("include", "/dashboard")
+
+      // Visit admin page — should show access denied
+      cy.visit("/admin")
+      cy.contains("Access denied")
     })
   })
 })
