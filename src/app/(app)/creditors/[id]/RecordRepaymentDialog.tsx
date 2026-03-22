@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Loader2 } from "lucide-react"
 import { recordCreditorRepaymentAction } from "@/app/(app)/creditors/actions"
 import {
   Dialog,
@@ -40,7 +41,7 @@ interface Props {
 export function RecordRepaymentDialog({ creditorId, investments, outstandingBalance }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const [investmentId, setInvestmentId] = useState("")
   const [amount, setAmount] = useState("")
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
@@ -68,24 +69,23 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     }
 
     setErrors({})
-    setSubmitting(true)
 
-    try {
-      await recordCreditorRepaymentAction({
-        investmentId,
-        amount: amount.trim(),
-        repaymentDate: date,
-      })
+    startTransition(async () => {
+      try {
+        await recordCreditorRepaymentAction({
+          investmentId,
+          amount: amount.trim(),
+          repaymentDate: date,
+        })
 
-      toast.success("Repayment recorded successfully")
-      setOpen(false)
-      resetForm()
-      router.refresh()
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to record repayment")
-    } finally {
-      setSubmitting(false)
-    }
+        toast.success("Repayment recorded successfully")
+        setOpen(false)
+        resetForm()
+        router.refresh()
+      } catch (err: any) {
+        toast.error(err?.message ?? "Failed to record repayment")
+      }
+    })
   }
 
   return (
@@ -141,7 +141,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="e.g. 500000"
-                disabled={submitting}
+                disabled={isPending}
                 className="flex-1"
               />
             </div>
@@ -157,13 +157,20 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              disabled={submitting}
+              disabled={isPending}
             />
           </div>
 
           <DialogFooter showCloseButton>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Recording..." : "Record Repayment"}
+            <Button type="submit" disabled={isPending}>
+              {isPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Recording...
+                </>
+              ) : (
+                "Record Repayment"
+              )}
             </Button>
           </DialogFooter>
         </form>

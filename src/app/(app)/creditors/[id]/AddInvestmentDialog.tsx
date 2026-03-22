@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Loader2 } from "lucide-react"
 import { addInvestmentAction } from "@/app/(app)/creditors/actions"
 import {
   Dialog,
@@ -23,7 +24,7 @@ interface Props {
 export function AddInvestmentDialog({ creditorId }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
+  const [isPending, startTransition] = useTransition()
   const [amount, setAmount] = useState("")
   const [interestRate, setInterestRate] = useState("10")
   const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
@@ -53,25 +54,24 @@ export function AddInvestmentDialog({ creditorId }: Props) {
     }
 
     setErrors({})
-    setSubmitting(true)
 
-    try {
-      await addInvestmentAction({
-        creditorId,
-        amount: amount.trim(),
-        interestRateMonthly: (Number(interestRate) / 100).toString(),
-        investmentDate: date,
-      })
+    startTransition(async () => {
+      try {
+        await addInvestmentAction({
+          creditorId,
+          amount: amount.trim(),
+          interestRateMonthly: (Number(interestRate) / 100).toString(),
+          investmentDate: date,
+        })
 
-      toast.success("Investment added successfully")
-      setOpen(false)
-      resetForm()
-      router.refresh()
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to add investment")
-    } finally {
-      setSubmitting(false)
-    }
+        toast.success("Investment added successfully")
+        setOpen(false)
+        resetForm()
+        router.refresh()
+      } catch (err: any) {
+        toast.error(err?.message ?? "Failed to add investment")
+      }
+    })
   }
 
   return (
@@ -99,7 +99,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="e.g. 5000000"
-                disabled={submitting}
+                disabled={isPending}
                 className="flex-1"
               />
             </div>
@@ -119,7 +119,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
                 step="0.01"
                 value={interestRate}
                 onChange={(e) => setInterestRate(e.target.value)}
-                disabled={submitting}
+                disabled={isPending}
                 className="flex-1"
               />
               <span className="text-sm text-muted-foreground font-medium w-6 shrink-0">%</span>
@@ -136,13 +136,20 @@ export function AddInvestmentDialog({ creditorId }: Props) {
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              disabled={submitting}
+              disabled={isPending}
             />
           </div>
 
           <DialogFooter showCloseButton>
-            <Button type="submit" disabled={submitting}>
-              {submitting ? "Adding..." : "Add Investment"}
+            <Button type="submit" disabled={isPending}>
+              {isPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Adding...
+                </>
+              ) : (
+                "Add Investment"
+              )}
             </Button>
           </DialogFooter>
         </form>

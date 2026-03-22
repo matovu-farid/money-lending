@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import { MoreHorizontal, Loader2 } from "lucide-react"
@@ -72,17 +73,19 @@ function loanStatusLabel(status: string): string {
 }
 
 export function LoanDetailClient({ loan, payments, customerName }: LoanDetailClientProps) {
+  const router = useRouter()
+
   // Edit dialog state
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [editAmount, setEditAmount] = useState("")
   const [editDate, setEditDate] = useState("")
   const [editReason, setEditReason] = useState("")
-  const [editSubmitting, setEditSubmitting] = useState(false)
+  const [isEditPending, startEditTransition] = useTransition()
 
   // Delete dialog state
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
   const [deleteReason, setDeleteReason] = useState("")
-  const [deleteSubmitting, setDeleteSubmitting] = useState(false)
+  const [isDeletePending, startDeleteTransition] = useTransition()
 
   // Outstanding balance: last active payment's principalBalanceAfter, or loan principal if none
   const activePayments = payments.filter((p) => p.deletedAt === null)
@@ -115,42 +118,44 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
     setDeleteReason("")
   }
 
-  async function handleEditSubmit() {
+  function handleEditSubmit() {
     if (!editingPayment) return
-    setEditSubmitting(true)
-    const result = await editPaymentAction({
-      paymentId: editingPayment.id,
-      amount: editAmount.trim(),
-      paymentDate: editDate ? editDate + "T00:00:00.000Z" : undefined,
-      reason: editReason.trim(),
+    startEditTransition(async () => {
+      const result = await editPaymentAction({
+        paymentId: editingPayment.id,
+        amount: editAmount.trim(),
+        paymentDate: editDate ? editDate + "T00:00:00.000Z" : undefined,
+        reason: editReason.trim(),
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast("Payment updated")
+      closeEditDialog()
+      router.refresh()
     })
-    setEditSubmitting(false)
-
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
-
-    toast("Payment updated")
-    closeEditDialog()
   }
 
-  async function handleDeleteSubmit() {
+  function handleDeleteSubmit() {
     if (!deletingPayment) return
-    setDeleteSubmitting(true)
-    const result = await deletePaymentAction({
-      paymentId: deletingPayment.id,
-      reason: deleteReason.trim(),
+    startDeleteTransition(async () => {
+      const result = await deletePaymentAction({
+        paymentId: deletingPayment.id,
+        reason: deleteReason.trim(),
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast("Payment deleted")
+      closeDeleteDialog()
+      router.refresh()
     })
-    setDeleteSubmitting(false)
-
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
-
-    toast("Payment deleted")
-    closeDeleteDialog()
   }
 
   const loanRef = `LOAN-${loan.id.slice(0, 8).toUpperCase()}`
@@ -320,7 +325,7 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
                 type="text"
                 value={editAmount}
                 onChange={(e) => setEditAmount(e.target.value)}
-                disabled={editSubmitting}
+                disabled={isEditPending}
               />
             </div>
             <div className="space-y-1">
@@ -330,7 +335,7 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
                 type="date"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
-                disabled={editSubmitting}
+                disabled={isEditPending}
               />
             </div>
             <div className="space-y-1">
@@ -340,7 +345,7 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
                 value={editReason}
                 onChange={(e) => setEditReason(e.target.value)}
                 placeholder="Explain what is being corrected and why"
-                disabled={editSubmitting}
+                disabled={isEditPending}
                 maxLength={500}
               />
             </div>
@@ -349,15 +354,15 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
             <Button
               variant="outline"
               onClick={closeEditDialog}
-              disabled={editSubmitting}
+              disabled={isEditPending}
             >
               Discard Changes
             </Button>
             <Button
               onClick={handleEditSubmit}
-              disabled={editSubmitting || !editReason.trim()}
+              disabled={isEditPending || !editReason.trim()}
             >
-              {editSubmitting ? (
+              {isEditPending ? (
                 <>
                   <Loader2 className="animate-spin mr-2 h-4 w-4" />
                   Saving...
@@ -388,7 +393,7 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
                 value={deleteReason}
                 onChange={(e) => setDeleteReason(e.target.value)}
                 placeholder="Explain why this payment is being deleted"
-                disabled={deleteSubmitting}
+                disabled={isDeletePending}
                 maxLength={500}
               />
             </div>
@@ -397,16 +402,16 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
             <Button
               variant="outline"
               onClick={closeDeleteDialog}
-              disabled={deleteSubmitting}
+              disabled={isDeletePending}
             >
               Keep Payment
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteSubmit}
-              disabled={deleteSubmitting || !deleteReason.trim()}
+              disabled={isDeletePending || !deleteReason.trim()}
             >
-              {deleteSubmitting ? (
+              {isDeletePending ? (
                 <>
                   <Loader2 className="animate-spin mr-2 h-4 w-4" />
                   Deleting...
