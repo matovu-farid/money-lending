@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Loader2 } from "lucide-react"
 import { authClient, useSession } from "@/lib/auth-client"
 import { assignRole } from "@/actions/user.actions"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -48,10 +50,12 @@ function formatDate(date: Date | string): string {
 }
 
 export default function AdminPage() {
+  const router = useRouter()
   const { data: session } = useSession()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [loading, setLoading] = useState(true)
-  const [roleUpdating, setRoleUpdating] = useState<string | null>(null)
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
@@ -77,20 +81,23 @@ export default function AdminPage() {
     })
   }, [session, actorLevel])
 
-  async function handleRoleChange(userId: string, newRole: UserRole) {
-    setRoleUpdating(userId)
-    const result = await assignRole({ userId, role: newRole })
-    setRoleUpdating(null)
+  function handleRoleChange(userId: string, newRole: UserRole) {
+    setUpdatingUserId(userId)
+    startTransition(async () => {
+      const result = await assignRole({ userId, role: newRole })
+      setUpdatingUserId(null)
 
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
 
-    setUsers((prev) =>
-      prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
-    )
-    toast.success(`Role updated to ${newRole}`)
+      setUsers((prev) =>
+        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      )
+      toast.success(`Role updated to ${newRole}`)
+      router.refresh()
+    })
   }
 
   if (!session || loading) {
@@ -142,41 +149,44 @@ export default function AdminPage() {
               const userLevel = ROLE_LEVELS[userRole] ?? 0
               // Can only assign roles to users with a level below the actor's level
               const canChangeRole = userLevel < actorLevel && roleOptions.length > 0
-              const isUpdating = roleUpdating === user.id
+              const isUpdating = updatingUserId === user.id
 
               return (
                 <TableRow key={user.id}>
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
-                    {canChangeRole ? (
-                      <Select
-                        value={userRole}
-                        onValueChange={(val: string | null) =>
-                          val && handleRoleChange(user.id, val as UserRole)
-                        }
-                        disabled={isUpdating}
-                      >
-                        <SelectTrigger className="w-36" size="sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {roleOptions.map((role) => (
-                            <SelectItem key={role} value={role}>
-                              {role === "loanOfficer"
-                                ? "Loan Officer"
-                                : role.charAt(0).toUpperCase() + role.slice(1)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="text-sm">
-                        {userRole === "loanOfficer"
-                          ? "Loan Officer"
-                          : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {canChangeRole ? (
+                        <Select
+                          value={userRole}
+                          onValueChange={(val: string | null) =>
+                            val && handleRoleChange(user.id, val as UserRole)
+                          }
+                          disabled={isUpdating}
+                        >
+                          <SelectTrigger className="w-36" size="sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {roleOptions.map((role) => (
+                              <SelectItem key={role} value={role}>
+                                {role === "loanOfficer"
+                                  ? "Loan Officer"
+                                  : role.charAt(0).toUpperCase() + role.slice(1)}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-sm">
+                          {userRole === "loanOfficer"
+                            ? "Loan Officer"
+                            : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+                        </span>
+                      )}
+                      {isUpdating && <Loader2 className="animate-spin h-4 w-4 text-muted-foreground" />}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {user.banned ? (

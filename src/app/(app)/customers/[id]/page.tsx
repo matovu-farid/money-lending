@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useTransition } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { ChevronDown, ChevronUp } from "lucide-react"
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react"
 import { getCustomerAction, updateCustomerAction, changeCustomerStatusAction } from "@/actions/customer.actions"
 import { listLoansAction } from "@/actions/loan.actions"
 import { getPaymentsByLoanAction } from "@/actions/payment.actions"
@@ -96,13 +96,13 @@ export default function CustomerProfilePage() {
   const [editFullName, setEditFullName] = useState("")
   const [editContact, setEditContact] = useState("")
   const [editAddress, setEditAddress] = useState("")
-  const [saving, setSaving] = useState(false)
+  const [isEditPending, startEditTransition] = useTransition()
 
   // Status change state
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [pendingStatus, setPendingStatus] = useState<CustomerStatus | null>(null)
   const [statusReason, setStatusReason] = useState("")
-  const [statusSaving, setStatusSaving] = useState(false)
+  const [isStatusPending, startStatusTransition] = useTransition()
 
   useEffect(() => {
     async function fetchData() {
@@ -174,26 +174,24 @@ export default function CustomerProfilePage() {
     setEditing(false)
   }
 
-  async function handleEditSave() {
+  function handleEditSave() {
     if (!customer) return
-    setSaving(true)
+    startEditTransition(async () => {
+      const result = await updateCustomerAction(customerId, {
+        fullName: editFullName.trim() || undefined,
+        contact: editContact.trim() || undefined,
+        address: editAddress.trim() || undefined,
+      })
 
-    const result = await updateCustomerAction(customerId, {
-      fullName: editFullName.trim() || undefined,
-      contact: editContact.trim() || undefined,
-      address: editAddress.trim() || undefined,
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      setCustomer(result.data)
+      setEditing(false)
+      toast.success("Customer updated successfully")
     })
-
-    setSaving(false)
-
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
-
-    setCustomer(result.data)
-    setEditing(false)
-    toast.success("Customer updated successfully")
   }
 
   function handleStatusSelect(newStatus: string | null) {
@@ -204,24 +202,24 @@ export default function CustomerProfilePage() {
     setStatusDialogOpen(true)
   }
 
-  async function handleStatusConfirm() {
+  function handleStatusConfirm() {
     if (!customer || !pendingStatus || statusReason.trim().length < 10) return
-    setStatusSaving(true)
-    const result = await changeCustomerStatusAction({
-      customerId: customer.id,
-      newStatus: pendingStatus,
-      reason: statusReason,
+    startStatusTransition(async () => {
+      const result = await changeCustomerStatusAction({
+        customerId: customer.id,
+        newStatus: pendingStatus,
+        reason: statusReason,
+      })
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      setCustomer(result.data)
+      setStatusDialogOpen(false)
+      toast.success(`${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`)
+      setPendingStatus(null)
+      setStatusReason("")
     })
-    setStatusSaving(false)
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
-    setCustomer(result.data)
-    setStatusDialogOpen(false)
-    toast.success(`${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`)
-    setPendingStatus(null)
-    setStatusReason("")
   }
 
   function handleStatusCancel() {
@@ -352,7 +350,7 @@ export default function CustomerProfilePage() {
                   id="edit-fullName"
                   value={editFullName}
                   onChange={(e) => setEditFullName(e.target.value)}
-                  disabled={saving}
+                  disabled={isEditPending}
                 />
               </div>
               <div className="space-y-1">
@@ -361,7 +359,7 @@ export default function CustomerProfilePage() {
                   id="edit-contact"
                   value={editContact}
                   onChange={(e) => setEditContact(e.target.value)}
-                  disabled={saving}
+                  disabled={isEditPending}
                 />
               </div>
               <div className="space-y-1">
@@ -370,14 +368,21 @@ export default function CustomerProfilePage() {
                   id="edit-address"
                   value={editAddress}
                   onChange={(e) => setEditAddress(e.target.value)}
-                  disabled={saving}
+                  disabled={isEditPending}
                 />
               </div>
               <div className="flex gap-3">
-                <Button onClick={handleEditSave} disabled={saving}>
-                  {saving ? "Saving..." : "Save"}
+                <Button onClick={handleEditSave} disabled={isEditPending}>
+                  {isEditPending ? (
+                    <>
+                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                      Saving...
+                    </>
+                  ) : (
+                    "Save"
+                  )}
                 </Button>
-                <Button variant="outline" onClick={handleEditCancel} disabled={saving}>
+                <Button variant="outline" onClick={handleEditCancel} disabled={isEditPending}>
                   Cancel
                 </Button>
               </div>
@@ -441,7 +446,7 @@ export default function CustomerProfilePage() {
               value={statusReason}
               onChange={(e) => setStatusReason(e.target.value)}
               placeholder="Provide a reason for this status change..."
-              disabled={statusSaving}
+              disabled={isStatusPending}
             />
             {statusReason.trim().length > 0 && statusReason.trim().length < 10 && (
               <p className="text-xs text-destructive">Reason must be at least 10 characters</p>
@@ -449,15 +454,22 @@ export default function CustomerProfilePage() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={handleStatusCancel} disabled={statusSaving}>
+            <Button variant="outline" onClick={handleStatusCancel} disabled={isStatusPending}>
               Cancel
             </Button>
             <Button
               variant={isBlacklisted ? "destructive" : "default"}
               onClick={handleStatusConfirm}
-              disabled={statusSaving || statusReason.trim().length < 10}
+              disabled={isStatusPending || statusReason.trim().length < 10}
             >
-              {statusSaving ? "Saving..." : "Confirm"}
+              {isStatusPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Saving...
+                </>
+              ) : (
+                "Confirm"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
