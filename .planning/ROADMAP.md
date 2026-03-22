@@ -101,7 +101,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -109,3 +109,16 @@ Phases execute in numeric order: 1 → 2 → 3 → 4
 | 2. Loan Operations | 4/4 | Complete   | 2026-03-20 |
 | 3. Operational Management | 4/4 | Complete   | 2026-03-21 |
 | 4. Financial Reporting | 8/8 | Complete   | 2026-03-21 |
+
+### Phase 5: Add optimistic updates for form submits, loading animations, and TanStack Query integration
+
+**Goal:** Every form in the app provides instant visual feedback — loading spinners on submit, optimistic list updates for add/delete, and TanStack Query for expense/income cache management
+**Requirements**: UX-01, UX-02, UX-03, UX-04, UX-05
+**Depends on:** Phase 4
+**Plans:** 4 plans
+
+Plans:
+- [ ] 05-01-PLAN.md — Install TanStack Query, create Providers/Spinner components, loading skeleton
+- [ ] 05-02-PLAN.md — Upgrade auth + navigate-away forms to useTransition with Loader2 spinners
+- [ ] 05-03-PLAN.md — Upgrade in-place mutation dialogs (loan, creditor, admin, customer) to useTransition
+- [ ] 05-04-PLAN.md — Expense and income lists TanStack Query optimistic mutations
