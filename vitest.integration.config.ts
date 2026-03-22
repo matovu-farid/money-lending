@@ -6,10 +6,12 @@ export default defineConfig({
     environment: "node",
     include: ["src/services/__integration__/*.test.ts"],
     globals: true,
+    globalSetup: ["scripts/pglite-global-setup.ts"],
     setupFiles: ["src/services/__integration__/setup.ts"],
-    // Set CYPRESS before any module is imported (ES import hoisting
-    // means process.env assignments inside setup.ts run AFTER imports).
-    env: { CYPRESS: "true" },
+    env: {
+      CYPRESS: "true",
+      DATABASE_URL_TEST_UNPOOLED: "postgres://localhost:5488/postgres?search_path=test",
+    },
     // Run sequentially — each test suite truncates tables
     sequence: { concurrent: false },
     fileParallelism: false,
