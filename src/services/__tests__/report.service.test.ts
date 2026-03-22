@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, beforeEach } from "vitest"
 import BigNumber from "bignumber.js"
 import { calculateInterest, calculateDaysOverdue, calculateDailyRate } from "@/lib/interest/engine"
+import { Effect } from "effect"
 
 /**
  * Report Service Tests — TDD
@@ -11,10 +12,16 @@ import { calculateInterest, calculateDaysOverdue, calculateDailyRate } from "@/l
  * - Balance Sheet: identity A = L + E
  * - Portfolio: riskFlag threshold (daysOverdue >= 30)
  * - Snapshot: idempotency check (conceptual — no test DB)
- *
- * NOTE: DB-interactive tests are marked .todo (no test DB).
- * Unit tests cover pure logic and service exports.
+ * - DB-mocked tests for service functions
  */
+
+vi.mock("@/lib/db", () => ({
+  db: { select: vi.fn(), insert: vi.fn() },
+}))
+
+vi.mock("@/services/creditor.service", () => ({
+  getSystemCapital: vi.fn(),
+}))
 
 // ----------------------------------------------------------------
 // Test 1: P&L aggregation math
@@ -265,9 +272,327 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     // If alreadyExists, skip insert — no duplicate should be created
   })
 
-  it.todo("generateMonthlySnapshot: inserts pnl and balance_sheet rows (requires test DB)")
-  it.todo("generateMonthlySnapshot: calling twice for same period does not create duplicate (idempotency)")
-  it.todo("getPnlData: queries transactions table for given period with correct date range")
-  it.todo("getBalanceSheetData: computes assets from active loans, liabilities from getSystemCapital")
-  it.todo("getPortfolioData: returns active loans sorted by daysOverdue descending")
+  // ---- DB-mocked tests ----
+
+  let mockedDb: any
+  let mockedGetSystemCapital: any
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    const dbMod = await import("@/lib/db")
+    mockedDb = dbMod.db
+    const creditorMod = await import("@/services/creditor.service")
+    mockedGetSystemCapital = creditorMod.getSystemCapital
+  })
+
+  it("generateMonthlySnapshot: inserts pnl and balance_sheet rows (requires test DB)", async () => {
+    const { generateMonthlySnapshot } = await import("@/services/report.service")
+
+    // 1st select: existing snapshots — none
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // 2nd select: getPnlData → transactions innerJoin
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { type: "credit", amount: "500000", categoryName: "Interest Earned" },
+            { type: "debit", amount: "200000", categoryName: "Rent" },
+          ]),
+        }),
+      }),
+    } as any)
+
+    // 3rd select: getBalanceSheetData → active loans
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "loan-1",
+            principalAmount: "1000000",
+            status: "active",
+            customerId: "cust-1",
+            startDate: new Date("2026-01-01"),
+            interestRate: "0.10",
+            interestRateOverride: null,
+            minInterestDays: 30,
+            minPeriodOverride: null,
+          },
+        ]),
+      }),
+    } as any)
+
+    // 4th select: payments for loan-1
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as any)
+
+    // Mock getSystemCapital
+    vi.mocked(mockedGetSystemCapital).mockReturnValue(
+      Effect.succeed({
+        totalInvested: "3000000.00",
+        totalInterestAccrued: "0.00",
+        totalRepaymentsMade: "0.00",
+        totalOutstanding: "3000000.00",
+      })
+    )
+
+    // 5th select: share capital transactions (innerJoin)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as any)
+
+    // 6th select: all transactions for retained earnings
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          { type: "credit", amount: "500000" },
+          { type: "debit", amount: "200000" },
+        ]),
+      }),
+    } as any)
+
+    // Mock insert
+    const valuesStub = vi.fn().mockResolvedValue(undefined)
+    mockedDb.insert.mockReturnValue({ values: valuesStub })
+
+    await Effect.runPromise(generateMonthlySnapshot("2026-02", "user-1"))
+
+    expect(mockedDb.insert).toHaveBeenCalledTimes(1)
+    expect(valuesStub).toHaveBeenCalledTimes(1)
+
+    const insertedRows = valuesStub.mock.calls[0][0]
+    expect(insertedRows).toHaveLength(2)
+    expect(insertedRows[0].type).toBe("pnl")
+    expect(insertedRows[1].type).toBe("balance_sheet")
+    expect(insertedRows[0].generatedBy).toBe("user-1")
+    expect(insertedRows[1].generatedBy).toBe("user-1")
+  })
+
+  it("generateMonthlySnapshot: calling twice for same period does not create duplicate (idempotency)", async () => {
+    const { generateMonthlySnapshot } = await import("@/services/report.service")
+
+    // Existing snapshots already have both types
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          { type: "pnl" },
+          { type: "balance_sheet" },
+        ]),
+      }),
+    } as any)
+
+    await Effect.runPromise(generateMonthlySnapshot("2026-02", "user-1"))
+
+    // insert should NOT have been called
+    expect(mockedDb.insert).not.toHaveBeenCalled()
+  })
+
+  it("getPnlData: queries transactions table for given period with correct date range", async () => {
+    const { getPnlData } = await import("@/services/report.service")
+
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { type: "credit", amount: "500000", categoryName: "Interest Earned" },
+            { type: "credit", amount: "1000000", categoryName: "Share Capital" },
+            { type: "debit", amount: "200000", categoryName: "Rent" },
+            { type: "debit", amount: "300000", categoryName: "Salaries" },
+          ]),
+        }),
+      }),
+    } as any)
+
+    const result = await Effect.runPromise(getPnlData("2026-02"))
+
+    expect(result.period).toBe("2026-02")
+    expect(result.totalIncome).toBe("1500000.00")
+    expect(result.totalExpenses).toBe("500000.00")
+    expect(result.netProfit).toBe("1000000.00")
+    expect(result.income).toHaveLength(2)
+    expect(result.expenses).toHaveLength(2)
+    expect(result.income).toEqual(
+      expect.arrayContaining([
+        { category: "Interest Earned", amount: "500000.00" },
+        { category: "Share Capital", amount: "1000000.00" },
+      ])
+    )
+    expect(result.expenses).toEqual(
+      expect.arrayContaining([
+        { category: "Rent", amount: "200000.00" },
+        { category: "Salaries", amount: "300000.00" },
+      ])
+    )
+  })
+
+  it("getBalanceSheetData: computes assets from active loans, liabilities from getSystemCapital", async () => {
+    const { getBalanceSheetData } = await import("@/services/report.service")
+
+    // 1st select: active loans
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "loan-1",
+            principalAmount: "5000000",
+            status: "active",
+            customerId: "cust-1",
+            startDate: new Date("2026-01-01"),
+            interestRate: "0.10",
+            interestRateOverride: null,
+            minInterestDays: 30,
+            minPeriodOverride: null,
+          },
+        ]),
+      }),
+    } as any)
+
+    // 2nd select: payments for loan-1 (none — use original principal)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as any)
+
+    // Mock getSystemCapital
+    vi.mocked(mockedGetSystemCapital).mockReturnValue(
+      Effect.succeed({
+        totalInvested: "3000000.00",
+        totalInterestAccrued: "0.00",
+        totalRepaymentsMade: "0.00",
+        totalOutstanding: "3000000.00",
+      })
+    )
+
+    // 3rd select: share capital transactions (innerJoin)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { amount: "1000000" },
+          ]),
+        }),
+      }),
+    } as any)
+
+    // 4th select: all transactions for retained earnings
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          { type: "credit", amount: "2500000" },
+          { type: "debit", amount: "500000" },
+        ]),
+      }),
+    } as any)
+
+    const result = await Effect.runPromise(getBalanceSheetData("2026-02"))
+
+    expect(result.asOf).toBe("2026-02")
+    expect(result.assets.totalLoansOutstanding).toBe("5000000.00")
+    expect(result.liabilities.totalCreditorBalances).toBe("3000000.00")
+    expect(result.equity.shareCapital).toBe("1000000.00")
+    expect(result.equity.retainedEarnings).toBe("2000000.00")
+    expect(result.equity.totalEquity).toBe("3000000.00")
+  })
+
+  it("getPortfolioData: returns active loans sorted by daysOverdue descending", async () => {
+    const { getPortfolioData } = await import("@/services/report.service")
+
+    const now = new Date()
+    // Loan A: 60 days old, Loan B: 10 days old
+    const startDateA = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000)
+    const startDateB = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000)
+
+    // 1st select: active loans (2 loans)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          {
+            id: "loan-a",
+            principalAmount: "5000000",
+            status: "active",
+            customerId: "cust-a",
+            startDate: startDateA,
+            interestRate: "0.10",
+            interestRateOverride: null,
+            minInterestDays: 30,
+            minPeriodOverride: null,
+          },
+          {
+            id: "loan-b",
+            principalAmount: "2000000",
+            status: "active",
+            customerId: "cust-b",
+            startDate: startDateB,
+            interestRate: "0.10",
+            interestRateOverride: null,
+            minInterestDays: 30,
+            minPeriodOverride: null,
+          },
+        ]),
+      }),
+    } as any)
+
+    // 2nd select: customer for loan-a
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ fullName: "Alice" }]),
+      }),
+    } as any)
+
+    // 3rd select: payments for loan-a (none — so overdue)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as any)
+
+    // 4th select: customer for loan-b
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([{ fullName: "Bob" }]),
+      }),
+    } as any)
+
+    // 5th select: payments for loan-b (none)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockResolvedValue([]),
+        }),
+      }),
+    } as any)
+
+    const result = await Effect.runPromise(getPortfolioData())
+
+    expect(result).toHaveLength(2)
+    // Sorted by daysOverdue DESC — loan-a (60 days) should be first
+    expect(result[0].loanId).toBe("loan-a")
+    expect(result[0].customerName).toBe("Alice")
+    expect(result[1].loanId).toBe("loan-b")
+    expect(result[1].customerName).toBe("Bob")
+
+    // loan-a should have more days overdue than loan-b
+    expect(parseInt(result[0].daysOverdue)).toBeGreaterThan(parseInt(result[1].daysOverdue))
+
+    // loan-a at 60 days with no payments should be risk-flagged
+    expect(result[0].riskFlag).toBe(true)
+  })
 })
