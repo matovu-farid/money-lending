@@ -36,6 +36,8 @@ async function applyMigrations(db: PGlite) {
 
 export async function startServer() {
   db = await PGlite.create()
+  // Match Neon's UTC timezone to ensure consistent timestamptz::date casts
+  await db.exec("SET timezone TO 'UTC'")
   await applyMigrations(db)
 
   server = new PGLiteSocketServer({ db, port: PORT, host: "127.0.0.1" })
