@@ -1,7 +1,8 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
+import { Loader2 } from "lucide-react"
 import { authClient } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,24 +18,23 @@ import {
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("")
-  const [loading, setLoading] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
-    setLoading(true)
+    startTransition(async () => {
+      await authClient.requestPasswordReset({
+        email,
+        redirectTo: "/reset-password",
+      })
 
-    await authClient.requestPasswordReset({
-      email,
-      redirectTo: "/reset-password",
+      // Always show success message regardless of whether account exists
+      // (prevents email enumeration attacks)
+      setSubmitted(true)
     })
-
-    // Always show success message regardless of whether account exists
-    // (prevents email enumeration attacks)
-    setSubmitted(true)
-    setLoading(false)
   }
 
   return (
@@ -72,8 +72,15 @@ export default function ForgotPasswordPage() {
               </p>
             )}
 
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Sending..." : "Send reset link"}
+            <Button type="submit" className="w-full" disabled={isPending}>
+              {isPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Sending...
+                </>
+              ) : (
+                "Send Reset Link"
+              )}
             </Button>
           </form>
         )}

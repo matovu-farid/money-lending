@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
 import { signIn } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -20,28 +21,27 @@ export default function LoginPage() {
   const router = useRouter()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    setLoading(true)
     setError(null)
+    startTransition(async () => {
+      const result = await signIn.email({
+        email,
+        password,
+      })
 
-    const result = await signIn.email({
-      email,
-      password,
+      if (result.error) {
+        setError(result.error.message ?? "Invalid email or password. Please try again.")
+        return
+      }
+
+      // Successful sign-in — proxy.ts will redirect based on role
+      router.push("/dashboard")
+      router.refresh()
     })
-
-    if (result.error) {
-      setError(result.error.message ?? "Invalid email or password. Please try again.")
-      setLoading(false)
-      return
-    }
-
-    // Successful sign-in — proxy.ts will redirect based on role
-    router.push("/dashboard")
-    router.refresh()
   }
 
   return (
@@ -91,8 +91,15 @@ export default function LoginPage() {
             </p>
           )}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Signing in..." : "Sign in"}
+          <Button type="submit" className="w-full" disabled={isPending}>
+            {isPending ? (
+              <>
+                <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                Signing in...
+              </>
+            ) : (
+              "Sign In"
+            )}
           </Button>
         </form>
       </CardContent>

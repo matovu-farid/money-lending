@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { Loader2 } from "lucide-react"
 import { signUp } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,10 +23,10 @@ export default function RegisterPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isPending, startTransition] = useTransition()
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     setError(null)
 
@@ -44,25 +45,24 @@ export default function RegisterPage() {
       return
     }
 
-    setLoading(true)
+    startTransition(async () => {
+      const result = await signUp.email({
+        name: name.trim(),
+        email,
+        password,
+      })
 
-    const result = await signUp.email({
-      name: name.trim(),
-      email,
-      password,
+      if (result.error) {
+        setError(result.error.message ?? "Registration failed. Please try again.")
+        return
+      }
+
+      // After signup, redirect to pending-approval.
+      // The first registered user is auto-promoted to superAdmin by Plan 01-03's databaseHook,
+      // and proxy.ts will immediately redirect them to /dashboard since their role is not "unassigned".
+      router.push("/pending-approval")
+      router.refresh()
     })
-
-    if (result.error) {
-      setError(result.error.message ?? "Registration failed. Please try again.")
-      setLoading(false)
-      return
-    }
-
-    // After signup, redirect to pending-approval.
-    // The first registered user is auto-promoted to superAdmin by Plan 01-03's databaseHook,
-    // and proxy.ts will immediately redirect them to /dashboard since their role is not "unassigned".
-    router.push("/pending-approval")
-    router.refresh()
   }
 
   return (
@@ -128,8 +128,15 @@ export default function RegisterPage() {
             </p>
           )}
 
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? "Creating account..." : "Create account"}
+          <Button type="submit" className="w-full" disabled={isPending}>
+            {isPending ? (
+              <>
+                <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                Creating account...
+              </>
+            ) : (
+              "Create Account"
+            )}
           </Button>
         </form>
       </CardContent>
