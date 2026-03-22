@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 05-01-PLAN.md
-last_updated: "2026-03-22T02:01:33.053Z"
+stopped_at: Completed 05-04-PLAN.md
+last_updated: "2026-03-22T02:06:20.681Z"
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 27
-  completed_plans: 24
+  completed_plans: 26
 ---
 
 # Project State
@@ -65,6 +65,7 @@ Plan: 1 of 4
 | Phase 04-financial-reporting P07 | 15 | 2 tasks | 13 files |
 | Phase 04-financial-reporting P08 | 3 | 1 tasks | 3 files |
 | Phase 05 P01 | 2 | 3 tasks | 9 files |
+| Phase 05 P04 | 5 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,8 @@ Recent decisions affecting current work:
 - [Phase 04-financial-reporting]: Month-end cron uses POST not GET — data-modifying operation (snapshot insertion)
 - [Phase 04-financial-reporting]: capitalInSystem shows totalOutstanding from getSystemCapital() — principal + accrued creditor interest
 - [Phase 05]: TanStack Query staleTime set to 60s; QueryClientProvider wraps AppShell; Spinner adds data-testid for Cypress; loading.tsx is zero-JS CSS-only skeleton
+- [Phase 05]: Server Actions return void (throw on error) — onSuccess has no error-in-result guard; rollback only in onError
+- [Phase 05]: Optimistic row removed in onSuccess (not replaced) — revalidatePath handles real data refresh on next navigation
 
 ### Pending Todos
 
@@ -150,6 +153,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-22T02:01:33.051Z
-Stopped at: Completed 05-01-PLAN.md
+Last session: 2026-03-22T02:06:17.242Z
+Stopped at: Completed 05-04-PLAN.md
 Resume file: None
