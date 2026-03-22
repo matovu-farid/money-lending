@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { createCreditorAction, addInvestmentAction } from "@/app/(app)/creditors/actions"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -26,10 +27,10 @@ export default function NewCreditorPage() {
     () => new Date().toISOString().split("T")[0]
   )
 
-  const [submitting, setSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [isPending, startTransition] = useTransition()
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
     const errors: Record<string, string> = {}
@@ -49,27 +50,26 @@ export default function NewCreditorPage() {
     }
 
     setFieldErrors({})
-    setSubmitting(true)
+    startTransition(async () => {
+      try {
+        const creditor = await createCreditorAction({
+          name: name.trim(),
+          contact: contact.trim(),
+          address: address.trim(),
+        })
 
-    try {
-      const creditor = await createCreditorAction({
-        name: name.trim(),
-        contact: contact.trim(),
-        address: address.trim(),
-      })
+        await addInvestmentAction({
+          creditorId: creditor.id,
+          amount: amount.trim(),
+          interestRateMonthly: (Number(interestRateMonthly) / 100).toString(),
+          investmentDate,
+        })
 
-      await addInvestmentAction({
-        creditorId: creditor.id,
-        amount: amount.trim(),
-        interestRateMonthly: (Number(interestRateMonthly) / 100).toString(),
-        investmentDate,
-      })
-
-      window.location.href = "/creditors"
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to register creditor")
-      setSubmitting(false)
-    }
+        router.push("/creditors")
+      } catch (err: any) {
+        toast.error(err?.message ?? "Failed to register creditor")
+      }
+    })
   }
 
   return (
@@ -97,7 +97,7 @@ export default function NewCreditorPage() {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. John Investor"
-                  disabled={submitting}
+                  disabled={isPending}
                 />
                 {fieldErrors.name && (
                   <p className="text-destructive text-xs">{fieldErrors.name}</p>
@@ -113,7 +113,7 @@ export default function NewCreditorPage() {
                   value={contact}
                   onChange={(e) => setContact(e.target.value)}
                   placeholder="Phone number or email"
-                  disabled={submitting}
+                  disabled={isPending}
                 />
                 {fieldErrors.contact && (
                   <p className="text-destructive text-xs">{fieldErrors.contact}</p>
@@ -129,7 +129,7 @@ export default function NewCreditorPage() {
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                   placeholder="e.g. Kampala, Uganda"
-                  disabled={submitting}
+                  disabled={isPending}
                 />
                 {fieldErrors.address && (
                   <p className="text-destructive text-xs">{fieldErrors.address}</p>
@@ -158,7 +158,7 @@ export default function NewCreditorPage() {
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="e.g. 5000000"
-                    disabled={submitting}
+                    disabled={isPending}
                     className="flex-1"
                   />
                 </div>
@@ -179,7 +179,7 @@ export default function NewCreditorPage() {
                     step="0.01"
                     value={interestRateMonthly}
                     onChange={(e) => setInterestRateMonthly(e.target.value)}
-                    disabled={submitting}
+                    disabled={isPending}
                     className="flex-1"
                   />
                   <span className="text-sm text-muted-foreground font-medium w-6 shrink-0">%</span>
@@ -197,7 +197,7 @@ export default function NewCreditorPage() {
                   type="date"
                   value={investmentDate}
                   onChange={(e) => setInvestmentDate(e.target.value)}
-                  disabled={submitting}
+                  disabled={isPending}
                 />
               </div>
             </div>
@@ -205,8 +205,15 @@ export default function NewCreditorPage() {
         </Card>
 
         <div className="flex gap-3">
-          <Button type="submit" form="creditor-form" disabled={submitting}>
-            {submitting ? "Saving..." : "Add Creditor"}
+          <Button type="submit" form="creditor-form" disabled={isPending}>
+            {isPending ? (
+              <>
+                <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                Registering...
+              </>
+            ) : (
+              "Register Creditor"
+            )}
           </Button>
           <Link
             href="/creditors"

@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { createCustomerAction } from "@/actions/customer.actions"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -16,10 +17,10 @@ export default function NewCustomerPage() {
   const [fullName, setFullName] = useState("")
   const [contact, setContact] = useState("")
   const [address, setAddress] = useState("")
-  const [submitting, setSubmitting] = useState(false)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
+  const [isPending, startTransition] = useTransition()
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
     // Client-side required-field checks — no Zod
@@ -34,22 +35,20 @@ export default function NewCustomerPage() {
     }
 
     setFieldErrors({})
-    setSubmitting(true)
+    startTransition(async () => {
+      const result = await createCustomerAction({
+        fullName: fullName.trim(),
+        contact: contact.trim(),
+        address: address.trim(),
+      })
 
-    const result = await createCustomerAction({
-      fullName: fullName.trim(),
-      contact: contact.trim(),
-      address: address.trim(),
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      router.push(`/customers/${result.data.id}`)
     })
-
-    setSubmitting(false)
-
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
-
-    router.push(`/customers/${result.data.id}`)
   }
 
   return (
@@ -75,7 +74,7 @@ export default function NewCustomerPage() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. John Doe"
-                disabled={submitting}
+                disabled={isPending}
               />
               {fieldErrors.fullName && (
                 <p className="text-destructive text-xs">{fieldErrors.fullName}</p>
@@ -90,7 +89,7 @@ export default function NewCustomerPage() {
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
                 placeholder="Phone number or email"
-                disabled={submitting}
+                disabled={isPending}
               />
               {fieldErrors.contact && (
                 <p className="text-destructive text-xs">{fieldErrors.contact}</p>
@@ -105,7 +104,7 @@ export default function NewCustomerPage() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="e.g. Kampala, Uganda"
-                disabled={submitting}
+                disabled={isPending}
               />
               {fieldErrors.address && (
                 <p className="text-destructive text-xs">{fieldErrors.address}</p>
@@ -113,8 +112,15 @@ export default function NewCustomerPage() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={submitting}>
-                {submitting ? "Registering..." : "Register Customer"}
+              <Button type="submit" disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                    Registering...
+                  </>
+                ) : (
+                  "Register Customer"
+                )}
               </Button>
               <Link
                 href="/customers"

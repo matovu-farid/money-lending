@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
+import { toast } from "sonner"
 import { recordPaymentAction } from "@/actions/payment.actions"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,7 +27,7 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
   const [paymentDate, setPaymentDate] = useState(todayISODate())
   const [amount, setAmount] = useState("")
   const [note, setNote] = useState("")
-  const [submitting, setSubmitting] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   const [errors, setErrors] = useState<{ amount?: string; paymentDate?: string }>({})
 
@@ -43,26 +43,26 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
     return Object.keys(nextErrors).length === 0
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!validate()) return
 
-    setSubmitting(true)
-    const result = await recordPaymentAction({
-      loanId,
-      paymentDate: paymentDate + "T00:00:00.000Z",
-      amount: amount.trim(),
-      note: note.trim() || undefined,
+    startTransition(async () => {
+      const result = await recordPaymentAction({
+        loanId,
+        paymentDate: paymentDate + "T00:00:00.000Z",
+        amount: amount.trim(),
+        note: note.trim() || undefined,
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success("Payment recorded successfully")
+      router.push(`/loans/${loanId}`)
     })
-    setSubmitting(false)
-
-    if ("error" in result) {
-      toast.error(result.error)
-      return
-    }
-
-    toast.success("Payment recorded successfully")
-    router.push(`/loans/${loanId}`)
   }
 
   return (
@@ -92,7 +92,7 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
                 type="date"
                 value={paymentDate}
                 onChange={(e) => setPaymentDate(e.target.value)}
-                disabled={submitting}
+                disabled={isPending}
               />
               {errors.paymentDate && (
                 <p className="text-destructive text-xs">{errors.paymentDate}</p>
@@ -113,7 +113,7 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   placeholder="e.g. 150000"
-                  disabled={submitting}
+                  disabled={isPending}
                   className="flex-1"
                 />
               </div>
@@ -130,13 +130,13 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Optional note"
-                disabled={submitting}
+                disabled={isPending}
               />
             </div>
 
             <div className="pt-2">
-              <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
-                {submitting ? (
+              <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
+                {isPending ? (
                   <>
                     <Loader2 className="animate-spin mr-2 h-4 w-4" />
                     Recording...

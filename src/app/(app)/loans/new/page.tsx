@@ -1,7 +1,8 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { getCustomerAction } from "@/actions/customer.actions"
 import { createLoanAction } from "@/actions/loan.actions"
@@ -52,7 +53,7 @@ function NewLoanPageInner() {
   const [step1Errors, setStep1Errors] = useState<Record<string, string>>({})
   const [step2Errors, setStep2Errors] = useState<Record<string, string>>({})
 
-  const [submitting, setSubmitting] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   // Fetch pre-filled customer name
   useEffect(() => {
@@ -104,38 +105,37 @@ function NewLoanPageInner() {
     if (validateStep2()) setStep(3)
   }
 
-  async function handleSubmit() {
-    setSubmitting(true)
-
-    const collateral: CollateralInput = {
-      nature: collateralNature,
-      description: collateralDescription.trim() || undefined,
-    }
-
-    const input: CreateLoanInput = {
-      customerId,
-      principalAmount,
-      interestRate: (parseFloat(interestRateDisplay) / 100).toFixed(10),
-      minInterestDays: 30,
-      startDate: new Date(startDate).toISOString(),
-      collateral,
-    }
-
-    const result = await createLoanAction(input)
-    setSubmitting(false)
-
-    if ("error" in result) {
-      if (result.error === "Incomplete loan requirements" && "details" in result) {
-        const details = result.details as { missing?: string[] }
-        toast.error(`Missing fields: ${details.missing?.join(", ") ?? "unknown"}`)
-      } else {
-        toast.error(result.error)
+  function handleSubmit() {
+    startTransition(async () => {
+      const collateral: CollateralInput = {
+        nature: collateralNature,
+        description: collateralDescription.trim() || undefined,
       }
-      return
-    }
 
-    toast.success("Loan issued successfully")
-    router.push(`/customers/${customerId}`)
+      const input: CreateLoanInput = {
+        customerId,
+        principalAmount,
+        interestRate: (parseFloat(interestRateDisplay) / 100).toFixed(10),
+        minInterestDays: 30,
+        startDate: new Date(startDate).toISOString(),
+        collateral,
+      }
+
+      const result = await createLoanAction(input)
+
+      if ("error" in result) {
+        if (result.error === "Incomplete loan requirements" && "details" in result) {
+          const details = result.details as { missing?: string[] }
+          toast.error(`Missing fields: ${details.missing?.join(", ") ?? "unknown"}`)
+        } else {
+          toast.error(result.error)
+        }
+        return
+      }
+
+      toast.success("Loan issued successfully")
+      router.push(`/customers/${customerId}`)
+    })
   }
 
   return (
@@ -372,11 +372,18 @@ function NewLoanPageInner() {
             )}
 
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" onClick={() => setStep(2)} disabled={submitting}>
+              <Button variant="outline" onClick={() => setStep(2)} disabled={isPending}>
                 Back
               </Button>
-              <Button onClick={handleSubmit} disabled={submitting}>
-                {submitting ? "Issuing Loan..." : "Issue Loan"}
+              <Button onClick={handleSubmit} disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                    Issuing Loan...
+                  </>
+                ) : (
+                  "Issue Loan"
+                )}
               </Button>
             </div>
           </CardContent>
