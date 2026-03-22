@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed quick/260322-s7a
-last_updated: "2026-03-22T20:24:00.000Z"
+stopped_at: Completed quick/260322-sl5
+last_updated: "2026-03-22T20:46:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -146,6 +146,7 @@ Recent decisions affecting current work:
 - [05-03]: Admin page keeps updatingUserId state for per-row spinner identification — useTransition alone can't distinguish which row triggered it
 - [05-03]: loan-detail-client uses two separate useTransition hooks for edit vs delete — independent in-flight tracking required for two dialogs
 - [quick-s7a]: Loans created as active immediately — no pending status; disbursement is off-app before recording; deletePayment reverts to active not pending
+- [quick-sl5]: Temporary loan officer edit privilege is UI-only via ?new=1 URL param — server actions enforce admin+ only; deleteLoan is hard delete in FK order with audit log written before deletion
 
 ### Pending Todos
 
@@ -163,6 +164,7 @@ None yet.
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
 | 260322-s7a | Remove pending loan status - loans are active immediately on creation | 2026-03-22 | 2343065 | [260322-s7a-remove-pending-loan-status-loans-are-act](./quick/260322-s7a-remove-pending-loan-status-loans-are-act/) |
+| 260322-sl5 | Admin edit/delete loans with temporary loan officer window | 2026-03-22 | 59e3500 | [260322-sl5-admin-edit-delete-loans-with-temporary-l](./quick/260322-sl5-admin-edit-delete-loans-with-temporary-l/) |
 
 ## Session Continuity
 
