@@ -1,6 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
+import { useMutation } from "@tanstack/react-query"
+import { toast } from "sonner"
 import {
   Table,
   TableBody,
@@ -66,6 +68,7 @@ type Transaction = {
   referenceType: string | null
   referenceId: string | null
   createdAt: Date
+  isOptimistic?: boolean
 }
 
 type Category = {
@@ -99,8 +102,8 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
   const [categories, setCategories] = useState<Category[]>(initialCategories)
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions)
-  const [isPending, startTransition] = useTransition()
+  const [localTransactions, setLocalTransactions] = useState<Transaction[]>(initialTransactions)
+  const [_isCategoryPending, startCategoryTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
 
   // Form state
@@ -117,6 +120,62 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
     setError(null)
   }
 
+  const addMutation = useMutation({
+    mutationFn: (input: CreateExpenseInput) => recordExpenseAction(input),
+    onMutate: async (input) => {
+      const category = categories.find((c) => c.id === input.categoryId)
+      const optimistic: Transaction = {
+        id: `optimistic-${Date.now()}`,
+        type: "debit",
+        amount: input.amount,
+        categoryId: input.categoryId,
+        categoryName: category?.name ?? "Unknown",
+        description: input.notes ?? null,
+        transactionDate: new Date(input.transactionDate),
+        recordedBy: "",
+        referenceType: null,
+        referenceId: null,
+        createdAt: new Date().toISOString() as unknown as Date,
+        isOptimistic: true,
+      }
+      const previous = [...localTransactions]
+      setLocalTransactions((prev) => [optimistic, ...prev])
+      return { previous, optimisticId: optimistic.id }
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previous) setLocalTransactions(context.previous)
+      toast.error("Failed to record expense")
+    },
+    onSuccess: (_result, _input, context) => {
+      // Remove the optimistic row — page revalidation will bring in the real data
+      if (context?.optimisticId) {
+        setLocalTransactions((prev) =>
+          prev.filter((t) => t.id !== context.optimisticId)
+        )
+      }
+      toast.success("Expense recorded")
+      setIsSheetOpen(false)
+      resetForm()
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (transactionId: string) => deleteExpenseAction(transactionId),
+    onMutate: async (transactionId) => {
+      const previous = [...localTransactions]
+      setLocalTransactions((prev) => prev.filter((t) => t.id !== transactionId))
+      setDeleteTarget(null)
+      return { previous }
+    },
+    onError: (_err, _id, context) => {
+      if (context?.previous) setLocalTransactions(context.previous)
+      toast.error("Failed to delete expense")
+    },
+    onSuccess: () => {
+      toast.success("Expense deleted")
+    },
+  })
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!formDate || !formCategoryId || !formAmount) {
@@ -129,40 +188,29 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
       transactionDate: formDate,
       notes: formNotes || undefined,
     }
-    startTransition(async () => {
-      try {
-        await recordExpenseAction(input)
-        setIsSheetOpen(false)
-        resetForm()
-        // Refresh by reloading page data
-        window.location.reload()
-      } catch {
-        setError("Failed to record expense. Please try again.")
-      }
-    })
+    addMutation.mutate(input)
   }
 
   async function handleDelete() {
     if (!deleteTarget) return
-    startTransition(async () => {
-      try {
-        await deleteExpenseAction(deleteTarget)
-        setDeleteTarget(null)
-        window.location.reload()
-      } catch {
-        setError("Failed to delete expense. Please try again.")
-      }
-    })
+    deleteMutation.mutate(deleteTarget)
   }
 
   async function handleAddCategory() {
     if (!newCategoryName.trim()) return
-    startTransition(async () => {
+    startCategoryTransition(async () => {
       try {
         await createExpenseCategoryAction({ name: newCategoryName.trim(), type: "expense" })
+        // Optimistically add to local categories list
+        const newCat: Category = {
+          id: `temp-${Date.now()}`,
+          name: newCategoryName.trim(),
+          type: "expense",
+          isDefault: false,
+        }
+        setCategories((prev) => [...prev, newCat])
         setNewCategoryName("")
         setIsAddCategoryOpen(false)
-        window.location.reload()
       } catch {
         setError("Failed to add category.")
       }
@@ -174,18 +222,24 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-semibold">Expenses</h1>
-          <Button onClick={() => { resetForm(); setIsSheetOpen(true) }}>
+          <Button
+            onClick={() => { resetForm(); setIsSheetOpen(true) }}
+            disabled={addMutation.isPending}
+          >
             Add Expense
           </Button>
         </div>
 
-        {transactions.length === 0 ? (
+        {localTransactions.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
             <p className="text-lg font-medium">No expenses recorded</p>
             <p className="text-muted-foreground">
               Record your first expense to start tracking outflows.
             </p>
-            <Button onClick={() => { resetForm(); setIsSheetOpen(true) }}>
+            <Button
+              onClick={() => { resetForm(); setIsSheetOpen(true) }}
+              disabled={addMutation.isPending}
+            >
               Add Expense
             </Button>
           </div>
@@ -201,8 +255,11 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
               </TableRow>
             </TableHeader>
             <TableBody>
-              {transactions.map((tx) => (
-                <TableRow key={tx.id}>
+              {localTransactions.map((tx) => (
+                <TableRow
+                  key={tx.id}
+                  className={tx.isOptimistic ? "opacity-50" : ""}
+                >
                   <TableCell>{formatDate(tx.transactionDate)}</TableCell>
                   <TableCell>{tx.categoryName}</TableCell>
                   <TableCell>{formatAmount(tx.amount)}</TableCell>
@@ -213,6 +270,11 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                       size="sm"
                       className="text-destructive hover:text-destructive"
                       onClick={() => setDeleteTarget(tx.id)}
+                      disabled={
+                        tx.isOptimistic ||
+                        deleteMutation.isPending ||
+                        (deleteMutation.variables === tx.id && deleteMutation.isPending)
+                      }
                     >
                       Delete
                     </Button>
@@ -279,7 +341,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                         type="button"
                         size="sm"
                         onClick={handleAddCategory}
-                        disabled={!newCategoryName.trim() || isPending}
+                        disabled={!newCategoryName.trim() || _isCategoryPending}
                       >
                         Add
                       </Button>
@@ -321,8 +383,8 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
               {error && <p className="text-sm text-destructive">{error}</p>}
 
               <SheetFooter>
-                <Button type="submit" disabled={isPending} className="w-full">
-                  {isPending ? "Saving..." : "Record Expense"}
+                <Button type="submit" disabled={addMutation.isPending} className="w-full">
+                  {addMutation.isPending ? "Saving..." : "Record Expense"}
                 </Button>
               </SheetFooter>
             </form>
@@ -342,16 +404,16 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
               <Button
                 variant="outline"
                 onClick={() => setDeleteTarget(null)}
-                disabled={isPending}
+                disabled={deleteMutation.isPending}
               >
                 Keep expense
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleDelete}
-                disabled={isPending}
+                disabled={deleteMutation.isPending}
               >
-                {isPending ? "Deleting..." : "Delete expense"}
+                {deleteMutation.isPending ? "Deleting..." : "Delete expense"}
               </Button>
             </DialogFooter>
           </DialogContent>
