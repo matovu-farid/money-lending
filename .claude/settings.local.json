@@ -1,4 +1,7 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "permissions": {
     "allow": [
       "Skill(gsd:discuss-phase)",
@@ -7,7 +10,35 @@
       "Bash(git commit:*)",
       "WebFetch(domain:www.better-auth.com)",
       "Bash(node:*)",
-      "Skill(gsd:execute-phase)"
+      "Skill(gsd:execute-phase)",
+      "WebSearch",
+      "Bash(grep -r \"vitest\\\\|test\\(\" /Users/faridmatovu/projects/money-lending/src --include=*.ts --include=*.tsx)",
+      "Bash(ls:*)",
+      "Bash(CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST npx next dev -p 3001 2>&1)",
+      "Bash(npx cypress:*)",
+      "mcp__plugin_context7_context7__resolve-library-id",
+      "mcp__plugin_context7_context7__query-docs",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(lsof -ti:3000)",
+      "Bash(xargs kill:*)",
+      "Bash(lsof -ti:3001)",
+      "Bash(CYPRESS=true npx next dev -p 3000 2>&1)",
+      "Bash(npx vitest:*)",
+      "Bash(find /Users/faridmatovu/projects/money-lending -path */node_modules -prune -o -name *.test.* -o -name *.spec.* -type f)",
+      "Bash(wc -l /Users/faridmatovu/projects/money-lending/cypress/e2e/*.cy.ts)",
+      "Bash(time curl:*)",
+      "Bash(CYPRESS=true DATABASE_URL=\"$DATABASE_URL_TEST\" next dev -p 3000 2>&1)",
+      "Bash(source .env)",
+      "Bash(CYPRESS=true DATABASE_URL=\"$DATABASE_URL_TEST\" npx next dev -p 3000)",
+      "Bash(curl:*)",
+      "Bash(CYPRESS=true npx next dev -p 3000)",
+      "Bash(npx tsx:*)",
+      "Bash(pnpm run:*)",
+      "Bash(pnpm vitest:*)",
+      "Skill(gsd:verify-work)",
+      "Skill(gsd:add-phase)",
+      "Bash(git rm:*)",
+      "Bash(git reset:*)"
     ]
   }
 }

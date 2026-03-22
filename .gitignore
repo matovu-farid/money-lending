@@ -15,6 +15,7 @@
 /private_docs
 cypress/screenshots
 cypress/videos
+.claude/worktrees
 
 
 # next.js
