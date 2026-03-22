@@ -1,9 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useTransition } from "react"
 import Link from "next/link"
-import { listLoansAction } from "@/actions/loan.actions"
-import type { Loan } from "@/types"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
+import { MoreHorizontal, Loader2 } from "lucide-react"
+import { listLoansAction, getCurrentUserRoleAction, deleteLoanAction } from "@/actions/loan.actions"
+import type { Loan, UserRole } from "@/types"
+import { ROLE_LEVELS } from "@/types"
 import {
   Table,
   TableBody,
@@ -13,7 +17,22 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { buttonVariants } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { cn, formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
@@ -32,20 +51,62 @@ function loanStatusLabel(status: string): string {
 }
 
 export default function LoansPage() {
+  const router = useRouter()
   const [loans, setLoans] = useState<Loan[]>([])
   const [loading, setLoading] = useState(true)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<UserRole>("unassigned")
+
+  // Delete dialog state
+  const [deletingLoanId, setDeletingLoanId] = useState<string | null>(null)
+  const [deleteReason, setDeleteReason] = useState("")
+  const [isDeletePending, startDeleteTransition] = useTransition()
+
+  const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
 
   useEffect(() => {
-    listLoansAction().then((result) => {
-      if ("error" in result) {
-        setFetchError(result.error ?? "Unknown error")
+    Promise.all([
+      listLoansAction(),
+      getCurrentUserRoleAction(),
+    ]).then(([loansResult, role]) => {
+      if ("error" in loansResult) {
+        setFetchError(loansResult.error ?? "Unknown error")
       } else {
-        setLoans(result.data)
+        setLoans(loansResult.data)
       }
+      setUserRole(role)
       setLoading(false)
     })
   }, [])
+
+  function openDeleteDialog(loanId: string) {
+    setDeletingLoanId(loanId)
+    setDeleteReason("")
+  }
+
+  function closeDeleteDialog() {
+    setDeletingLoanId(null)
+    setDeleteReason("")
+  }
+
+  function handleDeleteSubmit() {
+    if (!deletingLoanId) return
+    startDeleteTransition(async () => {
+      const result = await deleteLoanAction({
+        loanId: deletingLoanId,
+        reason: deleteReason.trim(),
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast("Loan deleted")
+      setLoans((prev) => prev.filter((l) => l.id !== deletingLoanId))
+      closeDeleteDialog()
+    })
+  }
 
   if (loading) {
     return (
@@ -88,6 +149,7 @@ export default function LoansPage() {
               <TableHead>Interest Rate</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Start Date</TableHead>
+              {isAdmin && <TableHead className="w-12">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -104,11 +166,89 @@ export default function LoansPage() {
                 <TableCell>
                   {formatDate(loan.startDate)}
                 </TableCell>
+                {isAdmin && (
+                  <TableCell>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        aria-label="Loan actions"
+                        className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors"
+                      >
+                        <MoreHorizontal className="h-4 w-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() => router.push(`/loans/${loan.id}`)}
+                        >
+                          View
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => router.push(`/loans/${loan.id}?edit=1`)}
+                        >
+                          Edit
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => openDeleteDialog(loan.id)}
+                          variant="destructive"
+                        >
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
         </Table>
       )}
+
+      {/* Delete Loan Dialog */}
+      <Dialog open={deletingLoanId !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete loan?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete the loan and all associated payments. This action cannot be undone.
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="listDeleteReason">Reason for deletion</Label>
+              <Textarea
+                id="listDeleteReason"
+                value={deleteReason}
+                onChange={(e) => setDeleteReason(e.target.value)}
+                placeholder="Explain why this loan is being deleted"
+                disabled={isDeletePending}
+                maxLength={500}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeDeleteDialog}
+              disabled={isDeletePending}
+            >
+              Keep Loan
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteSubmit}
+              disabled={isDeletePending || !deleteReason.trim()}
+            >
+              {isDeletePending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Loan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

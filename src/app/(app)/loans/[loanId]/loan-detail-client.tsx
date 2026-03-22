@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import { MoreHorizontal, Loader2 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
+import { updateLoanAction, deleteLoanAction } from "@/actions/loan.actions"
 import type { Loan, Payment } from "@/types"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
@@ -40,6 +41,8 @@ interface LoanDetailClientProps {
   loan: Loan
   payments: Payment[]
   customerName: string | null
+  canModify: boolean
+  openEditOnMount?: boolean
 }
 
 function formatUGX(amount: string | null | undefined): string {
@@ -65,20 +68,43 @@ function loanStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-export function LoanDetailClient({ loan, payments, customerName }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, payments, customerName, canModify, openEditOnMount }: LoanDetailClientProps) {
   const router = useRouter()
 
-  // Edit dialog state
+  // Edit payment dialog state
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [editAmount, setEditAmount] = useState("")
   const [editDate, setEditDate] = useState("")
   const [editReason, setEditReason] = useState("")
   const [isEditPending, startEditTransition] = useTransition()
 
-  // Delete dialog state
+  // Delete payment dialog state
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
   const [deleteReason, setDeleteReason] = useState("")
   const [isDeletePending, startDeleteTransition] = useTransition()
+
+  // Edit loan dialog state
+  const [editingLoan, setEditingLoan] = useState(false)
+  const [loanPrincipal, setLoanPrincipal] = useState(loan.principalAmount)
+  const [loanInterestRate, setLoanInterestRate] = useState(
+    (parseFloat(loan.interestRate) * 100).toFixed(1)
+  )
+  const [loanStartDate, setLoanStartDate] = useState(formatDateForInput(loan.startDate))
+  const [loanEditReason, setLoanEditReason] = useState("")
+  const [isLoanEditPending, startLoanEditTransition] = useTransition()
+
+  // Delete loan dialog state
+  const [deletingLoan, setDeletingLoan] = useState(false)
+  const [loanDeleteReason, setLoanDeleteReason] = useState("")
+  const [isLoanDeletePending, startLoanDeleteTransition] = useTransition()
+
+  // Auto-open edit dialog if navigated from list with ?edit=1
+  useEffect(() => {
+    if (openEditOnMount && canModify) {
+      openLoanEditDialog()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Outstanding balance: last active payment's principalBalanceAfter, or loan principal if none
   const activePayments = payments.filter((p) => p.deletedAt === null)
@@ -109,6 +135,29 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
   function closeDeleteDialog() {
     setDeletingPayment(null)
     setDeleteReason("")
+  }
+
+  function openLoanEditDialog() {
+    setLoanPrincipal(loan.principalAmount)
+    setLoanInterestRate((parseFloat(loan.interestRate) * 100).toFixed(1))
+    setLoanStartDate(formatDateForInput(loan.startDate))
+    setLoanEditReason("")
+    setEditingLoan(true)
+  }
+
+  function closeLoanEditDialog() {
+    setEditingLoan(false)
+    setLoanEditReason("")
+  }
+
+  function openLoanDeleteDialog() {
+    setLoanDeleteReason("")
+    setDeletingLoan(true)
+  }
+
+  function closeLoanDeleteDialog() {
+    setDeletingLoan(false)
+    setLoanDeleteReason("")
   }
 
   function handleEditSubmit() {
@@ -148,6 +197,50 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
       toast("Payment deleted")
       closeDeleteDialog()
       router.refresh()
+    })
+  }
+
+  function handleLoanEditSubmit() {
+    startLoanEditTransition(async () => {
+      // Convert interest rate from percentage display (e.g. "10") to decimal (e.g. "0.10")
+      const interestRateDecimal = loanInterestRate.trim()
+        ? (parseFloat(loanInterestRate) / 100).toFixed(10)
+        : undefined
+
+      const result = await updateLoanAction({
+        loanId: loan.id,
+        principalAmount: loanPrincipal.trim() || undefined,
+        interestRate: interestRateDecimal,
+        startDate: loanStartDate ? new Date(loanStartDate).toISOString() : undefined,
+        reason: loanEditReason.trim(),
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast("Loan updated")
+      closeLoanEditDialog()
+      router.refresh()
+    })
+  }
+
+  function handleLoanDeleteSubmit() {
+    startLoanDeleteTransition(async () => {
+      const result = await deleteLoanAction({
+        loanId: loan.id,
+        reason: loanDeleteReason.trim(),
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast("Loan deleted")
+      closeLoanDeleteDialog()
+      router.push("/loans")
     })
   }
 
@@ -204,6 +297,22 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
           >
             Print Receipt
           </Link>
+          {canModify && (
+            <>
+              <Button
+                variant="outline"
+                onClick={openLoanEditDialog}
+              >
+                Edit Loan
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={openLoanDeleteDialog}
+              >
+                Delete Loan
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -304,7 +413,7 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
         />
       )}
 
-      {/* Edit Dialog */}
+      {/* Edit Payment Dialog */}
       <Dialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closeEditDialog() }}>
         <DialogContent>
           <DialogHeader>
@@ -368,7 +477,7 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
+      {/* Delete Payment Dialog */}
       <Dialog open={deletingPayment !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
         <DialogContent>
           <DialogHeader>
@@ -411,6 +520,130 @@ export function LoanDetailClient({ loan, payments, customerName }: LoanDetailCli
                 </>
               ) : (
                 "Delete Payment"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Loan Dialog */}
+      <Dialog open={editingLoan} onOpenChange={(open) => { if (!open) closeLoanEditDialog() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Loan</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1">
+              <Label htmlFor="loanPrincipal">Principal Amount (UGX)</Label>
+              <Input
+                id="loanPrincipal"
+                type="text"
+                value={loanPrincipal}
+                onChange={(e) => setLoanPrincipal(e.target.value)}
+                disabled={isLoanEditPending}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="loanInterestRate">Interest Rate (% per month)</Label>
+              <Input
+                id="loanInterestRate"
+                type="number"
+                min="0"
+                step="0.1"
+                value={loanInterestRate}
+                onChange={(e) => setLoanInterestRate(e.target.value)}
+                disabled={isLoanEditPending}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="loanStartDate">Start Date</Label>
+              <Input
+                id="loanStartDate"
+                type="date"
+                value={loanStartDate}
+                onChange={(e) => setLoanStartDate(e.target.value)}
+                disabled={isLoanEditPending}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="loanEditReason">Reason for edit</Label>
+              <Textarea
+                id="loanEditReason"
+                value={loanEditReason}
+                onChange={(e) => setLoanEditReason(e.target.value)}
+                placeholder="Explain what is being corrected and why"
+                disabled={isLoanEditPending}
+                maxLength={500}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeLoanEditDialog}
+              disabled={isLoanEditPending}
+            >
+              Discard Changes
+            </Button>
+            <Button
+              onClick={handleLoanEditSubmit}
+              disabled={isLoanEditPending || !loanEditReason.trim()}
+            >
+              {isLoanEditPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Saving...
+                </>
+              ) : (
+                "Save Changes"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Loan Dialog */}
+      <Dialog open={deletingLoan} onOpenChange={(open) => { if (!open) closeLoanDeleteDialog() }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete loan?</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete the loan and all associated payments. This action cannot be undone.
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="loanDeleteReason">Reason for deletion</Label>
+              <Textarea
+                id="loanDeleteReason"
+                value={loanDeleteReason}
+                onChange={(e) => setLoanDeleteReason(e.target.value)}
+                placeholder="Explain why this loan is being deleted"
+                disabled={isLoanDeletePending}
+                maxLength={500}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeLoanDeleteDialog}
+              disabled={isLoanDeletePending}
+            >
+              Keep Loan
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleLoanDeleteSubmit}
+              disabled={isLoanDeletePending || !loanDeleteReason.trim()}
+            >
+              {isLoanDeletePending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Deleting...
+                </>
+              ) : (
+                "Delete Loan"
               )}
             </Button>
           </DialogFooter>

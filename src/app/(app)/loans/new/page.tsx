@@ -1,24 +1,19 @@
 "use client"
 
-import { Suspense, useEffect, useState, useTransition } from "react"
+import { Suspense, useEffect, useRef, useState, useTransition } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { getCustomerAction } from "@/actions/customer.actions"
-import { createLoanAction } from "@/actions/loan.actions"
+import { createLoanAction, getCollateralNaturesAction } from "@/actions/loan.actions"
 import { calculateLoanSummary } from "@/lib/interest"
 import type { CreateLoanInput, CollateralInput } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { formatNumberWithCommas, stripCommas, formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
   const num = parseFloat(amount)
@@ -29,11 +24,10 @@ function todayISODate(): string {
   return new Date().toISOString().split("T")[0]
 }
 
-const COLLATERAL_NATURES = ["Land Title", "Vehicle Log Book", "Other"]
-
 function NewLoanPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
   const [step, setStep] = useState(1)
@@ -48,6 +42,11 @@ function NewLoanPageInner() {
   // Step 2 — Collateral
   const [collateralNature, setCollateralNature] = useState("")
   const [collateralDescription, setCollateralDescription] = useState("")
+  const [knownNatures, setKnownNatures] = useState<string[]>([])
+  const [showNatureSuggestions, setShowNatureSuggestions] = useState(false)
+  const [highlightedIndex, setHighlightedIndex] = useState(-1)
+  const natureInputRef = useRef<HTMLInputElement>(null)
+  const suggestionsRef = useRef<HTMLUListElement>(null)
 
   // Validation errors
   const [step1Errors, setStep1Errors] = useState<Record<string, string>>({})
@@ -55,16 +54,36 @@ function NewLoanPageInner() {
 
   const [isPending, startTransition] = useTransition()
 
-  // Fetch pre-filled customer name
+  // Fetch known collateral natures for autocomplete
   useEffect(() => {
-    if (prefilledCustomerId) {
-      getCustomerAction(prefilledCustomerId).then((result) => {
-        if ("data" in result && result.data) {
-          setCustomerName(result.data.fullName)
-        }
-      })
+    getCollateralNaturesAction().then(setKnownNatures)
+  }, [])
+
+  const filteredNatures = collateralNature.trim()
+    ? knownNatures.filter((n) =>
+        n.toLowerCase().includes(collateralNature.toLowerCase())
+      )
+    : knownNatures
+
+  // Resolve pre-filled customer name: check TanStack Query cache first
+  // (seeded by the customer detail page), then fall back to a server fetch.
+  useEffect(() => {
+    if (!prefilledCustomerId) return
+
+    // Try cache first — avoids the flash of raw ID while the DB fetch resolves
+    const cached = queryClient.getQueryData<{ fullName: string }>(["customer", prefilledCustomerId])
+    if (cached?.fullName) {
+      setCustomerName(cached.fullName)
+      return
     }
-  }, [prefilledCustomerId])
+
+    getCustomerAction(prefilledCustomerId).then((result) => {
+      if ("data" in result && result.data) {
+        setCustomerName(result.data.fullName)
+        queryClient.setQueryData(["customer", prefilledCustomerId], result.data)
+      }
+    })
+  }, [prefilledCustomerId, queryClient])
 
   // Interest preview (computed on render when at step 3)
   const loanSummary =
@@ -134,7 +153,7 @@ function NewLoanPageInner() {
       }
 
       toast.success("Loan issued successfully")
-      router.push(`/customers/${customerId}`)
+      router.push(`/loans/${result.data.id}?new=1`)
     })
   }
 
@@ -208,11 +227,11 @@ function NewLoanPageInner() {
               <Label htmlFor="principalAmount">Amount (UGX)</Label>
               <Input
                 id="principalAmount"
-                type="number"
-                min="0"
-                value={principalAmount}
-                onChange={(e) => setPrincipalAmount(e.target.value)}
-                placeholder="e.g. 1000000"
+                type="text"
+                inputMode="numeric"
+                value={formatNumberWithCommas(principalAmount)}
+                onChange={(e) => setPrincipalAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                placeholder="e.g. 1,000,000"
               />
               {step1Errors.principalAmount && (
                 <p className="text-destructive text-xs">{step1Errors.principalAmount}</p>
@@ -262,23 +281,71 @@ function NewLoanPageInner() {
             <CardTitle>Collateral</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1">
+            <div className="space-y-1 relative">
               <Label htmlFor="collateralNature">Nature</Label>
-              <Select
+              <Input
+                ref={natureInputRef}
+                id="collateralNature"
+                type="text"
+                autoComplete="off"
                 value={collateralNature}
-                onValueChange={(val: string | null) => setCollateralNature(val ?? "")}
-              >
-                <SelectTrigger id="collateralNature" className="w-full">
-                  <SelectValue placeholder="Select collateral type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COLLATERAL_NATURES.map((nature) => (
-                    <SelectItem key={nature} value={nature}>
+                onChange={(e) => {
+                  setCollateralNature(e.target.value)
+                  setShowNatureSuggestions(true)
+                  setHighlightedIndex(-1)
+                }}
+                onFocus={() => setShowNatureSuggestions(true)}
+                onBlur={() => {
+                  // Delay to allow click on suggestion
+                  setTimeout(() => setShowNatureSuggestions(false), 150)
+                }}
+                onKeyDown={(e) => {
+                  if (!showNatureSuggestions || filteredNatures.length === 0) return
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault()
+                    setHighlightedIndex((i) =>
+                      i < filteredNatures.length - 1 ? i + 1 : 0
+                    )
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault()
+                    setHighlightedIndex((i) =>
+                      i > 0 ? i - 1 : filteredNatures.length - 1
+                    )
+                  } else if (e.key === "Enter" && highlightedIndex >= 0) {
+                    e.preventDefault()
+                    setCollateralNature(filteredNatures[highlightedIndex])
+                    setShowNatureSuggestions(false)
+                    setHighlightedIndex(-1)
+                  } else if (e.key === "Escape") {
+                    setShowNatureSuggestions(false)
+                  }
+                }}
+                placeholder="e.g. Land Title, Vehicle Log Book"
+              />
+              {showNatureSuggestions && filteredNatures.length > 0 && (
+                <ul
+                  ref={suggestionsRef}
+                  className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-auto rounded-md border border-border bg-popover py-1 shadow-md"
+                >
+                  {filteredNatures.map((nature, i) => (
+                    <li
+                      key={nature}
+                      className={`cursor-pointer px-3 py-1.5 text-sm ${
+                        i === highlightedIndex
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/50"
+                      }`}
+                      onMouseDown={() => {
+                        setCollateralNature(nature)
+                        setShowNatureSuggestions(false)
+                        setHighlightedIndex(-1)
+                      }}
+                    >
                       {nature}
-                    </SelectItem>
+                    </li>
                   ))}
-                </SelectContent>
-              </Select>
+                </ul>
+              )}
               {step2Errors.collateralNature && (
                 <p className="text-destructive text-xs">{step2Errors.collateralNature}</p>
               )}
@@ -328,7 +395,7 @@ function NewLoanPageInner() {
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Start Date</dt>
-                  <dd className="font-medium">{startDate}</dd>
+                  <dd className="font-medium">{formatDate(startDate)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Interest Rate</dt>

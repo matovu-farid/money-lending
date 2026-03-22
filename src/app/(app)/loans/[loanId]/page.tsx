@@ -5,14 +5,20 @@ import { getPaymentsForLoan } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { eq } from "drizzle-orm"
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
+import { ROLE_LEVELS, type UserRole } from "@/types"
 import { LoanDetailClient } from "./loan-detail-client"
 
 export default async function LoanDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ loanId: string }>
+  searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
   const { loanId } = await params
+  const sp = await searchParams
 
   // Fetch loan (404 if not found)
   const loanResult = await Effect.runPromise(
@@ -44,7 +50,33 @@ export default async function LoanDetailPage({
     // Non-critical — page still renders without customer name
   }
 
+  // Determine canModify based on role
+  const session = await auth.api.getSession({ headers: await headers() })
+  const role = ((session?.user?.role ?? "unassigned") as UserRole)
+  const userId = session?.user?.id ?? ""
+
+  let canModify = false
+  if (ROLE_LEVELS[role] >= ROLE_LEVELS.admin) {
+    // Admin+ can always edit/delete any loan
+    canModify = true
+  } else if (role === "loanOfficer") {
+    // Loan officers can only edit/delete a loan they just created (freshly created = ?new=1 param)
+    // and only their own loan — once they navigate away or reload, the privilege is gone
+    const freshlyCreated = sp.new === "1"
+    if (freshlyCreated && loan.issuedBy === userId) {
+      canModify = true
+    }
+  }
+
+  const openEdit = sp.edit === "1" && canModify
+
   return (
-    <LoanDetailClient loan={loan} payments={payments} customerName={customerName} />
+    <LoanDetailClient
+      loan={loan}
+      payments={payments}
+      customerName={customerName}
+      canModify={canModify}
+      openEditOnMount={openEdit}
+    />
   )
 }
