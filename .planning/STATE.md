@@ -158,6 +158,12 @@ None yet.
 - RESOLVED [Pre-phase]: Client's operating timezone confirmed as Africa/Kampala — set in .env and .env.example
 - RESOLVED [Phase 1]: Drizzle ORM version confirmed as 0.45.1 and migration API confirmed — schema written
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260322-s7a | Remove pending loan status - loans are active immediately on creation | 2026-03-22 | 2343065 | [260322-s7a-remove-pending-loan-status-loans-are-act](./quick/260322-s7a-remove-pending-loan-status-loans-are-act/) |
+
 ## Session Continuity
 
 Last session: 2026-03-22T20:20:00Z
