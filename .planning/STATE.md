@@ -143,6 +143,8 @@ Recent decisions affecting current work:
 - [05-02]: creditors/new: window.location.href replaced with router.push for correct transition tracking inside startTransition
 - [Phase 05]: Server Actions return void (throw on error) — onSuccess has no error-in-result guard; rollback only in onError
 - [Phase 05]: Optimistic row removed in onSuccess (not replaced) — revalidatePath handles real data refresh on next navigation
+- [05-03]: Admin page keeps updatingUserId state for per-row spinner identification — useTransition alone can't distinguish which row triggered it
+- [05-03]: loan-detail-client uses two separate useTransition hooks for edit vs delete — independent in-flight tracking required for two dialogs
 
 ### Pending Todos
 
@@ -157,6 +159,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-22T02:06:17.242Z
-Stopped at: Completed 05-04-PLAN.md
+Last session: 2026-03-22T02:08:26Z
+Stopped at: Completed 05-03-PLAN.md
 Resume file: None
