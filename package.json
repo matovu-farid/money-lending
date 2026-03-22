@@ -14,9 +14,9 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:test:setup": "npx tsx scripts/setup-test-db.ts",
-    "test:e2e": "CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST next dev -p 3001 & sleep 5 && cypress run; kill %1 2>/dev/null",
-    "test:e2e:open": "CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST next dev -p 3001 & cypress open; kill %1 2>/dev/null",
+    "pglite:start": "tsx scripts/pglite-server.ts",
+    "test:e2e": "tsx scripts/pglite-server.ts & sleep 3 && CYPRESS=true DATABASE_URL_TEST_UNPOOLED='postgres://localhost:5488/postgres?search_path=test' next dev -p 3001 & sleep 5 && cypress run; kill %1 %2 2>/dev/null",
+    "test:e2e:open": "tsx scripts/pglite-server.ts & sleep 3 && CYPRESS=true DATABASE_URL_TEST_UNPOOLED='postgres://localhost:5488/postgres?search_path=test' next dev -p 3001 & sleep 5 && cypress open; kill %1 %2 2>/dev/null",
     "cypress:open": "cypress open",
     "cypress:run": "cypress run"
   },
