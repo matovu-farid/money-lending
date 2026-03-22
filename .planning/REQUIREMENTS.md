@@ -94,6 +94,14 @@
 - [x] **RPTS-04**: System auto-generates Balance Sheet: Assets (loans outstanding), Liabilities (creditor balances), Equity (share capital)
 - [x] **RPTS-05**: User can export all reports to PDF and Excel formats
 
+### User Experience (UX)
+
+- [ ] **UX-01**: Loading spinners on all form submit buttons — every submit button shows a spinning icon and pending text while the Server Action or auth call is in progress
+- [ ] **UX-02**: All forms use React 19 `useTransition` instead of `useState(submitting)` — scheduler-aware pending state, no manual `setSubmitting(true/false)` boilerplate
+- [ ] **UX-03**: Optimistic add/delete for expense and income lists — new rows appear instantly before server confirms; deleted rows disappear instantly; failed mutations rollback and show error toast
+- [ ] **UX-04**: TanStack Query infrastructure — `QueryClientProvider` wraps the `(app)` route group via a `Providers` component; `useMutation` used for optimistic list operations
+- [ ] **UX-05**: Page-level loading skeleton — `loading.tsx` in the `(app)` route group renders an `animate-pulse` skeleton during page transitions
+
 ### Infrastructure (INFR)
 
 - [ ] **INFR-01**: PostgreSQL database with NUMERIC(15,2) monetary columns (UGX), audit log table (records every payment CUD with actor, timestamp, before/after values), and schema migrations
@@ -187,17 +195,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INFR-04     | Phase 2 | Complete |
 | INFR-05     | Phase 1 | In Progress (bignumber.js installed, no-float pattern enforced in schema design, 01-01) |
 | INFR-06     | Phase 1 | In Progress (Effect.js error types defined in 01-01; full service layer in 01-04/05) |
+| UX-01       | Phase 5 | Planned |
+| UX-02       | Phase 5 | Planned |
+| UX-03       | Phase 5 | Planned |
+| UX-04       | Phase 5 | Planned |
+| UX-05       | Phase 5 | Planned |
 
 **Coverage:**
 
-- v1 requirements: 52 total (AUTH×5, CUST×7, LOAN×11, RCPT×3, RISK×4, ALRT×2, CRED×6, FINC×3, RPTS×5, INFR×6)
-- Phase 1: 21 requirements (AUTH-01–05, CUST-01–04, LOAN-01–05, LOAN-10–11, INFR-01–03, INFR-05–06)
-- Phase 2: 9 requirements (LOAN-06–09, RCPT-01–03, ALRT-02, INFR-04)
-- Phase 3: 9 requirements (CUST-05–07, RISK-01–04, ALRT-01, RPTS-01)
-- Phase 4: 13 requirements (CRED-01–06, FINC-01–03, RPTS-02–05)
+- v1 requirements: 57 total (AUTH x5, CUST x7, LOAN x11, RCPT x3, RISK x4, ALRT x2, CRED x6, FINC x3, RPTS x5, UX x5, INFR x6)
+- Phase 1: 21 requirements (AUTH-01-05, CUST-01-04, LOAN-01-05, LOAN-10-11, INFR-01-03, INFR-05-06)
+- Phase 2: 9 requirements (LOAN-06-09, RCPT-01-03, ALRT-02, INFR-04)
+- Phase 3: 9 requirements (CUST-05-07, RISK-01-04, ALRT-01, RPTS-01)
+- Phase 4: 13 requirements (CRED-01-06, FINC-01-03, RPTS-02-05)
+- Phase 5: 5 requirements (UX-01-05)
 - Unmapped: 0
 
 ---
 
 _Requirements defined: 2026-03-19_
-_Last updated: 2026-03-19 after roadmap creation_
+_Last updated: 2026-03-22 after Phase 5 planning_
