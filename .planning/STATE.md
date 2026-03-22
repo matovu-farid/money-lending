@@ -67,6 +67,10 @@ Plan: 2 of 8
 
 ## Accumulated Context
 
+### Roadmap Evolution
+
+- Phase 5 added: Add optimistic updates for form submits, loading animations, and TanStack Query integration
+
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.

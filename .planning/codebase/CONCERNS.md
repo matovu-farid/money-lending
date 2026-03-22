@@ -1,92 +1,55 @@
 # Concerns
 
-**Analysis Date:** 2026-03-19
+**Last Updated:** 2026-03-22
 
-## Critical Issues
+## Resolved Issues
 
-### 1. No Test Infrastructure
-**File:** `package.json` — no test script or test dependencies
-**Impact:** Financial calculation bugs undetectable; regressions ship silently
-**Fix:** Add Vitest + React Testing Library before writing business logic
-**Priority:** Critical — must resolve before implementing loan/payment logic
+### 1. ~~No Test Infrastructure~~ — RESOLVED
+Vitest unit tests (97), integration tests (60), and Cypress E2E (~95) all passing.
 
-### 2. No Database Layer
-**Impact:** No persistence — application cannot function as a money-lending platform
-**Fix:** Choose and configure ORM (Prisma recommended) + database before Phase 1
-**Priority:** Critical — blocking all domain functionality
+### 2. ~~No Database Layer~~ — RESOLVED
+Drizzle ORM 0.45.1 with Neon PostgreSQL. 17 tables across customers, loans, payments, creditors, transactions, auth, etc.
 
-### 3. No Authentication System
-**Impact:** No user identity, no access control, no session management
-**Fix:** Integrate Clerk or NextAuth.js early; needed for all protected routes
-**Priority:** Critical — all financial data requires authentication
+### 3. ~~No Authentication System~~ — RESOLVED
+Better Auth with RBAC plugin. Email verification via Resend. First user auto-promoted to Super Admin.
 
-### 4. No Input Validation Framework
-**Impact:** User inputs to API routes unvalidated — data integrity and security risk
-**Fix:** Add Zod for schema validation at API boundaries
-**Priority:** Critical — financial applications require strict validation
+### 4. ~~No Input Validation Framework~~ — RESOLVED
+TypeScript types at service boundaries. No Zod per project decision — types are sufficient.
 
-### 5. No Audit Logging
-**Impact:** Financial transactions require audit trail for compliance and debugging
-**Fix:** Implement audit log table/service before any financial write operations
-**Priority:** Critical for financial domain
+### 5. ~~No Audit Logging~~ — RESOLVED
+`writeAuditLog` in every write operation (loan, payment, creditor, customer status change). Uses direct await inside Drizzle transactions.
 
-## High Priority Issues
+### 6. ~~No Role-Based Access Control~~ — RESOLVED
+Better Auth RBAC plugin with admin/superAdmin roles. Middleware-based checks via proxy.ts.
 
-### 6. No Role-Based Access Control
-**Impact:** Loans involve multiple roles (borrower, lender, admin) — no RBAC pattern exists
-**Fix:** Design and implement middleware-based RBAC before building loan features
-**Priority:** High
+## Active Issues
 
-### 7. No Environment Configuration Example
-**File:** No `.env.example` file exists
-**Impact:** Developers and deployment have no reference for required env vars
-**Fix:** Create `.env.example` with all required variables (db url, auth keys, etc.)
-**Priority:** High
+### 7. Integration Test Speed
+**Impact:** Integration tests take ~6 minutes due to Neon network latency
+**Mitigation:** Consider PGlite for local in-memory testing (eliminates cold starts, deadlocks, connection routing issues)
+**Priority:** Low — tests pass reliably; this is a DX improvement
 
 ### 8. React Compiler Enabled Experimentally
 **File:** `next.config.ts` — `reactCompiler: true`
-**Impact:** Experimental feature may cause unexpected behavior; limited ecosystem support
-**Fix:** Evaluate necessity; disable if issues arise during development
-**Priority:** Medium
+**Impact:** Experimental feature in Next.js 16; may cause unexpected behavior
+**Priority:** Medium — monitor for issues
 
-## Medium Priority Issues
-
-### 9. No Prettier Configuration
-**Impact:** Code formatting inconsistency across team
-**Fix:** Add `.prettierrc` and `prettier` dev dependency
-**Priority:** Medium
-
-### 10. No Error Boundary Implementation
+### 9. No Error Boundary Implementation
 **Impact:** Unhandled runtime errors will crash the entire UI
 **Fix:** Add `error.tsx` files in App Router route segments
 **Priority:** Medium
 
-### 11. pnpm Workspace Configured But Single Package
-**File:** `pnpm-workspace.yaml`
-**Impact:** Workspace overhead with no current benefit; may indicate planned monorepo
-**Note:** Investigate if monorepo architecture is intended
-**Priority:** Low — informational
-
 ## Security Considerations
 
-**Financial application security checklist (not yet addressed):**
-- [ ] SQL injection prevention (via ORM parameterized queries)
-- [ ] CSRF protection (Next.js provides via SameSite cookies)
+**Financial application security (status):**
+- [x] SQL injection prevention (Drizzle ORM parameterized queries)
+- [x] CSRF protection (Next.js SameSite cookies)
+- [x] Secure session management (Better Auth)
+- [x] Audit trail for all financial operations
 - [ ] Rate limiting on API routes
 - [ ] Sensitive data encryption at rest
 - [ ] PII handling compliance
-- [ ] Secure session management
-- [ ] Input sanitization
-
-## Tech Debt
-
-**Current state:** Effectively zero application tech debt — this is a fresh scaffold.
-
-**Risks to watch as development begins:**
-- Business logic leaking into API route handlers (should live in services layer)
-- Interest calculation logic duplicated across endpoints
-- No separation between domain logic and infrastructure concerns
 
 ---
 
-*Concerns analysis: 2026-03-19*
+*Updated: 2026-03-22*
