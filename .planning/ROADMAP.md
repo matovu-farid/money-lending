@@ -43,8 +43,8 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 **Plans:** 2/2 plans complete
 
 Plans:
-- [ ] 06-01-PLAN.md — Data layer: types, listPayments service (JOIN query), Server Action, integration tests, partial index
-- [ ] 06-02-PLAN.md — UI: PaymentsClient with filter bar, table, pagination, edit/delete actions, CSV export, sidebar unlock
+- [x] 06-01-PLAN.md — Data layer: types, listPayments service (JOIN query), Server Action, integration tests, partial index
+- [x] 06-02-PLAN.md — UI: PaymentsClient with filter bar, table, pagination, edit/delete actions, CSV export, sidebar unlock
 
 ### Phase 7: Daily Collections View
 **Goal**: Loan officers can see a date-navigable summary of what was collected on any given day and which active loans are due for payment today
@@ -55,11 +55,11 @@ Plans:
   2. User can see the per-loan breakdown of payments recorded for the selected day
   3. User can pick any date using a date picker and the summary and breakdown update to reflect that day
   4. User can see a list of active loans that have not received a payment in 30 or more days, indicating they are due today
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 07-01: Data layer — DailyCollectionsSummary type, getDailyCollections service (timezone-aware), getDailyCollectionsAction, use-daily-collections hook
-- [ ] 07-02: UI — DailyCollectionsTab with date picker, summary stats, due-today list with days-since-last-payment column
+- [ ] 07-01-PLAN.md — Data layer: types, daily-collections service (timezone-aware), server actions, TanStack Query hooks, unit + integration tests
+- [ ] 07-02-PLAN.md — UI: Tab integration in PaymentsClient, DailyCollectionsTab with date picker, summary cards, breakdown table, due-today list, Cypress E2E tests
 
 ### Phase 8: Quick-Record Workflow
 **Goal**: Loan officers can record a payment for any active loan directly from the Payments page without leaving it, and receive a receipt link immediately after success
@@ -85,6 +85,6 @@ Plans:
 | 3. Operational Management | v1.0 | 4/4 | Complete | 2026-03-21 |
 | 4. Financial Reporting | v1.0 | 8/8 | Complete | 2026-03-21 |
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
-| 6. Global Payments List | 2/2 | Complete   | 2026-03-23 | - |
-| 7. Daily Collections View | v1.1 | 0/2 | Not started | - |
+| 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
+| 7. Daily Collections View | v1.1 | 0/2 | Planning complete | - |
 | 8. Quick-Record Workflow | v1.1 | 0/2 | Not started | - |
