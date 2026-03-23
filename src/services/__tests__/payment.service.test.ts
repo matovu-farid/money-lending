@@ -671,7 +671,7 @@ describe("Payment Service", () => {
     it("returns empty array for user with no payments", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
-      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue({ rows: [] })
+      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue([])
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
       const result = await Effect.runPromise(getRecentlyCollectedLoans("unknown-user"))
@@ -695,7 +695,7 @@ describe("Payment Service", () => {
         },
       ]
 
-      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue({ rows: mockRows })
+      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue(mockRows)
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
       const result = await Effect.runPromise(getRecentlyCollectedLoans("user-1"))
@@ -725,7 +725,7 @@ describe("Payment Service", () => {
     it("uses default limit of 5 when no limit provided", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
-      const executeMock = vi.fn().mockResolvedValue({ rows: [] })
+      const executeMock = vi.fn().mockResolvedValue([])
       ;(mockedDb.execute as any) = executeMock
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")

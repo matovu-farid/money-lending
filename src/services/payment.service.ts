@@ -609,7 +609,8 @@ export const getRecentlyCollectedLoans = (
 ): Effect.Effect<RecentlyCollectedLoan[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const result = await db.execute(sql`
+      // drizzle postgres-js: db.execute returns rows directly (RowList), not { rows: [] }
+      const rows = await db.execute(sql`
         SELECT * FROM (
           SELECT DISTINCT ON (p.loan_id)
             p.loan_id,
@@ -625,7 +626,7 @@ export const getRecentlyCollectedLoans = (
         ORDER BY sub.payment_date DESC
         LIMIT ${limit}
       `)
-      return result.rows.map((row: any) => ({
+      return Array.from(rows).map((row: any) => ({
         loanId: row.loan_id as string,
         customerName: row.customer_name as string,
         paymentDate: new Date(row.payment_date as string),

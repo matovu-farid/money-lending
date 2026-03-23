@@ -9,6 +9,8 @@ import {
   deletePayment,
   getPaymentsForLoan,
   listPayments,
+  searchActiveLoans,
+  getRecentlyCollectedLoans,
 } from "@/services/payment.service"
 import { loans } from "@/lib/db/schema/loans"
 import { auditLog } from "@/lib/db/schema/audit"
@@ -823,6 +825,230 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         .from(loans)
         .where(eq(loans.id, loan.id))
       expect(reverted.status).toBe("active")
+    })
+  })
+
+  // =========================================================================
+  // Phase 8: searchActiveLoans
+  // =========================================================================
+
+  describe("searchActiveLoans", () => {
+    it("returns active loans matching customer name (case-insensitive partial match)", async () => {
+      const customer = await Effect.runPromise(
+        createCustomer({ fullName: "Sarah Mutesi", contact: "+256700000010", address: "Kampala" })
+      )
+      const loan = await makeLoan(customer.id)
+
+      const results = await Effect.runPromise(searchActiveLoans("sarah"))
+
+      expect(results.length).toBeGreaterThanOrEqual(1)
+      const match = results.find((r) => r.loanId === loan.id)
+      expect(match).toBeDefined()
+      expect(match!.customerName).toBe("Sarah Mutesi")
+      expect(match!.loanId).toBe(loan.id)
+    })
+
+    it("returns empty array when no loans match", async () => {
+      await makeCustomer()
+      const results = await Effect.runPromise(searchActiveLoans("xyz999"))
+      expect(results).toHaveLength(0)
+    })
+
+    it("does not return fully_paid loans", async () => {
+      const customer = await Effect.runPromise(
+        createCustomer({ fullName: "Fully Paid Customer", contact: "+256700000011", address: "Kampala" })
+      )
+      const loan = await makeLoan(customer.id, "100000.00", "0.10")
+
+      // Pay off the loan completely: interest=10,000 + principal=100,000 = 110,000
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31T09:00:00Z", amount: "110000" },
+          "test-actor"
+        )
+      )
+
+      const results = await Effect.runPromise(searchActiveLoans("Fully Paid"))
+      expect(results).toHaveLength(0)
+    })
+
+    it("does not return soft-deleted loans", async () => {
+      const customer = await Effect.runPromise(
+        createCustomer({ fullName: "Deleted Loan Customer", contact: "+256700000012", address: "Kampala" })
+      )
+      const loan = await makeLoan(customer.id)
+
+      // Soft-delete the loan via testDb
+      await testDb
+        .update(loans)
+        .set({ deletedAt: new Date() })
+        .where(eq(loans.id, loan.id))
+
+      const results = await Effect.runPromise(searchActiveLoans("Deleted Loan"))
+      expect(results).toHaveLength(0)
+    })
+
+    it("returns empty array for query shorter than 2 chars", async () => {
+      await makeCustomer()
+      const results = await Effect.runPromise(searchActiveLoans("a"))
+      expect(results).toHaveLength(0)
+    })
+
+    it("returns empty array for empty string", async () => {
+      await makeCustomer()
+      const results = await Effect.runPromise(searchActiveLoans(""))
+      expect(results).toHaveLength(0)
+    })
+  })
+
+  // =========================================================================
+  // Phase 8: getRecentlyCollectedLoans
+  // =========================================================================
+
+  describe("getRecentlyCollectedLoans", () => {
+    it("returns empty array for user with no payment history", async () => {
+      const results = await Effect.runPromise(getRecentlyCollectedLoans("unknown-user-id"))
+      expect(results).toHaveLength(0)
+    })
+
+    it("returns most recent payment date per loan (no duplicates for same loan)", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "5000000.00", "0.10")
+
+      // Record 2 payments on the same loan
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2026-01-01T09:00:00Z", amount: "50000" },
+          "collector-a"
+        )
+      )
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2026-02-01T09:00:00Z", amount: "50000" },
+          "collector-a"
+        )
+      )
+
+      const results = await Effect.runPromise(getRecentlyCollectedLoans("collector-a"))
+
+      // Should return only 1 entry (DISTINCT ON loan_id)
+      expect(results).toHaveLength(1)
+      expect(results[0].loanId).toBe(loan.id)
+      // Should return the most recent payment date
+      expect(results[0].paymentDate.toISOString().slice(0, 10)).toBe("2026-02-01")
+    })
+
+    it("orders results by most recent payment first", async () => {
+      const c1 = await Effect.runPromise(
+        createCustomer({ fullName: "Order Test Alpha", contact: "+256700001001", address: "A" })
+      )
+      const c2 = await Effect.runPromise(
+        createCustomer({ fullName: "Order Test Beta", contact: "+256700001002", address: "B" })
+      )
+      const l1 = await makeLoan(c1.id, "5000000.00")
+      const l2 = await makeLoan(c2.id, "5000000.00")
+
+      // Older payment on l1, newer on l2
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: l1.id, paymentDate: "2026-01-01T09:00:00Z", amount: "50000" },
+          "collector-b"
+        )
+      )
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: l2.id, paymentDate: "2026-02-01T09:00:00Z", amount: "50000" },
+          "collector-b"
+        )
+      )
+
+      const results = await Effect.runPromise(getRecentlyCollectedLoans("collector-b"))
+      expect(results).toHaveLength(2)
+      // Most recent first
+      expect(results[0].paymentDate >= results[1].paymentDate).toBe(true)
+    })
+
+    it("excludes soft-deleted payments", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "5000000.00")
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2026-03-01T09:00:00Z", amount: "50000" },
+          "collector-c"
+        )
+      )
+
+      // Soft-delete the payment
+      await Effect.runPromise(
+        deletePayment({ paymentId: payment.id, reason: "Duplicate" }, "collector-c")
+      )
+
+      const results = await Effect.runPromise(getRecentlyCollectedLoans("collector-c"))
+      expect(results).toHaveLength(0)
+    })
+
+    it("filters by recordedBy user — only sees own collected loans", async () => {
+      const c1 = await Effect.runPromise(
+        createCustomer({ fullName: "User Filter Alpha", contact: "+256700002001", address: "A" })
+      )
+      const c2 = await Effect.runPromise(
+        createCustomer({ fullName: "User Filter Beta", contact: "+256700002002", address: "B" })
+      )
+      const l1 = await makeLoan(c1.id, "5000000.00")
+      const l2 = await makeLoan(c2.id, "5000000.00")
+
+      // collector-x records on l1, collector-y records on l2
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: l1.id, paymentDate: "2026-03-01T09:00:00Z", amount: "50000" },
+          "collector-x"
+        )
+      )
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: l2.id, paymentDate: "2026-03-02T09:00:00Z", amount: "50000" },
+          "collector-y"
+        )
+      )
+
+      const resultsX = await Effect.runPromise(getRecentlyCollectedLoans("collector-x"))
+      const resultsY = await Effect.runPromise(getRecentlyCollectedLoans("collector-y"))
+
+      expect(resultsX).toHaveLength(1)
+      expect(resultsX[0].loanId).toBe(l1.id)
+
+      expect(resultsY).toHaveLength(1)
+      expect(resultsY[0].loanId).toBe(l2.id)
+    })
+
+    it("respects the limit parameter — returns at most 5 by default", async () => {
+      const userId = "collector-limit"
+
+      // Create 6 customers with loans and payments
+      for (let i = 0; i < 6; i++) {
+        const customer = await Effect.runPromise(
+          createCustomer({
+            fullName: `Limit Test Customer ${i}`,
+            contact: `+25670000300${i}`,
+            address: "Kampala",
+          })
+        )
+        const loan = await makeLoan(customer.id, "5000000.00")
+        await Effect.runPromise(
+          recordPayment(
+            {
+              loanId: loan.id,
+              paymentDate: `2026-0${(i % 9) + 1}-01T09:00:00Z`,
+              amount: "50000",
+            },
+            userId
+          )
+        )
+      }
+
+      const results = await Effect.runPromise(getRecentlyCollectedLoans(userId, 5))
+      expect(results).toHaveLength(5)
     })
   })
 })
