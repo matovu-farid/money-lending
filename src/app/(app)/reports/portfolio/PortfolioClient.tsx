@@ -109,16 +109,16 @@ export function PortfolioClient({
                   <TableCell className="font-medium">
                     {entry.customerName}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right font-mono tabular-nums">
                     {formatUGX(entry.principalAmount)}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right font-mono tabular-nums">
                     {formatUGX(entry.outstandingBalance)}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right font-mono tabular-nums">
                     {formatUGX(entry.interestAccrued)}
                   </TableCell>
-                  <TableCell className="text-right">
+                  <TableCell className="text-right font-mono tabular-nums">
                     {entry.daysOverdue}
                   </TableCell>
                   <TableCell>

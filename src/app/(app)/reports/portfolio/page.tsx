@@ -11,9 +11,9 @@ export default async function PortfolioReportPage() {
     <div className="space-y-6 p-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Loan Portfolio</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">Portfolio Report</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Active loans with interest accrued and risk flags
+            Loan portfolio analysis
           </p>
         </div>
       </div>

@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { PrintButton } from "@/app/(app)/receipts/disbursement/[loanId]/print-button"
+import { formatDate } from "@/lib/utils"
 
 export default async function RepaymentReceiptPage({
   params,
@@ -71,12 +72,6 @@ export default async function RepaymentReceiptPage({
   const formatCurrency = (value: string | number) =>
     `UGX ${new Intl.NumberFormat("en-UG").format(Number(value))}`
 
-  const formatDate = (date: Date | string) =>
-    new Date(date).toLocaleDateString("en-UG", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    })
 
   const receiptNumber = `PAY-${paymentId.slice(0, 8).toUpperCase()}`
   const loanReference = loan ? `LOAN-${loan.id.slice(0, 8).toUpperCase()}` : "—"
@@ -104,7 +99,7 @@ export default async function RepaymentReceiptPage({
       <div className="receipt-body bg-white text-black border border-border rounded-lg p-8 print:border-none print:rounded-none print:p-0">
         {/* Header */}
         <div className="mb-4">
-          <h1 className="text-lg font-semibold">Payment Receipt</h1>
+          <h1 className="text-lg font-semibold tracking-tight">Payment Receipt</h1>
           <p className="font-mono text-xs text-muted-foreground mt-1">
             {receiptNumber}
           </p>
@@ -133,19 +128,19 @@ export default async function RepaymentReceiptPage({
 
           <div className="flex justify-between">
             <dt className="text-xs text-muted-foreground">Payment amount</dt>
-            <dd className="text-sm font-medium">
+            <dd className="text-sm font-medium font-mono tabular-nums">
               {formatCurrency(payment.amount)}
             </dd>
           </div>
 
           <div className="flex justify-between">
             <dt className="text-xs text-muted-foreground">Interest paid</dt>
-            <dd className="text-sm">{formatCurrency(payment.interestPortion)}</dd>
+            <dd className="text-sm font-mono tabular-nums">{formatCurrency(payment.interestPortion)}</dd>
           </div>
 
           <div className="flex justify-between">
             <dt className="text-xs text-muted-foreground">Principal paid</dt>
-            <dd className="text-sm">
+            <dd className="text-sm font-mono tabular-nums">
               {formatCurrency(payment.principalPortion)}
             </dd>
           </div>
@@ -156,7 +151,7 @@ export default async function RepaymentReceiptPage({
             <dt className="text-xs text-muted-foreground">
               Outstanding balance after payment
             </dt>
-            <dd className="text-sm font-medium">
+            <dd className="text-sm font-medium font-mono tabular-nums">
               {formatCurrency(payment.principalBalanceAfter)}
             </dd>
           </div>

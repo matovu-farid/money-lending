@@ -127,13 +127,13 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
               <tbody>
                 <tr className="border-b border-muted">
                   <td className="py-2">Total Loans Outstanding</td>
-                  <td className="py-2 text-right">
+                  <td className="py-2 text-right font-mono tabular-nums">
                     {formatUGX(data.assets.totalLoansOutstanding)}
                   </td>
                 </tr>
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Assets</td>
-                  <td className="py-2 px-1 text-right">
+                  <td className="py-2 px-1 text-right font-mono tabular-nums">
                     {formatUGX(data.assets.totalLoansOutstanding)}
                   </td>
                 </tr>
@@ -150,13 +150,13 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
               <tbody>
                 <tr className="border-b border-muted">
                   <td className="py-2">Total Creditor Balances</td>
-                  <td className="py-2 text-right">
+                  <td className="py-2 text-right font-mono tabular-nums">
                     {formatUGX(data.liabilities.totalCreditorBalances)}
                   </td>
                 </tr>
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Liabilities</td>
-                  <td className="py-2 px-1 text-right">
+                  <td className="py-2 px-1 text-right font-mono tabular-nums">
                     {formatUGX(data.liabilities.totalCreditorBalances)}
                   </td>
                 </tr>
@@ -173,19 +173,19 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
               <tbody>
                 <tr className="border-b border-muted">
                   <td className="py-2">Share Capital</td>
-                  <td className="py-2 text-right">
+                  <td className="py-2 text-right font-mono tabular-nums">
                     {formatUGX(data.equity.shareCapital)}
                   </td>
                 </tr>
                 <tr className="border-b border-muted">
                   <td className="py-2">Retained Earnings</td>
-                  <td className="py-2 text-right">
+                  <td className="py-2 text-right font-mono tabular-nums">
                     {formatUGX(data.equity.retainedEarnings)}
                   </td>
                 </tr>
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Equity</td>
-                  <td className="py-2 px-1 text-right">
+                  <td className="py-2 px-1 text-right font-mono tabular-nums">
                     {formatUGX(data.equity.totalEquity)}
                   </td>
                 </tr>
@@ -197,7 +197,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
           <div className="border-t-2 pt-3">
             <div className="flex items-center justify-between font-bold text-base">
               <span>Total Liabilities + Equity</span>
-              <span>
+              <span className="font-mono tabular-nums">
                 {formatUGX(String(totalLiabilitiesPlusEquity))}
               </span>
             </div>

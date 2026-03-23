@@ -136,12 +136,12 @@ export function PnlClient({ data, period }: PnlClientProps) {
                   {data.income.map((row) => (
                     <tr key={row.category} className="border-b border-muted">
                       <td className="py-2">{row.category}</td>
-                      <td className="py-2 text-right">{formatUGX(row.amount)}</td>
+                      <td className="py-2 text-right font-mono tabular-nums">{formatUGX(row.amount)}</td>
                     </tr>
                   ))}
                   <tr className="font-semibold bg-muted/30">
                     <td className="py-2 px-1">Total Income</td>
-                    <td className="py-2 px-1 text-right">
+                    <td className="py-2 px-1 text-right font-mono tabular-nums">
                       {formatUGX(data.totalIncome)}
                     </td>
                   </tr>
@@ -165,12 +165,12 @@ export function PnlClient({ data, period }: PnlClientProps) {
                   {data.expenses.map((row) => (
                     <tr key={row.category} className="border-b border-muted">
                       <td className="py-2">{row.category}</td>
-                      <td className="py-2 text-right">{formatUGX(row.amount)}</td>
+                      <td className="py-2 text-right font-mono tabular-nums">{formatUGX(row.amount)}</td>
                     </tr>
                   ))}
                   <tr className="font-semibold bg-muted/30">
                     <td className="py-2 px-1">Total Expenses</td>
-                    <td className="py-2 px-1 text-right">
+                    <td className="py-2 px-1 text-right font-mono tabular-nums">
                       {formatUGX(data.totalExpenses)}
                     </td>
                   </tr>
@@ -185,8 +185,8 @@ export function PnlClient({ data, period }: PnlClientProps) {
                 <span
                   className={
                     parseFloat(data.netProfit) >= 0
-                      ? "text-green-700 dark:text-green-400"
-                      : "text-destructive"
+                      ? "text-green-700 font-mono tabular-nums dark:text-green-400"
+                      : "text-destructive font-mono tabular-nums"
                   }
                 >
                   {formatUGX(data.netProfit)}

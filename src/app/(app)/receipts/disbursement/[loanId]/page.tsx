@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Separator } from "@/components/ui/separator"
 import { PrintButton } from "./print-button"
+import { formatDate } from "@/lib/utils"
 
 export default async function DisbursementReceiptPage({
   params,
@@ -52,12 +53,6 @@ export default async function DisbursementReceiptPage({
   const formatCurrency = (value: string | number) =>
     `UGX ${new Intl.NumberFormat("en-UG").format(Number(value))}`
 
-  const formatDate = (date: Date | string) =>
-    new Date(date).toLocaleDateString("en-UG", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    })
 
   const receiptNumber = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
   const interestRateDisplay = `${(parseFloat(loan.interestRate) * 100).toFixed(1)}% per month`
@@ -88,7 +83,7 @@ export default async function DisbursementReceiptPage({
       <div className="receipt-body bg-white text-black border border-border rounded-lg p-8 print:border-none print:rounded-none print:p-0">
         {/* Header */}
         <div className="mb-4">
-          <h1 className="text-lg font-semibold">Loan Disbursement Receipt</h1>
+          <h1 className="text-lg font-semibold tracking-tight">Loan Disbursement Receipt</h1>
           <p className="font-mono text-xs text-muted-foreground mt-1">
             {receiptNumber}
           </p>
@@ -117,7 +112,7 @@ export default async function DisbursementReceiptPage({
 
           <div className="flex justify-between">
             <dt className="text-xs text-muted-foreground">Loan amount</dt>
-            <dd className="text-sm font-medium">
+            <dd className="text-sm font-medium font-mono tabular-nums">
               {formatCurrency(loan.principalAmount)}
             </dd>
           </div>

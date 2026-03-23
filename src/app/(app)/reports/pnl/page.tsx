@@ -25,9 +25,9 @@ export default async function PnlPage({ searchParams }: PnlPageProps) {
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-semibold">Profit & Loss</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Profit & Loss</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Monthly income and expense summary
+          Revenue and expense summary
         </p>
       </div>
 

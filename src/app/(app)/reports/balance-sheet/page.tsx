@@ -32,7 +32,7 @@ export default async function BalanceSheetPage({
   return (
     <div className="space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-semibold">Balance Sheet</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Balance Sheet</h1>
         <p className="text-sm text-muted-foreground mt-1">
           Assets, liabilities, and equity
         </p>
