@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
-import { recordPayment, editPayment, deletePayment, listPayments } from "@/services/payment.service"
+import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { eq } from "drizzle-orm"
@@ -43,6 +43,7 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
   try {
     const data = await Effect.runPromise(recordPayment(input, session.user.id))
     revalidatePath(`/loans/${input.loanId}`)
+    revalidatePath("/payments")
     void sendAdminNotification("payment.created", {
       actorName: session.user.name ?? "Unknown",
       actorEmail: session.user.email,
@@ -217,6 +218,44 @@ export async function getPaymentsByLoanAction(loanId: string) {
       .orderBy(payments.paymentDate)
     return { data: rows }
   } catch (error) {
+    return { error: "Internal server error" }
+  }
+}
+
+/**
+ * Searches active loans by customer name for the quick-record combobox.
+ * Returns up to 10 matching active loans.
+ * QREC-01: Loan search without leaving payments page.
+ */
+export async function searchActiveLoansAction(query: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  try {
+    const data = await Effect.runPromise(searchActiveLoans(query))
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+/**
+ * Returns the last N distinct loans the current user recorded payments for.
+ * Used for recently-collected chips in quick-record dialog.
+ * QREC-03: Recently-collected list for quick repeat selection.
+ */
+export async function getRecentlyCollectedLoansAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  try {
+    const data = await Effect.runPromise(getRecentlyCollectedLoans(session.user.id, 5))
+    return { data }
+  } catch {
     return { error: "Internal server error" }
   }
 }
