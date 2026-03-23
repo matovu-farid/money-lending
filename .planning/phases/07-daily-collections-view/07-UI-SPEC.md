@@ -55,12 +55,11 @@ Source: inferred from existing components — `kpi-card.tsx` uses `text-sm` (14p
 
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
-| Body | 14px | 400 (regular) | 1.5 | Table cell text, filter labels, subtitles (`text-sm`) |
-| Label | 14px | 500 (medium) | 1.5 | Table column headers (`text-sm font-medium`), card labels |
+| Body | 14px | 400 (regular) | 1.5 | Table cell text, filter labels, subtitles (`text-sm`); also used for table column headers (`font-medium` is the Tailwind Table component default — not a separately declared weight) |
 | Heading | 24px | 600 (semibold) | 1.2 | Section headings, KPI card values (`text-2xl font-semibold`) |
 | Display | 20px | 600 (semibold) | 1.2 | Page-level heading for "Daily Collections" within the tab |
 
-Typography rule: 2 weights only — 400 for body/muted text, 600 (semibold) for headings and values. The 500 medium is used exclusively for table column headers via Tailwind's `font-medium` class (already in the Table component).
+Typography rule: 2 weights only — 400 (regular) for body/muted text and table column headers, 600 (semibold) for headings and KPI values. The `font-medium` Tailwind class on table column headers is the shadcn Table component default and is not a declared third weight in this contract.
 
 ---
 
@@ -99,7 +98,7 @@ All components are already installed. No new shadcn components required.
 | `KpiCard` | `@/components/dashboard/kpi-card` | Reuse directly for summary stats — identical structure |
 | `Calendar` | `@/components/ui/calendar` | Date picker popup for arbitrary date selection |
 | `Popover`, `PopoverTrigger`, `PopoverContent` | `@/components/ui/popover` | Wraps Calendar for popup behavior |
-| `Button` | `@/components/ui/button` | Prev/next arrow buttons, date display trigger button |
+| `Button` | `@/components/ui/button` | Prev arrow button (`aria-label="Previous day"`), next arrow button (`aria-label="Next day"`), date display trigger button |
 | `Table`, `TableHeader`, `TableBody`, `TableRow`, `TableHead`, `TableCell` | `@/components/ui/table` | Collections breakdown table and due-today table |
 | `Badge` | `@/components/ui/badge` | Urgency indicators via `OverdueBadge` wrapper |
 | `OverdueBadge` | `@/components/watchlist/overdue-badge` | Due-today days-since-last-payment indicator — reuse directly |
@@ -110,14 +109,16 @@ All components are already installed. No new shadcn components required.
 
 Source: CONTEXT.md `## Implementation Decisions — Page layout`.
 
+The Summary Cards Row KPI values (Total Collected amount, payment count, average payment) are the primary visual anchor of the Daily tab — they must be the first data-bearing element the eye lands on after the date navigation bar.
+
 ```
 /payments?tab=daily
 └── DailyCollectionsTab (single scrollable column)
     ├── Date Navigation Bar
-    │   ├── [←] prev day button (ChevronLeft icon, 44px touch target)
+    │   ├── [←] prev day button (ChevronLeft icon, 44px touch target, aria-label="Previous day")
     │   ├── Date display button → opens Calendar Popover
-    │   └── [→] next day button (ChevronRight icon, 44px touch target, disabled if date = today)
-    ├── Summary Cards Row (3 cards, responsive grid: 1 col mobile / 3 col desktop)
+    │   └── [→] next day button (ChevronRight icon, 44px touch target, aria-label="Next day", disabled if date = today)
+    ├── Summary Cards Row (3 cards, responsive grid: 1 col mobile / 3 col desktop) ← PRIMARY VISUAL ANCHOR
     │   ├── KpiCard: "Total Collected" — UGX amount
     │   ├── KpiCard: "Payments" — count
     │   └── KpiCard: "Average Payment" — UGX amount (or "—" if 0 payments)
@@ -137,8 +138,8 @@ Tab integration: wrap existing PaymentsClient content in shadcn `<Tabs>`. The "D
 
 ### Date Navigation
 - Default date on mount: today's date from `format(new Date(), 'yyyy-MM-dd')` (client-side — never server-side)
-- Prev button: `subDays(currentDate, 1)` via date-fns; always enabled
-- Next button: `addDays(currentDate, 1)` via date-fns; disabled when `currentDate >= today`
+- Prev button: `subDays(currentDate, 1)` via date-fns; always enabled; `aria-label="Previous day"`
+- Next button: `addDays(currentDate, 1)` via date-fns; disabled when `currentDate >= today`; `aria-label="Next day"`
 - Calendar: `disabled={(date) => date > new Date()}` — future dates blocked
 - Date stored in URL: `?tab=daily&date=YYYY-MM-DD`; changing date updates URL, triggers re-fetch via TanStack Query key change
 
