@@ -71,10 +71,10 @@ Tokens are CSS variables defined in globals.css; all values use oklch. Both ligh
 |------|-------------|-------------|-------|
 | Dominant (60%) | --background | oklch(1 0 0) — white | Page background, table background |
 | Secondary (30%) | --card / --muted | oklch(1 0 0) / oklch(0.97 0 0) | Filter bar surface, sheet panel, dialog surface, empty state container |
-| Accent (10%) | --primary | oklch(0.205 0 0) — near-black | Primary action buttons only (Export CSV button, sheet submit button) |
+| Accent (10%) | --primary | oklch(0.205 0 0) — near-black | Primary action buttons only ("Save changes" sheet submit button) |
 | Destructive | --destructive | oklch(0.577 0.245 27.325) — red | Delete payment dialog confirm button, delete DropdownMenuItem variant |
 
-Accent reserved for: (1) "Export CSV" primary button in the page header bar, (2) "Save changes" submit button inside the Edit Payment Sheet. No other elements use the primary/accent color.
+Accent reserved for: "Save changes" submit button inside the Edit Payment Sheet only. Export CSV uses `variant="outline"` (secondary action). No other elements use the primary/accent color.
 
 Secondary semantic: `--muted-foreground` (oklch(0.556 0 0)) used for placeholder text, empty state body copy, and recorded-by column text. This is a text-only secondary, not a surface color.
 
@@ -138,7 +138,7 @@ All components are already installed. No `npx shadcn add` commands needed.
 | 7 | Balance After | UGX {principalBalanceAfter} | text-muted-foreground |
 | 8 | (no header) | DropdownMenu trigger | Admin-only column — hidden for loan_officer |
 
-Column 8 (Actions) renders only when `isAdmin === true`. The column header is empty. DropdownMenuTrigger is `h-8 w-8` centered with `MoreHorizontal` (16px lucide icon).
+Column 8 (Actions) renders only when `isAdmin === true`. The column header is empty. DropdownMenuTrigger is `h-8 w-8` centered with `MoreHorizontal` (16px lucide icon), `aria-label="Payment actions"`.
 
 ---
 
