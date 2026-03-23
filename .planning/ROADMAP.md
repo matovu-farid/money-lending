@@ -76,6 +76,29 @@ Plans:
 - [ ] 08-01-PLAN.md — Data layer: types, searchActiveLoans + getRecentlyCollectedLoans services, server actions, revalidatePath("/payments"), unit + integration tests
 - [ ] 08-02-PLAN.md — UI: LoanSearchCombobox, QuickRecordDialog with recently-collected chips + success state + receipt link, Cypress E2E tests
 
+### Phase 9: Design System Overhaul — Apply Sovereign Ledger design system across the entire app
+
+**Goal:** Every page in the application renders with the Sovereign Ledger design system — monochromatic surface hierarchy, Electric Blue accent, Geist Mono for all numeric values, sharp corners, no border separators, glassmorphism floating elements
+**Requirements**: DS-01, DS-02, DS-03, DS-04, DS-05, DS-06, DS-07, DS-08, DS-09, DS-10, DS-11, DS-12
+**Depends on:** Phase 8
+**Success Criteria** (what must be TRUE):
+  1. globals.css uses Sovereign Ledger OKLCH color tokens with surface hierarchy
+  2. All Card components use tonal depth (no ring, no shadow)
+  3. All Button components use sharp corners (rounded-sm) and tertiary Electric Blue variant exists
+  4. All Dialog/Sheet overlays use glassmorphism (backdrop-blur-24px, bg-white/85)
+  5. Sidebar and TopBar have no visible borders (tonal separation only)
+  6. Every currency, percentage, count, and timestamp value in the app uses font-mono tabular-nums
+  7. Every page heading uses tracking-tight with a label-style subtitle
+  8. Full Cypress E2E suite passes with zero failures
+**Plans:** 5 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Design token smoke test + globals.css Sovereign Ledger token rewrite
+- [ ] 09-02-PLAN.md — Primitive UI components: card, button, badge, input, table, dialog, sheet
+- [ ] 09-03-PLAN.md — Layout components: sidebar, top-bar, app-shell border removal
+- [ ] 09-04-PLAN.md — Core page typography: dashboard, customers, loans, payments, watchlist
+- [ ] 09-05-PLAN.md — Remaining pages + receipts + reports + full regression pass
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -86,5 +109,6 @@ Plans:
 | 4. Financial Reporting | v1.0 | 8/8 | Complete | 2026-03-21 |
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
-| 7. Daily Collections View | 2/2 | Complete   | 2026-03-23 | - |
-| 8. Quick-Record Workflow | 2/2 | Complete   | 2026-03-23 | - |
+| 7. Daily Collections View | v1.1 | 2/2 | Complete | 2026-03-23 |
+| 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
+| 9. Design System Overhaul | v1.1 | 0/5 | Planning | - |
