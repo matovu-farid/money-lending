@@ -2,10 +2,7 @@
  * Design System — Sovereign Ledger Smoke Tests
  *
  * This file validates that the Sovereign Ledger design tokens are correctly applied.
- * Some tests are skipped (it.skip) because they depend on future plans being executed:
- *   - Plan 02: Card ring removal
- *   - Plan 03: Sidebar / top-bar border removal
- *   - Plan 04: Typography tracking classes on headings
+ * All tests are enabled — all plans (01-06) have been executed.
  */
 
 // ---------------------------------------------------------------------------
@@ -166,10 +163,10 @@ describe("Design System — Sovereign Ledger", () => {
   })
 
   // -------------------------------------------------------------------------
-  // 2. Typography classes (enable after Plan 04)
+  // 2. Typography classes
   // -------------------------------------------------------------------------
   describe("2. Typography Classes", () => {
-    it.skip("enable after Plan 04 — dashboard heading has tracking-tight class", () => {
+    it("dashboard heading has tracking-tight class", () => {
       cy.get("h1, h2").first().should("have.class", "tracking-tight")
     })
   })

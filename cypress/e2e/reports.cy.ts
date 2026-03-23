@@ -8,7 +8,7 @@ describe("Reports", () => {
   it("shows reports hub page with heading", () => {
     cy.visit("/reports")
     cy.contains("Reports", { timeout: 15000 }).should("be.visible")
-    cy.contains("Financial statements and portfolio reports").should("be.visible")
+    cy.contains("Financial reporting and analytics").should("be.visible")
   })
 
   it("shows all 4 report cards", () => {
