@@ -111,10 +111,13 @@ Plans:
   2. PAY-06, PAY-07, PAY-08 checked off in REQUIREMENTS.md
   3. 06-02-SUMMARY.md lists PAY-06, PAY-07, PAY-08 in requirements_completed
   4. Phase 9 VERIFICATION.md refreshed (no longer stale)
-  5. DS-07–DS-11 listed in Phase 9 SUMMARY requirements_completed frontmatter
+  5. DS-07-DS-11 listed in Phase 9 SUMMARY requirements_completed frontmatter
   6. payments-list.cy.ts Cypress run confirmed passing
 
-Plans: 0/1 plans
+**Plans:** 1 plan
+
+Plans:
+- [ ] 10-01-PLAN.md — Run Cypress verification, write Phase 6 VERIFICATION.md, update REQUIREMENTS.md + SUMMARY frontmatter, refresh Phase 9 VERIFICATION.md
 
 ## Progress
 
