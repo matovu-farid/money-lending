@@ -74,9 +74,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PAY-03 | Phase 6 | Complete |
 | PAY-04 | Phase 6 | Complete |
 | PAY-05 | Phase 6 | Complete |
-| PAY-06 | Phase 6 | Pending |
-| PAY-07 | Phase 6 | Pending |
-| PAY-08 | Phase 6 | Pending |
+| PAY-06 | Phase 10 | Pending |
+| PAY-07 | Phase 10 | Pending |
+| PAY-08 | Phase 10 | Pending |
 | COLL-01 | Phase 7 | Complete |
 | COLL-02 | Phase 7 | Complete |
 | COLL-03 | Phase 7 | Complete |

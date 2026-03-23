@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-03-22)
-- 🚧 **v1.1 Payments** — Phases 6-8 (in progress)
+- 🚧 **v1.1 Payments** — Phases 6-10 (in progress)
 
 ## Phases
 
@@ -27,6 +27,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 - [x] **Phase 6: Global Payments List** - Paginated, searchable, filterable payments table across all loans with edit, delete, and CSV export (completed 2026-03-23)
 - [x] **Phase 7: Daily Collections View** - Date-navigable daily summary showing total collected, payment count, and active loans due for payment today (completed 2026-03-23)
 - [x] **Phase 8: Quick-Record Workflow** - Inline payment recording from the Payments page without navigating to a loan (completed 2026-03-23)
+- [ ] **Phase 10: Verification & Documentation Cleanup** - Run Phase 6 Cypress verification, create missing VERIFICATION.md, update SUMMARY/REQUIREMENTS docs, refresh Phase 9 stale verification
 
 ## Phase Details
 
@@ -100,6 +101,21 @@ Plans:
 - [ ] 09-05-PLAN.md — Secondary pages: creditors, expenses, income, transactions, admin
 - [ ] 09-06-PLAN.md — Reports, receipts, design-system test enablement, full regression pass
 
+### Phase 10: Verification & Documentation Cleanup
+**Goal**: Close all audit gaps by running formal verification on Phase 6, updating documentation artifacts, and refreshing stale Phase 9 verification
+**Depends on**: Phase 9
+**Requirements**: PAY-01, PAY-02, PAY-03, PAY-04, PAY-05, PAY-06, PAY-07, PAY-08
+**Gap Closure:** Closes all gaps from v1.1 milestone audit
+**Success Criteria** (what must be TRUE):
+  1. Phase 6 VERIFICATION.md exists and confirms all 8 PAY requirements satisfied
+  2. PAY-06, PAY-07, PAY-08 checked off in REQUIREMENTS.md
+  3. 06-02-SUMMARY.md lists PAY-06, PAY-07, PAY-08 in requirements_completed
+  4. Phase 9 VERIFICATION.md refreshed (no longer stale)
+  5. DS-07–DS-11 listed in Phase 9 SUMMARY requirements_completed frontmatter
+  6. payments-list.cy.ts Cypress run confirmed passing
+
+Plans: 0/1 plans
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -113,3 +129,4 @@ Plans:
 | 7. Daily Collections View | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 9. Design System Overhaul | 6/6 | Complete   | 2026-03-23 | - |
+| 10. Verification & Doc Cleanup | v1.1 | 0/1 | Planned | - |
