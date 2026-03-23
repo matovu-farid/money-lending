@@ -558,4 +558,181 @@ describe("Payment Service", () => {
       expect(effect).toBeDefined()
     })
   })
+
+  // =========================================================================
+  // Phase 8: searchActiveLoans
+  // =========================================================================
+
+  describe("searchActiveLoans", () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it("returns empty array when query is empty string", async () => {
+      const { searchActiveLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(searchActiveLoans(""))
+      expect(result).toEqual([])
+    })
+
+    it("returns empty array when query is less than 2 chars", async () => {
+      const { searchActiveLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(searchActiveLoans("a"))
+      expect(result).toEqual([])
+    })
+
+    it("returns empty array when query is only whitespace", async () => {
+      const { searchActiveLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(searchActiveLoans("  "))
+      expect(result).toEqual([])
+    })
+
+    it("returns matching active loans when query has 2+ chars", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      const mockRows = [
+        {
+          loanId: "loan-1",
+          customerId: "cust-1",
+          customerName: "Sarah Mutesi",
+          principalAmount: "500000.00",
+        },
+      ]
+
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue(mockRows),
+            }),
+          }),
+        }),
+      })
+
+      const { searchActiveLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(searchActiveLoans("Sarah"))
+
+      expect(result).toHaveLength(1)
+      expect(result[0].customerName).toBe("Sarah Mutesi")
+      expect(result[0].loanId).toBe("loan-1")
+    })
+
+    it("returns empty array when no loans match query", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      })
+
+      const { searchActiveLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(searchActiveLoans("nonexistent"))
+
+      expect(result).toEqual([])
+    })
+
+    it("wraps DB errors in DatabaseError", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              limit: vi.fn().mockRejectedValue(new Error("DB connection failed")),
+            }),
+          }),
+        }),
+      })
+
+      const { searchActiveLoans } = await import("@/services/payment.service")
+      const exit = await Effect.runPromiseExit(searchActiveLoans("Sarah"))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (exit._tag === "Failure") {
+        const error = (exit.cause as any).error ?? (exit.cause as any)
+        expect(error._tag).toBe("DatabaseError")
+      }
+    })
+  })
+
+  // =========================================================================
+  // Phase 8: getRecentlyCollectedLoans
+  // =========================================================================
+
+  describe("getRecentlyCollectedLoans", () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it("returns empty array for user with no payments", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue({ rows: [] })
+
+      const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(getRecentlyCollectedLoans("unknown-user"))
+
+      expect(result).toEqual([])
+    })
+
+    it("maps rows to RecentlyCollectedLoan shape", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      const mockRows = [
+        {
+          loan_id: "loan-1",
+          customer_name: "Sarah Mutesi",
+          payment_date: "2026-03-15T09:00:00.000Z",
+        },
+        {
+          loan_id: "loan-2",
+          customer_name: "John Mukasa",
+          payment_date: "2026-03-10T09:00:00.000Z",
+        },
+      ]
+
+      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue({ rows: mockRows })
+
+      const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(getRecentlyCollectedLoans("user-1"))
+
+      expect(result).toHaveLength(2)
+      expect(result[0].loanId).toBe("loan-1")
+      expect(result[0].customerName).toBe("Sarah Mutesi")
+      expect(result[0].paymentDate).toBeInstanceOf(Date)
+      expect(result[1].loanId).toBe("loan-2")
+    })
+
+    it("wraps DB errors in DatabaseError", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      ;(mockedDb.execute as any) = vi.fn().mockRejectedValue(new Error("DB error"))
+
+      const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
+      const exit = await Effect.runPromiseExit(getRecentlyCollectedLoans("user-1"))
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (exit._tag === "Failure") {
+        const error = (exit.cause as any).error ?? (exit.cause as any)
+        expect(error._tag).toBe("DatabaseError")
+      }
+    })
+
+    it("uses default limit of 5 when no limit provided", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      const executeMock = vi.fn().mockResolvedValue({ rows: [] })
+      ;(mockedDb.execute as any) = executeMock
+
+      const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
+      await Effect.runPromise(getRecentlyCollectedLoans("user-1"))
+
+      // Verify execute was called (limit is embedded in the SQL template)
+      expect(executeMock).toHaveBeenCalledOnce()
+    })
+  })
 })

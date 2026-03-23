@@ -287,6 +287,20 @@ export interface TransactionLogFilters {
   dateTo?: string
 }
 
+// --- Phase 8: Quick-Record Workflow types ---
+export interface ActiveLoanSearchResult {
+  loanId: string
+  customerId: string
+  customerName: string
+  principalAmount: string
+}
+
+export interface RecentlyCollectedLoan {
+  loanId: string
+  customerName: string
+  paymentDate: Date
+}
+
 // --- Phase 7: Daily Collections types ---
 export interface DailyCollectionRow {
   paymentId: string

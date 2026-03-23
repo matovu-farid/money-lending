@@ -4,7 +4,7 @@ import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
-import { eq, asc, and, isNull, gte, lte, ilike, desc, count } from "drizzle-orm"
+import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment } from "@/lib/interest/engine"
@@ -17,6 +17,8 @@ import type {
   Payment,
   ListPaymentsInput,
   PaymentWithCustomer,
+  ActiveLoanSearchResult,
+  RecentlyCollectedLoan,
 } from "@/types"
 
 /**
@@ -557,4 +559,77 @@ export const getPaymentsForLoan = (
       if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
       return new DatabaseError({ cause: e })
     },
+  })
+
+/**
+ * Searches active loans by customer name (partial, case-insensitive).
+ * Returns up to 10 matching active loans for the quick-record combobox.
+ * Guards against empty or too-short queries (returns empty array for < 2 chars).
+ *
+ * QREC-01: Loan search without leaving payments page.
+ */
+export const searchActiveLoans = (
+  query: string
+): Effect.Effect<ActiveLoanSearchResult[], DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      if (!query || query.trim().length < 2) return []
+      const rows = await db
+        .select({
+          loanId: loans.id,
+          customerId: customers.id,
+          customerName: customers.fullName,
+          principalAmount: loans.principalAmount,
+        })
+        .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
+        .where(
+          and(
+            eq(loans.status, "active"),
+            isNull(loans.deletedAt),
+            ilike(customers.fullName, `%${query.trim()}%`)
+          )
+        )
+        .limit(10)
+      return rows
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+
+/**
+ * Returns the last N distinct loans the given user recorded payments for.
+ * Uses DISTINCT ON (loan_id) to deduplicate, ordered by most recent payment date.
+ * Only non-deleted payments count.
+ *
+ * QREC-03: Recently-collected list for quick repeat selection.
+ */
+export const getRecentlyCollectedLoans = (
+  userId: string,
+  limit: number = 5
+): Effect.Effect<RecentlyCollectedLoan[], DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const result = await db.execute(sql`
+        SELECT * FROM (
+          SELECT DISTINCT ON (p.loan_id)
+            p.loan_id,
+            c.full_name AS customer_name,
+            p.payment_date
+          FROM payments p
+          INNER JOIN loans l ON l.id = p.loan_id
+          INNER JOIN customers c ON c.id = l.customer_id
+          WHERE p.recorded_by = ${userId}
+            AND p.deleted_at IS NULL
+          ORDER BY p.loan_id, p.payment_date DESC
+        ) sub
+        ORDER BY sub.payment_date DESC
+        LIMIT ${limit}
+      `)
+      return result.rows.map((row: any) => ({
+        loanId: row.loan_id as string,
+        customerName: row.customer_name as string,
+        paymentDate: new Date(row.payment_date as string),
+      }))
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
   })
