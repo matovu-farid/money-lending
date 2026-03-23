@@ -9,11 +9,11 @@ Requirements for the Payments milestone. Each maps to roadmap phases.
 
 ### Payments List
 
-- [ ] **PAY-01**: User can view a paginated list of all payments across all loans
-- [ ] **PAY-02**: User can see customer name, loan reference, amount, date, and allocation breakdown for each payment
-- [ ] **PAY-03**: User can filter payments by date range
-- [ ] **PAY-04**: User can filter payments by amount range
-- [ ] **PAY-05**: User can search payments by customer name
+- [x] **PAY-01**: User can view a paginated list of all payments across all loans
+- [x] **PAY-02**: User can see customer name, loan reference, amount, date, and allocation breakdown for each payment
+- [x] **PAY-03**: User can filter payments by date range
+- [x] **PAY-04**: User can filter payments by amount range
+- [x] **PAY-05**: User can search payments by customer name
 - [ ] **PAY-06**: User can edit a payment directly from the global list (admin+ only)
 - [ ] **PAY-07**: User can delete a payment directly from the global list (admin+ only)
 - [ ] **PAY-08**: User can export the filtered payment list to CSV
@@ -54,11 +54,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PAY-01 | Phase 6 | Pending |
-| PAY-02 | Phase 6 | Pending |
-| PAY-03 | Phase 6 | Pending |
-| PAY-04 | Phase 6 | Pending |
-| PAY-05 | Phase 6 | Pending |
+| PAY-01 | Phase 6 | Complete |
+| PAY-02 | Phase 6 | Complete |
+| PAY-03 | Phase 6 | Complete |
+| PAY-04 | Phase 6 | Complete |
+| PAY-05 | Phase 6 | Complete |
 | PAY-06 | Phase 6 | Pending |
 | PAY-07 | Phase 6 | Pending |
 | PAY-08 | Phase 6 | Pending |

@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Payments
-status: planning
-stopped_at: Phase 6 context gathered
-last_updated: "2026-03-23T09:01:12.678Z"
-last_activity: 2026-03-23 — Roadmap created for v1.1 Payments milestone
+status: unknown
+stopped_at: Completed 06-01-PLAN.md
+last_updated: "2026-03-23T09:51:07.042Z"
+last_activity: v1.1 roadmap created — 3 phases, 6 plans, 15/15 requirements mapped
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -21,16 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-23)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 6 — Global Payments List
+**Current focus:** Phase 06 — global-payments-list
 
 ## Current Position
 
-Phase: 6 of 8 (Global Payments List)
-Plan: 0 of 2 in current phase
-Status: Ready to plan
-Last activity: 2026-03-23 — Roadmap created for v1.1 Payments milestone
-
-Progress: [░░░░░░░░░░] 0%
+Phase: 06 (global-payments-list) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -47,6 +42,7 @@ Progress: [░░░░░░░░░░] 0%
 | 6. Global Payments List | 0/2 | — | — |
 | 7. Daily Collections View | 0/2 | — | — |
 | 8. Quick-Record Workflow | 0/2 | — | — |
+| Phase 06 P01 | 6 | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -61,6 +57,9 @@ Key decisions relevant to v1.1:
 - `listPayments` service must always apply `isNull(deletedAt)` — `getPaymentsForLoan` intentionally includes soft-deleted rows (different contract)
 - All date-grouping queries must use `DATE(payment_date AT TIME ZONE 'Africa/Kampala')` — never bare `DATE(payment_date)`
 - Sidebar `disabled: true` removal is the last step of Phase 8, not the first
+- [Phase 06]: Partial index defined inside pgTable second arg array — standalone export causes JSON.parse error on undefined defaultConfig in drizzle 0.45.1
+- [Phase 06]: listPayments always applies isNull(deletedAt) as first condition; getPaymentsForLoan intentionally includes soft-deleted rows (different contracts)
+- [Phase 06]: dateTo inclusive boundary: append T23:59:59.999Z to include same-day payments
 
 ### Pending Todos
 
@@ -81,7 +80,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T09:01:12.676Z
+Last session: 2026-03-23T09:51:07.040Z
 Last activity: v1.1 roadmap created — 3 phases, 6 plans, 15/15 requirements mapped
-Stopped at: Phase 6 context gathered
-Resume file: .planning/phases/06-global-payments-list/06-CONTEXT.md
+Stopped at: Completed 06-01-PLAN.md
+Resume file: None

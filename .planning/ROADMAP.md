@@ -40,7 +40,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
   3. User can filter the list by date range, amount range, and search by customer name — results update without full page reload
   4. Admin can edit or delete any payment directly from the list without navigating to the loan page
   5. User can export the currently-filtered payment list to a CSV file
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 06-01-PLAN.md — Data layer: types, listPayments service (JOIN query), Server Action, integration tests, partial index
@@ -85,6 +85,6 @@ Plans:
 | 3. Operational Management | v1.0 | 4/4 | Complete | 2026-03-21 |
 | 4. Financial Reporting | v1.0 | 8/8 | Complete | 2026-03-21 |
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
-| 6. Global Payments List | v1.1 | 0/2 | Planning complete | - |
+| 6. Global Payments List | 1/2 | In Progress|  | - |
 | 7. Daily Collections View | v1.1 | 0/2 | Not started | - |
 | 8. Quick-Record Workflow | v1.1 | 0/2 | Not started | - |
