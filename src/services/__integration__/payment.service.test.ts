@@ -699,6 +699,89 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       expect(result.total).toBe(1)
       expect(result.rows[0].amount).toBe("50000.00")
     })
+
+    it("returns empty result when no payments exist", async () => {
+      const result = await Effect.runPromise(listPayments({ page: 1 }))
+      expect(result.rows).toHaveLength(0)
+      expect(result.total).toBe(0)
+    })
+
+    it("defaults to page 1 and pageSize 25 when omitted", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id)
+      await Effect.runPromise(recordPayment({
+        loanId: loan.id,
+        paymentDate: "2025-02-01",
+        amount: "50000.00",
+      }, "test-actor"))
+
+      const result = await Effect.runPromise(listPayments({}))
+      expect(result.rows).toHaveLength(1)
+      expect(result.total).toBe(1)
+    })
+
+    it("orders by paymentDate descending (most recent first)", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id)
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-01", amount: "50000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-03-01", amount: "50000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
+
+      const result = await Effect.runPromise(listPayments({ page: 1 }))
+      const dates = result.rows.map((r) => new Date(r.paymentDate).toISOString().slice(0, 10))
+      expect(dates).toEqual(["2025-03-01", "2025-02-01", "2025-01-01"])
+    })
+
+    it("combines multiple filters (date + amount + customer name)", async () => {
+      const c1 = await Effect.runPromise(createCustomer({ fullName: "Alice Mukasa", contact: "+256700000003", address: "Kampala" }))
+      const c2 = await Effect.runPromise(createCustomer({ fullName: "Bob Kato", contact: "+256700000004", address: "Entebbe" }))
+      const l1 = await makeLoan(c1.id, "5000000.00")
+      const l2 = await makeLoan(c2.id, "5000000.00")
+
+      // Alice: large payment on Jan 15
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-01-15", amount: "200000.00" }, "test-actor"))
+      // Alice: small payment on Feb 15
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-15", amount: "30000.00" }, "test-actor"))
+      // Bob: large payment on Jan 15
+      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-01-15", amount: "200000.00" }, "test-actor"))
+
+      // Filter: Alice + Jan only + large amounts
+      const result = await Effect.runPromise(listPayments({
+        customerName: "alice",
+        dateFrom: "2025-01-01",
+        dateTo: "2025-01-31",
+        amountMin: "100000",
+      }))
+      expect(result.total).toBe(1)
+      expect(result.rows[0].customerName).toBe("Alice Mukasa")
+    })
+
+    it("returns payments across multiple loans and customers", async () => {
+      const c1 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan A", contact: "+256700000005", address: "A" }))
+      const c2 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan B", contact: "+256700000006", address: "B" }))
+      const l1 = await makeLoan(c1.id)
+      const l2 = await makeLoan(c2.id)
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-02-01", amount: "70000.00" }, "test-actor"))
+
+      const result = await Effect.runPromise(listPayments({ page: 1 }))
+      expect(result.total).toBe(2)
+      const names = result.rows.map((r) => r.customerName).sort()
+      expect(names).toEqual(["Multi Loan A", "Multi Loan B"])
+    })
+
+    it("includes customerId in each row", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id)
+      await Effect.runPromise(recordPayment({
+        loanId: loan.id,
+        paymentDate: "2025-02-01",
+        amount: "50000.00",
+      }, "test-actor"))
+
+      const result = await Effect.runPromise(listPayments({ page: 1 }))
+      expect(result.rows[0].customerId).toBe(customer.id)
+    })
   })
 
   // =========================================================================
