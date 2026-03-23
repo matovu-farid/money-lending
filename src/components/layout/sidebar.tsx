@@ -26,7 +26,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { Separator } from "@/components/ui/separator"
 
 interface NavItem {
   label: string
@@ -105,12 +104,12 @@ export function Sidebar({ onClose }: SidebarProps) {
     <TooltipProvider delay={300}>
       <aside
         className={cn(
-          "flex flex-col h-full bg-sidebar border-r border-sidebar-border transition-all duration-200",
+          "flex flex-col h-full bg-sidebar transition-all duration-200",
           collapsed ? "w-[60px]" : "w-[240px]"
         )}
       >
         {/* Collapse toggle */}
-        <div className="flex items-center justify-end px-2 py-2 border-b border-sidebar-border">
+        <div className="flex items-center justify-end px-2 py-2">
           <Button
             variant="ghost"
             size="icon"
@@ -136,7 +135,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 </p>
               )}
               {group.label && collapsed && groupIndex > 0 && (
-                <Separator className="mx-2 my-1 bg-sidebar-border" />
+                <div className="my-2" />
               )}
               <ul className="space-y-0.5 px-2">
                 {group.items.map((item) => {
@@ -210,7 +209,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </nav>
 
         {/* User section at bottom */}
-        <div className="border-t border-sidebar-border p-2">
+        <div className="p-2">
           <div
             className={cn(
               "flex items-center gap-2 rounded-md px-2 py-2",

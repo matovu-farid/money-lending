@@ -8,7 +8,7 @@ interface TopBarProps {
 
 export function TopBar({ onMenuClick }: TopBarProps) {
   return (
-    <header className="h-14 border-b bg-background flex items-center px-4 md:px-6 shrink-0">
+    <header className="h-14 bg-background flex items-center px-4 md:px-6 shrink-0">
       <div className="flex items-center gap-3 flex-1">
         {onMenuClick && (
           <Button
