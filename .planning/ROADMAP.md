@@ -25,7 +25,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 **Milestone Goal:** Build out the Payments section as a first-class page — global payments list, daily collections view, and quick-record workflow so a loan officer never has to navigate to an individual loan page to collect a payment.
 
 - [x] **Phase 6: Global Payments List** - Paginated, searchable, filterable payments table across all loans with edit, delete, and CSV export (completed 2026-03-23)
-- [ ] **Phase 7: Daily Collections View** - Date-navigable daily summary showing total collected, payment count, and active loans due for payment today
+- [x] **Phase 7: Daily Collections View** - Date-navigable daily summary showing total collected, payment count, and active loans due for payment today (completed 2026-03-23)
 - [ ] **Phase 8: Quick-Record Workflow** - Inline payment recording from the Payments page without navigating to a loan
 
 ## Phase Details
@@ -55,7 +55,7 @@ Plans:
   2. User can see the per-loan breakdown of payments recorded for the selected day
   3. User can pick any date using a date picker and the summary and breakdown update to reflect that day
   4. User can see a list of active loans that have not received a payment in 30 or more days, indicating they are due today
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 07-01-PLAN.md — Data layer: types, daily-collections service (timezone-aware), server actions, TanStack Query hooks, unit + integration tests
@@ -86,5 +86,5 @@ Plans:
 | 4. Financial Reporting | v1.0 | 8/8 | Complete | 2026-03-21 |
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
-| 7. Daily Collections View | 1/2 | In Progress|  | - |
+| 7. Daily Collections View | 2/2 | Complete   | 2026-03-23 | - |
 | 8. Quick-Record Workflow | v1.1 | 0/2 | Not started | - |
