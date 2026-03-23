@@ -90,14 +90,15 @@ Plans:
   6. Every currency, percentage, count, and timestamp value in the app uses font-mono tabular-nums
   7. Every page heading uses tracking-tight with a label-style subtitle
   8. Full Cypress E2E suite passes with zero failures
-**Plans:** 5 plans
+**Plans:** 6 plans
 
 Plans:
 - [ ] 09-01-PLAN.md — Design token smoke test + globals.css Sovereign Ledger token rewrite
 - [ ] 09-02-PLAN.md — Primitive UI components: card, button, badge, input, table, dialog, sheet
 - [ ] 09-03-PLAN.md — Layout components: sidebar, top-bar, app-shell border removal
-- [ ] 09-04-PLAN.md — Core page typography: dashboard, customers, loans, payments, watchlist
-- [ ] 09-05-PLAN.md — Remaining pages + receipts + reports + full regression pass
+- [ ] 09-04-PLAN.md — Core page typography: dashboard, customers, loans, payments, watchlist, form pages, loan detail
+- [ ] 09-05-PLAN.md — Secondary pages: creditors, expenses, income, transactions, admin
+- [ ] 09-06-PLAN.md — Reports, receipts, design-system test enablement, full regression pass
 
 ## Progress
 
@@ -111,4 +112,4 @@ Plans:
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 7. Daily Collections View | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
-| 9. Design System Overhaul | v1.1 | 0/5 | Planning | - |
+| 9. Design System Overhaul | v1.1 | 0/6 | Planning | - |
