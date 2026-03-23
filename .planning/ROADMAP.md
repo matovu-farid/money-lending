@@ -90,7 +90,7 @@ Plans:
   6. Every currency, percentage, count, and timestamp value in the app uses font-mono tabular-nums
   7. Every page heading uses tracking-tight with a label-style subtitle
   8. Full Cypress E2E suite passes with zero failures
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 Plans:
 - [ ] 09-01-PLAN.md — Design token smoke test + globals.css Sovereign Ledger token rewrite
@@ -112,4 +112,4 @@ Plans:
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 7. Daily Collections View | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
-| 9. Design System Overhaul | 3/6 | In Progress|  | - |
+| 9. Design System Overhaul | 4/6 | In Progress|  | - |
