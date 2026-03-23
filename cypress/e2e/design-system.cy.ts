@@ -203,7 +203,7 @@ describe("Design System — Sovereign Ledger", () => {
   // 4. Card ring / box-shadow removal (enable after Plan 02)
   // -------------------------------------------------------------------------
   describe("4. Card Ring Removal", () => {
-    it.skip("enable after Plan 02 — [data-slot=card] has no visible box-shadow ring", () => {
+    it("[data-slot=card] has no visible box-shadow ring", () => {
       cy.get("[data-slot=card]")
         .first()
         .then(($card) => {
