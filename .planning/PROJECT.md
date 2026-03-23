@@ -28,7 +28,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 - [ ] Standalone Payments page with global list, search, and filters
 - ✓ COLL-01–04: Daily collections view with timezone-aware aggregation, breakdown table, due-today list — v1.1 Phase 07
-- [ ] Quick-record payment (select loan inline, no navigation required)
+- ✓ QREC-01–03: Quick-record payment with loan search, recently-collected chips, inline recording — v1.1 Phase 08
 
 ### Out of Scope
 
@@ -93,4 +93,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - Quick-record payment without navigating to individual loan page
 
 ---
-*Last updated: 2026-03-23 after v1.1 milestone started*
+*Last updated: 2026-03-23 after Phase 08 (quick-record-workflow) complete*
