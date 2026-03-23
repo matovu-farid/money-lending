@@ -70,11 +70,11 @@ Plans:
   2. User can submit the payment form in a modal and the payments list refreshes automatically to include the new payment
   3. User sees a receipt link in the success state immediately after recording the payment
   4. User can see a list of recently-collected loans for quick repeat selection, reducing keystrokes for bulk collection days
-**Plans**: TBD
+**Plans:** 2 plans
 
 Plans:
-- [ ] 08-01: Data layer and action updates — searchActiveLoansAction, extend recordPaymentAction to revalidate /payments, active-loan guard
-- [ ] 08-02: UI — LoanSearchCombobox primitive, QuickRecordDialog with success state and receipt link, recently-collected list
+- [ ] 08-01-PLAN.md — Data layer: types, searchActiveLoans + getRecentlyCollectedLoans services, server actions, revalidatePath("/payments"), unit + integration tests
+- [ ] 08-02-PLAN.md — UI: LoanSearchCombobox, QuickRecordDialog with recently-collected chips + success state + receipt link, Cypress E2E tests
 
 ## Progress
 
