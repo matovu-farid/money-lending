@@ -44,6 +44,7 @@ import { formatNumberWithCommas, formatDate } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer, type ListPaymentsInput } from "@/types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DailyCollectionsTab } from "./DailyCollectionsTab"
+import { QuickRecordDialog } from "./QuickRecordDialog"
 
 interface PaymentsClientProps {
   initialData: { rows: PaymentWithCustomer[]; total: number }
@@ -102,6 +103,8 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
 
   const isAdmin =
     ROLE_LEVELS[(session?.user?.role ?? "unassigned") as UserRole] >= ROLE_LEVELS.admin
+
+  const [quickRecordOpen, setQuickRecordOpen] = useState(false)
 
   // Filter state (initialized from server-rendered filters)
   const [customerName, setCustomerName] = useState(initialFilters.customerName ?? "")
@@ -318,16 +321,21 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Payments</h1>
-        {activeTab === "list" && (
-          <Button
-            variant="outline"
-            disabled={rows.length === 0}
-            onClick={() => exportToCsv(rows)}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Export CSV
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setQuickRecordOpen(true)}>
+            Record Payment
           </Button>
-        )}
+          {activeTab === "list" && (
+            <Button
+              variant="outline"
+              disabled={rows.length === 0}
+              onClick={() => exportToCsv(rows)}
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Export CSV
+            </Button>
+          )}
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
@@ -623,6 +631,9 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Quick Record Payment Dialog */}
+      <QuickRecordDialog open={quickRecordOpen} onOpenChange={setQuickRecordOpen} />
     </div>
   )
 }
