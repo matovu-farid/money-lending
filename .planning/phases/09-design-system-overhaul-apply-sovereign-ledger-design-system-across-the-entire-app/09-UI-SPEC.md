@@ -44,7 +44,7 @@ Declared values (8-point scale, multiples of 4):
 | xl | 32px | p-8 / gap-8 | Layout gaps between major modules |
 | 2xl | 48px | p-12 / gap-12 | Major section breaks, page header to content |
 | 3xl | 64px | p-16 / gap-16 | Page-level gutter (intentional void) |
-| 4xl | 88px | p-22 (custom) / gap-22 | Large editorial gutter (DESIGN.md §1: "16" or "20") |
+| 4xl | 80px | p-20 / gap-20 | Large editorial gutter — DESIGN.md §1: "large `20` (7rem) gutters to isolate critical data clusters" |
 
 Exceptions:
 - Touch targets (icon-only buttons): minimum 32px (h-8/w-8 current default) — acceptable; no change needed
@@ -59,18 +59,18 @@ Source: DESIGN.md §1 + RESEARCH.md Architecture Patterns
 
 | Role | Family | Size | Weight | Line Height | Letter Spacing | Usage |
 |------|--------|------|--------|-------------|----------------|-------|
-| Label | Geist (sans) | 11px (0.6875rem) | 500 (medium) | 1.4 | +0.05em (uppercase) | Table headers, card subtitles, metadata — ALL CAPS |
+| Label | Geist (sans) | 11px (0.6875rem) | 600 (semibold) | 1.4 | +0.05em (uppercase) | Table headers, card subtitles, metadata — ALL CAPS |
 | Body | Geist (sans) | 14px | 400 (regular) | 1.5 | 0 | Prose text, descriptions, customer names, status labels |
 | Heading | Geist (sans) | 20px | 600 (semibold) | 1.2 | -0.02em (tight) | Page section headings (h2), card titles |
 | Display | Geist (sans) | 24–32px | 600 (semibold) | 1.1 | -0.02em (tight) | Page h1 titles, KPI total portfolio balance |
-| Numeric | Geist Mono | (inherits context size) | 600 (semibold) | (inherits) | 0 (tabular-nums) | ALL currency amounts, percentages, counts, timestamps, loan IDs |
+| Numeric | Geist Mono | (inherits context size) | 400 (regular) | (inherits) | 0 (tabular-nums) | ALL currency amounts, percentages, counts, timestamps, loan IDs |
 
 Typography rules (non-negotiable):
 - Every currency value, percentage, count, timestamp, and loan slug: `font-mono tabular-nums`
 - Amount columns in tables: `text-right font-mono tabular-nums`
 - Amount column headers: `text-right`
 - Page headings (h1): `text-2xl font-semibold tracking-tight` (tracking-tight = -0.02em)
-- Metadata labels: `text-xs font-medium uppercase tracking-wider text-muted-foreground`
+- Metadata labels: `text-xs font-semibold uppercase tracking-wider text-muted-foreground` — semibold weight + uppercase + +0.05em tracking differentiates labels from headings visually without a third weight
 - Body text (names, descriptions): Geist sans, no mono, no uppercase
 
 Weights declared: 400 (regular) + 600 (semibold). No other weights.
@@ -158,6 +158,15 @@ Add `tertiary` variant to `buttonVariants` cva:
 tertiary: "text-[oklch(0.35_0.2_264)] bg-transparent hover:bg-accent"
 ```
 Existing `default` variant: no class change needed — token update handles color.
+
+### Icon-Only Button Accessibility
+
+All icon-only buttons (buttons that render only an icon with no visible text label) must include `aria-label` matching the action label in plain language. Examples:
+- Close button: `aria-label="Close"`
+- Edit button: `aria-label="Edit [entity]"`
+- Delete button: `aria-label="Delete [entity]"`
+
+No icon-only button may be rendered without an `aria-label`. This applies to all instances across all ~26 files touched in this phase.
 
 ### Table Component
 
