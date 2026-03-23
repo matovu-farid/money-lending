@@ -70,7 +70,7 @@ Plans:
   2. User can submit the payment form in a modal and the payments list refreshes automatically to include the new payment
   3. User sees a receipt link in the success state immediately after recording the payment
   4. User can see a list of recently-collected loans for quick repeat selection, reducing keystrokes for bulk collection days
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 08-01-PLAN.md — Data layer: types, searchActiveLoans + getRecentlyCollectedLoans services, server actions, revalidatePath("/payments"), unit + integration tests
@@ -87,4 +87,4 @@ Plans:
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 7. Daily Collections View | 2/2 | Complete   | 2026-03-23 | - |
-| 8. Quick-Record Workflow | v1.1 | 0/2 | Not started | - |
+| 8. Quick-Record Workflow | 1/2 | In Progress|  | - |

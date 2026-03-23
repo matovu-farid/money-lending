@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Payments
-status: unknown
-stopped_at: Phase 8 context gathered
-last_updated: "2026-03-23T14:33:19.730Z"
+status: executing
+stopped_at: "Completed 08-01-PLAN.md"
+last_updated: "2026-03-23T15:11:19.000Z"
 last_activity: 2026-03-23
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State
@@ -20,18 +20,18 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-23)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 07 — daily-collections-view
+**Current focus:** Phase 08 — quick-record-workflow
 
 ## Current Position
 
-Phase: 07 (daily-collections-view) — EXECUTING
-Plan: 1 of 2
+Phase: 08 (quick-record-workflow) — EXECUTING
+Plan: 2 of 2
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed: 0 (v1.1)
+- Total plans completed: 1 (v1.1)
 - Average duration: —
 - Total execution time: —
 
@@ -41,7 +41,7 @@ Plan: 1 of 2
 |-------|-------|-------|----------|
 | 6. Global Payments List | 0/2 | — | — |
 | 7. Daily Collections View | 0/2 | — | — |
-| 8. Quick-Record Workflow | 0/2 | — | — |
+| 8. Quick-Record Workflow | 1/2 | 7min | 7min |
 | Phase 06 P01 | 6 | 2 tasks | 8 files |
 | Phase 06 P02 | 3 | 1 tasks | 3 files |
 | Phase 07 P01 | 3 | 2 tasks | 6 files |
@@ -68,6 +68,9 @@ Key decisions relevant to v1.1:
 - [Phase 07]: useLoansDueToday staleTime 5 minutes — due-today list is date-independent
 - [Phase 07]: base-ui PopoverTrigger uses render prop pattern, not asChild — fix applied to DailyCollectionsTab
 - [Phase 07]: Cypress date navigation tests use URL-param-visit approach — router.push does not update headless browser URL from nested components
+- [Phase 08]: drizzle postgres-js db.execute returns RowList directly — use Array.from(rows), not result.rows
+- [Phase 08]: searchActiveLoans guards against < 2 char queries to prevent costly full-table ilike scans
+- [Phase 08]: getRecentlyCollectedLoansAction takes no parameters — userId always from server session to prevent spoofing
 
 ### Pending Todos
 
@@ -88,7 +91,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T14:33:19.723Z
+Last session: 2026-03-23T15:11:19.000Z
 Last activity: 2026-03-23
-Stopped at: Phase 8 context gathered
-Resume file: .planning/phases/08-quick-record-workflow/08-CONTEXT.md
+Stopped at: Completed 08-01-PLAN.md
+Resume file: .planning/phases/08-quick-record-workflow/08-02-PLAN.md
