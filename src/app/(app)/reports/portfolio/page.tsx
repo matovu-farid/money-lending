@@ -12,7 +12,7 @@ export default async function PortfolioReportPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Portfolio Report</h1>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
             Loan portfolio analysis
           </p>
         </div>

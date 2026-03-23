@@ -31,6 +31,21 @@ Requirements for the Payments milestone. Each maps to roadmap phases.
 - [x] **QREC-02**: User can see a receipt link after successfully recording a payment
 - [x] **QREC-03**: User can see a list of recently-collected loans for quick repeat selection
 
+### Design System Overhaul
+
+- [x] **DS-01**: App uses Sovereign Ledger oklch color token palette (off-white background, true black primary, Electric Blue accent)
+- [x] **DS-02**: All border-radius values use sharp financial terminal feel (0.5rem base)
+- [x] **DS-03**: Card components have no ring, rounded-lg corners
+- [x] **DS-04**: Button components use rounded-sm with tertiary variant available
+- [x] **DS-05**: Table components use ghost borders and label typography headers
+- [x] **DS-06**: Dialog and Sheet components use glassmorphism overlay
+- [x] **DS-07**: Layout chrome (sidebar, top-bar) uses tonal separation instead of border lines
+- [x] **DS-08**: All page headings use tracking-tight letter spacing
+- [x] **DS-09**: All page subtitles use label typography (text-xs font-semibold uppercase tracking-wider)
+- [x] **DS-10**: All numeric/currency values use font-mono tabular-nums
+- [x] **DS-11**: Print media resets tokens for receipt printing
+- [x] **DS-12**: Cypress design-system smoke test validates all token assertions
+
 ## Future Requirements
 
 ### Payments (v2+)
@@ -69,10 +84,22 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QREC-01 | Phase 8 | Complete |
 | QREC-02 | Phase 8 | Complete |
 | QREC-03 | Phase 8 | Complete |
+| DS-01 | Phase 9 | Complete |
+| DS-02 | Phase 9 | Complete |
+| DS-03 | Phase 9 | Complete |
+| DS-04 | Phase 9 | Complete |
+| DS-05 | Phase 9 | Complete |
+| DS-06 | Phase 9 | Complete |
+| DS-07 | Phase 9 | Complete |
+| DS-08 | Phase 9 | Complete |
+| DS-09 | Phase 9 | Complete |
+| DS-10 | Phase 9 | Complete |
+| DS-11 | Phase 9 | Complete |
+| DS-12 | Phase 9 | Complete |
 
 **Coverage:**
-- v1.1 requirements: 15 total
-- Mapped to phases: 15
+- v1.1 requirements: 27 total
+- Mapped to phases: 27
 - Unmapped: 0
 
 ---
