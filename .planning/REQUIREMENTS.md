@@ -27,9 +27,9 @@ Requirements for the Payments milestone. Each maps to roadmap phases.
 
 ### Quick Record
 
-- [ ] **QREC-01**: User can record a payment by searching and selecting a loan without leaving the payments page
-- [ ] **QREC-02**: User can see a receipt link after successfully recording a payment
-- [ ] **QREC-03**: User can see a list of recently-collected loans for quick repeat selection
+- [x] **QREC-01**: User can record a payment by searching and selecting a loan without leaving the payments page
+- [x] **QREC-02**: User can see a receipt link after successfully recording a payment
+- [x] **QREC-03**: User can see a list of recently-collected loans for quick repeat selection
 
 ## Future Requirements
 
@@ -66,9 +66,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COLL-02 | Phase 7 | Complete |
 | COLL-03 | Phase 7 | Complete |
 | COLL-04 | Phase 7 | Complete |
-| QREC-01 | Phase 8 | Pending |
-| QREC-02 | Phase 8 | Pending |
-| QREC-03 | Phase 8 | Pending |
+| QREC-01 | Phase 8 | Complete |
+| QREC-02 | Phase 8 | Complete |
+| QREC-03 | Phase 8 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 15 total
