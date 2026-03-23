@@ -1,505 +1,429 @@
 # Architecture Patterns
 
-**Domain:** Money Lending / Financial Management System
-**Researched:** 2026-03-19
+**Domain:** Payment management — global list, daily collections, quick-record (v1.1 milestone)
+**Researched:** 2026-03-23
+**Confidence:** HIGH — based on direct reading of v1.0 codebase
 
-## Recommended Architecture
+---
 
-Next.js 16 App Router, full-stack monolith. Server Components handle data fetching directly. Route Handlers expose the API surface for mutations and cron triggers. A dedicated service layer holds all financial business logic, keeping it independent of the HTTP layer and testable in isolation. PostgreSQL stores all financial state.
+## Context: What Already Exists
+
+The following payment infrastructure is fully operational in v1.0 and must not be replaced — only extended.
+
+| Existing Piece | Location | Role |
+|----------------|----------|------|
+| `payment.service.ts` | `src/services/` | Effect.js service: recordPayment, editPayment, deletePayment, getPaymentsForLoan |
+| `payment.actions.ts` | `src/actions/` | Server Actions: recordPaymentAction, editPaymentAction, deletePaymentAction, getPaymentsByLoanAction |
+| `RecordPaymentForm` | `src/app/(app)/loans/[loanId]/payments/new/` | Loan-scoped payment recording form |
+| `LoanDetailClient` | `src/app/(app)/loans/[loanId]/` | Payment list per loan with edit/delete dialogs |
+| `payments` schema | `src/lib/db/schema/payments.ts` | loanId, amount, interestPortion, principalPortion, balanceBefore/After, recordedBy, soft-delete fields |
+| Sidebar nav | `src/components/layout/sidebar.tsx` | "Payments" nav item at `/payments` — currently `disabled: true` |
+
+The sidebar already has a "Payments" slot at `href: "/payments"` marked `disabled: true`. Removing that flag is the final integration step — the nav link is already wired.
+
+---
+
+## Recommended Architecture for v1.1 Payments
+
+### New Route: `/payments`
+
+A single page route at `src/app/(app)/payments/page.tsx` following the same pattern as `/loans/page.tsx` and `/customers/page.tsx`:
+
+- Server Component shell (`page.tsx`) — renders the client component, performs no data fetching
+- Client Component (`PaymentsClient.tsx`) — owns all TanStack Query state, filters, tab switching
+
+### Two-Tab Layout Within `/payments`
+
+The page hosts two views under a tab switcher (shadcn `Tabs` component):
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     Presentation Layer                       │
-│  src/app/ — React Server Components + Client Components      │
-│  Pages: customers, loans, payments, reports, admin           │
-├──────────────────────────────────────────────────────────────┤
-│                     API Layer                                │
-│  src/app/api/ — Next.js Route Handlers                       │
-│  /api/loans, /api/payments, /api/customers, /api/creditors   │
-│  /api/cron/daily-interest (POST, secured by secret header)   │
-│  /api/webhooks/clerk (login activity)                        │
-├──────────────────────────────────────────────────────────────┤
-│                   Service Layer                              │
-│  src/lib/services/                                           │
-│  LoanService, InterestEngine, PaymentProcessor               │
-│  CreditorService, ReportService, NotificationService         │
-├──────────────────────────────────────────────────────────────┤
-│                 Data Access Layer                            │
-│  src/lib/db/ — Prisma ORM + PostgreSQL                       │
-│  Typed models: Customer, Loan, Payment, Creditor, ...        │
-└──────────────────────────────────────────────────────────────┘
+/payments
+  Tab 1: "All Payments"      — paginated global list with search/filter
+  Tab 2: "Daily Collections" — date-picker driven daily summary
 ```
 
-### Component Boundaries
+No sub-routes needed. Tab state lives in URL search params (`?tab=daily&date=2026-03-23`) so deep links and refreshes work correctly. This matches Next.js 16 App Router conventions.
+
+---
+
+## Component Boundaries
 
 | Component | Responsibility | Communicates With |
 |-----------|---------------|-------------------|
-| Route Handlers (`/api/*`) | Validate input, authenticate request, delegate to service, return HTTP response | Service Layer |
-| `LoanService` | Loan issuance, status transitions, validation safeguards | `InterestEngine`, `PaymentProcessor`, Prisma |
-| `InterestEngine` | Reducing balance interest calculation, daily accrual batch, 30-day minimum period rule | Prisma (reads/writes `InterestAccrual`) |
-| `PaymentProcessor` | Allocate payment to interest-first then principal, update loan balance, emit receipt data | `InterestEngine` (to determine outstanding interest), Prisma |
-| `CreditorService` | Creditor investment tracking, reuses `InterestEngine` for creditor accrual | Prisma, `InterestEngine` |
-| `ReportService` | Aggregate queries for P&L, balance sheet, portfolio view | Prisma (read-only) |
-| `NotificationService` | Email on money-in/out, 5-day due date alerts, overdue flagging | External email provider (e.g. Resend) |
-| Cron Endpoint (`/api/cron/daily-interest`) | Invoked once daily by system cron; calls `InterestEngine.runDailyBatch()` | `InterestEngine` |
-| `CronJobLog` table | Idempotency record for cron runs — prevents double-accrual on retries | Written by Cron Endpoint |
+| `src/app/(app)/payments/page.tsx` | Server shell, no data fetch | Renders PaymentsClient |
+| `src/app/(app)/payments/PaymentsClient.tsx` | Tab state, URL param sync, query client | PaymentListTab, DailyCollectionsTab, QuickRecordDialog |
+| `src/app/(app)/payments/PaymentListTab.tsx` | Global paginated payment table, filter bar, "Record Payment" trigger | usePayments hook, QuickRecordDialog open state |
+| `src/app/(app)/payments/DailyCollectionsTab.tsx` | Date picker, daily summary stats, day's payment list | useDailyCollections hook |
+| `src/app/(app)/payments/QuickRecordDialog.tsx` | Modal: loan search → record payment inline without navigation | useLoans (existing), recordPaymentAction (existing) |
+| `src/hooks/use-payments.ts` | TanStack Query wrapper for listPaymentsAction | payment.actions |
+| `src/hooks/use-daily-collections.ts` | TanStack Query wrapper for getDailyCollectionsAction | payment.actions |
+
+### Reuse Decisions
+
+- **QuickRecordDialog reuses `recordPaymentAction` unchanged.** The action already accepts any `loanId`. It has no dependency on the current route. No modifications to the action needed.
+- **The `loans` TanStack Query cache** (`queryKey: ["loans"]`) is already populated from `/loans` visits. QuickRecordDialog can call `listLoansAction()` with the same key to get a filtered list for the loan selector combobox.
+- **`getPaymentsByLoanAction`** (already in `payment.actions.ts`) can be used inside QuickRecordDialog to display a selected loan's current balance before recording.
+- **Edit and delete dialogs** from `LoanDetailClient` are not needed in the global list for v1.1 — the global list is read-only with links to loan detail pages. This keeps the scope bounded.
 
 ---
 
-## Database Schema Patterns
-
-### Core Principle: Store Accrued Interest Explicitly
-
-Do not recalculate interest from scratch on every query. Store daily accrual as rows in an `InterestAccrual` table. This makes audit trails exact, reports fast, and the daily cron the single source of truth.
-
-### Entity Overview
+## Data Flow: Global Payments List
 
 ```
-Customer (1) ──── (many) Loan
-Loan     (1) ──── (many) Payment
-Loan     (1) ──── (many) InterestAccrual
-Loan     (1) ──── (1)    Guarantor        (per-loan, not per-customer)
-Loan     (1) ──── (1)    Collateral       (per-loan)
-Creditor (1) ──── (many) CreditorInvestment
-CreditorInvestment (1) ── (many) InterestAccrual  (reuses same table with discriminator)
-Transaction (standalone) ── references Loan or Expense or Income source
-AuditLog    (immutable append-only)
-CronJobLog  (idempotency guard)
+PaymentListTab
+  → usePayments(filters, page)
+    → useQuery(["payments", filters, page])
+      → listPaymentsAction(filters)                [NEW Server Action]
+        → payment.service.listPayments(filters)    [NEW service function]
+          → db SELECT payments
+               JOIN loans ON payments.loan_id = loans.id
+               JOIN customers ON loans.customer_id = customers.id
+             WHERE payments.deleted_at IS NULL
+               AND [filters applied]
+             ORDER BY payments.payment_date DESC
+             LIMIT 25 OFFSET (page * 25)
 ```
 
-### Key Tables (Prisma-flavoured pseudoschema)
-
-```prisma
-model Customer {
-  id            String   @id @default(cuid())
-  fullName      String
-  phone         String?
-  email         String?
-  address       String
-  status        CustomerStatus  @default(ACTIVE)  // ACTIVE | BLACKLISTED | INACTIVE
-  createdAt     DateTime @default(now())
-  loans         Loan[]
-}
-
-model Loan {
-  id              String      @id @default(cuid())
-  customerId      String
-  customer        Customer    @relation(fields: [customerId], references: [id])
-  principalAmount Decimal     @db.Decimal(15, 2)  // original disbursed amount
-  outstandingBalance Decimal  @db.Decimal(15, 2)  // reduces as principal is paid
-  interestRate    Decimal     @db.Decimal(5, 4)   // e.g. 0.1000 = 10% per month
-  dailyRate       Decimal     @db.Decimal(10, 8)  // derived: interestRate / 30
-  status          LoanStatus  @default(PENDING)
-  // PENDING | ACTIVE | PARTIALLY_PAID | FULLY_PAID | DEFAULTED
-  issuedAt        DateTime?
-  dueAt           DateTime?   // issuedAt + 30 days
-  fullyPaidAt     DateTime?
-  minimumInterestDays Int     @default(30)
-  accruedInterestBalance Decimal @db.Decimal(15, 2) @default(0)
-  // running total of unpaid interest — updated by daily cron
-  guarantor       Guarantor?
-  collateral      Collateral?
-  payments        Payment[]
-  interestAccruals InterestAccrual[]
-  createdAt       DateTime    @default(now())
-  createdByUserId String      // Clerk user ID
-}
-
-model Payment {
-  id               String   @id @default(cuid())
-  loanId           String
-  loan             Loan     @relation(fields: [loanId], references: [id])
-  amountPaid       Decimal  @db.Decimal(15, 2)
-  interestApplied  Decimal  @db.Decimal(15, 2)  // portion allocated to interest
-  principalApplied Decimal  @db.Decimal(15, 2)  // portion allocated to principal
-  balanceBefore    Decimal  @db.Decimal(15, 2)  // snapshot for receipt
-  balanceAfter     Decimal  @db.Decimal(15, 2)  // snapshot for receipt
-  paidAt           DateTime @default(now())
-  recordedByUserId String
-  receiptNumber    String   @unique  // auto-generated, human-readable
-}
-
-model InterestAccrual {
-  id            String   @id @default(cuid())
-  loanId        String?
-  loan          Loan?    @relation(fields: [loanId], references: [id])
-  creditorInvestmentId String?  // populated when this is creditor-side accrual
-  date          DateTime @db.Date  // the calendar date this accrual is for
-  principalAtDate Decimal @db.Decimal(15, 2)  // balance used to calculate
-  dailyRate     Decimal  @db.Decimal(10, 8)
-  interestAmount Decimal @db.Decimal(15, 2)   // = principalAtDate * dailyRate
-  @@unique([loanId, date])  // idempotency: one accrual per loan per day
-  @@unique([creditorInvestmentId, date])
-}
-
-model Guarantor {
-  id       String @id @default(cuid())
-  loanId   String @unique
-  loan     Loan   @relation(fields: [loanId], references: [id])
-  fullName String
-  phone    String
-  address  String
-}
-
-model Collateral {
-  id          String @id @default(cuid())
-  loanId      String @unique
-  loan        Loan   @relation(fields: [loanId], references: [id])
-  nature      String  // "Land Title", "Motor Vehicle Log Book", etc.
-  description String?
-}
-
-model Creditor {
-  id          String   @id @default(cuid())
-  fullName    String
-  phone       String?
-  email       String?
-  address     String
-  createdAt   DateTime @default(now())
-  investments CreditorInvestment[]
-}
-
-model CreditorInvestment {
-  id              String   @id @default(cuid())
-  creditorId      String
-  creditor        Creditor @relation(fields: [creditorId], references: [id])
-  amount          Decimal  @db.Decimal(15, 2)
-  interestRate    Decimal  @db.Decimal(5, 4)
-  outstandingBalance Decimal @db.Decimal(15, 2)
-  startedAt       DateTime
-  status          InvestmentStatus @default(ACTIVE)
-  accruedInterestBalance Decimal @db.Decimal(15, 2) @default(0)
-  interestAccruals InterestAccrual[]
-}
-
-model Transaction {
-  id          String          @id @default(cuid())
-  type        TransactionType // DEBIT | CREDIT
-  category    String          // "Loan Disbursement", "Repayment", "Salary", "Rent", etc.
-  amount      Decimal         @db.Decimal(15, 2)
-  description String?
-  referenceId String?         // loanId, creditorInvestmentId, or null for manual entries
-  occurredAt  DateTime        @default(now())
-  recordedByUserId String
-}
-
-model AuditLog {
-  id         String   @id @default(cuid())
-  entityType String   // "Loan", "Payment", "Customer", etc.
-  entityId   String
-  action     String   // "CREATED", "STATUS_CHANGED", "PAYMENT_RECORDED", etc.
-  before     Json?    // snapshot before change
-  after      Json?    // snapshot after change
-  userId     String
-  occurredAt DateTime @default(now())
-}
-
-model CronJobLog {
-  id          String   @id @default(cuid())
-  jobName     String   // "daily-interest"
-  runDate     DateTime @db.Date  // the date this run was FOR (not when it ran)
-  status      String   // "COMPLETED" | "FAILED" | "PARTIAL"
-  loansProcessed Int   @default(0)
-  errors      Json?
-  startedAt   DateTime
-  completedAt DateTime?
-  @@unique([jobName, runDate])  // prevents double-run for same date
-}
-```
-
-### Numeric Precision
-
-Use `Decimal` (`NUMERIC` in PostgreSQL) for all monetary values, never `Float`. Floating point arithmetic causes cent-level rounding errors that compound over time in a lending system. `Decimal(15, 2)` supports up to 999 trillion with 2 decimal places. Interest rates use `Decimal(5, 4)` (e.g., `0.1000`) and daily rates use `Decimal(10, 8)` for precision across the division.
-
----
-
-## Data Flow for Key Operations
-
-### 1. Loan Issuance
-
-```
-Loan Officer fills form
-  → POST /api/loans
-  → Route Handler: validate input, check Clerk auth + role
-  → LoanService.issueLoan(dto)
-      → verify customer exists and is ACTIVE
-      → verify guarantor + collateral present (safeguard)
-      → compute dailyRate = interestRate / 30
-      → create Loan (status: ACTIVE), Guarantor, Collateral in DB transaction
-      → create Transaction (DEBIT, "Loan Disbursement")
-      → write AuditLog entry
-  → Return loan record + disbursement receipt data
-  → Frontend renders printable receipt
-```
-
-### 2. Daily Interest Run (Cron)
-
-```
-System cron fires at 00:05 daily (server-side cron or external scheduler)
-  → POST /api/cron/daily-interest
-    Authorization: Bearer CRON_SECRET (verified by handler)
-  → Check CronJobLog for today's date → if already COMPLETED, return 200 (idempotent)
-  → Write CronJobLog (status: RUNNING)
-  → InterestEngine.runDailyBatch(runDate)
-      → Query all loans WHERE status IN (ACTIVE, PARTIALLY_PAID)
-      → For each loan:
-          → Check if InterestAccrual already exists for (loanId, runDate) → skip if yes
-          → Calculate dailyInterest = outstandingBalance * dailyRate
-          → Insert InterestAccrual row
-          → Increment Loan.accruedInterestBalance by dailyInterest
-      → Query all CreditorInvestments WHERE status = ACTIVE (same pattern)
-      → Auto-flag overdue loans: WHERE dueAt < runDate AND status != FULLY_PAID
-  → Update CronJobLog (status: COMPLETED, loansProcessed: N)
-  → Return 200
-```
-
-The `@@unique([loanId, date])` constraint on `InterestAccrual` acts as a hard idempotency guard independent of `CronJobLog`. A retry cannot double-accrue.
-
-### 3. Payment Recording
-
-```
-Loan Officer enters payment amount
-  → POST /api/payments
-  → Route Handler: validate, auth check
-  → PaymentProcessor.recordPayment(loanId, amountPaid)
-      → Load loan (with accruedInterestBalance, outstandingBalance)
-      → Enforce minimum interest period:
-          → if daysActive < minimumInterestDays:
-              interestOwed = minimumInterest - totalInterestPaid (floor, not negative)
-          → else:
-              interestOwed = loan.accruedInterestBalance
-      → Allocate payment:
-          → interestApplied = min(amountPaid, interestOwed)
-          → principalApplied = amountPaid - interestApplied
-      → Update Loan:
-          → accruedInterestBalance -= interestApplied
-          → outstandingBalance -= principalApplied
-          → Recalculate status:
-              → outstandingBalance == 0 → FULLY_PAID
-              → outstandingBalance < principalAmount → PARTIALLY_PAID
-      → Create Payment record (with before/after balance snapshots)
-      → Create Transaction (CREDIT, "Repayment")
-      → Write AuditLog
-      → Trigger NotificationService.onPaymentReceived (email admin)
-  → Return payment record + repayment receipt data
-```
-
----
-
-## Service Layer Design
-
-### `InterestEngine` — Core Calculation Rules
+### Filter Shape
 
 ```typescript
-// src/lib/services/interest-engine.ts
-
-// Reducing balance: interest is calculated on the CURRENT outstanding principal
-// not the original loan amount.
-// dailyInterest = outstandingBalance * (monthlyRate / 30)
-
-// Minimum interest period: even if borrower repays in 5 days, they owe
-// at least 30 days of interest. This is enforced in PaymentProcessor,
-// not in the daily accrual (which just records actual days elapsed).
-```
-
-The engine exposes:
-- `runDailyBatch(date)` — called by cron
-- `calculateProjectedBalance(loanId, paymentAmount)` — for the repayment simulator
-- `calculateDaysRemaining(loanId)` — balance-to-days converter
-
-### `PaymentProcessor` — Allocation Rules
-
-Interest-first allocation is a non-negotiable business rule. The processor enforces:
-1. All outstanding accrued interest must be cleared before any principal reduction
-2. Minimum interest period floor (admin-configurable, default 30 days)
-3. Atomic DB transaction wrapping payment creation + balance updates
-
-### `ReportService` — Aggregate Queries Only
-
-The report service issues only read queries. It never mutates state. Report generation is decoupled from all loan/payment operations.
-
----
-
-## Cron Job Architecture in Next.js
-
-Next.js does not have a built-in scheduler. The recommended pattern for a self-hosted Node.js deployment is:
-
-**Option A (Recommended for self-hosted): System cron + secured Route Handler**
-
-```
-# /etc/cron.d/money-lending  (or system crontab)
-5 0 * * * curl -s -X POST https://your-domain.com/api/cron/daily-interest \
-  -H "Authorization: Bearer $CRON_SECRET" \
-  >> /var/log/lending-cron.log 2>&1
-```
-
-The Route Handler at `/api/cron/daily-interest`:
-1. Validates `Authorization: Bearer <CRON_SECRET>` header (env var, never public)
-2. Returns 200 immediately if today's `CronJobLog` shows COMPLETED
-3. Calls `InterestEngine.runDailyBatch(today)`
-4. Logs result to `CronJobLog`
-
-This is stateless, retryable, and auditable. The cron secret prevents accidental or malicious triggers.
-
-**Option B: `node-cron` via `instrumentation.ts`**
-
-```typescript
-// src/instrumentation.ts
-export async function register() {
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const cron = await import('node-cron')
-    cron.schedule('5 0 * * *', async () => {
-      // call InterestEngine.runDailyBatch() directly
-    })
-  }
+// Add to src/types/index.ts
+export interface PaymentListFilters {
+  search?: string      // matches customer full_name (ILIKE)
+  dateFrom?: string    // ISO date — inclusive lower bound on payment_date
+  dateTo?: string      // ISO date — inclusive upper bound on payment_date
+  loanId?: string      // filter to a specific loan
+  page?: number        // zero-indexed
+  pageSize?: number    // default 25
 }
 ```
 
-`instrumentation.ts` `register()` runs once at server startup (confirmed in Next.js 16.2.0 docs). This works but is harder to monitor, test, and retry independently. Use only if external cron scheduling is unavailable.
+### New Service Function Signature
 
-**Recommendation:** Option A. It is observable (logs in cron output + `CronJobLog` table), independently retryable, and decoupled from the Next.js process lifecycle.
+```typescript
+// Add to src/services/payment.service.ts
+export const listPayments = (
+  filters: PaymentListFilters
+): Effect.Effect<{ rows: PaymentWithContext[]; total: number }, DatabaseError>
+```
+
+### New Composite Type
+
+```typescript
+// Add to src/types/index.ts
+export interface PaymentWithContext {
+  id: string
+  loanId: string
+  paymentDate: Date
+  amount: string
+  interestPortion: string
+  principalPortion: string
+  principalBalanceBefore: string
+  principalBalanceAfter: string
+  recordedBy: string
+  deletedAt: Date | null
+  createdAt: Date
+  // Joined context
+  customerName: string
+  loanSlug: string      // loan.id.slice(-5) — matches existing loans list display pattern
+}
+```
 
 ---
 
-## Audit Logging Pattern
+## Data Flow: Daily Collections
 
-Every state-mutating operation writes an `AuditLog` row as part of the same database transaction. This is not optional — financial systems require an immutable record of who changed what and when.
-
-```typescript
-// Pattern: always inside the same Prisma transaction
-await prisma.$transaction([
-  prisma.loan.update({ where: { id }, data: { status: 'FULLY_PAID' } }),
-  prisma.auditLog.create({
-    data: {
-      entityType: 'Loan',
-      entityId: id,
-      action: 'STATUS_CHANGED',
-      before: { status: 'PARTIALLY_PAID' },
-      after: { status: 'FULLY_PAID' },
-      userId: clerkUserId,
-    }
-  })
-])
+```
+DailyCollectionsTab
+  → useDailyCollections(date)
+    → useQuery(["dailyCollections", date])
+      → getDailyCollectionsAction(date)                  [NEW Server Action]
+        → payment.service.getDailyCollections(date)      [NEW service function]
+          → db SELECT payments JOIN loans JOIN customers
+            WHERE payments.payment_date::date = $date
+              AND payments.deleted_at IS NULL
+            ORDER BY payments.payment_date ASC
 ```
 
-The `AuditLog` table is append-only. No application code ever updates or deletes audit rows. This is enforced by convention — do not expose update/delete endpoints for this table.
+### Daily Summary Shape
+
+```typescript
+// Add to src/types/index.ts
+export interface DailyCollectionsSummary {
+  date: string
+  totalCollected: string         // sum of amount (BigNumber)
+  totalInterestPortion: string   // sum of interestPortion
+  totalPrincipalPortion: string  // sum of principalPortion
+  paymentCount: number
+  payments: PaymentWithContext[]
+}
+```
+
+Summary stats are computed from the fetched rows in the service — no second aggregation query. Daily payment volumes are bounded (typically 10-50 per day), so loading all rows for a single date is safe and fast.
+
+---
+
+## Data Flow: Quick-Record Payment
+
+```
+QuickRecordDialog
+  Internal step state: "select-loan" | "enter-amount"
+
+  Step 1 — Loan selector:
+    → useQuery(["loans"]) [EXISTING query key from /loans page]
+      → listLoansAction() [EXISTING action]
+    → Combobox filtered by customer name or loan slug
+    → On select: optionally call getPaymentsByLoanAction(loanId) to show current balance
+
+  Step 2 — Record form:
+    Fields: paymentDate (default today), amount
+    → recordPaymentAction({ loanId, paymentDate, amount })
+      → EXISTING action, ZERO changes needed
+    On success:
+      → queryClient.invalidateQueries({ queryKey: ["payments"] })
+      → queryClient.invalidateQueries({ queryKey: ["dailyCollections"] })
+      → queryClient.invalidateQueries({ queryKey: ["loans"] })  // status may change to fully_paid
+      → toast.success("Payment recorded")
+      → dialog closes
+```
+
+### Key UX Rule
+
+The QuickRecordDialog does not navigate away. It stays on `/payments`. This is the core improvement over `/loans/[loanId]/payments/new` — the existing loan-scoped route is kept as-is for users who reach it from the loan detail page.
 
 ---
 
 ## Patterns to Follow
 
-### Pattern: Immutable Payment Records
+### Pattern 1: Thin Action, Effect Service
 
-Once a `Payment` row is created, it is never updated. Corrections are handled by creating a reversal entry (a separate payment with a negative flag or a manual transaction adjustment) and a corresponding `AuditLog` entry. This preserves the full financial history.
+All existing actions follow this exact shape. Match it for the two new actions:
 
-### Pattern: Snapshot Balances on Payment
+```typescript
+// In src/actions/payment.actions.ts — add to bottom
+export async function listPaymentsAction(filters: PaymentListFilters) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
 
-The `Payment` record stores `balanceBefore` and `balanceAfter`. This means a receipt can always be regenerated accurately from the database, even after subsequent payments change the loan balance. Do not recalculate receipt values at render time.
+  try {
+    const data = await Effect.runPromise(listPayments(filters))
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
 
-### Pattern: Decimal Arithmetic via Prisma/PostgreSQL
+export async function getDailyCollectionsAction(date: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
 
-Prisma maps `Decimal` fields to the `Decimal.js` library in Node.js, which provides arbitrary-precision arithmetic. All interest calculations must use `Decimal` operations, never native JavaScript `number` arithmetic.
+  try {
+    const data = await Effect.runPromise(getDailyCollections(date))
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+```
 
-### Pattern: Single Source of Truth for Balances
+No Zod. TypeScript types for input validation. Runtime guards for auth only.
 
-`Loan.outstandingBalance` and `Loan.accruedInterestBalance` are the authoritative balances. They are updated transactionally on every payment and every daily accrual. Do not recalculate running balances by summing historical records — that approach is slow and error-prone. The daily cron and payment processor maintain these as live columns.
+### Pattern 2: TanStack Query Hook
+
+Mirrors `src/hooks/use-customers.ts` exactly:
+
+```typescript
+// src/hooks/use-payments.ts
+export function usePayments(filters: PaymentListFilters, page: number) {
+  return useQuery<{ rows: PaymentWithContext[]; total: number }>({
+    queryKey: ["payments", filters, page],
+    queryFn: async () => {
+      const result = await listPaymentsAction({ ...filters, page, pageSize: 25 })
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
+}
+```
+
+### Pattern 3: URL Search Param State Sync
+
+```typescript
+// In PaymentsClient.tsx
+const searchParams = useSearchParams()
+const router = useRouter()
+
+const activeTab = searchParams.get("tab") ?? "all"
+const selectedDate = searchParams.get("date") ?? todayISODate()
+
+function setTab(tab: string) {
+  const params = new URLSearchParams(searchParams.toString())
+  params.set("tab", tab)
+  router.replace(`/payments?${params.toString()}`)
+}
+```
+
+Enables deep-linking to `/payments?tab=daily&date=2026-03-23` and correct browser back/forward behavior.
+
+### Pattern 4: Effect Service Function
+
+New service functions follow the existing pattern:
+
+```typescript
+// In src/services/payment.service.ts — append to bottom
+export const listPayments = (
+  filters: PaymentListFilters
+): Effect.Effect<{ rows: PaymentWithContext[]; total: number }, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      // Drizzle query with JOIN, WHERE, LIMIT/OFFSET
+      // ...
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+```
+
+No new imports needed — `db`, `Effect`, `DatabaseError` are already imported.
 
 ---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern: Float for Money
+### Anti-Pattern 1: Route Handler for Payments Data
 
-**What:** `amount: Float` in schema or `parseFloat()` in calculation code
-**Why bad:** `0.1 + 0.2 !== 0.3` in IEEE 754. Over hundreds of accrual days, rounding errors compound into real money discrepancies.
-**Instead:** `Decimal` in schema, `Decimal.js` in calculation code.
+**What:** Creating `/api/payments` route handler
+**Why bad:** The project explicitly uses Server Actions (not Route Handlers) for all data access. Route Handlers add fetch ceremony and break architectural consistency.
+**Instead:** Add `listPaymentsAction` and `getDailyCollectionsAction` to `src/actions/payment.actions.ts`.
 
-### Anti-Pattern: Recalculate Interest from Raw History
+### Anti-Pattern 2: Separate Sub-Route for Daily View
 
-**What:** Deriving loan balance/interest by summing all `InterestAccrual` rows on every request
-**Why bad:** O(n) query per loan where n is days active (a 2-year loan = 730 rows). Unacceptable for dashboards showing 100+ loans.
-**Instead:** Maintain running balance columns (`accruedInterestBalance`, `outstandingBalance`) updated transactionally. Use `InterestAccrual` rows only for audit/history views.
+**What:** Creating `/payments/daily` as a separate page
+**Why bad:** Unnecessary navigation complexity. Daily view is a filter on the same data model. Users lose filter context when switching views.
+**Instead:** Tab switcher within `/payments`, state in URL search params.
 
-### Anti-Pattern: Business Logic in Route Handlers
+### Anti-Pattern 3: Duplicating `recordPayment` Logic
 
-**What:** Loan allocation, interest calculation, and status transition logic inside `app/api/*/route.ts`
-**Why bad:** Untestable without HTTP, duplicated when logic is needed in cron, and brittle when rules change.
-**Instead:** Route handlers are thin — validate, auth-check, call a service function, return response.
+**What:** Writing a new "quick record" service function
+**Why bad:** `recordPaymentAction` already accepts any `loanId`. The existing loan-scoped form passes `loanId` from the URL, but the action has no route dependency.
+**Instead:** Call `recordPaymentAction` from QuickRecordDialog directly. Zero service changes.
 
-### Anti-Pattern: Skipping the Minimum Interest Period in Daily Accrual
+### Anti-Pattern 4: Loading All Payments Without Pagination
 
-**What:** Stopping accrual after 30 days if the borrower hasn't paid
-**Why bad:** The 30-day minimum is a *payment floor*, not an accrual cap. Interest continues to accrue every day regardless.
-**Instead:** Daily accrual runs indefinitely on active loans. The minimum period rule is enforced only at payment allocation time — the borrower must pay at least 30 days' interest even if they repay early.
+**What:** Fetching all payments globally on page load
+**Why bad:** A live lending operation accumulates thousands of payments quickly. Unpaginated SELECT causes slow queries and slow render.
+**Instead:** Server-side pagination with `LIMIT/OFFSET`. Default page size 25. Daily collections view is bounded by date and loads all rows for a single day (safe).
 
-### Anti-Pattern: Unguarded Cron Endpoint
+### Anti-Pattern 5: Bypassing Effect Error Wrapping
 
-**What:** `GET /api/cron/daily-interest` with no auth, or using a predictable token
-**Why bad:** Anyone who discovers the URL can trigger mass interest writes or drain server resources.
-**Instead:** `CRON_SECRET` env variable, verified on every request. Reject all requests that don't present it.
+**What:** Writing `listPayments` as a plain `async` Drizzle query outside Effect
+**Why bad:** All service functions use `Effect.tryPromise` for typed error propagation. Mixing patterns makes error handling inconsistent and breaks the test harness.
+**Instead:** Wrap in `Effect.tryPromise` with `catch: (e) => new DatabaseError({ cause: e })`.
 
 ---
 
-## Suggested Build Order (Dependencies)
+## Integration Points: New vs Modified
 
-Build order is dictated by data dependencies. Each phase must be stable before the next can be built correctly.
+### New Files
+
+| File | Type | Purpose |
+|------|------|---------|
+| `src/app/(app)/payments/page.tsx` | Server Component | Route shell |
+| `src/app/(app)/payments/PaymentsClient.tsx` | Client Component | Tab/URL state, top-level layout |
+| `src/app/(app)/payments/PaymentListTab.tsx` | Client Component | Global list with filters and pagination |
+| `src/app/(app)/payments/DailyCollectionsTab.tsx` | Client Component | Date picker and daily summary |
+| `src/app/(app)/payments/QuickRecordDialog.tsx` | Client Component | Inline payment recording modal |
+| `src/hooks/use-payments.ts` | Hook | TanStack Query for global list |
+| `src/hooks/use-daily-collections.ts` | Hook | TanStack Query for daily view |
+
+### Modified Files
+
+| File | Change | Risk |
+|------|--------|------|
+| `src/actions/payment.actions.ts` | Add `listPaymentsAction`, `getDailyCollectionsAction` | Low — additive only, existing actions untouched |
+| `src/services/payment.service.ts` | Add `listPayments`, `getDailyCollections` functions | Low — additive only, existing functions untouched |
+| `src/types/index.ts` | Add `PaymentWithContext`, `PaymentListFilters`, `DailyCollectionsSummary` types | Low — additive |
+| `src/components/layout/sidebar.tsx` | Remove `disabled: true` from Payments nav item | Trivial — one-line change, do last |
+
+### No Changes Needed
+
+- `recordPaymentAction` — works as-is for QuickRecordDialog
+- `payments` schema — no new columns required
+- `loans` schema — no changes
+- `src/app/(app)/loans/[loanId]/payments/new/` — kept as-is, still used from loan detail page
+
+---
+
+## Recommended Build Order
+
+Dependencies dictate this order. Items at the same level can be built in parallel.
 
 ```
-1. Database schema + Prisma setup
-   └── All other layers depend on this
+Level 1 — Foundation (sequential)
+  1a. Types: PaymentWithContext, PaymentListFilters, DailyCollectionsSummary
+      (src/types/index.ts — everything downstream imports these)
 
-2. Customer entity (CRUD + status)
-   └── Loans cannot be issued without a customer
+  1b. Service functions: listPayments, getDailyCollections
+      (src/services/payment.service.ts — depends on types)
 
-3. Core Loan Engine
-   a. Loan issuance (create loan + guarantor + collateral)
-   b. InterestEngine (daily accrual calculation)
-   c. Cron endpoint + CronJobLog (runs the engine daily)
-   └── Payment processor depends on having accrued interest
+  1c. Server Actions: listPaymentsAction, getDailyCollectionsAction
+      (src/actions/payment.actions.ts — depends on service functions)
 
-4. Payment Processor
-   └── Requires: loan engine, accrued interest balance
-   └── Generates: Payment records, receipt data
+Level 2 — Hooks (after actions, parallel with each other)
+  2a. src/hooks/use-payments.ts
+  2b. src/hooks/use-daily-collections.ts
 
-5. Creditor Management
-   └── Reuses InterestEngine — build after loan engine is proven correct
+Level 3 — Components (parallel, each depends on one hook)
+  3a. PaymentListTab (depends on use-payments)
+  3b. DailyCollectionsTab (depends on use-daily-collections)
+  3c. QuickRecordDialog (depends only on existing recordPaymentAction + listLoansAction)
 
-6. Transaction Log + Expense/Income Tracking
-   └── Standalone, but enriched once loan/payment data exists
+Level 4 — Route assembly (depends on all components)
+  4a. PaymentsClient (composes tabs + dialog)
+  4b. page.tsx (wraps PaymentsClient)
 
-7. Receipts (disbursement + repayment)
-   └── Requires: loan + payment records with balance snapshots
-
-8. Notifications + Alerts
-   └── Requires: loan status, due dates, payment events
-
-9. Reporting (Dashboard, P&L, Balance Sheet)
-   └── Requires: all financial data to be present and correct
-
-10. Admin Panel (role assignment, settings override)
-    └── Settings affect loan engine behavior — build once engine is stable
+Level 5 — Nav unlock (do last, after page is functional)
+  5a. Remove disabled: true from Payments in sidebar.tsx
 ```
+
+---
+
+## Database Index Recommendation
+
+The `payments` table currently has no explicit index beyond the primary key. The global list query orders by `payment_date DESC`. Add this migration before shipping:
+
+```sql
+-- drizzle/0005_payments-list-index.sql
+CREATE INDEX IF NOT EXISTS idx_payments_date_desc
+  ON payments (payment_date DESC)
+  WHERE deleted_at IS NULL;
+```
+
+This is a partial index (excludes soft-deleted rows) and directly matches the query shape in `listPayments`. Without it, the global list query will do a full table scan as the payments table grows.
 
 ---
 
 ## Scalability Considerations
 
-| Concern | At current scale (100 loans) | If scale grows (10K+ loans) |
-|---------|------------------------------|------------------------------|
-| Daily interest cron | Single batch, sequential loop is fine | Chunk into batches of 500, process with `Promise.allSettled` |
-| Balance queries | Direct column reads — fast | Still fast, columns are indexed by default |
-| Report generation | Aggregate queries — acceptable latency | Add materialized views or background pre-computation |
-| `InterestAccrual` table growth | ~100 rows/day = 36K/year | ~10K rows/day = 3.6M/year — add index on `(loanId, date)`, partition by year |
+| Concern | Current scale | If scale grows |
+|---------|--------------|----------------|
+| Global list query | ~thousands of payments | Server-side pagination covers this; index on payment_date DESC covers ordering cost |
+| Daily collections query | ~10-50 payments/day | Full day fetch is fine; date-bounded query is fast |
+| Loan selector in QuickRecordDialog | ~100s of active loans | In-memory filter over existing loans cache; acceptable. If >500 loans, add server-side search to loan selector |
+| Cache invalidation on record | Affects "payments" and "dailyCollections" keys | `queryClient.invalidateQueries` with specific keys — no broadcast invalidation needed |
 
 ---
 
 ## Sources
 
-- Next.js 16.2.0 Route Handlers documentation (official, verified): `https://nextjs.org/docs/app/api-reference/file-conventions/route`
-- Next.js 16.2.0 `after()` function documentation (official, verified): `https://nextjs.org/docs/app/api-reference/functions/after`
-- Next.js 16.2.0 Instrumentation documentation (official, verified): `https://nextjs.org/docs/app/guides/instrumentation`
-- Next.js 16.2.0 Self-hosting guide re: cron and `after` support (official, verified): `https://nextjs.org/docs/app/guides/self-hosting`
-- Project requirements: `.planning/PROJECT.md`
-- Existing codebase analysis: `.planning/codebase/ARCHITECTURE.md`
-- Reducing balance interest calculation logic: domain knowledge (MEDIUM confidence — standard financial formula, widely documented)
-- PostgreSQL `NUMERIC` type for monetary values: domain standard practice (HIGH confidence)
+- Direct reading: `src/services/payment.service.ts` (493 lines, v1.0)
+- Direct reading: `src/actions/payment.actions.ts` (203 lines, v1.0)
+- Direct reading: `src/lib/db/schema/payments.ts`
+- Direct reading: `src/lib/db/schema/loans.ts`
+- Direct reading: `src/lib/db/schema/customers.ts`
+- Direct reading: `src/components/layout/sidebar.tsx` (Payments nav slot confirmed at line 54)
+- Direct reading: `src/hooks/use-customers.ts` (hook pattern reference)
+- Direct reading: `src/app/(app)/customers/page.tsx` (page pattern reference)
+- Direct reading: `src/app/(app)/loans/page.tsx` (TanStack Query page pattern reference)
+- Direct reading: `src/types/index.ts` (existing type patterns)
+- Direct reading: `.planning/PROJECT.md` (v1.1 feature requirements)
+- Confidence: HIGH for all integration points — all based on current codebase, not training data assumptions

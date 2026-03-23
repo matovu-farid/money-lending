@@ -1,267 +1,130 @@
 # Domain Pitfalls
 
-**Domain:** Money Lending / Financial Management System
-**Researched:** 2026-03-19
-**Confidence:** HIGH (domain fundamentals are well-established; patterns drawn from financial software engineering principles and known failure modes in lending systems)
+**Domain:** Payments page (global list, daily collections, quick-record) added to existing perpetual lending system
+**Researched:** 2026-03-23
+**Milestone context:** v1.1 — adding standalone Payments feature on top of shipped v1.0
+
+---
+
+## v1.1 Milestone Pitfalls
+
+Pitfalls specific to adding a global payments view, daily collections summary, and quick-record workflow to the existing system. All findings are grounded in the v1.0 codebase.
 
 ---
 
 ## Critical Pitfalls
 
-Mistakes that cause rewrites, data corruption, or incorrect financial outcomes.
+Mistakes that cause data corruption, financial inconsistency, or require rewrites.
 
 ---
 
-### Pitfall 1: Floating-Point Arithmetic for Money
+### Pitfall 1: Soft-Delete Blindness in the Global Payments Query
 
-**What goes wrong:** JavaScript's native `number` type uses IEEE 754 double-precision floating point. Operations like `0.1 + 0.2` do not produce `0.3` — they produce `0.30000000000000004`. In a lending system, this compounds invisibly across thousands of daily interest calculations. A principal of 1,000,000 at 10%/month accumulates floating-point drift that eventually causes a borrower's balance to be a few coins off, receipts to not match ledger totals, and P&L statements to have unexplained rounding discrepancies.
+**What goes wrong:** A global payments query that omits `isNull(payments.deletedAt)` silently includes soft-deleted payments in totals, the payments list, and daily collection summaries. Staff see voided payments in live figures and act on stale numbers.
 
-**Why it happens:** Developers reach for `Number`, `parseFloat`, or standard arithmetic operators because they are the path of least resistance in JavaScript. The error is invisible in development (it appears in the 10th+ decimal place) and only surfaces at scale or when totals are compared across contexts.
+**Why it happens:** The existing `getPaymentsForLoan` deliberately includes deleted rows — they appear with strikethrough on the loan-detail page (per LOAN-07). A developer copying that function for the new global list carries over the intent without noticing the different requirement. The v1.0 codebase intentionally has two patterns in the same service file:
+- `getPaymentsForLoan` — fetches ALL rows (including deleted) for the per-loan history view.
+- `recordPayment` / `recalculateFromPayment` — filters `isNull(payments.deletedAt)` for financial calculations.
 
-**Consequences:**
-- Loan balance never reaches exactly 0.00 — "fully paid" status never triggers
-- Receipt amounts differ from ledger entries by fractions
-- Monthly P&L totals don't balance
-- Audit trails show inconsistent figures
+The global list and daily collections always need the calculation pattern, never the history pattern.
+
+**Consequences:** Over-counted collection totals; deleted payments appear without the per-loan context that explains why they exist; financial summaries are wrong.
 
 **Prevention:**
-- Store ALL monetary values in the database as `NUMERIC(15,2)` or `BIGINT` (integer cents/minor units). Never use `FLOAT` or `DECIMAL` in PostgreSQL for money columns.
-- In application code, use a decimal library — `decimal.js` or `big.js` — for ALL arithmetic involving money. Do not mix native `number` operations with decimal library operations.
-- Establish a single canonical rounding rule (e.g., `ROUND_HALF_UP` to 2 decimal places) and apply it consistently at every calculation boundary.
-- Write unit tests that verify `0.1 + 0.2 === 0.3` using the decimal library, and that 30 days of daily interest on a round principal produces the exact expected total.
+- The new global-list and daily-collections service functions must explicitly use `isNull(payments.deletedAt)`.
+- If deleted payments need to be visible globally (admin audit view), render them with a visual flag and always exclude them from aggregated totals.
+- Add a code comment on `getPaymentsForLoan` noting it intentionally includes deleted rows, so the contrast with the global-list function is explicit.
 
-**Detection (warning signs):**
-- Any test involving accumulated interest totals fails with off-by-one-cent errors
-- Receipt "total paid" doesn't match sum of individual payment records
-- A fully-paid loan shows a remaining balance of 0.0000000001
+**Detection:** Integration test: record a payment, soft-delete it, assert it does not appear in the global list count and does not contribute to daily totals.
 
-**Phase:** Address in Phase 1 (database schema + loan engine foundation). Retrofitting this after payments exist is extremely painful.
+**Phase:** Phase 1 — Global Payments List.
 
 ---
 
-### Pitfall 2: Cron Job Double-Execution (Interest Accrued Twice)
+### Pitfall 2: Date-Grouping Bug in Daily Collections (UTC vs. Local Calendar Day)
 
-**What goes wrong:** The daily interest cron runs once at midnight. If the server restarts, the job scheduler re-initializes and fires the job again. In serverless or containerized environments, two instances can run simultaneously. Result: interest is accrued twice for the same day, doubling the charge to borrowers. Because interest goes to `interest_accrued` (not directly to `balance`), the error may not be visible until payment allocation.
+**What goes wrong:** `paymentDate` is `timestamp with timezone`. The existing `record-payment-form.tsx` appends `"T00:00:00.000Z"` to the date string (line 53) — UTC midnight. A payment recorded as "2026-03-23" in Kampala (UTC+3) is stored as `2026-03-22T21:00:00+00:00`. PostgreSQL's `DATE(payment_date)` returns `2026-03-22` — one day behind what the loan officer entered. Every payment in the daily collections view appears under the wrong date.
 
-**Why it happens:** Developers implement "run this job at midnight" without implementing idempotency. They assume the scheduler will never fire twice. In practice: deployments, server restarts, container restarts, and timezone edge cases all cause duplicate runs.
+**Why it happens:** The UTC-midnight pattern was chosen for consistency in v1.0. It worked for the loan-detail view (which shows the date portion as entered by the officer). A new grouping query using bare `DATE(payment_date)` breaks under this convention.
 
-**Consequences:**
-- Borrowers are charged double interest for one or more days
-- Creditor interest also double-accrued
-- Correcting this after the fact requires identifying affected loans and reversing entries — without an audit trail, this is impossible to do accurately
+**Consequences:** Daily collections show the wrong date bucket for every payment. Staff cannot reconcile paper collection sheets against the app.
 
-**Prevention:**
-- Before accruing interest for a loan on a given date, check whether an `interest_accrual` record already exists for that loan on that date. If it does, skip and log.
-- Use a dedicated `daily_accrual_log` table with a `UNIQUE(loan_id, accrual_date)` constraint. The constraint will cause the second run to fail gracefully rather than insert a duplicate row.
-- Alternatively, use PostgreSQL advisory locks (`pg_try_advisory_lock`) to ensure only one instance of the job runs at a time.
-- Log every cron execution with start time, end time, loans processed count, and outcome.
+**Prevention:** Two consistent options:
+1. **Group using timezone-aware cast** — `DATE(payment_date AT TIME ZONE 'Africa/Kampala')` in all grouping queries.
+2. **Store date-only** — migrate `paymentDate` to a `DATE` column (no timezone). Eliminates the problem permanently. Heavier migration work.
 
-**Detection (warning signs):**
-- Loan interest balance increases by 2x on a specific date
-- Cron execution logs show two runs within seconds of each other
-- Any month where total interest charged doesn't match manual calculation
+Given the system is single-location (Uganda), Option 1 is the lower-risk path for this milestone. If chosen, the `AT TIME ZONE 'Africa/Kampala'` cast must appear in every grouping query; never use bare `DATE(payment_date)`.
 
-**Phase:** Address in Phase 2 (cron infrastructure). Idempotency must be built in from the first cron implementation, not added later.
+**Detection:** Record a payment for today. Verify the daily collections view shows it under today, not yesterday. Run the test at 23:00 local time when the UTC-vs-local gap is most visible.
+
+**Phase:** Phase 2 — Daily Collections View.
 
 ---
 
-### Pitfall 3: Payment Allocation Order Not Enforced at the Database Level
+### Pitfall 3: revalidatePath Scope Too Narrow After Quick-Record
 
-**What goes wrong:** The business rule is "interest first, remainder to principal." This logic lives in the application layer. A developer bypasses the API (e.g., a direct database fix, a migration, or a bulk import) and credits principal directly. Now the loan has principal reduced but interest still outstanding. The loan appears closer to paid-off than it is. The borrower disputes their balance.
+**What goes wrong:** The existing `recordPaymentAction` calls `revalidatePath('/loans/${input.loanId}')`. When quick-record fires from the Payments page, this revalidation does not touch the Payments page or the daily collections view. The quick-record dialog closes with a success toast, but the global payments list does not update.
 
-**Why it happens:** Business rules enforced only in application code are invisible to anyone working directly with the database. There is no constraint preventing a payment record from being inserted with an incorrect allocation.
+**Why it happens:** The Server Action was written for the loan-detail flow. Path revalidation is point-in-time and scoped to listed paths. Adding a new entry point does not expand the revalidation set.
 
-**Consequences:**
-- Loan balance understated (borrower shown as owing less than they do)
-- Discrepancy between interest accrued and interest collected in P&L
-- "Fully paid" triggered prematurely
+**Consequences:** The payments list appears stale after quick-record. Loan officers see old data and doubt the system's reliability.
 
 **Prevention:**
-- Implement a PostgreSQL trigger or check constraint that validates payment records: `principal_paid` can only be > 0 if `interest_paid` >= current `interest_outstanding` for that loan at payment time. (Trigger-based enforcement is more flexible than a check constraint here.)
-- In the application, wrap the entire payment allocation in a single database transaction: read current interest balance, allocate payment, write payment record, update loan balance — atomically.
-- Write integration tests that attempt to over-allocate to principal and verify the system rejects it.
+- Extend `recordPaymentAction` to also call `revalidatePath('/payments')`.
+- If TanStack Query powers the payments list, also call `queryClient.invalidateQueries({ queryKey: ["payments"] })` in the mutation's `onSuccess` callback (but revalidatePath is still required for Server Component segments).
+- Define a shared constant listing all paths that must be revalidated after any payment mutation, so the set is maintained in one place.
 
-**Detection (warning signs):**
-- A loan's `interest_outstanding` is positive but `principal_outstanding` decreased
-- Sum of all `principal_paid` across payments exceeds expected principal reduction given payments made
-
-**Phase:** Address in Phase 2 (loan engine + payment processing). The allocation logic and its tests should be complete before the UI is built.
+**Phase:** Phase 3 — Quick-Record Workflow.
 
 ---
 
-### Pitfall 4: Audit Trail as Afterthought
+### Pitfall 4: No Loan-Active Guard in Quick-Record
 
-**What goes wrong:** Developers add an `updated_at` timestamp to tables and call it an audit trail. When a loan officer changes a loan amount after disbursement, or an admin overrides the interest rate mid-loan, there is no record of what changed, who changed it, or what it was before. The client cannot answer "why is this borrower's balance what it is?" during a dispute.
+**What goes wrong:** The quick-record loan selector searches across all loans. If a `fully_paid` loan is selected, the system accepts the payment: `recordPayment` in the service layer checks only for `LoanNotFound`, not for `status === 'fully_paid'`. The cascade recalculation runs. The balance updates. But the loan was already closed.
 
-**Why it happens:** Audit logging feels like overhead during initial development. It gets deferred to "after MVP" and is never retrofitted because it requires schema changes and rewrites to every update path.
+**Why it happens:** The existing per-loan record-payment flow starts from the loan detail page where the status badge is prominently displayed — there is an implicit status context. Quick-record abstracts away that context entirely.
 
-**Consequences:**
-- Cannot reconstruct a loan's history during a dispute
-- No accountability for admin overrides (minimum interest period override, rate changes)
-- Regulatory exposure if the business is ever audited
-- Cannot debug calculation errors after the fact
+**Consequences:** Financial records show payments against closed loans. The loan status may flip back to `active` (which `recalculateFromPayment` does not do) or remain `fully_paid` while showing a non-zero balance — an inconsistent state that confuses the loan detail view.
 
 **Prevention:**
-- Design an `audit_log` table from the start: `(id, table_name, record_id, action, changed_by, changed_at, before_state JSONB, after_state JSONB)`.
-- Use PostgreSQL triggers or a middleware layer to write audit entries on every `INSERT`, `UPDATE`, and `DELETE` to financial tables (`loans`, `payments`, `interest_accruals`, `creditor_investments`).
-- Log admin overrides explicitly with reason field: `(override_type, old_value, new_value, admin_id, reason, timestamp)`.
-- Include `changed_by` (Clerk user ID) in every audit entry — do not rely only on database-level triggers which cannot know the application user.
+- Filter the loan search in quick-record to only return `status = 'active'` loans.
+- Add a server-side guard in `recordPaymentAction`: if `loan.status === 'fully_paid'` return `{ error: "Cannot record a payment against a fully paid loan" }`. The UI filter is UX; the server guard is enforcement.
 
-**Detection (warning signs):**
-- A loan's balance cannot be reconstructed from its payment history alone
-- An admin setting was changed but no one knows when or by whom
-
-**Phase:** Address in Phase 1 (schema design). The audit log schema must exist before any financial data is written.
+**Phase:** Phase 3 — Quick-Record Workflow.
 
 ---
 
-### Pitfall 5: Role-Based Access Control Enforced Only in the UI
+### Pitfall 5: Double-Submission of Quick-Record Form
 
-**What goes wrong:** The frontend hides the "Delete Loan" button for Loan Officers. But the API route `/api/loans/[id]` accepts a `DELETE` request from any authenticated Clerk session. A Loan Officer who knows the endpoint can delete loans directly. This is also exploitable via browser DevTools.
+**What goes wrong:** A fast double-click on the quick-record submit button sends two identical payment mutations. The first inserts the payment and updates the balance. The second reads the already-updated balance, re-runs `allocatePayment` with the new principal balance, and inserts a second valid payment — recording an unintended extra payment, firing `autoPostInterestEarned` twice, and potentially marking the loan `fully_paid` prematurely.
 
-**Why it happens:** Clerk makes it easy to check roles in React components. Developers enforce RBAC at the component level and assume the UI is the only entry point. They defer server-side enforcement to "later."
+**Why it happens:** The existing `RecordPaymentForm` disables the button via `disabled={isPending}`. A new quick-record dialog built from scratch may not copy this guard faithfully, especially if the developer uses a different state management pattern.
 
-**Consequences:**
-- Loan Officers can modify or delete loans they should only be able to read or create
-- Viewers can submit payments
-- No audit trail of the unauthorized action (because the API didn't check the role before proceeding)
+**Consequences:** Duplicate payment entries. Incorrect loan balance. Duplicate interest auto-posted to the transaction log. Requires admin delete cascade to fix, which itself triggers another cascade recalculation.
 
 **Prevention:**
-- Define a middleware function that extracts the Clerk session, resolves the user's role, and checks it against a permission map BEFORE the route handler executes. This runs on the server, not the client.
-- Create a permissions matrix document (Loan Officer: create payment, view loans; Admin: edit loans, override settings; Super Admin: all; Viewer: read only) and implement it as a server-side constant — not inline per-route logic.
-- Write integration tests that call sensitive API routes with each role and verify correct `403` responses for unauthorized roles.
-- Never trust `role` data sent from the client — always resolve it from the Clerk session on the server.
+- Copy the `disabled={isPending}` pattern on the submit button and all form inputs verbatim from the existing `RecordPaymentForm`.
+- Keep `useTransition` as the pending state mechanism — it is already the project standard.
+- Deeper defense: check for a recent duplicate before inserting (`same loanId + amount + paymentDate + recordedBy` within a 60-second window) and return an error rather than inserting.
 
-**Detection (warning signs):**
-- A Loan Officer can reach an edit or delete endpoint without a 403 response
-- Role checks only appear in React components, not in API route handlers
-
-**Phase:** Address in Phase 1 (auth + RBAC foundation). All subsequent phases depend on this being correct.
+**Phase:** Phase 3 — Quick-Record Workflow.
 
 ---
 
-### Pitfall 6: Clerk Webhook Reliability for Login Activity Tracking
+### Pitfall 6: N+1 Queries for Customer and Loan Name Enrichment
 
-**What goes wrong:** The project requires login activity tracking via Clerk webhooks. Clerk sends webhook events on sign-in, sign-out, and user updates. If the webhook endpoint is down, times out, or returns a non-2xx status, Clerk will retry — but if retries also fail, events are lost permanently. The login activity log becomes incomplete without any indication of the gap.
+**What goes wrong:** Payments need to display customer name and loan reference in the global list. The naïve approach: fetch all payments, then loop and call a per-payment query for the loan, then per-loan for the customer. With 200 payments this is 401+ queries per page load.
 
-**Why it happens:** Developers implement the webhook handler synchronously (validate → write to DB in the same request). If the database is slow or the handler throws, the endpoint returns 500 and the event is dropped after retries.
+**Why it happens:** The existing `getPaymentsForLoan` returns bare payment rows — customer name is not needed there (the loan context is already on the page). The global list requires enrichment that was never needed in v1.0. The dashboard service `getDashboardKPIs` already demonstrates this anti-pattern (N queries for N active loans with a nested payments fetch per loan).
 
-**Consequences:**
-- Incomplete login activity log — security events missing
-- Admin cannot audit who was logged in during a security incident
-- Clerk webhook retries can flood the endpoint under failure conditions
+**Consequences:** The global payments list times out or loads in 8+ seconds.
 
 **Prevention:**
-- Webhook handler must: (1) validate the Svix signature immediately, (2) write the raw event payload to a `webhook_events` queue table (fast insert), (3) return `200` immediately. A separate background process reads the queue and processes events.
-- Set a strict timeout on the webhook handler (under 3 seconds). Never do complex business logic inside a webhook handler.
-- Monitor the `webhook_events` table for unprocessed events older than 5 minutes.
-- Use Clerk's webhook delivery logs (in the Clerk dashboard) to verify events are being received. Set up alerting if the endpoint starts returning non-2xx.
+- Write a single JOIN query: `payments LEFT JOIN loans ON payments.loan_id = loans.id LEFT JOIN customers ON loans.customer_id = customers.id`.
+- In Drizzle: chain `.leftJoin(loans, eq(payments.loanId, loans.id)).leftJoin(customers, eq(loans.customerId, customers.id))` and select only the needed columns.
+- Never fetch bare payments and enrich in a for-loop.
 
-**Detection (warning signs):**
-- Login activity log shows gaps during periods when the server was under load
-- Webhook handler takes more than 1 second to respond
-- No monitoring on the `webhook_events` table
-
-**Phase:** Address in Phase 3 (admin + audit features). The fast-insert queue pattern must be in place before going live.
-
----
-
-### Pitfall 7: 30-Day Minimum Interest Period Not Enforced Transactionally
-
-**What goes wrong:** The business rule is: borrowers pay at least 30 days of interest even if they repay in full on day 5. The frontend shows a "days remaining" and the backend calculates minimum interest. But when the payment is submitted, the minimum interest check is done in the route handler. A race condition: two simultaneous payment submissions (double-click, network retry) both pass the check independently and together they clear the loan early without applying the minimum interest correctly.
-
-**Why it happens:** Minimum interest enforcement is checked before writing, not locked during writing. Concurrent requests both read the "not yet paid" state before either writes.
-
-**Consequences:**
-- Loan is marked Fully Paid with less than 30 days of interest collected
-- Business loses revenue
-- The error is invisible until end-of-month reconciliation
-
-**Prevention:**
-- Use a `SELECT ... FOR UPDATE` (pessimistic lock) on the loan row at the start of every payment transaction. This serializes concurrent payments on the same loan.
-- Calculate minimum interest as: `principal * daily_rate * max(30, days_elapsed)`. Enforce this calculation server-side, not just in the UI.
-- The payment route must be idempotent: include a client-generated `idempotency_key` in the request. If a key is already in the `payment_idempotency` table, return the existing result rather than processing again.
-
-**Detection (warning signs):**
-- Two payments submitted within milliseconds show the second one also "succeeding"
-- A loan marked Fully Paid on day 10 has less than 30 days of interest collected
-
-**Phase:** Address in Phase 2 (payment processing). The locking and idempotency patterns must be in place before any payment UI is built.
-
----
-
-### Pitfall 8: Interest Calculation Off-By-One on Loan Start Date
-
-**What goes wrong:** Daily interest begins accruing from the loan disbursement date. If the cron runs at midnight, what date does it use — UTC or local time? If the server is in UTC and the business is in UTC+3, a loan disbursed at 11pm local time on March 1 is disbursed at 8pm UTC on March 1. The cron at midnight UTC fires before midnight local time. Day 1 of interest accrual is computed based on UTC dates, not local dates. Over 30 days, the total interest charged may be off by one day.
-
-**Why it happens:** Timezone handling in financial systems is universally underestimated. Developers default to server timezone or UTC without thinking through when the business day starts and ends.
-
-**Consequences:**
-- Borrowers charged interest for one day more or less than they should be
-- "30 days" doesn't mean 30 calendar days in the borrower's timezone
-- Disputes about when a loan started vs when interest started
-
-**Prevention:**
-- Define the "business timezone" as a configuration constant (e.g., `Africa/Kampala`). ALL date calculations for loans use this timezone — never raw UTC.
-- Store `loan_start_date` as a `DATE` (not `TIMESTAMP`) in the database, using the business timezone. The date is what matters, not the exact millisecond.
-- The cron job's "today" must be computed as `new Date()` converted to the business timezone, then date-only. Do not use `new Date().toISOString().split('T')[0]` (this gives UTC date).
-- Use `date-fns-tz` or `luxon` for timezone-aware date arithmetic. Never use raw `Date` object arithmetic for business date calculations.
-
-**Detection (warning signs):**
-- A loan started March 1 shows first interest accrual on March 2 (or March 1 runs twice)
-- "30 days elapsed" triggers at 29 or 31 calendar days depending on time of disbursement
-- Cron logs show `accrual_date: 2026-03-19` when local business date is March 20
-
-**Phase:** Address in Phase 1 (schema + cron design) and Phase 2 (cron implementation). Document the timezone assumption explicitly in the codebase.
-
----
-
-### Pitfall 9: Loan Status Transitions Not Guarded
-
-**What goes wrong:** Loan statuses are: `Pending → Active → Partially Paid → Fully Paid → Defaulted`. A developer writes a status update endpoint that accepts any status value. A malicious or mistaken actor sends `PATCH /api/loans/123 { status: "Fully Paid" }` without any payment being recorded. The loan is marked paid, the borrower owes nothing, and there is no corresponding payment record.
-
-**Why it happens:** Status is stored as an enum and updated freely. There is no state machine enforcing valid transitions or preconditions.
-
-**Consequences:**
-- Loans marked Fully Paid without payment — unrecoverable without audit log
-- Defaulted loans marked Active again without approval workflow
-- Interest accrual continues (or stops) incorrectly based on wrong status
-
-**Prevention:**
-- Implement a server-side state machine: define a `VALID_TRANSITIONS` map (`{ Active: ["Partially Paid", "Defaulted"], ... }`) and reject any transition not in the map.
-- Status should be derived from financial state where possible, not set directly: "Fully Paid" is set only by the payment processing logic after confirming `outstanding_balance === 0`.
-- Only Super Admin can manually override status, and every manual override must write an audit log entry with reason.
-- The API should not have a general "update loan status" endpoint — status changes should be side effects of business operations (payment recorded, days elapsed, admin decision).
-
-**Detection (warning signs):**
-- A loan's status is Fully Paid but `outstanding_balance > 0`
-- Loan status was changed without a corresponding payment or admin action in the audit log
-
-**Phase:** Address in Phase 2 (loan engine). State machine logic must be in place before any status-changing UI is built.
-
----
-
-### Pitfall 10: Creditor Interest Calculation Entangled with Borrower Loan Engine
-
-**What goes wrong:** The project notes that creditor daily interest "reuses the loan engine." If this is implemented as literal code reuse (same function, same table, same cron), a change to the borrower interest logic silently changes creditor interest logic. A bug fix for one becomes a regression for the other.
-
-**Why it happens:** DRY (Don't Repeat Yourself) is applied at the wrong abstraction boundary. The calculation formula is similar, but the business semantics are different: borrower interest is owed TO the business, creditor interest is owed BY the business.
-
-**Consequences:**
-- A change to minimum interest period logic for borrowers accidentally applies to creditors
-- Interest rate override in settings affects creditors when it should only affect borrowers
-- Reports mix up interest income (from borrowers) and interest expense (to creditors)
-
-**Prevention:**
-- Share the mathematical formula (a pure function: `calculateDailyInterest(principal, rate)`) but implement separate database tables, separate cron tasks, and separate service modules for borrower loans vs creditor investments.
-- In the P&L report, explicitly distinguish: `interest_income` (from borrowers) vs `interest_expense` (to creditors). These must be sourced from separate tables.
-- Name things precisely: `borrower_interest_accruals` vs `creditor_interest_accruals` — not a shared `interest_accruals` table with a `type` discriminator.
-
-**Detection (warning signs):**
-- A settings change to "default interest rate" affects creditor interest accruals
-- P&L shows one "interest" line that combines income and expense
-
-**Phase:** Address in Phase 1 (schema design). Separation of concerns at the schema level prevents later entanglement.
+**Phase:** Phase 1 — Global Payments List.
 
 ---
 
@@ -269,53 +132,58 @@ Mistakes that cause rewrites, data corruption, or incorrect financial outcomes.
 
 ---
 
-### Pitfall 11: Receipt Generation Without Snapshot
+### Pitfall 7: TanStack Query Cache Key Fragmentation
 
-**What goes wrong:** Receipts display loan details fetched live from the database at print time. If the loan's interest rate or customer name is later edited, reprinting the receipt shows the updated values — not the values at time of transaction.
+**What goes wrong:** The payments list uses `queryKey: ["payments"]`. The daily collections component uses `queryKey: ["payments", "daily", date]`. Invalidating `["payments"]` after a quick-record mutation DOES invalidate `["payments", "daily", date]` by prefix matching (TanStack Query v5 default). However, if a developer uses a different root key (e.g., `["dailyCollections", date]`) or wraps the daily fetch in a separate hook with an unrelated key, invalidation breaks silently.
 
 **Prevention:**
-- When generating a receipt (disbursement or repayment), snapshot the relevant values into the receipt record at creation time: `principal_at_disbursement`, `rate_at_disbursement`, `interest_paid`, `principal_paid`, `balance_after`. The receipt table is immutable after creation.
-- Receipt generation logic should read from the snapshot, not live loan data.
+- Define a shared query key factory before writing any payment queries: `paymentsKeys = { all: () => ["payments"] as const, daily: (date: string) => ["payments", "daily", date] as const }`.
+- All payment-related queries use this factory. Invalidating `paymentsKeys.all()` propagates to all subkeys.
+- Do not use a different top-level key for data that derives from the payments table.
 
-**Phase:** Address in Phase 2 (receipts). Treat receipts as immutable financial documents from day one.
+**Phase:** Phase 2 — Daily Collections View.
 
 ---
 
-### Pitfall 12: N+1 Queries in Dashboard and Reports
+### Pitfall 8: Loan Search in Quick-Record Loads All Active Loans on Mount
 
-**What goes wrong:** The executive dashboard loads all active loans, then for each loan queries payments, then for each loan queries interest accruals. With 500 active loans, this is 1,500+ database queries per page load. The dashboard becomes unusable.
+**What goes wrong:** The loan selector in quick-record calls `listLoansAction()` which returns every active loan with customer name. On a business with 300 active loans this is an unnecessarily large payload loaded into a combobox that is difficult to navigate.
 
 **Prevention:**
-- Dashboard aggregates should be computed with SQL `GROUP BY` queries or materialized views — not application-layer loops.
-- Write the dashboard data queries first (before the UI), verify they use indexes, and check query plans with `EXPLAIN ANALYZE`.
-- Index foreign keys: `loan_id` on `payments`, `loan_id` on `interest_accruals`, `customer_id` on `loans`.
+- The loan search must be a debounced server-side search: query `status = 'active'` loans where `customerName ILIKE '%{query}%'`, limit 10 results, triggered only when the user types at least 2 characters.
+- Do NOT load all active loans on mount. An empty search state should show a prompt ("Type to search loans"), not a full list.
 
-**Phase:** Address in Phase 3 (dashboard + reports). Write efficient queries from the start; don't optimize "later."
+**Phase:** Phase 3 — Quick-Record Workflow.
 
 ---
 
-### Pitfall 13: Permissive Input Validation on Financial Fields
+### Pitfall 9: Daily Collections Aggregation Using Native Float
 
-**What goes wrong:** The payment submission form accepts any number for payment amount. A loan officer enters a negative payment amount (`-5000`) due to a typo. The allocation logic subtracts from interest outstanding, effectively adding interest owed and reducing the balance in unexpected ways.
+**What goes wrong:** The daily collections view sums payment amounts for display (e.g., "Total collected today: UGX 4,500,000"). A developer uses `payments.reduce((sum, p) => sum + parseFloat(p.amount), 0)`. For UGX amounts in the millions, `parseFloat` introduces floating-point errors that surface as display artifacts.
+
+**Why it happens:** `payment.amount` is a NUMERIC string from Drizzle. The project rule is "BigNumber.js for all monetary calculations — native floats forbidden," but this rule is easy to overlook in a display-only aggregation context.
+
+**Consequences:** UGX 4,500,000 displays as UGX 4,499,999.98. Staff distrust the system.
 
 **Prevention:**
-- Server-side validation (not just client-side): payment amount must be a positive number, greater than zero, less than a configurable maximum (e.g., 10x the original principal as a sanity check).
-- Reject non-numeric, zero, and negative values with a clear error message before the amount touches any calculation logic.
-- Add database-level check constraints: `CHECK (amount > 0)` on payment tables.
+- Sum using BigNumber: `payments.reduce((sum, p) => sum.plus(p.amount), new BigNumber(0))`.
+- Alternatively, push the aggregation to SQL (`SUM(amount)` in Postgres) and format the returned NUMERIC string — no client-side float.
 
-**Phase:** Address in Phase 2 (payment processing API). All financial input endpoints need strict server-side validation.
+**Phase:** Phase 2 — Daily Collections View.
 
 ---
 
-### Pitfall 14: Blacklisted Customer Status Not Blocking Loan Issuance
+### Pitfall 10: Receipt Link After Quick-Record Uses Wrong ID
 
-**What goes wrong:** A customer is marked `Blacklisted`. A new loan application is created for them (perhaps by a different loan officer who didn't check the status). The system allows it because the loan issuance form doesn't check customer status.
+**What goes wrong:** After a successful quick-record, a "Print Receipt" link is offered. The existing repayment receipt route is `/receipts/repayment/[paymentId]`. If the success callback uses `data.loanId` instead of `data.id`, the receipt 404s.
+
+**Why it happens:** The existing per-loan record-payment form redirects to `/loans/${loanId}` — no receipt link in that flow. Quick-record adds receipt printing for the first time in this flow. The developer writes the link fresh and confuses the two IDs.
 
 **Prevention:**
-- Loan issuance flow must verify `customer.status === 'Active'` at two points: (1) when the loan application is created, and (2) when the disbursement receipt is printed/finalized.
-- The API endpoint for creating a loan must reject the request if the customer is Blacklisted or Inactive, with a clear error message.
+- After `recordPaymentAction`, the returned `data` is the payment row: `data.id` is the payment UUID, `data.loanId` is the loan UUID.
+- Receipt link: `/receipts/repayment/${data.id}` — confirm against `src/app/(app)/receipts/repayment/[paymentId]/page.tsx`.
 
-**Phase:** Address in Phase 2 (loan issuance workflow). This is a business rule, not a nice-to-have.
+**Phase:** Phase 3 — Quick-Record Workflow.
 
 ---
 
@@ -323,40 +191,35 @@ Mistakes that cause rewrites, data corruption, or incorrect financial outcomes.
 
 ---
 
-### Pitfall 15: PDF Export Rendering Inconsistencies Across Environments
+### Pitfall 11: Date Range Filter Off-by-One (Last Day Excluded)
 
-**What goes wrong:** PDF generation works in development but produces garbled characters, missing fonts, or broken layouts in production. This is especially common with Puppeteer/headless Chrome in containerized environments.
+**What goes wrong:** A date range filter for "up to March 23" sets `end = 2026-03-23T00:00:00Z` (midnight). Payments recorded on March 23 at any time after midnight are excluded.
 
-**Prevention:**
-- Test PDF generation in the target production environment, not just locally.
-- Use a server-side PDF library with explicit font embedding (e.g., `@react-pdf/renderer` with bundled fonts, or a service like Browserless rather than a locally installed Chrome).
-- PDFs are generated server-side; never rely on browser `window.print()` for reports that need to be filed or emailed.
+**Prevention:** Set the end-date filter to `2026-03-23T23:59:59.999Z` (end of day), or use `lt(payments.paymentDate, nextDayStart)` — exclusive upper bound of the following day.
 
-**Phase:** Address in Phase 4 (reports). Test in the actual hosting environment before presenting to client.
+**Phase:** Phase 1 — Global Payments List.
 
 ---
 
-### Pitfall 16: Repayment Simulator Drift from Actual Calculation
+### Pitfall 12: Ambiguous "Amount" Column (Total vs. Principal)
 
-**What goes wrong:** The simulator ("if borrower pays X, how many days left?") uses a slightly different formula than the actual daily interest cron. Over time, the simulator's projections diverge from the real balance. Borrowers are told they have 20 days left, but the actual cron accrues interest differently.
+**What goes wrong:** The global list shows "Amount." Staff assume this is the principal repaid. `payment.amount` is the total received (interest + principal). A payment of UGX 150,000 where UGX 120,000 goes to interest shows "150,000" but the loan only went down by 30,000. Staff read it as a 150,000 reduction.
 
-**Prevention:**
-- The simulator must call the same service function that the cron uses for interest calculation — not a separate "approximation" function written for the UI.
-- Write a test that runs the simulator for N days and then runs the actual cron for N days and verifies the outcomes match.
+**Prevention:** Label the column "Total Received." Show `interestPortion` and `principalPortion` as sub-columns or in a hover tooltip. The loan-detail page already renders this split — reuse that pattern.
 
-**Phase:** Address in Phase 3 (monitoring + risk tools). The cron calculation logic must be extracted to a shared, tested service before the simulator is built.
+**Phase:** Phase 1 — Global Payments List.
 
 ---
 
-### Pitfall 17: Missing Database Indexes on Query-Critical Columns
+### Pitfall 13: No Pagination on the Global Payments List
 
-**What goes wrong:** Filtering loans by status, sorting by due date, and finding overdue borrowers all perform sequential table scans as the loan portfolio grows. Queries that run in 50ms at launch run in 8 seconds with 10,000 loan records.
+**What goes wrong:** A business running for a year may have 2,000+ active payment records. Fetching all of them renders a table that freezes the browser and saturates the Server Action response.
 
-**Prevention:**
-- At schema creation time, add indexes on: `loans.status`, `loans.due_date`, `loans.customer_id`, `loans.created_at`, `payments.loan_id`, `payments.created_at`, `interest_accruals.loan_id`, `interest_accruals.accrual_date`.
-- Composite index on `(loan_id, accrual_date)` for the uniqueness constraint on daily accruals (also serves query performance).
+**Prevention:** The global payments service function must accept `limit` and `offset` from the start. Build pagination into the initial Server Action signature — retrofitting it later requires changing query keys, invalidation logic, and the action signature simultaneously.
 
-**Phase:** Address in Phase 1 (schema design). Retrofitting indexes is easy, but designing the schema without them creates bad habits and hidden performance issues.
+Start with limit=50. Add a total count query for page controls.
+
+**Phase:** Phase 1 — Global Payments List.
 
 ---
 
@@ -364,29 +227,46 @@ Mistakes that cause rewrites, data corruption, or incorrect financial outcomes.
 
 | Phase Topic | Likely Pitfall | Mitigation |
 |-------------|---------------|------------|
-| Schema design | Float columns for money | Use NUMERIC(15,2) or BIGINT; audit log table from day 1 |
-| Auth + RBAC setup | UI-only role checks | Server-side middleware enforcing role on every API route |
-| Cron job implementation | Double-execution accruing interest twice | Idempotency via unique constraint on (loan_id, accrual_date) |
-| Payment processing | Race condition on concurrent payments | SELECT FOR UPDATE + idempotency key |
-| Payment allocation | Business rule bypassed via direct DB access | Enforce via trigger or strict API-only access pattern |
-| Interest calculation | Timezone mismatch causing off-by-one day | Single business timezone constant; DATE type not TIMESTAMP |
-| Loan issuance | Minimum interest period not enforced concurrently | Transactional check with pessimistic lock |
-| Receipts | Live data on reprinted receipts | Immutable snapshot at creation time |
-| Status management | Free-form status updates bypassing state machine | Server-side transition guard; status derived from financial state |
-| Creditor module | Shared code entangling creditor and borrower logic | Separate tables and service modules; shared math function only |
-| Dashboard/reports | N+1 query patterns | SQL aggregation; indexes in place before reports are built |
-| PDF export | Environment-specific rendering failures | Test in production environment before client demo |
-| Repayment simulator | Divergence from actual cron formula | Simulator calls the same service function as the cron |
-| Clerk webhooks | Lost login events on handler failure | Fast-insert queue pattern; async processing; 200 immediately |
+| Global list query | Soft-deleted payments included (Pitfall 1) | Always filter `isNull(deletedAt)` |
+| Global list query | N+1 customer/loan enrichment (Pitfall 6) | Single JOIN from the start |
+| Global list UX | Missing pagination (Pitfall 13) | Pagination baked into the initial Server Action |
+| Global list UX | Ambiguous "Amount" column (Pitfall 12) | Label as "Total Received," show split on hover |
+| Global list filter | Date range off-by-one (Pitfall 11) | End-of-day upper bound |
+| Daily collections grouping | UTC vs. local calendar day (Pitfall 2) | Use `DATE(payment_date AT TIME ZONE 'Africa/Kampala')` in grouping queries |
+| Daily collections math | Native float summation (Pitfall 9) | BigNumber.js or SQL SUM |
+| Daily collections cache | Query key fragmentation (Pitfall 7) | Shared query key factory before first hook is written |
+| Quick-record form | Double submission (Pitfall 5) | Copy `disabled={isPending}` pattern verbatim |
+| Quick-record form | No loan status guard (Pitfall 4) | Filter search to active loans + server-side status check |
+| Quick-record form | Loan search loads all (Pitfall 8) | Debounced server-side search, limit 10 |
+| Quick-record success | Receipt link wrong ID (Pitfall 10) | Use `data.id`, not `data.loanId` |
+| Quick-record mutation | revalidatePath too narrow (Pitfall 3) | Add `/payments` to revalidation set |
 
 ---
 
 ## Sources
 
-- Domain knowledge: IEEE 754 floating-point specification (known limitation of JavaScript `number` type) — HIGH confidence
-- PostgreSQL NUMERIC vs FLOAT behavior: PostgreSQL documentation — HIGH confidence
-- Clerk webhook delivery behavior (retries, failures): consistent with webhook delivery patterns across major providers — MEDIUM confidence (could not verify Clerk-specific retry count without web access)
-- Cron idempotency patterns: standard distributed systems practice — HIGH confidence
-- Payment allocation race conditions: standard database transaction isolation patterns — HIGH confidence
-- Timezone handling issues in financial systems: well-documented class of bugs in financial software — HIGH confidence
-- All patterns validated against PROJECT.md requirements — findings are specific to this system's stated constraints (PostgreSQL, Next.js, Clerk, daily cron)
+- Codebase: `src/services/payment.service.ts` — two intentional soft-delete patterns: `getPaymentsForLoan` (includes deleted) vs. `recordPayment` (excludes deleted)
+- Codebase: `src/actions/payment.actions.ts` — existing `revalidatePath` scope, permission guards
+- Codebase: `src/app/(app)/loans/[loanId]/payments/new/record-payment-form.tsx` — UTC midnight date construction (`"T00:00:00.000Z"` pattern)
+- Codebase: `src/services/dashboard.service.ts` — N+1 anti-pattern example in `getDashboardKPIs`
+- Codebase: `src/lib/interest/engine.ts` — `allocatePayment` floors balance at zero via `BigNumber.max`
+- Codebase: `src/lib/db/schema/payments.ts` — NUMERIC(15,2) monetary columns, `deletedAt` soft-delete field
+- Codebase: `src/lib/db/schema/loans.ts` — `loanStatusEnum("active" | "fully_paid")`
+- [Next.js timezone handling in date grouping — GitHub Discussion #37877](https://github.com/vercel/next.js/discussions/37877) — MEDIUM confidence
+- [TanStack Query v5 invalidation from mutations](https://tanstack.com/query/latest/docs/framework/react/guides/invalidations-from-mutations) — HIGH confidence
+- [Drizzle ORM joins documentation](https://orm.drizzle.team/docs/select) — HIGH confidence
+- [Prevent double form submissions — OpenReplay](https://blog.openreplay.com/prevent-double-form-submissions/) — MEDIUM confidence
+
+---
+
+## v1.0 Foundation Pitfalls (Retained for Reference)
+
+The following pitfalls were documented during v1.0 research. They are already addressed in the shipped codebase. They are retained here as reference because they inform why certain v1.1 patterns must be followed exactly.
+
+- **Float arithmetic** — Addressed: BigNumber.js used throughout, NUMERIC(15,2) in DB.
+- **Soft-delete pattern** — Addressed: `deletedAt` on payments, `isNull` filter in all financial queries (guard for v1.1 — see Pitfall 1 above).
+- **Cascade recalculation** — Addressed: `recalculateFromPayment` runs inside the same DB transaction.
+- **Audit trail** — Addressed: `writeAuditLog` called in every payment mutation.
+- **Interest-first allocation** — Addressed: `allocatePayment` pure function, tested.
+- **Loan status as derived state** — Addressed: `fully_paid` set only by payment service, never by direct status update.
+- **Role-based access** — Addressed: permission checks in Server Actions, not just UI.
