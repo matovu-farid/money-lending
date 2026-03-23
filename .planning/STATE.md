@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Payments
 status: unknown
-stopped_at: Phase 7 context gathered
-last_updated: "2026-03-23T10:12:00.181Z"
-last_activity: v1.1 roadmap created — 3 phases, 6 plans, 15/15 requirements mapped
+stopped_at: Completed 07-01-PLAN.md
+last_updated: "2026-03-23T11:04:24.203Z"
+last_activity: 2026-03-23
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -20,11 +20,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-23)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 06 — global-payments-list
+**Current focus:** Phase 07 — daily-collections-view
 
 ## Current Position
 
-Phase: 06 (global-payments-list) — EXECUTING
+Phase: 07 (daily-collections-view) — EXECUTING
 Plan: 1 of 2
 
 ## Performance Metrics
@@ -44,6 +44,7 @@ Plan: 1 of 2
 | 8. Quick-Record Workflow | 0/2 | — | — |
 | Phase 06 P01 | 6 | 2 tasks | 8 files |
 | Phase 06 P02 | 3 | 1 tasks | 3 files |
+| Phase 07 P01 | 3 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,9 @@ Key decisions relevant to v1.1:
 - [Phase 06]: Partial index defined inside pgTable second arg array — standalone export causes JSON.parse error on undefined defaultConfig in drizzle 0.45.1
 - [Phase 06]: listPayments always applies isNull(deletedAt) as first condition; getPaymentsForLoan intentionally includes soft-deleted rows (different contracts)
 - [Phase 06]: dateTo inclusive boundary: append T23:59:59.999Z to include same-day payments
+- [Phase 07]: getLoansDueToday uses loan.startDate as anchor when loan has zero payments — consistent with watchlist.service.ts
+- [Phase 07]: Integration test timestamps use T09:00:00Z (noon Kampala UTC+3) to avoid date boundary ambiguity in PGlite
+- [Phase 07]: useLoansDueToday staleTime 5 minutes — due-today list is date-independent
 
 ### Pending Todos
 
@@ -81,7 +85,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T10:12:00.178Z
-Last activity: v1.1 roadmap created — 3 phases, 6 plans, 15/15 requirements mapped
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-daily-collections-view/07-CONTEXT.md
+Last session: 2026-03-23T11:04:24.201Z
+Last activity: 2026-03-23
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None

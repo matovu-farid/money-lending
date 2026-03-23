@@ -20,10 +20,10 @@ Requirements for the Payments milestone. Each maps to roadmap phases.
 
 ### Daily Collections
 
-- [ ] **COLL-01**: User can view today's total collections amount and count
-- [ ] **COLL-02**: User can view per-loan collection breakdown for a given day
-- [ ] **COLL-03**: User can pick a date to view that day's collections
-- [ ] **COLL-04**: User can see which active loans are due for payment today (30-day cycle indicator)
+- [x] **COLL-01**: User can view today's total collections amount and count
+- [x] **COLL-02**: User can view per-loan collection breakdown for a given day
+- [x] **COLL-03**: User can pick a date to view that day's collections
+- [x] **COLL-04**: User can see which active loans are due for payment today (30-day cycle indicator)
 
 ### Quick Record
 
@@ -62,10 +62,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PAY-06 | Phase 6 | Pending |
 | PAY-07 | Phase 6 | Pending |
 | PAY-08 | Phase 6 | Pending |
-| COLL-01 | Phase 7 | Pending |
-| COLL-02 | Phase 7 | Pending |
-| COLL-03 | Phase 7 | Pending |
-| COLL-04 | Phase 7 | Pending |
+| COLL-01 | Phase 7 | Complete |
+| COLL-02 | Phase 7 | Complete |
+| COLL-03 | Phase 7 | Complete |
+| COLL-04 | Phase 7 | Complete |
 | QREC-01 | Phase 8 | Pending |
 | QREC-02 | Phase 8 | Pending |
 | QREC-03 | Phase 8 | Pending |

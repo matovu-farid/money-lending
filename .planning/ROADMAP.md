@@ -55,7 +55,7 @@ Plans:
   2. User can see the per-loan breakdown of payments recorded for the selected day
   3. User can pick any date using a date picker and the summary and breakdown update to reflect that day
   4. User can see a list of active loans that have not received a payment in 30 or more days, indicating they are due today
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 07-01-PLAN.md — Data layer: types, daily-collections service (timezone-aware), server actions, TanStack Query hooks, unit + integration tests
@@ -86,5 +86,5 @@ Plans:
 | 4. Financial Reporting | v1.0 | 8/8 | Complete | 2026-03-21 |
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
-| 7. Daily Collections View | v1.1 | 0/2 | Planning complete | - |
+| 7. Daily Collections View | 1/2 | In Progress|  | - |
 | 8. Quick-Record Workflow | v1.1 | 0/2 | Not started | - |
