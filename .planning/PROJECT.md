@@ -27,7 +27,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 ### Active
 
 - [ ] Standalone Payments page with global list, search, and filters
-- [ ] Daily collections view
+- ✓ COLL-01–04: Daily collections view with timezone-aware aggregation, breakdown table, due-today list — v1.1 Phase 07
 - [ ] Quick-record payment (select loan inline, no navigation required)
 
 ### Out of Scope
