@@ -1,0 +1,1 @@
+CREATE INDEX "idx_payments_active_date" ON "payments" USING btree ("payment_date") WHERE deleted_at IS NULL;

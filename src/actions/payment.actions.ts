@@ -4,13 +4,13 @@ import { Effect } from "effect"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
-import { recordPayment, editPayment, deletePayment } from "@/services/payment.service"
+import { recordPayment, editPayment, deletePayment, listPayments } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { eq } from "drizzle-orm"
 import { PaymentNotFound, LoanNotFound } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
-import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput } from "@/types"
+import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
 import { sendAdminNotification } from "@/lib/email"
 
 /**
@@ -175,6 +175,26 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
     if (error instanceof LoanNotFound) {
       return { error: "Loan not found" }
     }
+    return { error: "Internal server error" }
+  }
+}
+
+/**
+ * Lists all payments across all loans with pagination and filtering.
+ * Auth required.
+ *
+ * PAY-01 through PAY-05: Global payments list with filtering.
+ */
+export async function listPaymentsAction(input: ListPaymentsInput) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  try {
+    const data = await Effect.runPromise(listPayments(input))
+    return { data }
+  } catch {
     return { error: "Internal server error" }
   }
 }

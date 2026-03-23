@@ -2,8 +2,9 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
+import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
-import { eq, asc, and, isNull } from "drizzle-orm"
+import { eq, asc, and, isNull, gte, lte, ilike, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment } from "@/lib/interest/engine"
@@ -14,6 +15,8 @@ import type {
   EditPaymentInput,
   DeletePaymentInput,
   Payment,
+  ListPaymentsInput,
+  PaymentWithCustomer,
 } from "@/types"
 
 /**
@@ -463,6 +466,70 @@ export const deletePayment = (
       if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
       return new DatabaseError({ cause: e })
     },
+  })
+
+/**
+ * Lists all payments across all loans with pagination and filtering.
+ * Always excludes soft-deleted payments (isNull check is the first condition).
+ * Supports date range, amount range, and customer name (partial, case-insensitive) filters.
+ *
+ * PAY-01: Paginated payment list
+ * PAY-02: Each row includes customerName and allocation fields
+ * PAY-03: Date range filter with inclusive boundaries
+ * PAY-04: Amount range filter
+ * PAY-05: Customer name partial match (case-insensitive)
+ */
+export const listPayments = (
+  input: ListPaymentsInput
+): Effect.Effect<{ rows: PaymentWithCustomer[]; total: number }, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const page = input.page ?? 1
+      const pageSize = input.pageSize ?? 25
+      const offset = (page - 1) * pageSize
+
+      const conditions = [isNull(payments.deletedAt)]
+      if (input.dateFrom) conditions.push(gte(payments.paymentDate, new Date(input.dateFrom)))
+      if (input.dateTo) conditions.push(lte(payments.paymentDate, new Date(input.dateTo + "T23:59:59.999Z")))
+      if (input.amountMin) conditions.push(gte(payments.amount, input.amountMin))
+      if (input.amountMax) conditions.push(lte(payments.amount, input.amountMax))
+      if (input.customerName) conditions.push(ilike(customers.fullName, `%${input.customerName}%`))
+
+      const where = and(...conditions)
+
+      const [rows, [{ value: total }]] = await Promise.all([
+        db
+          .select({
+            id: payments.id,
+            loanId: payments.loanId,
+            customerId: loans.customerId,
+            customerName: customers.fullName,
+            paymentDate: payments.paymentDate,
+            amount: payments.amount,
+            interestPortion: payments.interestPortion,
+            principalPortion: payments.principalPortion,
+            principalBalanceAfter: payments.principalBalanceAfter,
+            recordedBy: payments.recordedBy,
+            createdAt: payments.createdAt,
+          })
+          .from(payments)
+          .innerJoin(loans, eq(payments.loanId, loans.id))
+          .innerJoin(customers, eq(loans.customerId, customers.id))
+          .where(where)
+          .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
+          .limit(pageSize)
+          .offset(offset),
+        db
+          .select({ value: count() })
+          .from(payments)
+          .innerJoin(loans, eq(payments.loanId, loans.id))
+          .innerJoin(customers, eq(loans.customerId, customers.id))
+          .where(where),
+      ])
+
+      return { rows: rows as PaymentWithCustomer[], total: Number(total) }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
   })
 
 /**

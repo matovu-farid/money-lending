@@ -10,6 +10,7 @@ import type { creditors, creditorInvestments, creditorRepayments, transactionCat
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
 export type Loan = InferSelectModel<typeof loans>
+export type LoanWithCustomer = Loan & { customerName: string }
 export type NewLoan = InferInsertModel<typeof loans>
 export type Collateral = InferSelectModel<typeof collateral>
 export type NewCollateral = InferInsertModel<typeof collateral>
@@ -92,6 +93,31 @@ export interface EditPaymentInput {
 export interface DeletePaymentInput {
   paymentId: string
   reason: string       // required for audit
+}
+
+// --- Phase 6: Global Payments List types ---
+export interface ListPaymentsInput {
+  page?: number          // 1-based, default 1
+  pageSize?: number      // default 25
+  dateFrom?: string      // ISO date string
+  dateTo?: string        // ISO date string
+  amountMin?: string     // NUMERIC string
+  amountMax?: string     // NUMERIC string
+  customerName?: string  // partial match, case-insensitive
+}
+
+export interface PaymentWithCustomer {
+  id: string
+  loanId: string
+  customerId: string
+  customerName: string
+  paymentDate: Date
+  amount: string
+  interestPortion: string
+  principalPortion: string
+  principalBalanceAfter: string
+  recordedBy: string
+  createdAt: Date
 }
 
 // --- Phase 3 types ---

@@ -29,6 +29,20 @@
       "when": 1774080504213,
       "tag": "0003_phase4-financial-reporting",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1774201803219,
+      "tag": "0004_add-loan-deleted-at",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1774259156555,
+      "tag": "0005_polite_makkari",
+      "breakpoints": true
     }
   ]
 }

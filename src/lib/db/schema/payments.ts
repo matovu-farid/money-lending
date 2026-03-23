@@ -1,4 +1,5 @@
-import { pgTable, uuid, numeric, timestamp, text } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, timestamp, text, index } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import { loans } from "./loans"
 
 export const payments = pgTable("payments", {
@@ -17,4 +18,8 @@ export const payments = pgTable("payments", {
   deleteReason: text("delete_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index("idx_payments_active_date")
+    .on(table.paymentDate)
+    .where(sql`deleted_at IS NULL`),
+])
