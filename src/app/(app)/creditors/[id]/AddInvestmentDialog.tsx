@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { formatNumberWithCommas, stripCommas } from "@/lib/utils"
 
 interface Props {
   creditorId: string
@@ -93,12 +94,11 @@ export function AddInvestmentDialog({ creditorId }: Props) {
               <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
               <Input
                 id="inv-amount"
-                type="number"
-                min="1"
-                step="any"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="e.g. 5000000"
+                type="text"
+                inputMode="numeric"
+                value={formatNumberWithCommas(amount)}
+                onChange={(e) => setAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                placeholder="e.g. 5,000,000"
                 disabled={isPending}
                 className="flex-1"
               />

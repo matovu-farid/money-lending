@@ -23,6 +23,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { formatNumberWithCommas, stripCommas } from "@/lib/utils"
 import type { CreditorInvestment } from "@/types"
 
 function formatUGX(amount: string | null | undefined): string {
@@ -104,7 +105,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
           {/* Outstanding balance reference */}
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
             <span className="text-muted-foreground">Outstanding Balance: </span>
-            <span className="font-medium">{formatUGX(outstandingBalance)}</span>
+            <span className="font-medium font-mono tabular-nums">{formatUGX(outstandingBalance)}</span>
           </div>
 
           <div className="space-y-1">
@@ -119,7 +120,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
               <SelectContent>
                 {investments.map((inv) => (
                   <SelectItem key={inv.id} value={inv.id}>
-                    {formatUGX(inv.amount)} — {new Date(inv.investmentDate).toLocaleDateString("en-UG")}
+                    <span className="font-mono tabular-nums">{formatUGX(inv.amount)}</span>{" — "}<span className="font-mono tabular-nums">{new Date(inv.investmentDate).toLocaleDateString("en-UG")}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -135,12 +136,11 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
               <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
               <Input
                 id="repay-amount"
-                type="number"
-                min="1"
-                step="any"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="e.g. 500000"
+                type="text"
+                inputMode="numeric"
+                value={formatNumberWithCommas(amount)}
+                onChange={(e) => setAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                placeholder="e.g. 500,000"
                 disabled={isPending}
                 className="flex-1"
               />

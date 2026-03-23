@@ -12,6 +12,7 @@ import {
 import { AddInvestmentDialog } from "./AddInvestmentDialog"
 import { RecordRepaymentDialog } from "./RecordRepaymentDialog"
 import type { Creditor, CreditorDashboard, CreditorInvestment, CreditorRepayment } from "@/types"
+import { formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string | null | undefined): string {
   if (!amount) return "UGX 0"
@@ -20,9 +21,6 @@ function formatUGX(amount: string | null | undefined): string {
   return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
 }
 
-function formatDate(date: Date | string): string {
-  return new Date(date).toLocaleDateString("en-UG")
-}
 
 function formatRate(rate: string): string {
   const num = parseFloat(rate) * 100
@@ -71,22 +69,22 @@ export function CreditorProfileClient({
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Rate</TableHead>
-                  <TableHead>Principal Balance</TableHead>
-                  <TableHead>Interest Accrued</TableHead>
-                  <TableHead>Total Repaid</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Rate</TableHead>
+                  <TableHead className="text-right">Principal Balance</TableHead>
+                  <TableHead className="text-right">Interest Accrued</TableHead>
+                  <TableHead className="text-right">Total Repaid</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {dashboard.investments.map((inv) => (
                   <TableRow key={inv.id}>
-                    <TableCell>{formatDate(inv.investmentDate)}</TableCell>
-                    <TableCell>{formatUGX(inv.amount)}</TableCell>
-                    <TableCell>{formatRate(inv.interestRateMonthly)}</TableCell>
-                    <TableCell>{formatUGX(inv.principalBalance)}</TableCell>
-                    <TableCell>{formatUGX(inv.interestAccrued)}</TableCell>
-                    <TableCell>{formatUGX(inv.totalRepaid)}</TableCell>
+                    <TableCell className="font-mono tabular-nums">{formatDate(inv.investmentDate)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(inv.amount)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatRate(inv.interestRateMonthly)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(inv.principalBalance)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(inv.interestAccrued)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(inv.totalRepaid)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -104,20 +102,20 @@ export function CreditorProfileClient({
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Interest Portion</TableHead>
-                  <TableHead>Principal Portion</TableHead>
-                  <TableHead>Balance After</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Interest Portion</TableHead>
+                  <TableHead className="text-right">Principal Portion</TableHead>
+                  <TableHead className="text-right">Balance After</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {repayments.map((repayment) => (
                   <TableRow key={repayment.id}>
-                    <TableCell>{formatDate(repayment.repaymentDate)}</TableCell>
-                    <TableCell>{formatUGX(repayment.amount)}</TableCell>
-                    <TableCell>{formatUGX(repayment.interestPortion)}</TableCell>
-                    <TableCell>{formatUGX(repayment.principalPortion)}</TableCell>
-                    <TableCell>{formatUGX(repayment.principalBalanceAfter)}</TableCell>
+                    <TableCell className="font-mono tabular-nums">{formatDate(repayment.repaymentDate)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(repayment.amount)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(repayment.interestPortion)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(repayment.principalPortion)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatUGX(repayment.principalBalanceAfter)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

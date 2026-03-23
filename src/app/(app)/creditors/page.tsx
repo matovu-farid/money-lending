@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
+import { formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
   const num = parseFloat(amount)
@@ -37,7 +38,10 @@ export default async function CreditorsPage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Creditors</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Creditors</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Capital sources and obligations</p>
+        </div>
         <ButtonLink href="/creditors/new">
           Add Creditor
         </ButtonLink>
@@ -94,8 +98,8 @@ export default async function CreditorsPage() {
                 <TableCell className="font-medium">{creditor.name}</TableCell>
                 <TableCell>{creditor.contact}</TableCell>
                 <TableCell>{creditor.address}</TableCell>
-                <TableCell>
-                  {new Date(creditor.createdAt).toLocaleDateString("en-UG")}
+                <TableCell className="font-mono tabular-nums">
+                  {formatDate(creditor.createdAt)}
                 </TableCell>
                 <TableCell>
                   <ButtonLink
