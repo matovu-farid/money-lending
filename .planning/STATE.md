@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Payments
 status: unknown
-stopped_at: Completed 09-01-PLAN.md
-last_updated: "2026-03-23T18:05:21.197Z"
+stopped_at: Completed 09-02-PLAN.md
+last_updated: "2026-03-23T18:30:45Z"
 last_activity: 2026-03-23
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-23)
 ## Current Position
 
 Phase: 09 (design-system-overhaul-apply-sovereign-ledger-design-system-across-the-entire-app) — EXECUTING
-Plan: 1 of 6
+Plan: 2 of 6
 
 ## Performance Metrics
 
@@ -48,6 +48,7 @@ Plan: 1 of 6
 | Phase 07 P02 | 28 | 2 tasks | 4 files |
 | Phase 08 P02 | 7min | 2 tasks | 4 files |
 | Phase 09 P01 | 12min | 2 tasks | 2 files |
+| Phase 09 P02 | 4min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -77,6 +78,9 @@ Key decisions relevant to v1.1:
 - [Phase 08]: QuickRecordDialog success state replaces form content inline (same dialog, no auto-close) — Record another resets all state
 - [Phase 09]: Canvas pixel-read used in Cypress to convert OKLCH/lab computed colors to sRGB — browser resolves oklch to lab() not rgb() in Electron/Chromium
 - [Phase 09]: Print @media block adds :root token reset for --background/--foreground to pure white/black for receipt printing
+- [Phase 09 P02]: Dialog/Sheet content uses bg-white/85 not bg-background — glassmorphism requires semi-transparent white, not the surface token
+- [Phase 09 P02]: Sheet removes all side border classes (border-t/b/l/r) per No-Line rule — floating panels have no explicit edges
+- [Phase 09 P02]: TableHead uses text-xs font-semibold uppercase tracking-wider text-muted-foreground label typography — drops font-medium and text-foreground
 
 ### Pending Todos
 
@@ -101,7 +105,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T18:05:21.195Z
+Last session: 2026-03-23T18:30:45Z
 Last activity: 2026-03-23
-Stopped at: Completed 09-01-PLAN.md
+Stopped at: Completed 09-02-PLAN.md
 Resume file: None
