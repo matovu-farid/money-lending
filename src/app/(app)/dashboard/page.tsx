@@ -1,11 +1,12 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon } from "lucide-react"
+import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp } from "lucide-react"
 import { getDashboardAction } from "@/actions/dashboard.actions"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { DashboardKPIs, ActivityFeedItem } from "@/types"
+import { formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
   const num = parseFloat(amount)
@@ -30,11 +31,40 @@ function activityIcon(type: ActivityFeedItem["type"]) {
   return <PaymentIcon className="h-4 w-4 text-muted-foreground shrink-0" />
 }
 
+const DETAIL_LABELS: Record<string, string> = {
+  amount: "Amount",
+  interestRate: "Interest Rate",
+  startDate: "Start Date",
+  customerName: "Customer",
+  collateral: "Collateral",
+  paymentDate: "Payment Date",
+  interestPortion: "Interest Portion",
+  principalPortion: "Principal Portion",
+}
+
+function formatDetailValue(key: string, value: string | number | null | undefined): string {
+  if (value == null) return "—"
+  const str = String(value)
+  if (["amount", "interestPortion", "principalPortion"].includes(key)) {
+    const num = parseFloat(str)
+    if (!isNaN(num)) return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
+  }
+  if (key === "interestRate") {
+    const num = parseFloat(str)
+    if (!isNaN(num)) return `${(num * 100).toFixed(0)}% / month`
+  }
+  if (key === "startDate" || key === "paymentDate") {
+    return formatDate(str)
+  }
+  return str
+}
+
 export default function DashboardPage() {
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
   const [activity, setActivity] = useState<ActivityFeedItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
     getDashboardAction().then((result) => {
@@ -51,8 +81,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-sm text-muted-foreground mt-1">Portfolio health at a glance</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Portfolio health at a glance</p>
       </div>
 
       {error && (
@@ -118,20 +148,52 @@ export default function DashboardPage() {
             </p>
           ) : (
             <div>
-              {activity.map((item, index) => (
-                <div
-                  key={item.id}
-                  className={`flex items-start gap-3 px-6 py-4 ${index < activity.length - 1 ? "border-b" : ""}`}
-                >
-                  {activityIcon(item.type)}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">{item.description}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {relativeTime(item.timestamp)}
-                    </p>
+              {activity.map((item, index) => {
+                const isExpanded = expandedId === item.id
+                const hasDetail = item.detail && Object.keys(item.detail).length > 0
+                return (
+                  <div
+                    key={item.id}
+                    className={index < activity.length - 1 ? "border-b" : ""}
+                  >
+                    <button
+                      type="button"
+                      className={`flex items-start gap-3 px-6 py-4 w-full text-left ${hasDetail ? "cursor-pointer hover:bg-muted/50 transition-colors" : "cursor-default"}`}
+                      onClick={() => hasDetail && setExpandedId(isExpanded ? null : item.id)}
+                      data-testid={`activity-item-${item.id}`}
+                    >
+                      {activityIcon(item.type)}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm">{item.description}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                          {relativeTime(item.timestamp)}
+                        </p>
+                      </div>
+                      {hasDetail && (
+                        isExpanded
+                          ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                          : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                      )}
+                    </button>
+                    {isExpanded && item.detail && (
+                      <div className="px-6 pb-4 pl-13" data-testid={`activity-detail-${item.id}`}>
+                        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm ml-7">
+                          {Object.entries(item.detail).map(([key, value]) => {
+                            const label = DETAIL_LABELS[key]
+                            if (!label || value == null) return null
+                            return (
+                              <div key={key} className="contents">
+                                <dt className="text-muted-foreground">{label}</dt>
+                                <dd className={["amount", "interestPortion", "principalPortion", "interestRate"].includes(key) ? "font-mono tabular-nums" : undefined}>{formatDetailValue(key, value)}</dd>
+                              </div>
+                            )
+                          })}
+                        </dl>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </CardContent>
