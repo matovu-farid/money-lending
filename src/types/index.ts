@@ -286,3 +286,31 @@ export interface TransactionLogFilters {
   dateFrom?: string
   dateTo?: string
 }
+
+// --- Phase 7: Daily Collections types ---
+export interface DailyCollectionRow {
+  paymentId: string
+  loanId: string
+  customerName: string
+  amount: string
+  interestPortion: string
+  principalPortion: string
+  paymentDate: Date
+}
+
+export interface DailyCollectionsSummary {
+  date: string             // YYYY-MM-DD
+  totalCollected: string   // BigNumber string e.g. "300000.00"
+  paymentCount: number
+  rows: DailyCollectionRow[]
+}
+
+export interface LoanDueToday {
+  loanId: string
+  customerId: string
+  customerName: string
+  loanAmount: string
+  outstandingBalance: string
+  daysSinceLastPayment: number
+  lastPaymentDate: Date | null
+}
