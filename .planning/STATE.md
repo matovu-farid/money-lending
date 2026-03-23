@@ -1,10 +1,10 @@
 ---
 gsd_state_version: 1.0
 milestone: v1.0
-milestone_name: milestone
-status: unknown
-stopped_at: Completed quick/260322-sl5
-last_updated: "2026-03-22T20:46:00.000Z"
+milestone_name: MVP
+status: completed
+stopped_at: Milestone v1.0 archived
+last_updated: "2026-03-23T08:15:00.000Z"
 progress:
   total_phases: 5
   completed_phases: 5
@@ -16,148 +16,28 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-19)
+See: .planning/PROJECT.md (updated 2026-03-23)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 05 — add-optimistic-updates-for-form-submits-loading-animations-and-tanstack-query-integration
+**Current focus:** Planning next milestone
 
 ## Current Position
 
-Phase: 05 (add-optimistic-updates-for-form-submits-loading-animations-and-tanstack-query-integration) — EXECUTING
-Plan: 3 of 4
-
-## Performance Metrics
-
-**Velocity:**
-
-- Total plans completed: 4
-- Average duration: 7 min
-- Total execution time: 0.45 hours
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01-foundation | 4 | 27 min | 7 min |
-
-**Recent Trend:**
-
-- Last 5 plans: 8 min
-- Trend: on track
-
-*Updated after each plan completion*
-| Phase 01-foundation P05 | 5 | 2 tasks | 5 files |
-| Phase 01-foundation P06 | 6 | 2 tasks | 22 files |
-| Phase 01-foundation P07 | 18 | 2 tasks | 6 files |
-| Phase 02-loan-operations P01 | 7 | 2 tasks | 10 files |
-| Phase 02-loan-operations P03 | 3 | 2 tasks | 5 files |
-| Phase 02-loan-operations P04 | 8 | 2 tasks | 5 files |
-| Phase 02-loan-operations P02 | 6 | 2 tasks | 7 files |
-| Phase 03-operational-management P01 | 15 | 3 tasks | 18 files |
-| Phase 03-operational-management P04 | 9 | 2 tasks | 7 files |
-| Phase 03-operational-management P02 | 25 | 3 tasks | 8 files |
-| Phase 04-financial-reporting P01 | 4 | 3 tasks | 13 files |
-| Phase 04-financial-reporting P03 | 4 | 2 tasks | 7 files |
-| Phase 04-financial-reporting P02 | 4 | 3 tasks | 3 files |
-| Phase 04-financial-reporting P05 | 3 | 2 tasks | 6 files |
-| Phase 04-financial-reporting P06 | 4 | 2 tasks | 3 files |
-| Phase 04-financial-reporting P04 | 18 | 3 tasks | 8 files |
-| Phase 04-financial-reporting P07 | 15 | 2 tasks | 13 files |
-| Phase 04-financial-reporting P08 | 3 | 1 tasks | 3 files |
-| Phase 05 P01 | 2 | 3 tasks | 9 files |
-| Phase 05 P02 | 3 | 2 tasks | 7 files |
-| Phase 05 P03 | 3 | 2 tasks | 5 files |
-| Phase 05 P04 | 5 | 2 tasks | 2 files |
+Milestone v1.0 MVP shipped 2026-03-22. All 5 phases (27 plans) complete.
 
 ## Accumulated Context
 
-### Roadmap Evolution
-
-- Phase 5 added: Add optimistic updates for form submits, loading animations, and TanStack Query integration
-
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- [Pre-phase]: Better Auth replaces Clerk — self-hosted RBAC plugin, no vendor lock-in; all auth middleware must use Better Auth session API
-- [Pre-phase]: Interest is calculated on-demand from loan history (no daily accrual rows) — cron handles overdue detection and alerts only, not financial math
-- [Pre-phase]: All monetary arithmetic uses BigNumber library — no native JS float operations on money values anywhere in the codebase
-- [Phase 1]: Loans are perpetual — no term_days, no due_date. Payment table is the rate-period source of truth with principal_balance_before/after columns.
-- [01-01]: No Zod installed — Server Actions use TypeScript types; only Better Auth catch-all Route Handler handles its own validation.
-- [01-01]: Collateral is a separate table (collateral.ts) with loanId FK, not inline columns on loans.
-- [01-01]: INFR-06 Layer deferral — services return Effect<S,E,never> with db closed over module scope; full Context.Tag/Layer wiring deferred to Phase 2.
-- [01-02]: Math.max is acceptable for integer day-count comparison (non-monetary) — BigNumber used exclusively for monetary arithmetic.
-- [01-02]: calculateLoanSummary fields use totalInterestAtMinPeriod/totalOwedAtMinPeriod naming (not 30Days suffix) because min period is overridable per LOAN-11.
-- [01-02]: calculateDaysOverdue returns BigNumber(0) when unpaid interest <= 0 — correct business behavior for fully current loan.
-- [01-03]: First-user-superadmin via databaseHooks.user.create.after using raw SQL count — avoids circular deps and missing request headers inside hook.
-- [01-03]: proxy.ts uses auth.api.getSession (full DB lookup) not cookie-only — required for session.user.role check; cookieCache (5-min) mitigates cost.
-- [01-03]: AUTH-04 satisfied by Better Auth session table — each login creates a row with userId and createdAt; no extra audit hook needed.
-- [01-03]: RESOLVED — Better Auth RBAC plugin API verified; unassignedRole requires 'as any' cast for empty newRole({}) due to TypeScript Subset<never> inference.
-- [01-04]: writeAuditLog is plain async (not Effect) — Effect.runPromise inside Drizzle tx callbacks causes runtime errors (RESEARCH.md Pitfall 7).
-- [01-04]: No Zod in customer Server Actions — TypeScript types + runtime string guards satisfy INFR-02 per user decision.
-- [Phase 01-foundation]: LOAN-11 vs AUTH-03 resolved: per-loan overrides are admin+, global system defaults require superAdmin per AUTH-03 capability table
-- [Phase 01-foundation]: [01-05]: writeAuditLog called with direct await inside db.transaction -- not Effect.runPromise to avoid Pitfall 7
-- [Phase 01-foundation]: shadcn@latest uses @base-ui/react primitives (not Radix) -- TooltipTrigger has no asChild prop; render prop pattern required
-- [Phase 01-foundation]: Better Auth password reset client method is authClient.requestPasswordReset (not forgetPassword)
-- [Phase 01-foundation]: buttonVariants used with Link for link-button elements — base-ui Button has no asChild prop
-- [Phase 01-foundation]: Admin page uses authClient.admin.listUsers with result.data cast via (result.data as any)?.users due to Better Auth type complexity
-- [Phase 01-foundation]: Email verification enabled via Better Auth requireEmailVerification + Resend integration — registration flow requires email verification before login; CYPRESS=true bypasses to in-memory store for E2E tests
-- [Phase 02-loan-operations]: allocatePayment takes params object (not positional args) for clarity with 5 inputs
-- [Phase 02-loan-operations]: recalculateFromPayment is internal (not exported) — called only from editPayment and deletePayment
-- [Phase 02-loan-operations]: deletePayment reverts loan to pending if no active payments remain after deletion
-- [Phase 02-loan-operations]: PrintButton extracted as 'use client' component — window.print() requires browser context; receipt page is a Server Component
-- [Phase 02-loan-operations]: Repayment receipt imports PrintButton from disbursement folder — single source of truth for print trigger
-- [Phase 02-loan-operations]: sendAdminNotification is fire-and-forget (void, never await) -- email failure never blocks user Server Action
-- [Phase 02-loan-operations]: Cron endpoint /api/cron/overdue is detection-only (no DB writes) -- Phase 3 stores flagged results for watchlist UI
-- [Phase 02-loan-operations]: Server component + client island: page.tsx fetches via Effect.runPromise, passes props to LoanDetailClient
-- [Phase 02-loan-operations]: base-ui MenuItem uses onClick not onSelect -- DropdownMenuItems use onClick handler
-- [Phase 03-operational-management]: Migration applied via psql directly — drizzle-kit migrate hangs on pooled Neon connection; unpooled URL used for psql; migration records inserted into drizzle.__drizzle_migrations manually
-- [Phase 03-operational-management]: tsconfig.json excludes cypress/ directory to prevent Next.js TypeScript build from checking Cypress specs (it.todo is Cypress-only API)
-- [Phase 03]: Outstanding balance calculated per-loan via principalBalanceAfter of last payment — matches loan detail page pattern and payment table source of truth
-- [Phase 03]: Watchlist >= 30 day threshold uses identical calculateDaysOverdue engine calls as cron endpoint for RISK-04 compliance — no calculation drift
-- [Phase 03]: capitalInSystem hardcoded to 0.00 with Phase 4 subtitle — creditor data not yet available
-- [Phase 03-operational-management]: SimulatorPanel uses allocatePayment and calculateDaysOverdue from engine.ts directly — same implementation as real payment recording (RISK-04 compliance)
-- [Phase 03-operational-management]: createNotificationsForLoan is plain async (not Effect) — called from Route Handler, same pattern as writeAuditLog [01-04]
-- [Phase 03-operational-management]: Notification dedup: check userId + loanId + dueDate before insert prevents duplicate alerts on repeated cron runs
-- [Phase 03-operational-management]: getPaymentsByLoanAction added for customer profile loan history lazy-load (includes soft-deleted payments)
-- [Phase 04-financial-reporting]: date-picker not in base-nova shadcn registry; calendar + popover is the correct composition pattern
-- [Phase 04-financial-reporting]: drizzle .defaultFalse() does not exist; corrected to .default(false) for boolean columns
-- [Phase 04-financial-reporting]: autoPost* functions are plain async not Effect — called inside db.transaction where Effect.runPromise is unsafe (Pitfall 7)
-- [Phase 04-financial-reporting]: CategoryInUseError returned (not DB FK constraint) for clean user-facing error when deleting categories with transactions
-- [Phase 04-financial-reporting]: BigNumber DECIMAL_PLACES=10 precision: 10M * 0.10/30 * 30 = 999999.99 — test assertions match actual engine output, not idealized math
-- [Phase 04-financial-reporting]: creditor.service.ts uses ESM top-level imports for engine functions — require() is CJS-only and fails in vitest node environment
-- [Phase 04-financial-reporting]: Select onValueChange in base-ui returns string | null — guard with if (value !== null) before setState
-- [Phase 04-financial-reporting]: PopoverTrigger has no asChild prop in base-ui — render prop pattern required (same as TooltipTrigger)
-- [Phase 04-financial-reporting]: Transaction Log filters use URL searchParams server component re-fetch pattern for shareable/bookmarkable filter state
-- [Phase 04-financial-reporting]: report.service.ts uses Effect.runPromise() to call getSystemCapital() — acceptable for report queries (not inside db.transaction)
-- [Phase 04-financial-reporting]: retainedEarnings = total credits - total debits up to asOf date (cumulative P&L from transaction log)
-- [Phase 04-financial-reporting]: Creditor list and profile use Server Components with direct Effect.runPromise calls — no client search/filter needed
-- [Phase 04-financial-reporting]: Profile page fetches investments+repayments from DB alongside dashboard to populate tabs without additional service methods
-- [Phase 04-financial-reporting]: Buffer wrapped as Uint8Array for Route Handler Response body — Node Buffer not assignable to Web API BodyInit
-- [Phase 04-financial-reporting]: buttonVariants + Link pattern used in reports hub — base-ui Button has no asChild prop
-- [Phase 04-financial-reporting]: Month-end cron uses POST not GET — data-modifying operation (snapshot insertion)
-- [Phase 04-financial-reporting]: capitalInSystem shows totalOutstanding from getSystemCapital() — principal + accrued creditor interest
-- [Phase 05]: TanStack Query staleTime set to 60s; QueryClientProvider wraps AppShell; Spinner adds data-testid for Cypress; loading.tsx is zero-JS CSS-only skeleton
-- [05-02]: useTransition replaces useState(loading/submitting) in all 7 navigate-away and auth forms — React 19 scheduler-aware pending; client-side validation runs outside startTransition for synchronous early return
-- [05-02]: creditors/new: window.location.href replaced with router.push for correct transition tracking inside startTransition
-- [Phase 05]: Server Actions return void (throw on error) — onSuccess has no error-in-result guard; rollback only in onError
-- [Phase 05]: Optimistic row removed in onSuccess (not replaced) — revalidatePath handles real data refresh on next navigation
-- [05-03]: Admin page keeps updatingUserId state for per-row spinner identification — useTransition alone can't distinguish which row triggered it
-- [05-03]: loan-detail-client uses two separate useTransition hooks for edit vs delete — independent in-flight tracking required for two dialogs
-- [quick-s7a]: Loans created as active immediately — no pending status; disbursement is off-app before recording; deletePayment reverts to active not pending
-- [quick-sl5]: Temporary loan officer edit privilege is UI-only via ?new=1 URL param — server actions enforce admin+ only; deleteLoan is hard delete in FK order with audit log written before deletion
+Full decision log in PROJECT.md Key Decisions table.
 
 ### Pending Todos
 
-None yet.
+None.
 
 ### Blockers/Concerns
 
-- RESOLVED [Phase 1]: Better Auth RBAC plugin API verified against installed package docs; implemented correctly in 01-03
-- [Phase 2]: @react-pdf/renderer React 19 compatibility is unverified — must test in the actual Next.js 16 + React 19 environment before committing to it for receipt generation
-- RESOLVED [Pre-phase]: Client's operating timezone confirmed as Africa/Kampala — set in .env and .env.example
-- RESOLVED [Phase 1]: Drizzle ORM version confirmed as 0.45.1 and migration API confirmed — schema written
+- [Phase 2]: @react-pdf/renderer React 19 compatibility is unverified — must test before relying on it further
 
 ### Quick Tasks Completed
 
@@ -168,7 +48,7 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-03-22T20:46:00Z
-Last activity: 2026-03-22 - Completed quick task 260322-sl5: Admin+ edit/delete loans with temporary loan officer privilege
-Stopped at: Completed quick/260322-sl5
+Last session: 2026-03-23
+Last activity: Milestone v1.0 archived
+Stopped at: Milestone completion
 Resume file: None
