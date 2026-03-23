@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Payments
 status: unknown
-stopped_at: Completed 09-02-PLAN.md
-last_updated: "2026-03-23T18:30:45Z"
+stopped_at: Completed 09-03-PLAN.md
+last_updated: "2026-03-23T18:38:18.446Z"
 last_activity: 2026-03-23
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 12
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -49,6 +49,7 @@ Plan: 2 of 6
 | Phase 08 P02 | 7min | 2 tasks | 4 files |
 | Phase 09 P01 | 12min | 2 tasks | 2 files |
 | Phase 09 P02 | 4min | 2 tasks | 8 files |
+| Phase 09 P03 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Key decisions relevant to v1.1:
 - [Phase 09 P02]: Dialog/Sheet content uses bg-white/85 not bg-background — glassmorphism requires semi-transparent white, not the surface token
 - [Phase 09 P02]: Sheet removes all side border classes (border-t/b/l/r) per No-Line rule — floating panels have no explicit edges
 - [Phase 09 P02]: TableHead uses text-xs font-semibold uppercase tracking-wider text-muted-foreground label typography — drops font-medium and text-foreground
+- [Phase 09]: Separator replaced with spatial div spacer in collapsed sidebar nav — No-Line Rule
+- [Phase 09]: Explicit bg-background on app-shell main documents surface tier intent
 
 ### Pending Todos
 
@@ -105,7 +108,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T18:30:45Z
+Last session: 2026-03-23T18:38:18.442Z
 Last activity: 2026-03-23
-Stopped at: Completed 09-02-PLAN.md
+Stopped at: Completed 09-03-PLAN.md
 Resume file: None
