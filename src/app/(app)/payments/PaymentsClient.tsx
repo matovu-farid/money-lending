@@ -42,11 +42,14 @@ import { listPaymentsAction, editPaymentAction, deletePaymentAction } from "@/ac
 import { useSession } from "@/lib/auth-client"
 import { formatNumberWithCommas, formatDate } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer, type ListPaymentsInput } from "@/types"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { DailyCollectionsTab } from "./DailyCollectionsTab"
 
 interface PaymentsClientProps {
   initialData: { rows: PaymentWithCustomer[]; total: number }
   initialPage: number
   initialFilters: ListPaymentsInput
+  initialTab?: "list" | "daily"
 }
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
@@ -72,11 +75,30 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
   URL.revokeObjectURL(url)
 }
 
-export function PaymentsClient({ initialData, initialPage, initialFilters }: PaymentsClientProps) {
+export function PaymentsClient({ initialData, initialPage, initialFilters, initialTab }: PaymentsClientProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { data: session } = useSession()
+
+  const activeTab = initialTab ?? (searchParams.get("tab") as "list" | "daily") ?? "list"
+
+  function handleTabChange(tab: string) {
+    const params = new URLSearchParams(searchParams.toString())
+    params.set("tab", tab)
+    if (tab === "daily") {
+      params.delete("page")
+      params.delete("customerName")
+      params.delete("dateFrom")
+      params.delete("dateTo")
+      params.delete("amountMin")
+      params.delete("amountMax")
+    }
+    if (tab === "list") {
+      params.delete("date")
+    }
+    router.push(`/payments?${params.toString()}`)
+  }
 
   const isAdmin =
     ROLE_LEVELS[(session?.user?.role ?? "unassigned") as UserRole] >= ROLE_LEVELS.admin
@@ -296,15 +318,25 @@ export function PaymentsClient({ initialData, initialPage, initialFilters }: Pay
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Payments</h1>
-        <Button
-          variant="outline"
-          disabled={rows.length === 0}
-          onClick={() => exportToCsv(rows)}
-        >
-          <Download className="h-4 w-4 mr-2" />
-          Export CSV
-        </Button>
+        {activeTab === "list" && (
+          <Button
+            variant="outline"
+            disabled={rows.length === 0}
+            onClick={() => exportToCsv(rows)}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
+          </Button>
+        )}
       </div>
+
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
+        <TabsList>
+          <TabsTrigger value="list">All Payments</TabsTrigger>
+          <TabsTrigger value="daily">Daily</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="list">
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-end gap-3">
@@ -495,6 +527,14 @@ export function PaymentsClient({ initialData, initialPage, initialFilters }: Pay
           )}
         </>
       )}
+
+        </TabsContent>
+
+        <TabsContent value="daily">
+          <DailyCollectionsTab />
+        </TabsContent>
+
+      </Tabs>
 
       {/* Edit Payment Sheet */}
       <Sheet open={editOpen} onOpenChange={setEditOpen}>

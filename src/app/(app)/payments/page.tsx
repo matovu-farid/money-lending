@@ -8,6 +8,7 @@ export default async function PaymentsPage({
   searchParams: Promise<Record<string, string | undefined>>
 }) {
   const params = await searchParams
+  const tab = (params.tab ?? "list") as "list" | "daily"
   const page = Number(params.page ?? 1)
   const filters: ListPaymentsInput = {
     page,
@@ -19,7 +20,7 @@ export default async function PaymentsPage({
     customerName: params.customerName,
   }
   const result = await listPaymentsAction(filters)
-  const initialData = "data" in result ? result.data : { rows: [], total: 0 }
+  const initialData = ("data" in result && result.data) ? result.data : { rows: [], total: 0 }
 
   return (
     <div className="p-6 space-y-4">
@@ -27,6 +28,7 @@ export default async function PaymentsPage({
         initialData={initialData}
         initialPage={page}
         initialFilters={filters}
+        initialTab={tab}
       />
     </div>
   )
