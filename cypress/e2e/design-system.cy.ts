@@ -178,7 +178,7 @@ describe("Design System — Sovereign Ledger", () => {
   // 3. No 1px solid section borders (enable after Plan 03)
   // -------------------------------------------------------------------------
   describe("3. No-Line Rule — Section Borders", () => {
-    it.skip("enable after Plan 03 — sidebar aside has no visible border-right", () => {
+    it("sidebar aside has no visible border-right", () => {
       cy.get("aside").then(($aside) => {
         const borderWidth = parseInt(
           getComputedStyle($aside[0]).borderRightWidth,
@@ -188,7 +188,7 @@ describe("Design System — Sovereign Ledger", () => {
       })
     })
 
-    it.skip("enable after Plan 03 — top-bar header has no visible border-bottom", () => {
+    it("top-bar header has no visible border-bottom", () => {
       cy.get("header").then(($header) => {
         const borderWidth = parseInt(
           getComputedStyle($header[0]).borderBottomWidth,
