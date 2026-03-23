@@ -54,27 +54,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PAY-01 | — | Pending |
-| PAY-02 | — | Pending |
-| PAY-03 | — | Pending |
-| PAY-04 | — | Pending |
-| PAY-05 | — | Pending |
-| PAY-06 | — | Pending |
-| PAY-07 | — | Pending |
-| PAY-08 | — | Pending |
-| COLL-01 | — | Pending |
-| COLL-02 | — | Pending |
-| COLL-03 | — | Pending |
-| COLL-04 | — | Pending |
-| QREC-01 | — | Pending |
-| QREC-02 | — | Pending |
-| QREC-03 | — | Pending |
+| PAY-01 | Phase 6 | Pending |
+| PAY-02 | Phase 6 | Pending |
+| PAY-03 | Phase 6 | Pending |
+| PAY-04 | Phase 6 | Pending |
+| PAY-05 | Phase 6 | Pending |
+| PAY-06 | Phase 6 | Pending |
+| PAY-07 | Phase 6 | Pending |
+| PAY-08 | Phase 6 | Pending |
+| COLL-01 | Phase 7 | Pending |
+| COLL-02 | Phase 7 | Pending |
+| COLL-03 | Phase 7 | Pending |
+| COLL-04 | Phase 7 | Pending |
+| QREC-01 | Phase 8 | Pending |
+| QREC-02 | Phase 8 | Pending |
+| QREC-03 | Phase 8 | Pending |
 
 **Coverage:**
 - v1.1 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15
+- Mapped to phases: 15
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-03-23*
-*Last updated: 2026-03-23 after initial definition*
+*Last updated: 2026-03-23 — traceability complete after roadmap creation*
