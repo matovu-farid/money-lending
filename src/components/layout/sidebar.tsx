@@ -51,7 +51,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Customers", href: "/customers", icon: Users },
       { label: "Loans", href: "/loans", icon: Banknote },
-      { label: "Payments", href: "/payments", icon: CreditCard, disabled: true },
+      { label: "Payments", href: "/payments", icon: CreditCard },
       { label: "Watchlist", href: "/watchlist", icon: AlertTriangle },
     ],
   },
