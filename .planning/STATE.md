@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: Payments
-status: executing
-stopped_at: "Completed 08-01-PLAN.md"
-last_updated: "2026-03-23T15:11:19.000Z"
+status: unknown
+stopped_at: Completed 08-02-PLAN.md
+last_updated: "2026-03-23T15:23:24.818Z"
 last_activity: 2026-03-23
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 6
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -46,6 +46,7 @@ Plan: 2 of 2
 | Phase 06 P02 | 3 | 1 tasks | 3 files |
 | Phase 07 P01 | 3 | 2 tasks | 6 files |
 | Phase 07 P02 | 28 | 2 tasks | 4 files |
+| Phase 08 P02 | 7min | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,8 @@ Key decisions relevant to v1.1:
 - [Phase 08]: drizzle postgres-js db.execute returns RowList directly — use Array.from(rows), not result.rows
 - [Phase 08]: searchActiveLoans guards against < 2 char queries to prevent costly full-table ilike scans
 - [Phase 08]: getRecentlyCollectedLoansAction takes no parameters — userId always from server session to prevent spoofing
+- [Phase 08]: LoanSearchCombobox uses plain div dropdown instead of base-ui Popover — PopoverTrigger render prop intercepts input onChange events in headless environments
+- [Phase 08]: QuickRecordDialog success state replaces form content inline (same dialog, no auto-close) — Record another resets all state
 
 ### Pending Todos
 
@@ -91,7 +94,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-23T15:11:19.000Z
+Last session: 2026-03-23T15:23:24.816Z
 Last activity: 2026-03-23
-Stopped at: Completed 08-01-PLAN.md
-Resume file: .planning/phases/08-quick-record-workflow/08-02-PLAN.md
+Stopped at: Completed 08-02-PLAN.md
+Resume file: None

@@ -26,7 +26,7 @@ Full details: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md)
 
 - [x] **Phase 6: Global Payments List** - Paginated, searchable, filterable payments table across all loans with edit, delete, and CSV export (completed 2026-03-23)
 - [x] **Phase 7: Daily Collections View** - Date-navigable daily summary showing total collected, payment count, and active loans due for payment today (completed 2026-03-23)
-- [ ] **Phase 8: Quick-Record Workflow** - Inline payment recording from the Payments page without navigating to a loan
+- [x] **Phase 8: Quick-Record Workflow** - Inline payment recording from the Payments page without navigating to a loan (completed 2026-03-23)
 
 ## Phase Details
 
@@ -70,7 +70,7 @@ Plans:
   2. User can submit the payment form in a modal and the payments list refreshes automatically to include the new payment
   3. User sees a receipt link in the success state immediately after recording the payment
   4. User can see a list of recently-collected loans for quick repeat selection, reducing keystrokes for bulk collection days
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 08-01-PLAN.md — Data layer: types, searchActiveLoans + getRecentlyCollectedLoans services, server actions, revalidatePath("/payments"), unit + integration tests
@@ -87,4 +87,4 @@ Plans:
 | 5. Optimistic Updates & UX | v1.0 | 4/4 | Complete | 2026-03-22 |
 | 6. Global Payments List | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 7. Daily Collections View | 2/2 | Complete   | 2026-03-23 | - |
-| 8. Quick-Record Workflow | 1/2 | In Progress|  | - |
+| 8. Quick-Record Workflow | 2/2 | Complete   | 2026-03-23 | - |
