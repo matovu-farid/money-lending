@@ -1,12 +1,13 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { MoreHorizontal, Loader2 } from "lucide-react"
 import { listLoansAction, getCurrentUserRoleAction, deleteLoanAction } from "@/actions/loan.actions"
-import type { Loan, UserRole } from "@/types"
+import type { LoanWithCustomer, UserRole } from "@/types"
 import { ROLE_LEVELS } from "@/types"
 import {
   Table,
@@ -52,10 +53,21 @@ function loanStatusLabel(status: string): string {
 
 export default function LoansPage() {
   const router = useRouter()
-  const [loans, setLoans] = useState<Loan[]>([])
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string | null>(null)
-  const [userRole, setUserRole] = useState<UserRole>("unassigned")
+  const queryClient = useQueryClient()
+
+  const { data: loans = [], isLoading, isError } = useQuery<LoanWithCustomer[]>({
+    queryKey: ["loans"],
+    queryFn: async () => {
+      const result = await listLoansAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
+
+  const { data: userRole = "unassigned" as UserRole } = useQuery<UserRole>({
+    queryKey: ["currentUserRole"],
+    queryFn: () => getCurrentUserRoleAction(),
+  })
 
   // Delete dialog state
   const [deletingLoanId, setDeletingLoanId] = useState<string | null>(null)
@@ -63,21 +75,6 @@ export default function LoansPage() {
   const [isDeletePending, startDeleteTransition] = useTransition()
 
   const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
-
-  useEffect(() => {
-    Promise.all([
-      listLoansAction(),
-      getCurrentUserRoleAction(),
-    ]).then(([loansResult, role]) => {
-      if ("error" in loansResult) {
-        setFetchError(loansResult.error ?? "Unknown error")
-      } else {
-        setLoans(loansResult.data)
-      }
-      setUserRole(role)
-      setLoading(false)
-    })
-  }, [])
 
   function openDeleteDialog(loanId: string) {
     setDeletingLoanId(loanId)
@@ -103,12 +100,12 @@ export default function LoansPage() {
       }
 
       toast("Loan deleted")
-      setLoans((prev) => prev.filter((l) => l.id !== deletingLoanId))
+      queryClient.invalidateQueries({ queryKey: ["loans"] })
       closeDeleteDialog()
     })
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="p-6">
         <p className="text-muted-foreground">Loading loans...</p>
@@ -116,10 +113,10 @@ export default function LoansPage() {
     )
   }
 
-  if (fetchError) {
+  if (isError) {
     return (
       <div className="p-6">
-        <p className="text-destructive">Error: {fetchError}</p>
+        <p className="text-destructive">Error loading loans</p>
       </div>
     )
   }
@@ -127,7 +124,10 @@ export default function LoansPage() {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Loans</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Active and historical loans</p>
+        </div>
         <Link href="/loans/new" className={cn(buttonVariants())}>
           New Loan
         </Link>
@@ -144,9 +144,10 @@ export default function LoansPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Customer ID</TableHead>
-              <TableHead>Principal Amount</TableHead>
-              <TableHead>Interest Rate</TableHead>
+              <TableHead>Slug</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead className="text-right">Principal Amount</TableHead>
+              <TableHead className="text-right">Interest Rate</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Start Date</TableHead>
               {isAdmin && <TableHead className="w-12">Actions</TableHead>}
@@ -155,15 +156,16 @@ export default function LoansPage() {
           <TableBody>
             {loans.map((loan) => (
               <TableRow key={loan.id}>
-                <TableCell className="font-mono text-xs">{loan.customerId}</TableCell>
-                <TableCell>UGX {formatUGX(loan.principalAmount)}</TableCell>
-                <TableCell>{(parseFloat(loan.interestRate) * 100).toFixed(0)}% / month</TableCell>
+                <TableCell className="font-mono text-xs tabular-nums">{loan.id.slice(-5)}</TableCell>
+                <TableCell>{loan.customerName}</TableCell>
+                <TableCell className="text-right font-mono tabular-nums">UGX {formatUGX(loan.principalAmount)}</TableCell>
+                <TableCell className="text-right font-mono tabular-nums">{(parseFloat(loan.interestRate) * 100).toFixed(0)}% / month</TableCell>
                 <TableCell>
                   <Badge variant={loanStatusVariant(loan.status)}>
                     {loanStatusLabel(loan.status)}
                   </Badge>
                 </TableCell>
-                <TableCell>
+                <TableCell className="font-mono tabular-nums">
                   {formatDate(loan.startDate)}
                 </TableCell>
                 {isAdmin && (

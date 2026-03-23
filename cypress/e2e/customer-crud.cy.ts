@@ -35,7 +35,7 @@ describe("Customer CRUD", () => {
       cy.contains("button", "Register Customer").click()
 
       // Should redirect to customer profile
-      cy.url({ timeout: 10000 }).should("match", /\/customers\/.+/)
+      cy.url({ timeout: 10000 }).should("match", /\/customers\/[0-9a-f-]{36}/)
       cy.contains("John Doe")
       cy.contains("0771234567")
       cy.contains("Kampala, Uganda")
@@ -67,7 +67,7 @@ describe("Customer CRUD", () => {
       cy.get("#contact").type("0787654321")
       cy.get("#address").type("Entebbe, Uganda")
       cy.contains("button", "Register Customer").click()
-      cy.url({ timeout: 10000 }).should("match", /\/customers\/.+/)
+      cy.url({ timeout: 10000 }).should("match", /\/customers\/[0-9a-f-]{36}/)
     })
 
     it("displays customer info with status badge", () => {
@@ -127,7 +127,7 @@ describe("Customer CRUD", () => {
       cy.get("#contact").type("0712345678")
       cy.get("#address").type("Jinja, Uganda")
       cy.contains("button", "Register Customer").click()
-      cy.url({ timeout: 10000 }).should("match", /\/customers\/.+/)
+      cy.url({ timeout: 10000 }).should("match", /\/customers\/[0-9a-f-]{36}/)
 
       // Navigate to list
       cy.visit("/customers")
@@ -142,13 +142,13 @@ describe("Customer CRUD", () => {
       cy.get("#contact").type("0723456789")
       cy.get("#address").type("Mbarara, Uganda")
       cy.contains("button", "Register Customer").click()
-      cy.url({ timeout: 10000 }).should("match", /\/customers\/.+/)
+      cy.url({ timeout: 10000 }).should("match", /\/customers\/[0-9a-f-]{36}/)
 
       cy.visit("/customers")
       cy.contains("Bob Click").click()
-      cy.url().should("match", /\/customers\/.+/)
+      cy.url().should("match", /\/customers\/[0-9a-f-]{36}/)
       cy.contains("Bob Click")
-      cy.contains("Customer Profile")
+      cy.contains("Customer profile")
     })
   })
 })

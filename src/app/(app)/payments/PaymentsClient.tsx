@@ -320,7 +320,10 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
     <div className="space-y-4">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Payments</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Payment history and collections</p>
+        </div>
         <div className="flex items-center gap-2">
           <Button onClick={() => setQuickRecordOpen(true)}>
             Record Payment
@@ -443,38 +446,32 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
                 <TableHead>Date</TableHead>
                 <TableHead>Customer</TableHead>
                 <TableHead>Loan Ref</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Interest</TableHead>
-                <TableHead>Principal</TableHead>
-                <TableHead>Balance After</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead className="text-right">Interest</TableHead>
+                <TableHead className="text-right">Principal</TableHead>
+                <TableHead className="text-right">Balance After</TableHead>
                 {isAdmin && <TableHead className="w-12"></TableHead>}
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell>{formatDate(row.paymentDate)}</TableCell>
+                  <TableCell className="font-mono tabular-nums">{formatDate(row.paymentDate)}</TableCell>
                   <TableCell>{row.customerName}</TableCell>
                   <TableCell>
-                    <span className="text-xs font-mono">
+                    <span className="text-xs font-mono tabular-nums">
                       LOAN-{row.loanId.slice(0, 8).toUpperCase()}
                     </span>
                   </TableCell>
-                  <TableCell>UGX {formatNumberWithCommas(row.amount)}</TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground">
-                      UGX {formatNumberWithCommas(row.interestPortion)}
-                    </span>
+                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.amount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                    UGX {formatNumberWithCommas(row.interestPortion)}
                   </TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground">
-                      UGX {formatNumberWithCommas(row.principalPortion)}
-                    </span>
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                    UGX {formatNumberWithCommas(row.principalPortion)}
                   </TableCell>
-                  <TableCell>
-                    <span className="text-muted-foreground">
-                      UGX {formatNumberWithCommas(row.principalBalanceAfter)}
-                    </span>
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+                    UGX {formatNumberWithCommas(row.principalBalanceAfter)}
                   </TableCell>
                   {isAdmin && (
                     <TableCell>
@@ -511,7 +508,7 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
           {total > pageSize && (
             <div className="flex items-center justify-between pt-4">
               <p className="text-sm text-muted-foreground">
-                Showing {start}&ndash;{end} of {total} payments
+                Showing <span className="font-mono tabular-nums">{start}&ndash;{end}</span> of <span className="font-mono tabular-nums">{total}</span> payments
               </p>
               <div className="flex gap-2">
                 <Button

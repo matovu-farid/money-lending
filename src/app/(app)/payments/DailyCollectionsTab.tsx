@@ -192,9 +192,9 @@ export function DailyCollectionsTab() {
               <TableRow>
                 <TableHead>Customer</TableHead>
                 <TableHead>Loan Ref</TableHead>
-                <TableHead>Amount (UGX)</TableHead>
-                <TableHead>Interest</TableHead>
-                <TableHead>Principal</TableHead>
+                <TableHead className="text-right">Amount (UGX)</TableHead>
+                <TableHead className="text-right">Interest</TableHead>
+                <TableHead className="text-right">Principal</TableHead>
                 <TableHead>Time</TableHead>
               </TableRow>
             </TableHeader>
@@ -203,18 +203,18 @@ export function DailyCollectionsTab() {
                 <TableRow key={row.paymentId}>
                   <TableCell>{row.customerName}</TableCell>
                   <TableCell>
-                    <span className="text-xs font-mono">
+                    <span className="text-xs font-mono tabular-nums">
                       LOAN-{row.loanId.slice(0, 8).toUpperCase()}
                     </span>
                   </TableCell>
-                  <TableCell>UGX {formatNumberWithCommas(row.amount)}</TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.amount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
                     UGX {formatNumberWithCommas(row.interestPortion)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
                     UGX {formatNumberWithCommas(row.principalPortion)}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="font-mono tabular-nums text-muted-foreground">
                     {format(new Date(row.paymentDate), "HH:mm")}
                   </TableCell>
                 </TableRow>
@@ -271,7 +271,7 @@ export function DailyCollectionsTab() {
               <TableRow>
                 <TableHead>Customer</TableHead>
                 <TableHead>Loan Ref</TableHead>
-                <TableHead>Outstanding Balance</TableHead>
+                <TableHead className="text-right">Outstanding Balance</TableHead>
                 <TableHead>Days Since Last Payment</TableHead>
                 <TableHead>Last Payment</TableHead>
               </TableRow>
@@ -281,15 +281,15 @@ export function DailyCollectionsTab() {
                 <TableRow key={loan.loanId}>
                   <TableCell>{loan.customerName}</TableCell>
                   <TableCell>
-                    <span className="text-xs font-mono">
+                    <span className="text-xs font-mono tabular-nums">
                       LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
                     </span>
                   </TableCell>
-                  <TableCell>UGX {formatNumberWithCommas(loan.outstandingBalance)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(loan.outstandingBalance)}</TableCell>
                   <TableCell>
                     <OverdueBadge daysOverdue={loan.daysSinceLastPayment} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
+                  <TableCell className="font-mono tabular-nums text-muted-foreground">
                     {loan.lastPaymentDate ? formatDate(loan.lastPaymentDate) : "Never"}
                   </TableCell>
                 </TableRow>

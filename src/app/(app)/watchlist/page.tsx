@@ -13,20 +13,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { WatchlistEntry } from "@/types"
+import { formatDate, formatDateTime } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
   const num = parseFloat(amount)
   if (isNaN(num)) return "UGX 0"
   return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
-}
-
-function formatDate(date: Date | null): string {
-  if (!date) return "No payments"
-  return new Date(date).toLocaleDateString("en-UG", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
 }
 
 export default function WatchlistPage() {
@@ -50,9 +42,10 @@ export default function WatchlistPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">Borrower Watchlist</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Last calculated: {calculatedAt.toLocaleString("en-UG")}
+        <h1 className="text-2xl font-semibold tracking-tight">Watchlist</h1>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Overdue and at-risk loans</p>
+        <p className="text-xs text-muted-foreground mt-1 font-mono">
+          Last calculated: {formatDateTime(calculatedAt)}
         </p>
       </div>
 
@@ -66,10 +59,10 @@ export default function WatchlistPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Customer Name</TableHead>
-                <TableHead>Loan Amount</TableHead>
-                <TableHead>Outstanding Balance</TableHead>
+                <TableHead className="text-right">Loan Amount</TableHead>
+                <TableHead className="text-right">Outstanding Balance</TableHead>
                 <TableHead>Days Overdue</TableHead>
-                <TableHead>Daily Rate (UGX)</TableHead>
+                <TableHead className="text-right">Daily Rate (UGX)</TableHead>
                 <TableHead>Last Payment</TableHead>
               </TableRow>
             </TableHeader>
@@ -99,10 +92,10 @@ export default function WatchlistPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Customer Name</TableHead>
-                <TableHead>Loan Amount</TableHead>
-                <TableHead>Outstanding Balance</TableHead>
+                <TableHead className="text-right">Loan Amount</TableHead>
+                <TableHead className="text-right">Outstanding Balance</TableHead>
                 <TableHead>Days Overdue</TableHead>
-                <TableHead>Daily Rate (UGX)</TableHead>
+                <TableHead className="text-right">Daily Rate (UGX)</TableHead>
                 <TableHead>Last Payment</TableHead>
               </TableRow>
             </TableHeader>
@@ -116,13 +109,13 @@ export default function WatchlistPage() {
                   aria-label={`View ${entry.customerName}'s profile`}
                 >
                   <TableCell className="font-medium">{entry.customerName}</TableCell>
-                  <TableCell>{formatUGX(entry.loanAmount)}</TableCell>
-                  <TableCell>{formatUGX(entry.outstandingBalance)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatUGX(entry.loanAmount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatUGX(entry.outstandingBalance)}</TableCell>
                   <TableCell>
                     <OverdueBadge daysOverdue={parseInt(entry.daysOverdue)} />
                   </TableCell>
-                  <TableCell>{formatUGX(entry.dailyRate)}</TableCell>
-                  <TableCell>{formatDate(entry.lastPaymentDate)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatUGX(entry.dailyRate)}</TableCell>
+                  <TableCell className="font-mono tabular-nums">{entry.lastPaymentDate ? formatDate(entry.lastPaymentDate) : "No payments"}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

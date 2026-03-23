@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -14,11 +15,49 @@ import { cn } from "@/lib/utils"
 
 export default function NewCustomerPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [fullName, setFullName] = useState("")
   const [contact, setContact] = useState("")
   const [address, setAddress] = useState("")
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
-  const [isPending, startTransition] = useTransition()
+
+  const mutation = useMutation({
+    mutationFn: (input: { fullName: string; contact: string; address: string }) =>
+      createCustomerAction(input),
+    onMutate: async (input) => {
+      const tempId = crypto.randomUUID()
+      const optimisticCustomer = {
+        id: tempId,
+        fullName: input.fullName,
+        contact: input.contact,
+        address: input.address,
+        status: "active" as const,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }
+      queryClient.setQueryData(["customer", tempId], optimisticCustomer)
+      router.push(`/customers/${tempId}`)
+      return { tempId }
+    },
+    onSuccess: (result, _input, context) => {
+      if (!context) return
+      if ("error" in result) {
+        queryClient.removeQueries({ queryKey: ["customer", context.tempId] })
+        router.push("/customers/new")
+        toast.error(result.error)
+        return
+      }
+      queryClient.removeQueries({ queryKey: ["customer", context.tempId] })
+      queryClient.setQueryData(["customer", result.data.id], result.data)
+      router.replace(`/customers/${result.data.id}`)
+    },
+    onError: (_error, _input, context) => {
+      if (!context) return
+      queryClient.removeQueries({ queryKey: ["customer", context.tempId] })
+      router.push("/customers/new")
+      toast.error("Failed to create customer")
+    },
+  })
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -35,26 +74,17 @@ export default function NewCustomerPage() {
     }
 
     setFieldErrors({})
-    startTransition(async () => {
-      const result = await createCustomerAction({
-        fullName: fullName.trim(),
-        contact: contact.trim(),
-        address: address.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      router.push(`/customers/${result.data.id}`)
+    mutation.mutate({
+      fullName: fullName.trim(),
+      contact: contact.trim(),
+      address: address.trim(),
     })
   }
 
   return (
     <div className="p-6 max-w-lg">
       <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Register Customer</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Register Customer</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Add a new customer to the system.
         </p>
@@ -74,7 +104,7 @@ export default function NewCustomerPage() {
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. John Doe"
-                disabled={isPending}
+                disabled={mutation.isPending}
               />
               {fieldErrors.fullName && (
                 <p className="text-destructive text-xs">{fieldErrors.fullName}</p>
@@ -89,7 +119,7 @@ export default function NewCustomerPage() {
                 value={contact}
                 onChange={(e) => setContact(e.target.value)}
                 placeholder="Phone number or email"
-                disabled={isPending}
+                disabled={mutation.isPending}
               />
               {fieldErrors.contact && (
                 <p className="text-destructive text-xs">{fieldErrors.contact}</p>
@@ -104,7 +134,7 @@ export default function NewCustomerPage() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 placeholder="e.g. Kampala, Uganda"
-                disabled={isPending}
+                disabled={mutation.isPending}
               />
               {fieldErrors.address && (
                 <p className="text-destructive text-xs">{fieldErrors.address}</p>
@@ -112,8 +142,8 @@ export default function NewCustomerPage() {
             </div>
 
             <div className="flex gap-3 pt-2">
-              <Button type="submit" disabled={isPending}>
-                {isPending ? (
+              <Button type="submit" disabled={mutation.isPending}>
+                {mutation.isPending ? (
                   <>
                     <Loader2 className="animate-spin mr-2 h-4 w-4" />
                     Registering...

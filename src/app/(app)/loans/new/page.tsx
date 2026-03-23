@@ -153,14 +153,14 @@ function NewLoanPageInner() {
       }
 
       toast.success("Loan issued successfully")
-      router.push(`/loans/${result.data.id}?new=1`)
+      router.push(`/customers/${customerId}`)
     })
   }
 
   return (
     <div className="p-6 max-w-xl">
       <div className="mb-4">
-        <h1 className="text-2xl font-semibold">Issue New Loan</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Issue New Loan</h1>
         <p className="text-muted-foreground text-sm mt-1">
           Step {step} of 3
         </p>
@@ -391,15 +391,15 @@ function NewLoanPageInner() {
                 )}
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Principal Amount</dt>
-                  <dd className="font-medium">UGX {formatUGX(principalAmount)}</dd>
+                  <dd className="font-medium font-mono tabular-nums">UGX {formatUGX(principalAmount)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Start Date</dt>
-                  <dd className="font-medium">{formatDate(startDate)}</dd>
+                  <dd className="font-medium font-mono tabular-nums">{formatDate(startDate)}</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Interest Rate</dt>
-                  <dd className="font-medium">{interestRateDisplay}% per month</dd>
+                  <dd className="font-medium font-mono tabular-nums">{interestRateDisplay}% per month</dd>
                 </div>
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Collateral</dt>
@@ -421,15 +421,15 @@ function NewLoanPageInner() {
                 <dl className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Daily interest amount</dt>
-                    <dd className="font-medium">UGX {formatUGX(loanSummary.dailyInterest)}</dd>
+                    <dd className="font-medium font-mono tabular-nums">UGX {formatUGX(loanSummary.dailyInterest)}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Total interest at minimum period</dt>
-                    <dd className="font-medium">UGX {formatUGX(loanSummary.totalInterestAtMinPeriod)}</dd>
+                    <dd className="font-medium font-mono tabular-nums">UGX {formatUGX(loanSummary.totalInterestAtMinPeriod)}</dd>
                   </div>
                   <div className="flex justify-between border-t border-border pt-2 mt-2">
                     <dt className="font-medium">Total owed at minimum period</dt>
-                    <dd className="font-semibold">UGX {formatUGX(loanSummary.totalOwedAtMinPeriod)}</dd>
+                    <dd className="font-semibold font-mono tabular-nums">UGX {formatUGX(loanSummary.totalOwedAtMinPeriod)}</dd>
                   </div>
                 </dl>
                 <p className="text-xs text-muted-foreground">

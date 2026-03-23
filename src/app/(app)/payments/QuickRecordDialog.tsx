@@ -92,6 +92,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       setSuccessPaymentId(result.data.id)
       queryClient.invalidateQueries({ queryKey: ["payments"] })
       queryClient.invalidateQueries({ queryKey: ["recentLoans"] })
+      queryClient.invalidateQueries({ queryKey: ["daily-collections"] })
+      queryClient.invalidateQueries({ queryKey: ["loans-due-today"] })
     })
   }
 
@@ -107,7 +109,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
             </DialogHeader>
             <div className="space-y-3 py-2">
               <p className="text-sm">
-                Payment of UGX {formatNumberWithCommas(amount)} recorded for {selectedLoan?.customerName}.
+                Payment of <span className="font-mono tabular-nums">UGX {formatNumberWithCommas(amount)}</span> recorded for {selectedLoan?.customerName}.
               </p>
               <Link
                 href={`/receipts/repayment/${successPaymentId}`}

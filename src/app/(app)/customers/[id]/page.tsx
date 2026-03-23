@@ -320,8 +320,8 @@ export default function CustomerProfilePage() {
     <div className="p-6 space-y-6 max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">{customer.fullName}</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Customer Profile</p>
+          <h1 className="text-2xl font-semibold tracking-tight">{customer.fullName}</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Customer profile</p>
         </div>
         <Link
           href={`/loans/new?customerId=${customerId}`}
@@ -416,7 +416,7 @@ export default function CustomerProfilePage() {
         <CardContent className="space-y-2">
           <Select value={customer.status} onValueChange={handleStatusSelect}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue />
+              <SelectValue>{statusLabel(customer.status)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
@@ -500,7 +500,7 @@ export default function CustomerProfilePage() {
                         <OverdueBadge daysOverdue={Math.round(item.daysOverdue)} />
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground font-mono">
                       Issued {formatDate(item.loan.startDate)}
                     </p>
                   </div>
@@ -520,11 +520,11 @@ export default function CustomerProfilePage() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-1">
-                  <p className="text-2xl font-semibold">
+                  <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums">
                     UGX {formatUGX(item.loan.principalAmount)}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {(parseFloat(item.loan.interestRate) * 100).toFixed(0)}% per month
+                    <span className="font-mono tabular-nums">{(parseFloat(item.loan.interestRate) * 100).toFixed(0)}%</span> per month
                   </p>
                 </div>
 
@@ -554,16 +554,16 @@ export default function CustomerProfilePage() {
                               <TableCell className={cn(payment.deletedAt && "line-through text-muted-foreground")}>
                                 {formatDate(payment.paymentDate)}
                               </TableCell>
-                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
                                 UGX {formatUGX(payment.amount)}
                               </TableCell>
-                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
                                 UGX {formatUGX(payment.interestPortion)}
                               </TableCell>
-                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
                                 UGX {formatUGX(payment.principalPortion)}
                               </TableCell>
-                              <TableCell className={cn("text-right", payment.deletedAt && "line-through text-muted-foreground")}>
+                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
                                 UGX {formatUGX(payment.principalBalanceAfter)}
                               </TableCell>
                             </TableRow>

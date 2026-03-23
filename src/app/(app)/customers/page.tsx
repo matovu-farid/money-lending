@@ -1,11 +1,11 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { searchCustomersAction } from "@/actions/customer.actions"
+import { useCustomers } from "@/hooks/use-customers"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
-import type { Customer, CustomerSearchParams } from "@/types"
+import type { CustomerSearchParams } from "@/types"
 import {
   Table,
   TableBody,
@@ -34,35 +34,12 @@ const PAGE_SIZE = 20
 
 export default function CustomersPage() {
   const router = useRouter()
-  const [customers, setCustomers] = useState<Customer[]>([])
-  const [total, setTotal] = useState(0)
   const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useState<CustomerSearchParams>({})
-  const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string | null>(null)
 
-  const fetchCustomers = useCallback(async (params: CustomerSearchParams, currentPage: number) => {
-    setLoading(true)
-    setFetchError(null)
-    const result = await searchCustomersAction({ ...params, page: currentPage, pageSize: PAGE_SIZE })
-    if ("error" in result) {
-      setFetchError(result.error ?? "Unknown error")
-    } else {
-      setCustomers(result.data.rows)
-      setTotal(result.data.total)
-    }
-    setLoading(false)
-  }, [])
-
-  // Initial load
-  useEffect(() => {
-    fetchCustomers({}, 0)
-  }, [fetchCustomers])
-
-  // Re-fetch when page changes
-  useEffect(() => {
-    fetchCustomers(searchParams, page)
-  }, [page, searchParams, fetchCustomers])
+  const { data, isLoading, error } = useCustomers(searchParams, page)
+  const customers = data?.rows ?? []
+  const total = data?.total ?? 0
 
   const handleSearch = useCallback((params: CustomerSearchParams) => {
     setPage(0)
@@ -74,10 +51,10 @@ export default function CustomersPage() {
     setSearchParams({})
   }, [])
 
-  if (fetchError) {
+  if (error) {
     return (
       <div className="p-6">
-        <p className="text-destructive">Error: {fetchError}</p>
+        <p className="text-destructive">Error: {error.message}</p>
       </div>
     )
   }
@@ -85,15 +62,18 @@ export default function CustomersPage() {
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Customers</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Customer portfolio overview</p>
+        </div>
         <Link href="/customers/new" className={cn(buttonVariants())}>
           Add Customer
         </Link>
       </div>
 
-      <CustomerSearchBar onSearch={handleSearch} loading={loading} />
+      <CustomerSearchBar onSearch={handleSearch} loading={isLoading} />
 
-      {loading ? (
+      {isLoading ? (
         <div>
           <p className="text-muted-foreground">Loading customers...</p>
         </div>
@@ -148,7 +128,7 @@ export default function CustomersPage() {
 
           <div className="flex items-center justify-between pt-4">
             <p className="text-sm text-muted-foreground">
-              Showing {page * PAGE_SIZE + 1}&ndash;{Math.min((page + 1) * PAGE_SIZE, total)} of {total} customers
+              Showing <span className="font-mono tabular-nums">{page * PAGE_SIZE + 1}&ndash;{Math.min((page + 1) * PAGE_SIZE, total)}</span> of <span className="font-mono tabular-nums">{total}</span> customers
             </p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>

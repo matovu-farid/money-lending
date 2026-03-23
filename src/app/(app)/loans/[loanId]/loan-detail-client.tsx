@@ -260,22 +260,22 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
           <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
         </div>
         {customerName && (
-          <p className="text-lg font-semibold">{customerName}</p>
+          <p className="text-lg font-semibold tracking-tight">{customerName}</p>
         )}
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mt-3">
           <div>
             <dt className="text-xs text-muted-foreground">Principal</dt>
-            <dd className="font-medium">UGX {formatUGX(loan.principalAmount)}</dd>
+            <dd className="font-medium font-mono tabular-nums">UGX {formatUGX(loan.principalAmount)}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Interest Rate</dt>
-            <dd className="font-medium">
+            <dd className="font-medium font-mono tabular-nums">
               {(parseFloat(loan.interestRate) * 100).toFixed(1)}% / month
             </dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Start Date</dt>
-            <dd className="font-medium">{formatDate(loan.startDate)}</dd>
+            <dd className="font-medium font-mono tabular-nums">{formatDate(loan.startDate)}</dd>
           </div>
         </dl>
       </div>
@@ -283,7 +283,7 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
       {/* Outstanding Balance focal point */}
       <div className="rounded-lg border border-border bg-card p-6">
         <p className="text-xs text-muted-foreground">Outstanding Balance</p>
-        <p className="text-2xl font-semibold mt-1">UGX {formatUGX(outstandingBalance)}</p>
+        <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums mt-1">UGX {formatUGX(outstandingBalance)}</p>
         <div className="flex gap-3 mt-4 flex-wrap">
           <Link
             href={`/loans/${loan.id}/payments/new`}
@@ -338,10 +338,10 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>
-                <TableHead>Amount (UGX)</TableHead>
-                <TableHead>Interest Paid (UGX)</TableHead>
-                <TableHead>Principal Paid (UGX)</TableHead>
-                <TableHead>Balance After (UGX)</TableHead>
+                <TableHead className="text-right">Amount (UGX)</TableHead>
+                <TableHead className="text-right">Interest Paid (UGX)</TableHead>
+                <TableHead className="text-right">Principal Paid (UGX)</TableHead>
+                <TableHead className="text-right">Balance After (UGX)</TableHead>
                 <TableHead>Recorded By</TableHead>
                 <TableHead className="w-12">Actions</TableHead>
               </TableRow>
@@ -352,19 +352,19 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
                 const cellClass = isDeleted ? "opacity-60 line-through" : ""
                 return (
                   <TableRow key={payment.id}>
-                    <TableCell className={cellClass}>
+                    <TableCell className={cn("font-mono tabular-nums", cellClass)}>
                       {formatDate(payment.paymentDate)}
                     </TableCell>
-                    <TableCell className={cellClass}>
+                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
                       {formatUGX(payment.amount)}
                     </TableCell>
-                    <TableCell className={cellClass}>
+                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
                       {formatUGX(payment.interestPortion)}
                     </TableCell>
-                    <TableCell className={cellClass}>
+                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
                       {formatUGX(payment.principalPortion)}
                     </TableCell>
-                    <TableCell className={cellClass}>
+                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
                       {formatUGX(payment.principalBalanceAfter)}
                     </TableCell>
                     <TableCell className={cn("font-mono text-xs", cellClass)}>
