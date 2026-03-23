@@ -54,16 +54,17 @@ All sizes are CSS token-driven via shadcn base-nova. Declared in implementation 
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body | 14px (text-sm) | 400 (normal) | 1.5 |
-| Label | 14px (text-sm) | 500 (medium) | 1.4 |
+| Label | 14px (text-sm) | 600 (semibold) | 1.4 |
 | Heading | 16px (text-base) | 600 (semibold) | 1.2 |
 | Caption / muted helper | 12px (text-xs) | 400 (normal) | 1.4 |
 
 Notes:
 - Dialog title uses Heading (16px, semibold).
-- Form field labels use Label (14px, medium).
+- Form field labels use Label (14px, semibold).
 - Search result rows and chip labels use Body (14px, normal).
 - Receipt link uses Body (14px, normal) with `underline-offset-4 hover:underline` (link variant).
 - No Display size needed — this phase has no page-level headings.
+- Two weights only: 400 (normal) for Body and Caption; 600 (semibold) for Heading and Label.
 
 Source: `src/components/ui/button.tsx` (text-sm baseline), existing PaymentsClient patterns.
 
@@ -82,7 +83,7 @@ Token values from `src/app/globals.css` `:root` block (light mode; dark mode CSS
 
 Accent reserved for:
 1. "Record Payment" trigger button (primary variant, opens the dialog)
-2. "Submit" button inside QuickRecordDialog (primary variant)
+2. "Record Payment" submit button inside QuickRecordDialog (primary variant)
 3. Active/selected state border on the LoanSearchCombobox input when a loan is selected
 4. Focus ring on all interactive elements (via `--ring` / `focus-visible:ring-3`)
 
@@ -124,7 +125,7 @@ New components to build:
 ┌─────────────────────────────────────────┐
 │  DialogTitle: "Record Payment"          │
 ├─────────────────────────────────────────┤
-│  Recently collected (label, 14px/500)   │
+│  Recently collected (label, 14px/600)   │
 │  [Chip: Sarah M. · LOAN-AB12] [Chip…]   │  ← up to 5 chips, horizontal wrap
 │  (hidden if user has no history)        │
 │                                         │
@@ -139,7 +140,7 @@ New components to build:
 │  [  Input: date  (default: today)    ]  │
 │                                         │
 ├─────────────────────────────────────────┤
-│  [Cancel (outline)]    [Submit (default)]│
+│  [Close (outline)]  [Record Payment]    │
 └─────────────────────────────────────────┘
 ```
 
@@ -183,6 +184,7 @@ New components to build:
 - Show max 10 results
 - On result click: close popover, set selected loan, display selected loan name in input field (read-only appearance), enable amount field
 - Clear button (X icon) visible when a loan is selected — clicking resets selection and re-enables typing
+- Clear button must have `aria-label="Clear loan selection"` for screen reader accessibility
 - PopoverContent renders with `sideOffset={4}`; set `style={{ zIndex: 9999 }}` if z-index conflict with Dialog overlay is detected during implementation
 
 ### Recently-Collected Chips
@@ -227,8 +229,8 @@ New components to build:
 | Search loading state | Searching... |
 | Search empty state | No active loans found for "{query}" |
 | Search min-chars hint | Type at least 2 characters to search |
-| Submit button | Submit |
-| Submit button (loading) | Submitting... |
+| Submit button | Record Payment |
+| Submit button (loading) | Recording... |
 | Success body | Payment of UGX {amount} recorded for {customerName}. |
 | Receipt link | View receipt |
 | Record another button | Record another |
