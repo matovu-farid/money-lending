@@ -49,38 +49,53 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  /* Surface hierarchy — Sovereign Ledger */
+  --background: oklch(0.98 0 0);           /* surface #f9f9fb */
+  --foreground: oklch(0.145 0 0);          /* on_surface #1a1c1d */
+
+  --card: oklch(1 0 0);                    /* surface_container_lowest #ffffff */
   --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
+
+  --popover: oklch(1 0 0);                 /* same as card */
   --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+
+  --primary: oklch(0 0 0);                 /* true black #000000 */
+  --primary-foreground: oklch(0.9 0 0);    /* on_primary #e2e2e2 */
+
+  --secondary: oklch(0.93 0 0);            /* surface_container_high #e8e8ea */
+  --secondary-foreground: oklch(0.145 0 0);
+
+  --muted: oklch(0.96 0 0);               /* surface_container_low #f3f3f5 */
+  --muted-foreground: oklch(0.42 0 0);    /* on_surface_variant #474747 */
+
+  --accent: oklch(0.94 0 0);              /* surface_container #edeef0 */
+  --accent-foreground: oklch(0.145 0 0);
+
+  --destructive: oklch(0.577 0.245 27.325); /* keep as-is */
+
+  --border: oklch(0.8 0 0);               /* outline_variant #c6c6c6 */
+  --input: oklch(0.9 0 0);                /* surface_container_highest #e2e2e4 */
+  --ring: oklch(0.35 0.2 264);            /* tertiary Electric Blue #002f9c */
+
+  /* Charts — keep existing neutral scale */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
+
+  /* Radius — sharp financial terminal */
+  --radius: 0.5rem;                        /* was 0.625rem */
+
+  /* Sidebar — surface_container_low */
+  --sidebar: oklch(0.96 0 0);              /* #f3f3f5 */
   --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar-primary: oklch(0 0 0);         /* primary black */
+  --sidebar-primary-foreground: oklch(0.9 0 0);
+  --sidebar-accent: oklch(0.94 0 0);       /* surface_container */
+  --sidebar-accent-foreground: oklch(0.145 0 0);
+  --sidebar-border: oklch(0.8 0 0);        /* outline_variant */
+  --sidebar-ring: oklch(0.35 0.2 264);     /* Electric Blue */
 }
 
 .dark {
@@ -127,9 +142,17 @@
   html {
     @apply font-sans;
   }
+  /* Sovereign Ledger: tight tracking on headings */
+  h1, h2, h3 {
+    letter-spacing: -0.02em;
+  }
 }
 
 @media print {
+  :root {
+    --background: oklch(1 0 0);   /* pure white for printing */
+    --foreground: oklch(0 0 0);   /* pure black for printing */
+  }
   .print-hidden {
     display: none !important;
   }
