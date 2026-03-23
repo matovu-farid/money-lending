@@ -26,7 +26,9 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ### Active
 
-(No active requirements — next milestone not yet planned)
+- [ ] Standalone Payments page with global list, search, and filters
+- [ ] Daily collections view
+- [ ] Quick-record payment (select loan inline, no navigation required)
 
 ### Out of Scope
 
@@ -81,4 +83,14 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | Loans created as active (no pending) | Disbursement is off-app; recording = it happened | ✓ Good |
 
 ---
-*Last updated: 2026-03-23 after v1.0 milestone*
+## Current Milestone: v1.1 Payments
+
+**Goal:** Build out the Payments section as a first-class page — global payments list, daily collections view, and quick-record workflow.
+
+**Target features:**
+- Global payments list with search/filter (date, customer, amount, loan)
+- Daily collections summary view
+- Quick-record payment without navigating to individual loan page
+
+---
+*Last updated: 2026-03-23 after v1.1 milestone started*
