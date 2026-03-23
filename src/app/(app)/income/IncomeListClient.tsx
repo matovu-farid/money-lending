@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
@@ -50,6 +50,7 @@ import {
   deleteIncomeAction,
   createIncomeCategoryAction,
 } from "./actions"
+import { formatNumberWithCommas, stripCommas, formatDate } from "@/lib/utils"
 import type { CreateIncomeInput } from "@/types"
 
 type Transaction = {
@@ -79,13 +80,6 @@ interface IncomeListClientProps {
   categories: Category[]
 }
 
-function formatDate(date: Date): string {
-  const d = new Date(date)
-  const day = String(d.getDate()).padStart(2, "0")
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const year = d.getFullYear()
-  return `${day}/${month}/${year}`
-}
 
 function formatAmount(amount: string): string {
   const num = parseFloat(amount)
@@ -101,6 +95,15 @@ export function IncomeListClient({ transactions: initialTransactions, categories
   const [localTransactions, setLocalTransactions] = useState<Transaction[]>(initialTransactions)
   const [_isCategoryPending, startCategoryTransition] = useTransition()
   const [error, setError] = useState<string | null>(null)
+
+  // Sync with server data when revalidation brings new props
+  useEffect(() => {
+    setLocalTransactions(initialTransactions)
+  }, [initialTransactions])
+
+  useEffect(() => {
+    setCategories(initialCategories)
+  }, [initialCategories])
 
   // Form state
   const [formDate, setFormDate] = useState("")
@@ -196,13 +199,12 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     if (!newCategoryName.trim()) return
     startCategoryTransition(async () => {
       try {
-        await createIncomeCategoryAction({ name: newCategoryName.trim(), type: "income" })
-        // Optimistically add to local categories list
+        const created = await createIncomeCategoryAction({ name: newCategoryName.trim(), type: "income" })
         const newCat: Category = {
-          id: `temp-${Date.now()}`,
-          name: newCategoryName.trim(),
-          type: "income",
-          isDefault: false,
+          id: created.id,
+          name: created.name,
+          type: created.type,
+          isDefault: created.isDefault,
         }
         setCategories((prev) => [...prev, newCat])
         setNewCategoryName("")
@@ -217,7 +219,10 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     <TooltipProvider>
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold">Income</h1>
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Income</h1>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Revenue and other income</p>
+          </div>
           <Button
             onClick={() => { resetForm(); setIsSheetOpen(true) }}
             disabled={addMutation.isPending}
@@ -245,7 +250,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
               <TableRow>
                 <TableHead>Date</TableHead>
                 <TableHead>Category</TableHead>
-                <TableHead>Amount</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Notes</TableHead>
                 <TableHead></TableHead>
               </TableRow>
@@ -256,9 +261,9 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                   key={tx.id}
                   className={tx.isOptimistic ? "opacity-50" : ""}
                 >
-                  <TableCell>{formatDate(tx.transactionDate)}</TableCell>
+                  <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>
                   <TableCell>{tx.categoryName}</TableCell>
-                  <TableCell>{formatAmount(tx.amount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatAmount(tx.amount)}</TableCell>
                   <TableCell className="text-muted-foreground">{tx.description ?? "—"}</TableCell>
                   <TableCell>
                     <Button
@@ -354,12 +359,11 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                   </span>
                   <Input
                     id="income-amount"
-                    type="number"
-                    min="0"
-                    step="0.01"
+                    type="text"
+                    inputMode="numeric"
                     className="pl-12"
-                    value={formAmount}
-                    onChange={(e) => setFormAmount(e.target.value)}
+                    value={formatNumberWithCommas(formAmount)}
+                    onChange={(e) => setFormAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
                     required
                   />
                 </div>

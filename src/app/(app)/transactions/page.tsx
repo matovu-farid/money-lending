@@ -43,7 +43,10 @@ export default async function TransactionLogPage({ searchParams }: TransactionLo
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Transaction Log</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Complete transaction history</p>
+        </div>
         <div className="flex gap-2">
           <a
             href="/api/reports/transactions?format=pdf"

@@ -52,13 +52,7 @@ interface TransactionLogClientProps {
   filters: TransactionLogFilters
 }
 
-function formatDate(date: Date): string {
-  const d = new Date(date)
-  const day = String(d.getDate()).padStart(2, "0")
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const year = d.getFullYear()
-  return `${day}/${month}/${year}`
-}
+import { formatDate } from "@/lib/utils"
 
 function formatAmount(amount: string): string {
   const num = parseFloat(amount)
@@ -269,14 +263,14 @@ export function TransactionLogClient({
                 <TableHead>Type</TableHead>
                 <TableHead>Category</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead>Amount</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Recorded By</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {transactions.map((tx) => (
                 <TableRow key={tx.id}>
-                  <TableCell>{formatDate(tx.transactionDate)}</TableCell>
+                  <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>
                   <TableCell>
                     {tx.type === "credit" ? (
                       <Badge className="text-green-600 border-green-200 bg-green-50">
@@ -293,7 +287,7 @@ export function TransactionLogClient({
                     {tx.description ?? "—"}
                   </TableCell>
                   <TableCell
-                    className={tx.type === "credit" ? "text-green-600" : "text-destructive"}
+                    className={`text-right font-mono tabular-nums ${tx.type === "credit" ? "text-green-600" : "text-destructive"}`}
                   >
                     {formatAmount(tx.amount)}
                   </TableCell>
@@ -309,7 +303,7 @@ export function TransactionLogClient({
           {total > pageSize && (
             <div className="flex items-center justify-between pt-4">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * pageSize + 1}&ndash;{Math.min(page * pageSize, total)} of {total} transactions
+                Showing <span className="font-mono tabular-nums">{(page - 1) * pageSize + 1}</span>&ndash;<span className="font-mono tabular-nums">{Math.min(page * pageSize, total)}</span> of <span className="font-mono tabular-nums">{total}</span> transactions
               </p>
               <div className="flex gap-2">
                 <Button

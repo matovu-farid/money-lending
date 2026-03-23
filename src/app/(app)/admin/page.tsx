@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { formatDate } from "@/lib/utils"
 
 interface AdminUser {
   id: string
@@ -40,14 +41,6 @@ function getRoleOptions(actorRole: UserRole): UserRole[] {
   )
 }
 
-function formatDate(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date
-  return d.toLocaleDateString("en-UG", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  })
-}
 
 export default function AdminPage() {
   const router = useRouter()
@@ -125,8 +118,8 @@ export default function AdminPage() {
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold">Admin</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">User management</p>
+          <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">System administration</p>
         </div>
       </div>
 
@@ -166,7 +159,11 @@ export default function AdminPage() {
                           disabled={isUpdating}
                         >
                           <SelectTrigger className="w-36" size="sm">
-                            <SelectValue />
+                            <SelectValue>
+                              {userRole === "loanOfficer"
+                                ? "Loan Officer"
+                                : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             {roleOptions.map((role) => (
@@ -195,7 +192,7 @@ export default function AdminPage() {
                       <Badge variant="secondary">Active</Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
+                  <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
                     {formatDate(user.createdAt)}
                   </TableCell>
                 </TableRow>

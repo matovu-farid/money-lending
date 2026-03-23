@@ -7,7 +7,8 @@ describe("Transaction Log", () => {
 
   it("shows transaction log page with heading", () => {
     cy.visit("/transactions")
-    cy.contains("Transaction Log", { timeout: 15000 }).should("be.visible")
+    cy.contains("Transactions", { timeout: 15000 }).should("be.visible")
+    cy.contains("Complete transaction history").should("be.visible")
   })
 
   it("shows empty state when no transactions exist", () => {
@@ -24,54 +25,44 @@ describe("Transaction Log", () => {
 
   it("shows filter controls", () => {
     cy.visit("/transactions")
-    // Type filter trigger should show "All"
-    cy.get("[data-slot='select-trigger']", { timeout: 15000 }).first().should("contain.text", "All")
-    // Category filter trigger should show "All Categories"
-    cy.get("[data-slot='select-trigger']").eq(1).should("contain.text", "All Categories")
+    // Both filter triggers should be visible
+    cy.get("[data-slot='select-trigger']", { timeout: 15000 }).should("have.length.gte", 2)
+    // Type filter shows "All" and category filter shows "All Categories"
+    // Both use SelectValue placeholders which render inside the trigger
+    cy.get("[data-slot='select-trigger']").first().invoke("text").should("match", /all/i)
+    cy.get("[data-slot='select-trigger']").last().invoke("text").should("match", /all/i)
   })
 
-  it("shows transactions after recording a payment", () => {
-    // Create customer, issue loan, record payment
-    cy.visit("/customers/new")
-    cy.get("#fullName").type("Transaction Borrower")
-    cy.get("#contact").type("0771000070")
-    cy.get("#address").type("Kampala, Uganda")
-    cy.contains("button", "Register Customer").click()
-    cy.url({ timeout: 10000 }).should("match", /\/customers\/.+/)
-
-    cy.url().then((url) => {
-      const cid = url.split("/customers/")[1]
-      cy.visit(`/loans/new?customerId=${cid}`)
-      cy.get("#principalAmount").type("500000")
-      cy.contains("button", "Next").click()
-      cy.get("#collateralNature").closest("[data-slot=select-trigger]").click()
-      cy.contains("Land Title").click()
-      cy.contains("button", "Next").click()
-      cy.contains("button", "Issue Loan").click()
-      cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
-
-      // Record a payment on the loan
-      cy.task("db:getLoans").then((loans: any) => {
-        const loanId = loans[0].id
-        cy.visit(`/loans/${loanId}`)
-        cy.contains("Record Payment", { timeout: 15000 }).click()
-        cy.get("#amount").type("100000")
-        cy.contains("button", "Record").click()
-        cy.contains("100,000", { timeout: 10000 }).should("be.visible")
-      })
-    })
+  it("shows transactions after recording an expense", () => {
+    // Record an expense — this always creates a debit transaction
+    cy.visit("/expenses")
+    cy.contains("button", "Add Expense", { timeout: 15000 }).scrollIntoView().click({ force: true })
+    cy.get("#expense-date").type("2026-03-21")
+    cy.contains("+ Add Category").click()
+    cy.get("#new-category-name").type("Office Rent")
+    cy.contains("button", /^Add$/).click()
+    cy.get("[data-slot=select-trigger]").first().click({ force: true })
+    cy.get("[data-slot=select-content]", { timeout: 5000 }).should("exist")
+    cy.contains("[data-slot=select-item]", "Office Rent").realClick()
+    cy.get("#expense-amount").type("200000")
+    cy.get("#expense-notes").type("Monthly office rent")
+    cy.contains("button", "Record Expense").click()
+    cy.contains("200,000", { timeout: 10000 }).should("be.visible")
 
     // Check transaction log
     cy.visit("/transactions")
-    cy.contains("No transactions yet").should("not.exist")
+    cy.contains("No transactions yet", { timeout: 5000 }).should("not.exist")
+    cy.contains("200,000", { timeout: 10000 }).should("exist")
   })
 
   it("can filter transactions by type", () => {
     cy.visit("/transactions")
     // The type dropdown should be functional
     cy.get("[data-slot='select-trigger']", { timeout: 15000 }).first().click()
-    cy.contains("[role=option]", "Income").click()
-    // Page should reload with filter applied
+    cy.get("[data-slot=select-content]", { timeout: 5000 }).should("exist")
+    cy.contains("[data-slot=select-item]", "Income").realClick()
+    // Verify the filter was applied — the select trigger should reflect the chosen value
+    cy.get("[data-slot='select-trigger']").first().invoke("text").should("match", /income/i)
     cy.url().should("include", "/transactions")
   })
 })

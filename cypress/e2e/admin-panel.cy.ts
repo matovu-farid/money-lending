@@ -15,7 +15,7 @@ describe("Admin User Management", () => {
   it("admin page shows user management table", () => {
     cy.visit("/admin")
     cy.contains("Admin")
-    cy.contains("User management")
+    cy.contains("System administration")
 
     // Table headers
     cy.contains("th", "Name")
@@ -39,7 +39,7 @@ describe("Admin User Management", () => {
       .find("td")
       .last()
       .invoke("text")
-      .should("match", /\d{1,2} \w{3} \d{4}/)
+      .should("match", /\w{3} \d{1,2}, \d{4}/)
   })
 
   describe("Role Management", () => {
@@ -75,11 +75,12 @@ describe("Admin User Management", () => {
         cy.get("[data-slot=select-trigger]").click()
       })
 
-      // Select loanOfficer from dropdown
-      cy.contains("[role=option]", "Loan Officer").click()
+      // Select loanOfficer from dropdown (portal renders outside the table row)
+      cy.get("[data-slot=select-content]", { timeout: 5000 }).should("exist")
+      cy.contains("[data-slot=select-item]", "Loan Officer").realClick()
 
       // Verify toast success
-      cy.contains("Role updated")
+      cy.contains("Role updated", { timeout: 10000 })
     })
 
     it("role hierarchy limits dropdown options for admin vs superAdmin", () => {
@@ -88,11 +89,14 @@ describe("Admin User Management", () => {
 
       cy.visit("/admin")
 
-      // The admin user's row should NOT have a dropdown (same level as viewer cannot assign)
+      // SuperAdmin can change admin user's role, but "superAdmin" should not be an option
       cy.contains("tr", "Regular User").within(() => {
-        // SuperAdmin sees admin user but can't change admin to superAdmin (only lower roles)
-        cy.get("[data-slot=select-trigger]").should("not.exist")
+        cy.get("[data-slot=select-trigger]").click()
       })
+
+      cy.get("[data-slot=select-content]", { timeout: 5000 }).should("exist")
+      // The dropdown should NOT include "Super Admin" / "superAdmin" option
+      cy.get("[data-slot=select-content]").should("not.contain", "Super Admin")
     })
   })
 
