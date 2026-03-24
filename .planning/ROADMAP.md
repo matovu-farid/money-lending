@@ -34,7 +34,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 
 </details>
 
-### 🚧 v1.2 Responsive (In Progress)
+### v1.2 Responsive (In Progress)
 
 **Milestone Goal:** Make the entire app usable on mobile, tablet, and desktop — bottom tab bar navigation, responsive card layouts for all list pages, touch-friendly interactions, and full Cypress coverage at mobile viewport.
 
@@ -56,7 +56,10 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
   2. All table row assertions use `[data-testid='data-row']` — works regardless of whether a `<tr>` or a card is rendered
   3. Every page component uses `p-4 md:p-6` responsive padding instead of hardcoded `p-6`
   4. All existing Cypress specs still pass after selector changes
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 11-01-PLAN.md — Add data-testid attributes and migrate Cypress selectors
+- [ ] 11-02-PLAN.md — Replace hardcoded p-6 padding with responsive p-4 md:p-6
 
 ### Phase 12: Mobile Navigation
 **Goal**: Users on mobile can navigate the entire app via a bottom tab bar; sidebar is hidden on mobile and visible on tablet/desktop
@@ -96,7 +99,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 **Depends on**: Phase 14
 **Requirements**: TOUCH-01, TOUCH-02, TOUCH-03
 **Success Criteria** (what must be TRUE):
-  1. All buttons, links, and action menu triggers have a minimum 44×44px tap target (WCAG 2.5.8)
+  1. All buttons, links, and action menu triggers have a minimum 44x44px tap target (WCAG 2.5.8)
   2. Edit and delete dialogs open as bottom drawers on mobile and as centered modals on desktop
   3. Mobile navigation supports swipe gestures where applicable without conflicting with browser back gestures
 **Plans**: TBD
@@ -127,7 +130,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 9. Design System Overhaul | v1.1 | 6/6 | Complete | 2026-03-23 |
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
-| 11. Test Selector Foundation | v1.2 | 0/TBD | Not started | - |
+| 11. Test Selector Foundation | v1.2 | 0/2 | Not started | - |
 | 12. Mobile Navigation | v1.2 | 0/TBD | Not started | - |
 | 13. Responsive Table + Cards | v1.2 | 0/TBD | Not started | - |
 | 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |
