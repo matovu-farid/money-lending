@@ -24,7 +24,7 @@ export default async function RepaymentReceiptPage({
 
   if (!payment) {
     return (
-      <div className="container max-w-2xl mx-auto p-6">
+      <div className="container max-w-2xl mx-auto p-4 md:p-6">
         <Alert variant="destructive">
           <AlertTitle>Payment not found</AlertTitle>
           <AlertDescription>
@@ -37,7 +37,7 @@ export default async function RepaymentReceiptPage({
 
   if (payment.deletedAt) {
     return (
-      <div className="container max-w-2xl mx-auto p-6">
+      <div className="container max-w-2xl mx-auto p-4 md:p-6">
         <Alert variant="destructive">
           <AlertTitle>Cannot print receipt</AlertTitle>
           <AlertDescription>
@@ -77,7 +77,7 @@ export default async function RepaymentReceiptPage({
   const loanReference = loan ? `LOAN-${loan.id.slice(0, 8).toUpperCase()}` : "—"
 
   return (
-    <div className="container max-w-2xl mx-auto p-6 print:p-0 print:max-w-none print:container-none">
+    <div className="container max-w-2xl mx-auto p-4 md:p-6 print:p-0 print:max-w-none print:container-none">
       {/* RCPT-03 blocked state */}
       {isBlocked && (
         <Alert variant="destructive" className="mb-4 print-hidden">

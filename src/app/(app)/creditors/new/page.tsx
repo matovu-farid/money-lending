@@ -10,7 +10,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
+import { cn, formatNumberWithCommas, stripCommas } from "@/lib/utils"
 
 export default function NewCreditorPage() {
   const router = useRouter()
@@ -73,7 +73,7 @@ export default function NewCreditorPage() {
   }
 
   return (
-    <div className="p-6 max-w-lg">
+    <div className="p-4 md:p-6 max-w-lg">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold">Add Creditor</h1>
         <p className="text-muted-foreground text-sm mt-1">
@@ -152,12 +152,11 @@ export default function NewCreditorPage() {
                   <Input
                     id="amount"
                     name="amount"
-                    type="number"
-                    min="1"
-                    step="any"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    placeholder="e.g. 5000000"
+                    type="text"
+                    inputMode="numeric"
+                    value={formatNumberWithCommas(amount)}
+                    onChange={(e) => setAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                    placeholder="e.g. 5,000,000"
                     disabled={isPending}
                     className="flex-1"
                   />
