@@ -14,9 +14,9 @@ Requirements for the Payments milestone. Each maps to roadmap phases.
 - [x] **PAY-03**: User can filter payments by date range
 - [x] **PAY-04**: User can filter payments by amount range
 - [x] **PAY-05**: User can search payments by customer name
-- [ ] **PAY-06**: User can edit a payment directly from the global list (admin+ only)
-- [ ] **PAY-07**: User can delete a payment directly from the global list (admin+ only)
-- [ ] **PAY-08**: User can export the filtered payment list to CSV
+- [x] **PAY-06**: User can edit a payment directly from the global list (admin+ only)
+- [x] **PAY-07**: User can delete a payment directly from the global list (admin+ only)
+- [x] **PAY-08**: User can export the filtered payment list to CSV
 
 ### Daily Collections
 
@@ -74,9 +74,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PAY-03 | Phase 6 | Complete |
 | PAY-04 | Phase 6 | Complete |
 | PAY-05 | Phase 6 | Complete |
-| PAY-06 | Phase 10 | Pending |
-| PAY-07 | Phase 10 | Pending |
-| PAY-08 | Phase 10 | Pending |
+| PAY-06 | Phase 6 | Complete |
+| PAY-07 | Phase 6 | Complete |
+| PAY-08 | Phase 6 | Complete |
 | COLL-01 | Phase 7 | Complete |
 | COLL-02 | Phase 7 | Complete |
 | COLL-03 | Phase 7 | Complete |

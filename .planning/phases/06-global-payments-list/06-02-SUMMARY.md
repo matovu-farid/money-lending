@@ -31,6 +31,7 @@ metrics:
   tasks_total: 2
   files_created: 2
   files_modified: 1
+requirements-completed: [PAY-06, PAY-07, PAY-08]
 ---
 
 # Phase 06 Plan 02: Global Payments Page UI Summary
