@@ -9,11 +9,11 @@ Requirements for responsive mobile + desktop milestone. Each maps to roadmap pha
 
 ### Navigation
 
-- [ ] **NAV-01**: Mobile bottom tab bar with 5 primary tabs (Dashboard, Customers, Payments, Loans, More)
-- [ ] **NAV-02**: "More" sheet showing remaining nav items (Creditors, Expenses, Income, Reports, Watchlist)
-- [ ] **NAV-03**: Sidebar hidden on mobile, visible on desktop (md+ breakpoint)
-- [ ] **NAV-04**: Active tab state indicator with smooth transitions
-- [ ] **NAV-05**: Safe-area inset padding for iPhone home indicator
+- [x] **NAV-01**: Mobile bottom tab bar with 5 primary tabs (Dashboard, Customers, Payments, Loans, More)
+- [x] **NAV-02**: "More" sheet showing remaining nav items (Creditors, Expenses, Income, Reports, Watchlist)
+- [x] **NAV-03**: Sidebar hidden on mobile, visible on desktop (md+ breakpoint)
+- [x] **NAV-04**: Active tab state indicator with smooth transitions
+- [x] **NAV-05**: Safe-area inset padding for iPhone home indicator
 
 ### Responsive Layouts
 
@@ -63,11 +63,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | TEST-01 | Phase 11 | Complete |
 | RESP-06 | Phase 11 | Complete |
-| NAV-01 | Phase 12 | Pending |
-| NAV-02 | Phase 12 | Pending |
-| NAV-03 | Phase 12 | Pending |
-| NAV-04 | Phase 12 | Pending |
-| NAV-05 | Phase 12 | Pending |
+| NAV-01 | Phase 12 | Complete |
+| NAV-02 | Phase 12 | Complete |
+| NAV-03 | Phase 12 | Complete |
+| NAV-04 | Phase 12 | Complete |
+| NAV-05 | Phase 12 | Complete |
 | RESP-01 | Phase 13 | Pending |
 | RESP-02 | Phase 13 | Pending |
 | RESP-07 | Phase 13 | Pending |

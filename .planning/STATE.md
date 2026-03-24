@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Responsive
 status: unknown
-stopped_at: Completed 11-test-selector-foundation-02-PLAN.md
-last_updated: "2026-03-24T22:11:48.342Z"
+stopped_at: Completed 12-mobile-navigation-01-PLAN.md
+last_updated: "2026-03-24T23:35:32.377Z"
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  total_plans: 4
+  completed_plans: 3
 ---
 
 # Project State
@@ -19,12 +19,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 11 — test-selector-foundation
+**Current focus:** Phase 12 — mobile-navigation
 
 ## Current Position
 
-Phase: 11 (test-selector-foundation) — COMPLETE
-Plan: 2 of 2
+Phase: 12 (mobile-navigation) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Plan: 2 of 2
 *Updated after each plan completion*
 | Phase 11-test-selector-foundation P01 | 25 | 2 tasks | 18 files |
 | Phase 11-test-selector-foundation P02 | 56 | 2 tasks | 22 files |
+| Phase 12-mobile-navigation P01 | 138s | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -60,6 +61,8 @@ Key decisions affecting v1.2:
 - [Phase 11-test-selector-foundation]: Skeleton/loading placeholder rows do not get data-testid='data-row' — they are not real data and have no stable identity
 - [Phase 11-test-selector-foundation]: data-testid scope extended to all app TableBody rows (15 files), not just the 5 listed in plan, per plan's own instruction
 - [Phase 11-02]: Only page-level wrapper divs updated; card interior bg-card p-6 preserved (Phase 13 concern); receipt pages print:p-0 preserved
+- [Phase 12-mobile-navigation]: CSS-only show/hide for BottomTabBar (flex md:hidden) — no JS viewport detection, avoids hydration mismatch
+- [Phase 12-mobile-navigation]: viewport export with viewportFit cover added to layout.tsx for iPhone safe-area CSS variable support
 
 ### Blockers/Concerns
 
@@ -68,6 +71,6 @@ Key decisions affecting v1.2:
 
 ## Session Continuity
 
-Last session: 2026-03-24T21:58:07Z
-Stopped at: Completed 11-test-selector-foundation-02-PLAN.md
+Last session: 2026-03-24T23:35:32.375Z
+Stopped at: Completed 12-mobile-navigation-01-PLAN.md
 Resume file: None
