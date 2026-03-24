@@ -61,31 +61,31 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| NAV-01 | — | Pending |
-| NAV-02 | — | Pending |
-| NAV-03 | — | Pending |
-| NAV-04 | — | Pending |
-| NAV-05 | — | Pending |
-| RESP-01 | — | Pending |
-| RESP-02 | — | Pending |
-| RESP-03 | — | Pending |
-| RESP-04 | — | Pending |
-| RESP-05 | — | Pending |
-| RESP-06 | — | Pending |
-| RESP-07 | — | Pending |
-| TOUCH-01 | — | Pending |
-| TOUCH-02 | — | Pending |
-| TOUCH-03 | — | Pending |
-| TEST-01 | — | Pending |
-| TEST-02 | — | Pending |
-| TEST-03 | — | Pending |
-| TEST-04 | — | Pending |
+| TEST-01 | Phase 11 | Pending |
+| RESP-06 | Phase 11 | Pending |
+| NAV-01 | Phase 12 | Pending |
+| NAV-02 | Phase 12 | Pending |
+| NAV-03 | Phase 12 | Pending |
+| NAV-04 | Phase 12 | Pending |
+| NAV-05 | Phase 12 | Pending |
+| RESP-01 | Phase 13 | Pending |
+| RESP-02 | Phase 13 | Pending |
+| RESP-07 | Phase 13 | Pending |
+| RESP-03 | Phase 14 | Pending |
+| RESP-04 | Phase 14 | Pending |
+| RESP-05 | Phase 14 | Pending |
+| TOUCH-01 | Phase 15 | Pending |
+| TOUCH-02 | Phase 15 | Pending |
+| TOUCH-03 | Phase 15 | Pending |
+| TEST-02 | Phase 16 | Pending |
+| TEST-03 | Phase 16 | Pending |
+| TEST-04 | Phase 16 | Pending |
 
 **Coverage:**
 - v1.2 requirements: 19 total
-- Mapped to phases: 0
-- Unmapped: 19 ⚠️
+- Mapped to phases: 19
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-03-24*
-*Last updated: 2026-03-24 after initial definition*
+*Last updated: 2026-03-24 — traceability mapped after roadmap creation*

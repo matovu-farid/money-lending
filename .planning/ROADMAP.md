@@ -4,6 +4,7 @@
 
 - ✅ **v1.0 MVP** — Phases 1-5 (shipped 2026-03-22)
 - ✅ **v1.1 Payments** — Phases 6-10 (shipped 2026-03-24)
+- 🚧 **v1.2 Responsive** — Phases 11-16 (in progress)
 
 ## Phases
 
@@ -33,7 +34,86 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 
 </details>
 
+### 🚧 v1.2 Responsive (In Progress)
+
+**Milestone Goal:** Make the entire app usable on mobile, tablet, and desktop — bottom tab bar navigation, responsive card layouts for all list pages, touch-friendly interactions, and full Cypress coverage at mobile viewport.
+
+- [ ] **Phase 11: Test Selector Foundation** - Scope data-testid attributes and remove hardcoded padding before any layout changes
+- [ ] **Phase 12: Mobile Navigation** - Bottom tab bar with 5 primary tabs, More sheet, safe-area insets, sidebar hidden on mobile
+- [ ] **Phase 13: Responsive Table Primitive + Card Layouts** - ResponsiveTable component applied to all list pages; dashboard reflowed to single column
+- [ ] **Phase 14: Forms, Filters, and Table Polish** - Single-column forms, collapsible filters, sticky table headers across all pages
+- [ ] **Phase 15: Touch Optimization** - 44px touch targets, DrawerDialog for mobile, swipe gestures
+- [ ] **Phase 16: Cypress Mobile Coverage** - All existing specs pass at desktop; mobile viewport blocks and tab bar tests added
+
+## Phase Details
+
+### Phase 11: Test Selector Foundation
+**Goal**: Cypress selectors are scoped with data-testid and hardcoded padding is replaced before any new nav or layout components enter the DOM
+**Depends on**: Phase 10 (v1.1 complete)
+**Requirements**: TEST-01, RESP-06
+**Success Criteria** (what must be TRUE):
+  1. All nav assertions in existing Cypress specs target `[data-testid='sidebar-nav']` — not bare `cy.get('nav')`
+  2. All table row assertions use `[data-testid='data-row']` — works regardless of whether a `<tr>` or a card is rendered
+  3. Every page component uses `p-4 md:p-6` responsive padding instead of hardcoded `p-6`
+  4. All existing Cypress specs still pass after selector changes
+**Plans**: TBD
+
+### Phase 12: Mobile Navigation
+**Goal**: Users on mobile can navigate the entire app via a bottom tab bar; sidebar is hidden on mobile and visible on tablet/desktop
+**Depends on**: Phase 11
+**Requirements**: NAV-01, NAV-02, NAV-03, NAV-04, NAV-05
+**Success Criteria** (what must be TRUE):
+  1. At mobile viewport (390px), a fixed bottom tab bar shows 5 tabs: Dashboard, Customers, Payments, Loans, More
+  2. Tapping "More" opens a bottom sheet listing Creditors, Expenses, Income, Reports, Watchlist
+  3. The active tab is visually highlighted with a smooth indicator transition
+  4. At tablet/desktop viewport (768px+), the sidebar is visible and the bottom tab bar is absent from the DOM
+  5. On iPhone (viewport-fit=cover), the bottom tab bar clears the home indicator via safe-area-inset-bottom padding
+**Plans**: TBD
+
+### Phase 13: Responsive Table Primitive + Card Layouts
+**Goal**: All list pages render stacked card layouts on mobile and standard tables on desktop using a single CSS-controlled primitive
+**Depends on**: Phase 12
+**Requirements**: RESP-01, RESP-02, RESP-07
+**Success Criteria** (what must be TRUE):
+  1. At mobile viewport, list pages (Customers, Loans, Payments, Creditors, Expenses, Income, Watchlist) show stacked cards instead of horizontal table rows
+  2. At desktop viewport, the same pages show the original table layout — no regressions
+  3. The Dashboard KPI cards and charts reflow to a single column on mobile
+  4. The card/table switch is controlled by CSS breakpoints with no JavaScript viewport detection (no hydration mismatch)
+**Plans**: TBD
+
+### Phase 14: Forms, Filters, and Table Polish
+**Goal**: All forms render single-column on mobile, filter panels are collapsible, and table headers stick on desktop scroll
+**Depends on**: Phase 13
+**Requirements**: RESP-03, RESP-04, RESP-05
+**Success Criteria** (what must be TRUE):
+  1. Multi-column form layouts (loan wizard, customer registration, creditor form) collapse to single column at mobile viewport
+  2. Filter panels on list pages (Customers, Loans, Payments, Expenses, Income) are collapsed by default on mobile and expanded by default on desktop
+  3. Table headers remain visible when scrolling long lists on desktop
+**Plans**: TBD
+
+### Phase 15: Touch Optimization
+**Goal**: Every interactive element is reachable by thumb, dialogs open as bottom drawers on mobile, and swipe navigation is available where applicable
+**Depends on**: Phase 14
+**Requirements**: TOUCH-01, TOUCH-02, TOUCH-03
+**Success Criteria** (what must be TRUE):
+  1. All buttons, links, and action menu triggers have a minimum 44×44px tap target (WCAG 2.5.8)
+  2. Edit and delete dialogs open as bottom drawers on mobile and as centered modals on desktop
+  3. Mobile navigation supports swipe gestures where applicable without conflicting with browser back gestures
+**Plans**: TBD
+
+### Phase 16: Cypress Mobile Coverage
+**Goal**: All existing Cypress specs pass at desktop viewport and every page has mobile viewport test coverage; tab bar navigation is fully tested
+**Depends on**: Phase 15
+**Requirements**: TEST-02, TEST-03, TEST-04
+**Success Criteria** (what must be TRUE):
+  1. All existing Cypress spec files pass when run at default (desktop) viewport after all responsive changes
+  2. Every existing spec file contains a mobile viewport block (`cy.viewport(390, 844)`) covering rendering, navigation, and key actions
+  3. A dedicated spec for the bottom tab bar verifies tab switching, "More" sheet, active state, and safe-area layout at mobile viewport
+**Plans**: TBD
+
 ## Progress
+
+**Execution Order:** 11 → 12 → 13 → 14 → 15 → 16
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -47,3 +127,9 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 9. Design System Overhaul | v1.1 | 6/6 | Complete | 2026-03-23 |
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
+| 11. Test Selector Foundation | v1.2 | 0/TBD | Not started | - |
+| 12. Mobile Navigation | v1.2 | 0/TBD | Not started | - |
+| 13. Responsive Table + Cards | v1.2 | 0/TBD | Not started | - |
+| 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |
+| 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
+| 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
