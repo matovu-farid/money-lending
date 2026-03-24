@@ -22,7 +22,7 @@ Requirements for responsive mobile + desktop milestone. Each maps to roadmap pha
 - [ ] **RESP-03**: All forms render single-column on mobile
 - [ ] **RESP-04**: Collapsible filter panels on mobile (expanded by default on desktop)
 - [ ] **RESP-05**: Sticky table headers on scroll (desktop)
-- [ ] **RESP-06**: Remove hardcoded `p-6` padding — use responsive `p-4 md:p-6`
+- [x] **RESP-06**: Remove hardcoded `p-6` padding — use responsive `p-4 md:p-6`
 - [ ] **RESP-07**: Responsive card layouts for: Customers, Loans, Payments, Creditors, Expenses, Income, Watchlist
 
 ### Touch Optimization
@@ -62,7 +62,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | TEST-01 | Phase 11 | Complete |
-| RESP-06 | Phase 11 | Pending |
+| RESP-06 | Phase 11 | Complete |
 | NAV-01 | Phase 12 | Pending |
 | NAV-02 | Phase 12 | Pending |
 | NAV-03 | Phase 12 | Pending |
