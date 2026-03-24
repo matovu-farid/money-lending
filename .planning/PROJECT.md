@@ -26,7 +26,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ### Active
 
-- [ ] Standalone Payments page with global list, search, and filters
+- ✓ PAY-01–08: Standalone Payments page with global list, search, filters, CRUD actions — v1.1 Phase 06
 - ✓ COLL-01–04: Daily collections view with timezone-aware aggregation, breakdown table, due-today list — v1.1 Phase 07
 - ✓ QREC-01–03: Quick-record payment with loan search, recently-collected chips, inline recording — v1.1 Phase 08
 
@@ -87,10 +87,14 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 **Goal:** Build out the Payments section as a first-class page — global payments list, daily collections view, and quick-record workflow.
 
-**Target features:**
-- Global payments list with search/filter (date, customer, amount, loan)
-- Daily collections summary view
-- Quick-record payment without navigating to individual loan page
+**Status:** All 10 phases complete. Verification and documentation cleanup done. Ready for milestone audit.
+
+**Completed features:**
+- ✓ Global payments list with search/filter (date, customer, amount, loan)
+- ✓ Daily collections summary view
+- ✓ Quick-record payment without navigating to individual loan page
+- ✓ Design system overhaul applied across entire app
+- ✓ All verification and documentation gaps closed
 
 ---
-*Last updated: 2026-03-23 after Phase 08 (quick-record-workflow) complete*
+*Last updated: 2026-03-24 after Phase 10 (verification-documentation-cleanup) complete*
