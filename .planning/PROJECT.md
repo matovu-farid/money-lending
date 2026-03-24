@@ -27,6 +27,8 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - ✓ COLL-01–04: Daily collections view with timezone-aware aggregation, breakdown table, due-today list — v1.1
 - ✓ QREC-01–03: Quick-record payment with loan search, recently-collected chips, inline recording — v1.1
 - ✓ DS-01–12: Sovereign Ledger design system — OKLCH tokens, glassmorphism, tonal hierarchy, font-mono numerics — v1.1
+- ✓ TEST-01: Stable data-testid selectors on sidebar nav and data table rows — v1.2 Phase 11
+- ✓ RESP-06: Responsive p-4 md:p-6 page padding across all 22 pages — v1.2 Phase 11
 
 ### Active
 
@@ -102,4 +104,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | Loans created as active (no pending) | Disbursement is off-app; recording = it happened | ✓ Good |
 
 ---
-*Last updated: 2026-03-24 after v1.2 milestone started*
+*Last updated: 2026-03-25 after Phase 11 (test-selector-foundation) complete*
