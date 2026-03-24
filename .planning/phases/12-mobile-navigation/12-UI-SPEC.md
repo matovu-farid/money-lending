@@ -33,7 +33,7 @@ Declared values (all multiples of 4, pulled from existing Tailwind v4 + shadcn t
 
 | Token | Value | Usage |
 |-------|-------|-------|
-| xs | 4px | Icon-to-label gap inside tab buttons (`gap-0.5` = 2px, `gap-1` = 4px) |
+| xs | 4px | Icon-to-label gap inside tab buttons (`gap-1` = 4px) |
 | sm | 8px | Compact padding within MoreSheet nav items (horizontal inset) |
 | md | 16px | Page-level padding (mobile), MoreSheet interior `p-4` |
 | lg | 24px | Page-level padding (desktop md+), `md:p-6` |
@@ -55,9 +55,8 @@ Exceptions:
 | Role | Size | Weight | Line Height | Usage |
 |------|------|--------|-------------|-------|
 | Body | 14px (text-sm) | 400 (regular) | 1.5 | MoreSheet nav item labels |
-| Tab label | 10px (text-[10px]) | 500 (medium) | — (single line) | Bottom tab bar icon labels |
+| Tab label | 10px (text-[10px]) | 400 (regular) | — (single line) | Bottom tab bar icon labels |
 | Heading | 18px (text-lg) | 600 (semibold) | 1.2 | TopBar app name "Lending Manager" |
-| Section label | 12px (text-xs) | 600 (semibold) | — | Sidebar group labels (existing, unchanged) |
 
 Letter-spacing: `-0.02em` on headings (existing global rule in globals.css, preserved).
 
@@ -117,7 +116,7 @@ Modified components:
 | 4 | Loans | `Banknote` (h-5 w-5) | `/loans` | `pathname === '/loans' \|\| pathname.startsWith('/loans/')` |
 | 5 | More | `MoreHorizontal` (h-5 w-5) | none — opens MoreSheet | never active (always `text-muted-foreground`) |
 
-Layout: `flex h-14 items-stretch`. Each tab: `flex-1 flex flex-col items-center justify-center gap-0.5`.
+Layout: `flex h-14 items-stretch`. Each tab: `flex-1 flex flex-col items-center justify-center gap-1`.
 
 ### Secondary Items (MoreSheet — @base-ui/react Drawer, swipeDirection="down")
 
