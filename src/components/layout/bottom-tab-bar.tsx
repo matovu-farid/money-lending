@@ -31,7 +31,7 @@ export function BottomTabBar({ onMoreClick, className }: BottomTabBarProps) {
     <nav
       data-testid="bottom-tab-bar"
       className={cn(
-        "fixed bottom-0 inset-x-0 z-40 h-14 bg-background border-t border-border pb-[env(safe-area-inset-bottom)]",
+        "fixed bottom-0 inset-x-0 z-40 h-14 bg-background border-t border-border safe-area-bottom",
         className
       )}
     >

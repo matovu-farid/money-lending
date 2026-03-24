@@ -2,6 +2,10 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
+@source not "../../.planning/**";
+@source not "../../cypress/**";
+@source not "../../**/*.md";
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
@@ -146,6 +150,22 @@
   h1, h2, h3 {
     letter-spacing: -0.02em;
   }
+}
+
+/* Mobile bottom tab bar safe-area padding
+   Uses --safe-bottom CSS var to avoid Tailwind v4 scanning env() in arbitrary values */
+:root {
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@media (max-width: 767px) {
+  .main-content-pb {
+    padding-bottom: calc(3.5rem + var(--safe-bottom));
+  }
+}
+
+.safe-area-bottom {
+  padding-bottom: var(--safe-bottom);
 }
 
 @media print {

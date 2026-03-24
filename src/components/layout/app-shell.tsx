@@ -22,7 +22,7 @@ export function AppShell({ children }: AppShellProps) {
           <Sidebar />
         </div>
 
-        <main className="flex-1 overflow-auto bg-background p-4 md:p-6 pb-[calc(3.5rem+env(safe-area-inset-bottom))] md:pb-6">
+        <main className="flex-1 overflow-auto bg-background p-4 md:p-6 main-content-pb md:pb-6">
           {children}
         </main>
       </div>
