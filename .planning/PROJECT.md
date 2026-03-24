@@ -30,7 +30,13 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ### Active
 
-(None yet — define with `/gsd:new-milestone`)
+<!-- v1.2 Responsive — making the app work on mobile, tablet, and desktop -->
+
+- [ ] Mobile-first responsive layouts across all pages
+- [ ] Bottom tab bar navigation on mobile
+- [ ] Responsive data tables (card layout on mobile, table on desktop)
+- [ ] Touch-friendly form inputs and actions
+- [ ] Cypress tests updated for responsive viewports
 
 ### Out of Scope
 
@@ -46,6 +52,17 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 ## Context
 
 - **Shipped:** v1.1 Payments on 2026-03-24 (~67,000 LOC TypeScript, 414 files); v1.0 MVP on 2026-03-22
+
+## Current Milestone: v1.2 Responsive
+
+**Goal:** Make the entire app responsive across mobile, tablet, and desktop using shadcn components, with a bottom tab bar for mobile navigation.
+
+**Target features:**
+- Bottom tab bar navigation for mobile
+- Responsive layouts for all pages (dashboard, customers, loans, payments, collections, creditors, expenses, income, reports)
+- Mobile-friendly data tables (stacked cards on small screens)
+- Touch-optimized forms, dialogs, and action menus
+- Cypress tests adapted to work across viewports
 - **Tech stack:** Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS, shadcn/ui (base-ui primitives)
 - **Requirements doc:** `private_docs/Money_Lending_App_Requirements.docx` (v1.0, Feb 16 2026)
 - **Known tech debt:**
@@ -85,4 +102,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | Loans created as active (no pending) | Disbursement is off-app; recording = it happened | ✓ Good |
 
 ---
-*Last updated: 2026-03-24 after v1.1 milestone*
+*Last updated: 2026-03-24 after v1.2 milestone started*

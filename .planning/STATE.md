@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: Payments
-status: completed
-stopped_at: Milestone v1.1 archived
+milestone: v1.2
+milestone_name: Responsive
+status: active
+stopped_at: Defining requirements
 last_updated: "2026-03-24"
 last_activity: 2026-03-24
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 13
-  completed_plans: 13
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -20,11 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Planning next milestone
+**Current focus:** v1.2 Responsive — mobile + desktop layouts
 
 ## Current Position
 
-Milestone v1.1 complete. Ready for `/gsd:new-milestone`.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-24 — Milestone v1.2 started
 
 ## Accumulated Context
 
@@ -48,5 +51,5 @@ Full decision log in PROJECT.md Key Decisions table.
 
 Last session: 2026-03-24
 Last activity: 2026-03-24
-Stopped at: Milestone v1.1 archived
+Stopped at: Defining requirements
 Resume file: None
