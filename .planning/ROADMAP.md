@@ -56,7 +56,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
   2. All table row assertions use `[data-testid='data-row']` — works regardless of whether a `<tr>` or a card is rendered
   3. Every page component uses `p-4 md:p-6` responsive padding instead of hardcoded `p-6`
   4. All existing Cypress specs still pass after selector changes
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 11-01-PLAN.md — Add data-testid attributes and migrate Cypress selectors
 - [ ] 11-02-PLAN.md — Replace hardcoded p-6 padding with responsive p-4 md:p-6
@@ -130,7 +130,7 @@ Plans:
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 9. Design System Overhaul | v1.1 | 6/6 | Complete | 2026-03-23 |
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
-| 11. Test Selector Foundation | v1.2 | 0/2 | Not started | - |
+| 11. Test Selector Foundation | 1/2 | In Progress|  | - |
 | 12. Mobile Navigation | v1.2 | 0/TBD | Not started | - |
 | 13. Responsive Table + Cards | v1.2 | 0/TBD | Not started | - |
 | 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |

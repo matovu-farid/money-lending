@@ -33,7 +33,7 @@ Requirements for responsive mobile + desktop milestone. Each maps to roadmap pha
 
 ### Test Compatibility
 
-- [ ] **TEST-01**: Add `data-testid` attributes to nav elements and table rows before layout changes
+- [x] **TEST-01**: Add `data-testid` attributes to nav elements and table rows before layout changes
 - [ ] **TEST-02**: All existing Cypress specs pass at default (desktop) viewport after responsive changes
 - [ ] **TEST-03**: Mobile viewport test blocks added to all existing Cypress spec files
 - [ ] **TEST-04**: New Cypress specs for bottom tab bar and mobile navigation
@@ -61,7 +61,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| TEST-01 | Phase 11 | Pending |
+| TEST-01 | Phase 11 | Complete |
 | RESP-06 | Phase 11 | Pending |
 | NAV-01 | Phase 12 | Pending |
 | NAV-02 | Phase 12 | Pending |
