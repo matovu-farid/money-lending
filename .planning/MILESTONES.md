@@ -1,5 +1,26 @@
 # Milestones
 
+## v1.1 Payments (Shipped: 2026-03-24)
+
+**Phases completed:** 5 phases, 13 plans
+
+**Key accomplishments:**
+
+1. Global Payments List — Paginated, searchable, filterable payments table across all loans with edit, delete, and CSV export
+2. Daily Collections View — Date-navigable daily summary with timezone-aware aggregation (Africa/Kampala) and due-today loan list
+3. Quick-Record Workflow — Inline payment recording from the Payments page with loan search combobox, recently-collected chips, and receipt link
+4. Sovereign Ledger Design System — Full OKLCH token rewrite, glassmorphism overlays, monochromatic surface hierarchy, font-mono tabular-nums across every page
+5. Verification & Documentation Cleanup — All 27 requirements formally verified, all audit gaps closed
+
+**Stats:**
+
+- Files modified: 114
+- Lines: +15,478 / -662
+- Timeline: 2 days (2026-03-23 → 2026-03-24)
+- Commits: ~96
+
+---
+
 ## v1.0 MVP (Shipped: 2026-03-23)
 
 **Phases completed:** 5 phases, 27 plans, 10 tasks

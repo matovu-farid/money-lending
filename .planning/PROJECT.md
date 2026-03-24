@@ -23,12 +23,14 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - ✓ RPTS-01–05: Executive dashboard, loan portfolio report, monthly P&L, Balance Sheet, PDF/Excel export — v1.0
 - ✓ UX-01–05: Loading spinners, useTransition, optimistic mutations, TanStack Query, page skeletons — v1.0
 - ✓ INFR-02–04: Server Actions, responsive UI, overdue detection cron — v1.0
+- ✓ PAY-01–08: Standalone Payments page with global list, search, filters, CRUD actions — v1.1
+- ✓ COLL-01–04: Daily collections view with timezone-aware aggregation, breakdown table, due-today list — v1.1
+- ✓ QREC-01–03: Quick-record payment with loan search, recently-collected chips, inline recording — v1.1
+- ✓ DS-01–12: Sovereign Ledger design system — OKLCH tokens, glassmorphism, tonal hierarchy, font-mono numerics — v1.1
 
 ### Active
 
-- ✓ PAY-01–08: Standalone Payments page with global list, search, filters, CRUD actions — v1.1 Phase 06
-- ✓ COLL-01–04: Daily collections view with timezone-aware aggregation, breakdown table, due-today list — v1.1 Phase 07
-- ✓ QREC-01–03: Quick-record payment with loan search, recently-collected chips, inline recording — v1.1 Phase 08
+(None yet — define with `/gsd:new-milestone`)
 
 ### Out of Scope
 
@@ -43,7 +45,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ## Context
 
-- **Shipped:** v1.0 MVP on 2026-03-22 (~52,000 LOC TypeScript, 300 files)
+- **Shipped:** v1.1 Payments on 2026-03-24 (~67,000 LOC TypeScript, 414 files); v1.0 MVP on 2026-03-22
 - **Tech stack:** Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS, shadcn/ui (base-ui primitives)
 - **Requirements doc:** `private_docs/Money_Lending_App_Requirements.docx` (v1.0, Feb 16 2026)
 - **Known tech debt:**
@@ -83,18 +85,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | Loans created as active (no pending) | Disbursement is off-app; recording = it happened | ✓ Good |
 
 ---
-## Current Milestone: v1.1 Payments
-
-**Goal:** Build out the Payments section as a first-class page — global payments list, daily collections view, and quick-record workflow.
-
-**Status:** All 10 phases complete. Verification and documentation cleanup done. Ready for milestone audit.
-
-**Completed features:**
-- ✓ Global payments list with search/filter (date, customer, amount, loan)
-- ✓ Daily collections summary view
-- ✓ Quick-record payment without navigating to individual loan page
-- ✓ Design system overhaul applied across entire app
-- ✓ All verification and documentation gaps closed
-
----
-*Last updated: 2026-03-24 after Phase 10 (verification-documentation-cleanup) complete*
+*Last updated: 2026-03-24 after v1.1 milestone*
