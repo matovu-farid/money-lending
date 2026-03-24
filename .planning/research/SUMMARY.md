@@ -1,17 +1,17 @@
 # Project Research Summary
 
-**Project:** Money Lending Management System — v1.1 Payments Milestone
-**Domain:** Payments page extension — global list, daily collections, quick-record workflow
-**Researched:** 2026-03-23
+**Project:** Money Lending Management System — v1.2 Responsive Milestone
+**Domain:** Responsive mobile + desktop layout for a financial/lending management web app
+**Researched:** 2026-03-24
 **Confidence:** HIGH
 
 ## Executive Summary
 
-The v1.1 Payments milestone adds a first-class Payments section to an already-shipped perpetual lending system. The core task is extending existing infrastructure — not building new primitives. Research confirms that zero new npm packages are required: Drizzle ORM, TanStack Query, date-fns, shadcn/ui base-ui components, Effect.js, BigNumber.js, and the Server Action pattern already in the codebase cover every feature need. The recommended approach is to build three additive layers — a global paginated payments list, a daily collections view as a second tab within the same route, and an inline quick-record dialog — following the exact patterns established in v1.0 for customers, loans, and transactions.
+The v1.2 milestone is a pure UI responsiveness layer over a fully-shipped v1.1 product — no new features, no new npm dependencies, no backend changes. The entire feature set (Customers, Loans, Payments, Collections, Creditors, Expenses, Income, Reports, Watchlist, Simulator, Notifications, Dashboard) is already built and working on desktop. The task is adapting every existing UI surface to work correctly on phones (360–430px wide) while keeping the desktop experience unchanged. The recommended approach is a clean breakpoint-based split: bottom tab bar navigation for mobile (`< md`, hidden via `md:hidden`), sidebar navigation for tablet/desktop (`hidden md:flex`), and dual-render table/card layouts controlled by Tailwind CSS media queries — no JavaScript viewport detection.
 
-The recommended architecture groups all three features under a single `/payments` route with tab-based sub-views (URL search params for deep-linking), server-side paginated service functions using JOIN queries, and a reuse-first stance on existing service functions (particularly `recordPaymentAction`, which needs zero changes to support quick-record). The sidebar already has a Payments nav slot at `href: "/payments"` marked `disabled: true` — removing that flag is the final integration step, not the first.
+The primary architectural additions are three new components: `BottomTabBar` (fixed-position, mobile-only, 5 primary tabs), `ResponsiveTable` (CSS show/hide wrapper rendering `<Table>` on desktop and stacked `<Card>` elements on mobile), and a `use-mobile.ts` hook. All are built from existing primitives already installed in the stack (Tailwind CSS v4, lucide-react, shadcn/ui, @base-ui/react, next/navigation). The build order is strict: AppShell and BottomTabBar first (foundation), then responsive table primitive, then per-page card layouts ordered from simplest to most complex (Dashboard → Customers → Watchlist → Creditors → Loans → Expenses/Income → Payments → Reports), then a final Cypress mobile viewport pass.
 
-The critical risks are operational in nature: soft-deleted payments being silently included in financial totals (two intentionally different soft-delete patterns coexist in `payment.service.ts`), date-grouping bugs caused by UTC midnight storage vs. Uganda-local calendar day, and a too-narrow `revalidatePath` scope after quick-record that leaves the payments list stale. All three are preventable through patterns already in the codebase. The highest-complexity new piece is the "due today" query for daily collections — identifying active loans whose last payment was 30+ days ago requires a MAX(paymentDate) aggregation per loan that has no existing analogue in v1.0.
+The highest-risk area is the existing Cypress test corpus: 25 spec files written exclusively at desktop viewport with unscoped `cy.get("nav")` and `cy.contains("a", ...)` selectors. Adding a second `<nav>` element (the bottom tab bar) to the DOM will cause immediate test failures unless navigation selectors are scoped with `data-testid` before the new component is added. This prerequisite must happen before any layout work begins. iOS safe-area insets are the second critical risk — `env(safe-area-inset-bottom)` must be applied in CSS (not JavaScript state) from the moment the bottom tab bar is created, or the bar will clip the iOS home indicator on iPhones.
 
 ---
 
@@ -19,156 +19,132 @@ The critical risks are operational in nature: soft-deleted payments being silent
 
 ### Recommended Stack
 
-No new dependencies required. The entire feature set is served by the current installed stack. Three decisions from STACK.md are worth preserving explicitly: (1) no `cmdk` — the existing `<Popover>` + `<Input>` builds the loan search combobox without introducing Radix peer-dependency conflicts; (2) no `nuqs` or URL state libraries — `useSearchParams` + `router.replace` is sufficient for tab and date state; (3) no `@tanstack/react-table` — the existing `<Table>` + offset pagination pattern is adequate at current data volumes.
+No new npm packages are needed. The installed stack (Next.js 16, React 19, Tailwind CSS v4, shadcn/ui, @base-ui/react, lucide-react, next/navigation, Cypress 15) provides everything required to build bottom tab bar navigation, responsive card layouts, safe-area inset handling, and multi-viewport Cypress tests.
 
-**Core technologies (existing, confirmed for this feature):**
-- **Drizzle ORM** (`gte`, `lte`, `ilike`, `count`, `sql`, multi-table JOIN) — all operators already imported in `transaction.service.ts` and `customer.service.ts`; no new operators needed
-- **TanStack Query** (`useQuery`, `queryClient.invalidateQueries`, shared key factory) — hook pattern mirrors `use-customers.ts` verbatim
-- **Effect.js** (`Effect.tryPromise`, `DatabaseError`) — all new service functions wrap in this pattern; mixing plain async outside Effect breaks error propagation
-- **BigNumber.js** — mandatory for daily collections totals; native float summation on monetary fields is explicitly prohibited by project convention
-- **date-fns v4** (`startOfDay`, `endOfDay`, `format`, `addDays`) — already installed; no second date library permitted
-- **shadcn/ui base-ui** (`<Popover>`, `<Input>`, `<Table>`, `<Dialog>`, `<Tabs>`, `<Card>`) — all components installed; loan combobox built from these primitives, not `cmdk`
-- **Server Actions** — all data mutations and queries go through Server Actions in `payment.actions.ts`; no Route Handlers
+**Core technologies (all already installed):**
+- **Tailwind CSS v4** — responsive breakpoints via `sm:`, `md:`, `lg:` prefixes; the `md` breakpoint (768px) is the primary mobile/non-mobile boundary already used by the sidebar
+- **lucide-react 0.577.0** — provides all icons for the 5-tab bottom nav bar (LayoutDashboard, Users, Banknote, CreditCard, MoreHorizontal)
+- **@base-ui/react 1.3.0** — `<Sheet side="bottom">` for the "More" overflow drawer on mobile; already used in the codebase
+- **next/navigation `usePathname()`** — active tab detection, identical pattern already in `sidebar.tsx`
+- **Cypress 15 `cy.viewport()`** — multi-viewport test support, no plugin needed; `cypress-real-events` (already installed) covers touch event testing
+
+**Critical version notes:**
+- Tailwind v4 uses CSS-first configuration (`@import "tailwindcss"` in `globals.css`) — no `tailwind.config.js`. Custom breakpoints go in `globals.css` via `@theme`.
+- `@base-ui/react` does NOT support Radix's `asChild` prop. Do not import `@radix-ui/react-*` alongside it.
 
 ### Expected Features
 
-**Must have (table stakes):**
-- Global paginated payments list with customer name search, date range filter, loan status filter — payments are currently only visible inside individual loan pages; a global view is required for audits, disputes, and end-of-day reconciliation
-- Columns: date, customer name, loan ID, "Total Received" (not "Amount"), interest portion, principal portion, balance after — label matters: staff read "amount" as principal repaid
-- Navigate-to-loan link from every payment row
-- Soft-deleted payment visibility toggle (admin only) — soft-deletes exist in the schema; admins need an audit path without affecting financial totals
-- Daily collections summary: total collected today (UGX), count of payments recorded, list of payments for the selected date
-- "Due today" list: active loans with no payment in last 30 days — the perpetual 30-day cycle model means 30+ days without a payment is the overdue signal
-- Quick-record workflow: search for a loan by customer name inline, record payment in a modal, stay on `/payments` after success (not bounced to loan detail)
-- Receipt link in quick-record success state — the existing per-loan flow exposes the receipt via loan-detail redirect; quick-record bypasses this and must provide an explicit link
+**Must have (v1.2 launch blockers):**
+- Bottom tab bar navigation on mobile (5 primary tabs + "More" sheet) — replaces hamburger pattern; primary mobile nav surface
+- Responsive data tables → card layout for all 8+ list pages — tables with 5–7 columns are unusable at 360px
+- Touch-friendly tap targets across all interactive elements (min 44×44px) — required for WCAG 2.5.8 Level AA (effective June 2025)
+- Single-column form layout on mobile for all forms (loan wizard, customer registration, creditor form)
+- Content padding corrected — remove hardcoded `p-6` from 9 page components that override AppShell's responsive `p-4 md:p-6`
+- Horizontal scroll scoped to table containers — prevents iOS Safari browser-back gesture conflicts
+- Cypress tests with mobile viewport (390px) coverage for all pages — required by AGENTS.md
 
-**Should have (differentiators):**
-- Collections progress bar: today's collected / expected (low complexity once "due today" count is reliable)
-- "Days since last payment" column in due-today list — makes urgency legible at a glance without mental arithmetic
-- Default date filter to today — the page primarily answers "what happened today?" so defaulting to today removes the most common filter interaction
-- Shared TanStack Query key factory (`paymentsKeys`) — prevents cache invalidation fragmentation as more payment queries are added
+**Should have (add when P1s complete, do not block launch):**
+- Quick-record payment accessible from bottom tab (1 tap to start; reuses existing QuickRecord component)
+- Sticky page header with title + primary CTA (prevents scroll-to-top on long lists)
+- Collapsible filter row on mobile (filter bars consume 3–4 rows and push content below fold)
+- DrawerDialog pattern — bottom Drawer on mobile instead of centered Dialog
+- Card skeleton loading states matching card layout (animated `pulse` skeletons for list pages)
 
-**Defer from v1.1:**
-- Daily collections PDF export — `pdf.service.ts` pattern exists for when the need is validated with the client; not blocking launch
-- Live balance preview in quick-record — the repayment simulator already covers this; not needed inline
-- Bulk payment recording — explicitly excluded: interest-first allocation is sequential; bulk entry creates ordering ambiguity and audit complexity
+**Defer to v2+:**
+- Swipe gesture navigation between tabs (requires Framer Motion or touch event API)
+- Offline-capable service worker / PWA — explicitly out of scope per PROJECT.md
+- Native iOS/Android app — out of scope per PROJECT.md
+- Push notifications — requires service worker + VAPID infrastructure not planned for v1.2
 
 ### Architecture Approach
 
-The entire payments section lives at `src/app/(app)/payments/` as a single route with a Server Component shell (`page.tsx`) wrapping a Client Component (`PaymentsClient.tsx`). Within that, two tab components (`PaymentListTab`, `DailyCollectionsTab`) and one dialog (`QuickRecordDialog`) compose the full experience. Tab state and selected date live in URL search params for deep-linking and browser history. All data access follows the thin-action / Effect-service pattern established in v1.0: Server Actions in `payment.actions.ts` call service functions in `payment.service.ts` wrapped in `Effect.tryPromise`. A new Drizzle migration adds a partial index on `payment_date DESC WHERE deleted_at IS NULL` before shipping the global list — without it, the query will do a full table scan as the portfolio grows.
+The v1.2 responsive architecture makes no changes to the data layer, routes, or service/action layer — all changes are confined to layout components and UI primitives. `BottomTabBar` lives inside `AppShell` (the `"use client"` component, already inside `<Providers>`), not in `layout.tsx` or individual pages. This is the only placement where `useSession` and `usePathname` are available and where the component is automatically applied to all app pages. The `<main>` element in AppShell must add `pb-16 md:pb-0` to reserve 64px above the fixed-position tab bar on mobile.
 
-**Major components:**
-1. `PaymentsClient.tsx` — tab state, URL param sync (`?tab=all|daily&date=YYYY-MM-DD`), composes all sub-components; no data fetching
-2. `PaymentListTab.tsx` — global paginated payment table, filter bar (date range, customer name, loan status), quick-record trigger; consumes `use-payments` hook
-3. `DailyCollectionsTab.tsx` — date picker, daily summary stats (total collected, count due today, progress bar), due-today list; consumes `use-daily-collections` hook
-4. `QuickRecordDialog.tsx` — inline modal: debounced loan search (active loans only, min 2 chars, limit 10) → payment form → success state with receipt link; reuses `recordPaymentAction` with zero changes
-5. `use-payments.ts` / `use-daily-collections.ts` — TanStack Query wrappers using a shared `paymentsKeys` factory; defined before any payment query is written
-6. New service functions in `payment.service.ts` (additive): `listPayments(filters)`, `getDailyCollections(date)` — zero changes to existing functions
+**Major new components:**
+1. **`BottomTabBar`** (`src/components/layout/bottom-tab-bar.tsx`) — fixed `bottom-0`, `md:hidden`, 5 primary tabs, active state via `pathname.startsWith(item.href)`, safe-area inset padding applied in CSS
+2. **`ResponsiveTable`** (`src/components/ui/responsive-table.tsx`) — CSS show/hide wrapper; renders `<Table>` on `md+` and `<Card>` stacks on mobile; avoids JS viewport detection to prevent hydration mismatch
+3. **`use-mobile.ts`** (`src/hooks/use-mobile.ts`) — 10-line `window.matchMedia('(max-width: 767px)')` hook; used only for imperative logic, not for layout switching (CSS handles layout)
 
-**Build order (dependency-driven):**
-- Level 1: Types (`PaymentWithContext`, `PaymentListFilters`, `DailyCollectionsSummary`) → service functions → Server Actions
-- Level 2: TanStack Query hooks (parallel)
-- Level 3: UI components (parallel)
-- Level 4: Route assembly
-- Level 5: Sidebar `disabled: true` removal (last — do not unlock before the page is functional)
+**No changes needed to:** sidebar.tsx (structural behavior unchanged), top-bar.tsx (hamburger already `md:hidden`), all Server Actions, services, TanStack Query hooks, or database schema.
+
+**Modified files:** `app-shell.tsx` (add BottomTabBar + `pb-16 md:pb-0`), all 11 page components (replace `<Table>` with responsive pattern, adjust padding), all Cypress spec files (add mobile viewport blocks).
 
 ### Critical Pitfalls
 
-1. **Soft-delete blindness in global query** — `getPaymentsForLoan` intentionally includes soft-deleted rows (per-loan history view needs them with strikethrough). Copying this function for the global list silently inflates financial totals. New `listPayments` and `getDailyCollections` must always apply `isNull(payments.deletedAt)`. Mark `getPaymentsForLoan` with a comment noting it intentionally includes deleted rows so the contrast is explicit.
+1. **Unscoped Cypress `cy.get("nav")` selectors break on dual-nav DOM** — After adding `BottomTabBar`, two `<nav>` elements exist simultaneously in the DOM. Unscoped `cy.get("nav").contains("a", "Payments")` finds whichever is first — causing failures or wrong navigation. Add `data-testid="sidebar-nav"` and `data-testid="bottom-tab-bar"` before adding the component; scope all existing nav assertions to `[data-testid='sidebar-nav']`. This must be a prerequisite task in Phase 1.
 
-2. **UTC vs. Uganda calendar day in date grouping** — `paymentDate` is stored at UTC midnight (`"T00:00:00.000Z"` in `record-payment-form.tsx` line 53). A payment recorded as "2026-03-23" in Kampala (UTC+3) is stored as `2026-03-22T21:00:00+00`. Bare `DATE(payment_date)` returns the wrong day. All date-grouping and daily-filter queries must use `DATE(payment_date AT TIME ZONE 'Africa/Kampala')`.
+2. **Existing table tests fail when tables become card stacks** — Tests asserting `cy.get("table tbody tr")` find zero rows when the table is CSS-hidden on mobile. Add `data-testid="data-row"` to both `<tr>` elements and mobile cards before touching any table markup; change all table row assertions to use the viewport-agnostic testid.
 
-3. **revalidatePath too narrow after quick-record** — The existing `recordPaymentAction` only revalidates `/loans/${loanId}`. After quick-record fires from `/payments`, the global list does not refresh. Extend `recordPaymentAction` to also revalidate `/payments`. Additionally, invalidate `paymentsKeys.all()` in TanStack Query's `onSuccess` callback for the client-side cache.
+3. **iOS safe-area inset clips bottom tab bar** — A `position: fixed; bottom: 0` bar without `env(safe-area-inset-bottom)` is partially obscured by the iOS home indicator (34px on iPhone X+). Set `viewport-fit=cover` in `layout.tsx` viewport meta tag and apply `padding-bottom: env(safe-area-inset-bottom)` directly in CSS — never store this in JavaScript state (Next.js route transitions can reset the CSS variable to `0`).
 
-4. **No loan-active guard in quick-record** — Quick-record must filter the loan search to `status = 'active'` only (UX layer) AND add a server-side guard in `recordPaymentAction` rejecting payments against `fully_paid` loans (enforcement layer). The current service checks only `LoanNotFound`; a status check is needed. Without this, a payment recorded on a closed loan leaves the loan in an inconsistent state.
+4. **Tailwind mobile-first breakpoint direction confusion** — `sm:hidden` means "hidden at 640px and above," NOT "hidden on mobile." The correct idioms are `hidden md:flex` (mobile-hidden, desktop-visible) and `md:hidden` (mobile-visible, desktop-hidden). A single wrong breakpoint prefix produces a silent CSS bug. Establish these idioms as a PR checklist item at Phase 1 start.
 
-5. **N+1 queries for customer/loan name enrichment** — The global list needs customer name and loan context per payment. The naïve approach fetches bare payments then queries per-row. With 200 payments this is 401+ queries. The `listPayments` service function must use a single JOIN from the start: `payments INNER JOIN loans INNER JOIN customers`. The dashboard service already demonstrates the N+1 anti-pattern — do not repeat it.
+5. **Changing the global Cypress viewport breaks all 25 existing tests** — Adding `viewportWidth: 375` to `cypress.config.ts` silently fails every existing desktop test. Mobile viewport tests must use `cy.viewport(390, 844)` in their own `beforeEach` block — never change the global config.
 
 ---
 
 ## Implications for Roadmap
 
-Research strongly suggests a 3-phase build ordered by dependency chain. Each phase is independently testable and delivers a usable increment.
+Based on research, the dependency chain is clear and suggests 5 phases with strict ordering at the foundation level and parallelism at the page level.
 
-### Phase 1: Global Payments List (Foundation)
+### Phase 1: Foundation — AppShell + Bottom Tab Bar
 
-**Rationale:** Everything else depends on the list query and pagination infrastructure. The daily collections view is a filtered projection of the same data. Quick-record needs the payments list to immediately reflect new records. Build the data layer first and the list UI on top of it before adding more views.
+**Rationale:** Everything else depends on this. The BottomTabBar establishes mobile navigation; AppShell changes ensure no page content is hidden behind it. Cypress selector scoping must be done here — before any second nav element enters the DOM — or all subsequent phases produce broken tests. This phase also establishes the Tailwind breakpoint conventions that all subsequent phases follow.
+**Delivers:** Mobile navigation (5 primary tabs), correct AppShell layout with bottom padding, safe-area inset handling, `data-testid` on both nav surfaces, viewport meta tag with `viewport-fit=cover`, Tailwind breakpoint convention documentation.
+**Addresses:** Bottom tab bar navigation (P1), content padding foundation, Cypress mobile test conventions.
+**Avoids:** Pitfalls 1, 3, 4, 5, 6 — all must be prevented at this phase, not retrofitted.
+**Research flag:** Standard patterns. Skip research-phase; implementation is fully defined.
 
-**Delivers:** Fully functional `/payments` page — paginated (25/page), searchable (customer name ILIKE), filterable (date range, loan status), read-only payment history across all loans with navigate-to-loan links. Replaces the placeholder that will appear when the nav is unlocked.
+### Phase 2: Responsive Table Primitive + Simple Pages
 
-**Addresses (FEATURES.md):**
-- Global paginated payments list with all filters
-- Columns: "Total Received," interest/principal split, balance after, navigate-to-loan link
-- Admin-only soft-deleted payment toggle
-- Default date filter to today (URL search param `?date=today`)
-- Empty state with call to action
+**Rationale:** Build the `ResponsiveTable` / card primitive once before applying it across 8+ pages. Validate the pattern on the simplest pages before tackling complex 7-column tables. Add `data-testid="data-row"` as the first task in this phase before touching any table markup.
+**Delivers:** `ResponsiveTable` component; responsive card layouts for Dashboard, Customers, Watchlist, Creditors, Notifications pages; hardcoded `p-6` padding removed from all page components.
+**Addresses:** Responsive tables → cards (P1) for low-complexity pages; touch tap target fixes (P1); horizontal scroll scoping (P1).
+**Avoids:** Pitfall 2 (table test breakage) — `data-testid` added before any markup change.
+**Research flag:** Standard patterns. Skip research-phase.
 
-**Avoids (PITFALLS.md):**
-- Pitfall 1 (soft-delete blindness): `isNull(deletedAt)` in every new query from day one
-- Pitfall 6 (N+1 enrichment): single JOIN query written as the first service function
-- Pitfall 11 (date range off-by-one): end-of-day upper bound (`23:59:59.999Z`) in date filter
-- Pitfall 12 (ambiguous "Amount" label): column labeled "Total Received" with interest/principal split
-- Pitfall 13 (no pagination): server-side LIMIT/OFFSET baked into initial Server Action signature
+### Phase 3: Complex Page Responsive Layouts
 
-**New artifacts:** `PaymentWithContext` type, `PaymentListFilters` type, `listPayments` service, `listPaymentsAction`, `use-payments` hook, `PaymentListTab`, `PaymentsClient`, `page.tsx`, Drizzle migration `0005_payments-list-index.sql` (partial index on `payment_date DESC WHERE deleted_at IS NULL`).
+**Rationale:** Loans (5 columns), Expenses/Income (4 columns each), and Payments (7 columns, filter panel, tabs) are the most complex tables. Payments is highest-risk — it has the most columns, a multi-tab layout, and the most assertions in the Cypress corpus. Attack it last after the pattern is validated on simpler pages.
+**Delivers:** Responsive card layouts for Loans, Expenses, Income, Payments list, Collections, Repayment Simulator, Admin, Reports; single-column forms on mobile; full-screen dialogs on mobile.
+**Addresses:** Responsive tables → cards (P1) for all remaining pages; single-column forms on mobile (P1).
+**Avoids:** Pitfall 2 (continued); dual DOM render performance trap (CSS show/hide for ≤50 rows; conditional rendering for high-row-count pages).
+**Research flag:** The Payments page filter panel collapse strategy (Accordion vs. Sheet vs. CSS toggle) is a design micro-decision to resolve at the start of this phase — not a full research phase.
 
-### Phase 2: Daily Collections View
+### Phase 4: Touch Optimization + P2 Differentiators
 
-**Rationale:** Builds on Phase 1 infrastructure (same route, same `PaymentsClient` shell, same TanStack Query cache). The "due today" query is the highest-complexity new piece and should be built after the list is stable so date-grouping behavior can be verified in a working context before being used for financial summary figures.
+**Rationale:** Touch target audits (min 44×44px) and P2 features (sticky headers, collapsible filter row, quick-record tab, DrawerDialog) are independent of page-level responsive work. DrawerDialog requires a quick compatibility check between shadcn Drawer and @base-ui/react before committing — 30-minute verification, not a full research phase.
+**Delivers:** WCAG 2.5.8 compliant touch targets across all interactive elements; sticky page headers; collapsible filter bars on Payments/Customers/Loans/Expenses/Income; quick-record shortcut in bottom tab.
+**Addresses:** Touch-friendly tap targets (P1 completion); sticky page headers (P2); collapsible filter row (P2); quick-record in bottom tab (P2).
+**Avoids:** Pitfall 7 (touch target size causing cypress-real-events click failures).
+**Research flag:** DrawerDialog @base-ui/react compatibility needs a verification task at phase start before committing the pattern.
 
-**Delivers:** Date-navigable daily collections view — total UGX collected for the selected day, count of payments, "due today" list of active loans 30+ days past their last payment, optional progress bar. Answers the loan officer's morning question: "who do I need to collect from today?"
+### Phase 5: Cypress Mobile Viewport Coverage
 
-**Addresses (FEATURES.md):**
-- Collections summary header (total collected UGX, payment count)
-- "Due today" list with days-since-last-payment column
-- Collections progress bar (total collected vs. due-today count)
-- Date picker navigation defaulting to today
-
-**Avoids (PITFALLS.md):**
-- Pitfall 2 (UTC vs. local calendar day): `DATE(payment_date AT TIME ZONE 'Africa/Kampala')` in all grouping queries — never bare `DATE(payment_date)`
-- Pitfall 7 (query key fragmentation): shared `paymentsKeys` factory defined in Phase 1 before any Phase 2 hooks are written
-- Pitfall 9 (native float summation): daily totals use BigNumber.js or SQL `SUM(amount)` — no `parseFloat` on monetary fields
-
-**New artifacts:** `DailyCollectionsSummary` type, `getDailyCollections` service, `getDailyCollectionsAction`, `use-daily-collections` hook, `DailyCollectionsTab`.
-
-### Phase 3: Quick-Record Workflow
-
-**Rationale:** Highest operational value for loan officers but depends on the payments list (Phase 1) being in place so post-record cache invalidation has something meaningful to refresh. Built last because it is the most UX-complex piece and benefits from established patterns and tested components from Phases 1-2.
-
-**Delivers:** Inline payment recording from the Payments section — find a loan by typing a customer name (debounced, active loans only, limit 10), fill amount + date in a modal, see a success toast with a receipt link. No page navigation required. The loan officer can record 10 payments without leaving `/payments`.
-
-**Addresses (FEATURES.md):**
-- Loan selector combobox (debounced server-side search, `status = 'active'` only, min 2 chars)
-- Inline payment form reusing `recordPaymentAction` unchanged
-- Post-record redirect stays on `/payments` (not loan detail)
-- Explicit receipt link in success state (`/receipts/repayment/${data.id}`)
-
-**Avoids (PITFALLS.md):**
-- Pitfall 3 (revalidatePath too narrow): extend `recordPaymentAction` to also revalidate `/payments`; invalidate `paymentsKeys.all()` in TanStack Query `onSuccess`
-- Pitfall 4 (no loan-active guard): active-only filter in combobox + server-side `fully_paid` rejection in the action
-- Pitfall 5 (double submission): `disabled={isPending}` on submit button + all form inputs; `useTransition` as pending mechanism — copied verbatim from `RecordPaymentForm`
-- Pitfall 8 (loan search loads all on mount): debounced, min 2 characters, limit 10, empty state shows a "Type to search" prompt — never load all loans on open
-- Pitfall 10 (receipt wrong ID): receipt link uses `data.id` (payment UUID), not `data.loanId`
-
-**New artifacts:** `QuickRecordDialog`, `LoanSearchCombobox` primitive, `searchActiveLoansAction` (debounced loan search), sidebar `disabled: true` removal (one-line change, do last).
+**Rationale:** Mobile Cypress tests can only be written after the responsive implementation exists — they are the verification layer, not a blocker. Per AGENTS.md, all verification must be automated with Cypress. This phase adds `cy.viewport(390, 844)` blocks to every existing spec file plus dedicated mobile-only assertions.
+**Delivers:** Full mobile viewport test coverage for all 15+ page specs; verified compliance with AGENTS.md automation requirement; tablet sidebar tests at 768px.
+**Addresses:** Cypress mobile viewport tests (P1 requirement per AGENTS.md).
+**Avoids:** Pitfall 6 (global viewport change) — tests use scoped viewport calls only.
+**Research flag:** Standard Cypress patterns. Skip research-phase; all test patterns are defined in FEATURES.md and PITFALLS.md.
 
 ### Phase Ordering Rationale
 
-- **Types before everything** — `PaymentWithContext`, `PaymentListFilters`, `DailyCollectionsSummary` must be defined before service functions, which must exist before actions, hooks, and UI. This chain is strict within each phase.
-- **Phase 1 before Phase 2** — The daily collections tab lives inside `PaymentsClient.tsx` which is created in Phase 1. Phase 2 adds `DailyCollectionsTab` as a second tab into an existing shell.
-- **Phase 1 before Phase 3** — Quick-record invalidates `paymentsKeys.all()` after success. The payments list must be functional before that invalidation matters.
-- **Sidebar unlock last** — Remove `disabled: true` from the Payments nav item only after all three phases pass testing. Unlocking early exposes an incomplete page to staff.
-- **Database index in Phase 1** — The partial index on `payment_date DESC` must exist before the global list goes live; adding it after data accumulates requires an `CONCURRENTLY` migration.
+- **Phase 1 must be first** — Cypress selector scoping and safe-area insets cannot be retrofitted; they produce cascading test failures and device bugs if deferred.
+- **Phase 2 before Phase 3** — The `ResponsiveTable` primitive must exist before any page uses it; simple pages validate the pattern before it's applied to complex ones.
+- **Phase 3 orders pages by complexity** — Simplest (Dashboard, Customers) first, most complex (Payments with 7-column table and filter panel) last. Front-loads learning and reduces rework.
+- **Phase 4 after Phase 3** — Touch targets and P2 features layer on top of responsive layouts; page components need to exist first.
+- **Phase 5 is always last** — Tests verify the finished state; writing them before the layout is done requires rewriting them.
 
 ### Research Flags
 
-Phases with well-documented patterns (skip additional research):
-- **Phase 1 (Global Payments List):** All patterns directly implemented in the existing codebase. `searchCustomers`, `listTransactions`, `use-customers`, and `customers/page.tsx` are verbatim templates. No research needed.
-- **Phase 3 (Quick-Record):** `recordPaymentAction` already works end-to-end. `LoanSearchCombobox` built from installed `<Popover>` + `<Input>` — the absence of `cmdk`/Radix is confirmed in `package.json`. No research needed.
+Phases with standard, well-documented patterns (no additional research needed):
+- **Phase 1 (Foundation):** BottomTabBar is a standard React component; safe-area insets and Tailwind breakpoints are fully documented; active tab `pathname.startsWith` logic is copied verbatim from the existing sidebar.
+- **Phase 2 (Responsive Table + Simple Pages):** CSS show/hide responsive table is a standard Tailwind pattern; Card component is installed.
+- **Phase 3 (Complex Pages):** Largely mechanical per-page application of Phase 2 pattern; one design micro-decision for Payments filter panel collapse.
+- **Phase 5 (Cypress):** All patterns defined in FEATURES.md; `cy.viewport()` is standard Cypress 15 API.
 
-Phases that may benefit from verification during planning:
-- **Phase 2 — "Due today" aggregation query:** The active-loans / last-payment-30-days-ago query requires a MAX(paymentDate) per loan via subquery or lateral join. The query intent is clear from research; the exact Drizzle ORM syntax should be prototyped against PGlite before being committed to the service layer. Low risk of blocking; moderate risk of a subtly wrong query that silently under- or over-counts due-today entries.
-- **Phase 2 — Timezone cast in test environment:** Integration tests run on PGlite configured with UTC. The `AT TIME ZONE 'Africa/Kampala'` cast must be verified to produce the expected result in that environment, or test assertions must pin the date cast to UTC. Flag this when writing Phase 2 integration tests.
+Phases needing a quick verification task before committing an approach:
+- **Phase 4 (DrawerDialog):** Confirm shadcn Drawer (backed by Vaul) is compatible with @base-ui/react. If incompatible, the fallback is `max-h-[calc(100dvh-...)]` on existing `<Sheet>` components. This is a 30-minute verification, not a full research phase.
 
 ---
 
@@ -176,47 +152,49 @@ Phases that may benefit from verification during planning:
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All patterns directly inspected in the installed codebase; zero new dependencies confirmed by `package.json` audit; no training-data assumptions |
-| Features | HIGH | Table stakes derived from existing codebase + v1.1 requirements doc (PROJECT.md); differentiators from microfinance UX domain patterns with MEDIUM confidence |
-| Architecture | HIGH | All component shapes, data flows, and integration points traced to existing v1.0 files; build order derived from direct dependency analysis of the codebase |
-| Pitfalls | HIGH | All critical pitfalls grounded in specific lines of v1.0 code: UTC midnight in `record-payment-form.tsx` line 53, two soft-delete patterns in `payment.service.ts`, existing `revalidatePath` scope in `payment.actions.ts` |
+| Stack | HIGH | Direct inspection of package.json; all required packages confirmed installed. No new dependencies needed — validated against every capability requirement. |
+| Features | HIGH | Based on direct codebase reading of all 11 page components. Per-page complexity accurately characterized. Navigation tab selection grounded in Material Design and iOS HIG 5-tab maximum. |
+| Architecture | HIGH | Based on direct reading of app-shell.tsx, sidebar.tsx, top-bar.tsx, globals.css, and all page components. All integration points verified against live code. Build order is dependency-driven with no ambiguity. |
+| Pitfalls | HIGH | Cypress pitfalls verified against actual test files at specific line numbers (payments-list.cy.ts line 379, lines 59–60). iOS safe-area Next.js regression verified via GitHub discussion #81264. Tailwind mobile-first pitfall documented against Tailwind official docs. |
 
-**Overall confidence:** HIGH
+**Overall confidence: HIGH**
 
 ### Gaps to Address
 
-- **"Due today" query syntax:** Research identified what the query must do (active loans, MAX(paymentDate) per loan, 30+ days since last payment OR no payments at all). The exact Drizzle ORM syntax — correlated subquery vs. lateral join vs. subquery in FROM — should be prototyped in isolation during Phase 2 planning. All three approaches are valid SQL; one may be cleaner in Drizzle's builder API.
-- **Timezone cast in PGlite test environment:** The integration test suite uses PGlite configured with UTC. The `AT TIME ZONE 'Africa/Kampala'` cast behavior in that environment must be verified during Phase 2 implementation. If it behaves unexpectedly, tests may need to use UTC-equivalent assertions or the app config may need to read timezone from an env variable.
-- **Collections progress bar denominator reliability:** The progress bar (collected today / expected today) depends on the "due today" count being accurate. If the due-today aggregation proves complex, defer the progress bar to a follow-on task within Phase 2 rather than blocking the daily collections summary.
+- **DrawerDialog @base-ui/react compatibility:** Research concludes DrawerDialog is valuable but flags it as unverified. Confirm in Phase 4 whether shadcn's Drawer (Vaul-backed, Radix-independent) works alongside @base-ui/react primitives before committing the pattern across delete-confirm dialogs and edit sheets.
+- **Payments filter panel collapse strategy:** The Payments page filter bar (date range, amount range, customer name, status — 4 filters) needs a collapse mechanism on mobile. Research recommends a "Filters" toggle button but does not specify the collapse implementation (Accordion / Sheet / CSS `max-h` toggle). Resolve this as a design micro-decision at Phase 3 planning before implementing the Payments page.
+- **Tablet sidebar at exact 768px breakpoint:** Research confirms sidebar is preserved on tablet. Verify in Phase 5 Cypress tests at `cy.viewport(768, 1024)` that the sidebar renders correctly and the bottom tab bar is absent at exactly the breakpoint boundary on major browsers.
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `src/services/payment.service.ts` — two intentional soft-delete patterns, existing service function signatures
-- `src/services/customer.service.ts` — ilike + pagination reference implementation
-- `src/services/transaction.service.ts` — gte/lte/count/sql aggregation reference implementation
-- `src/services/dashboard.service.ts` — N+1 anti-pattern example to avoid
-- `src/actions/payment.actions.ts` — existing action pattern, `revalidatePath` scope (current)
-- `src/hooks/use-customers.ts` — TanStack Query hook template
-- `src/app/(app)/customers/page.tsx` — pagination + search page pattern
-- `src/app/(app)/loans/[loanId]/payments/new/record-payment-form.tsx` — UTC midnight date construction (`"T00:00:00.000Z"` at line 53), `disabled={isPending}` pattern
-- `src/components/layout/sidebar.tsx` — Payments nav slot confirmed `disabled: true` at line 54
-- `src/lib/db/schema/payments.ts` — NUMERIC(15,2) monetary columns, `deletedAt` soft-delete field
-- `src/lib/db/schema/loans.ts` — `loanStatusEnum("active" | "fully_paid")`
-- `package.json` — installed versions, absence of `cmdk` and Radix confirmed
-- `.planning/PROJECT.md` — v1.1 feature requirements
+- `src/components/layout/app-shell.tsx` — current AppShell structure; `mobileOpen` state, hamburger handler, main element padding confirmed
+- `src/components/layout/sidebar.tsx` — navGroups config (9 destinations), `usePathname` active logic, `hidden md:flex` pattern
+- `src/components/layout/top-bar.tsx` — hamburger `md:hidden` pattern
+- `src/components/ui/table.tsx` — existing overflow-x-auto wrapper
+- `src/app/(app)/customers/page.tsx`, `loans/page.tsx`, `payments/PaymentsClient.tsx`, `dashboard/page.tsx` — page structure and table column counts
+- `src/app/globals.css` — Tailwind v4 via `@import "tailwindcss"`, OKLCH design tokens, sidebar CSS vars
+- `package.json` — all installed package versions confirmed; absence of conflicting packages confirmed
+- `cypress/e2e/payments-list.cy.ts` — unscoped `cy.get("nav")` at line 379, `cy.get("table tbody tr")` at lines 59–60, row action buttons at line 205
+- `cypress.config.ts` — no explicit `viewportWidth` set; default 1000px confirmed
+- [Cypress viewport docs](https://docs.cypress.io/api/commands/viewport) — `cy.viewport()` API
+- [Tailwind responsive design docs](https://tailwindcss.com/docs/responsive-design) — mobile-first breakpoint system
+- [MDN env() CSS function](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/env) — safe-area-inset universal browser support
 
 ### Secondary (MEDIUM confidence)
-- Microfinance domain patterns (Odoo Microfinance LMS, LoanBook field app descriptions) — daily collections workflow, due-today targeting, loan officer daily triage patterns
-- TanStack Query v5 invalidations from mutations docs — prefix-matching invalidation behavior confirmed
-- Drizzle ORM joins documentation — multi-table join patterns
-- Next.js GitHub Discussion #37877 — timezone handling in date grouping
-
-### Tertiary (LOW confidence)
-- Collections PDF export as a differentiator — inferred from existing `pdf.service.ts` patterns; not validated with client
+- [shadcn/ui Tailwind v4 changelog](https://ui.shadcn.com/docs/changelog/2025-02-tailwind-v4) — Tailwind v4 component compatibility
+- [GitHub issue #8847 — Bottom Navigation component request](https://github.com/shadcn-ui/ui/issues/8847) — confirms no official shadcn bottom nav; custom build required
+- [GitHub discussion #5730 — Mobile bottom tab navigation](https://github.com/shadcn-ui/ui/discussions/5730) — community pattern validation
+- [iOS safe area + Next.js routing regression](https://github.com/vercel/next.js/discussions/81264) — `env(safe-area-inset-bottom)` reset during route transitions
+- [Nielsen Norman Group — Mobile Tables](https://www.nngroup.com/articles/mobile-tables/) — card layout recommended for 5+ column tables
+- [WCAG 2.5.8 Target Size Minimum](https://www.allaccessible.org/blog/wcag-258-target-size-minimum-implementation-guide) — 44×44px minimum, Level AA effective June 2025
+- [Bottom Tab Bar Best Practices — UX Planet](https://uxplanet.org/bottom-tab-bar-navigation-design-best-practices-48d46a3b0c36) — 5-tab maximum, primary destinations
+- [Cypress Real World App — responsive testing](https://learn.cypress.io/real-world-examples/app-layout-and-responsiveness) — `cy.viewport()` pattern for multi-viewport specs
+- [Bottom tab bar safe area coverage](https://github.com/lobehub/lobehub/issues/10454) — iOS home indicator overlap pattern
 
 ---
-*Research completed: 2026-03-23*
+
+*Research completed: 2026-03-24*
 *Ready for roadmap: yes*

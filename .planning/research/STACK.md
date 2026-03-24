@@ -1,202 +1,258 @@
-# Technology Stack
+# Stack Research
 
-**Project:** Money Lending Management System — v1.1 Payments Milestone
-**Researched:** 2026-03-23
-**Scope:** NEW capabilities only. Existing validated stack (Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS, shadcn/ui base-ui, Server Actions, date-fns, sonner, lucide-react, react-day-picker, ExcelJS, jspdf) is NOT re-examined.
+**Project:** Money Lending Management System — v1.2 Responsive Milestone
+**Researched:** 2026-03-24
+**Scope:** NEW capabilities only for responsive mobile + desktop layouts. Existing validated stack (Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS v4, shadcn/ui with @base-ui/react primitives, Server Actions, date-fns, sonner, lucide-react, react-day-picker, ExcelJS, jspdf) is NOT re-examined.
+**Confidence:** HIGH
 
 ---
 
 ## Executive Decision
 
-**No new dependencies are required for the v1.1 Payments milestone.**
+**No new npm dependencies are required for v1.2 Responsive.**
 
-Everything needed to build a global payments list with search/filter/pagination, a daily collections view, and a quick-record workflow already exists in the installed stack. The research below documents exactly which existing tools handle each feature and what new patterns are needed.
-
----
-
-## Feature-to-Stack Mapping
-
-### Feature 1: Global Payments List with Search, Filter, Pagination
-
-**Data layer:** Drizzle ORM (`gte`, `lte`, `ilike`, `and`, `count` — already used in `transaction.service.ts`) handles paginated, filterable queries against the `payments` table joined to `loans` and `customers`.
-
-**New service method needed:** `listPayments(filters, page)` in `payment.service.ts` — follows the exact pattern of `searchCustomers()` and `listTransactions()` already in the codebase.
-
-**Filter dimensions required:**
-- Date range: `gte(payments.paymentDate, from)` + `lte(payments.paymentDate, to)` — Drizzle operators already imported in `transaction.service.ts`
-- Customer name: `ilike(customers.fullName, ...)` — already used in `customer.service.ts`
-- Amount range: `gte(payments.amount, min)` + `lte(payments.amount, max)` — same operators
-- Loan ID: `eq(payments.loanId, id)` — trivial
-
-**Pagination:** Offset/limit pattern already established in `searchCustomers()` — copy the same structure.
-
-**Client data fetching:** TanStack Query with a `usePayments(filters, page)` hook — mirrors the existing `use-customers.ts` hook exactly.
-
-**UI — search bar:** Debounced text input + Select dropdowns + date range inputs — mirrors `CustomerSearchBar`. No new component library needed. The existing `<Input>`, `<Select>`, `<Calendar>`, and `<Popover>` components cover all filter controls.
-
-**UI — results table:** `<Table>` from shadcn/ui — already used on loans and customers pages.
-
-**UI — pagination:** Prev/Next button pattern from `customers/page.tsx` — copy directly.
-
-**Confidence:** HIGH — all patterns are implemented verbatim in the codebase.
+Everything needed to build bottom tab bar navigation, responsive layouts, and mobile-friendly data tables already exists in the installed stack. The work is purely UI restructuring using Tailwind responsive utilities, CSS environment variables, and custom React components built from existing shadcn/base-ui primitives.
 
 ---
 
-### Feature 2: Daily Collections View
+## What "Responsive" Means for This Project
 
-**Data layer:** A `getDailyCollections(date)` service function aggregates payments for a given calendar day. Uses `gte` + `lte` on `payment_date` to bracket the day (00:00:00 to 23:59:59), plus `sum()` via `sql\`sum(...)\`` — Drizzle's `sql` template is already imported in `transaction.service.ts`.
+The app is used by lending staff (loan officers, admins) — not borrowers. The target is:
 
-**Date navigation:** `date-fns` v4 (`addDays`, `subDays`, `startOfDay`, `endOfDay`, `format`) — already installed and used in `utils.ts`. No new package needed.
+- **Desktop** (`lg:` and above, ≥1024px): Sidebar navigation, full data tables, dense information layout
+- **Tablet** (`md:`, 768–1023px): Sidebar hidden by default (hamburger), full data tables still work
+- **Mobile** (`< md`, <768px): Bottom tab bar navigation, tables collapse to stacked cards, touch targets ≥44px
 
-**UI — date picker for navigation:** The existing `<Calendar>` + `<Popover>` combination from `src/components/ui/` handles date selection. This is already the shadcn date-picker pattern.
-
-**UI — summary card:** `<Card>` already installed.
-
-**Confidence:** HIGH — date-fns and the sql aggregation operators are already in the project.
+The current `AppShell` already has a hamburger + Sheet-based mobile sidebar. v1.2 replaces the mobile hamburger approach with a persistent bottom tab bar on small screens.
 
 ---
 
-### Feature 3: Quick-Record Payment (Select Loan Inline)
+## Recommended Stack
 
-This is the only feature requiring a new UI pattern. The existing record-payment form lives at `/loans/[loanId]/payments/new` and requires the user to already know the loan ID. A "quick-record" workflow needs an inline loan search/selection before recording the payment.
+### Core Technologies (all already installed)
 
-**The problem:** The codebase has no combobox or command palette component. The Select component from `@base-ui/react` does not handle async search within the dropdown.
+| Technology | Version | Purpose | Why Sufficient |
+|------------|---------|---------|----------------|
+| Tailwind CSS | v4 (CSS-first config) | Responsive breakpoints, safe-area utilities | Mobile-first breakpoint system with `sm:`, `md:`, `lg:` prefixes; `@theme` for custom breakpoints in `globals.css` |
+| shadcn/ui | 4.1.0 | Component registry | All UI primitives needed for layout restructuring exist |
+| @base-ui/react | 1.3.0 | Headless component primitives | Dialog, Sheet, Popover — used for mobile overlays |
+| lucide-react | 0.577.0 | Navigation icons for bottom tab bar | Already provides all icons needed for 5-tab bottom nav |
+| next/navigation | Next.js 16 | `usePathname()` for active tab detection | Already used in Sidebar component |
 
-**Solution: Build a loan search input using existing primitives.**
+### No New Dependencies Needed
 
-The `<Popover>` (base-ui, already installed) + `<Input>` + a TanStack Query loan search action is the correct approach. The pattern:
+| Capability | How to Achieve | Why No New Package |
+|------------|---------------|-------------------|
+| Bottom tab bar | Custom component using `<Link>`, `usePathname()`, `lucide-react` icons, Tailwind | 30-50 lines of code; no third-party nav library matches the project's design system |
+| Responsive tables → cards | Tailwind `hidden md:table` + conditional card rendering in same component | Pure CSS breakpoint technique, no table library needed |
+| Safe-area insets (iPhone notch) | CSS `env(safe-area-inset-bottom)` inline style on bottom tab bar | Browser-native API, no package needed |
+| `useMediaQuery` / mobile detection | Build a 10-line `use-mobile.ts` hook using `window.matchMedia` | Simpler than installing `react-responsive` or `use-media` |
+| Touch target sizing | Tailwind `min-h-[44px] min-w-[44px]` on interactive elements | CSS-only, no library |
+| Swipe gestures on drawers | Vaul is already shadcn's drawer backing library | Already available via the existing `<Sheet>` component on `@base-ui/react` |
 
-1. User types customer name or loan reference into a text input
-2. Input triggers a debounced Server Action call (`searchLoansAction`) that returns matching active loans
-3. Results render in a `<PopoverContent>` as a list of clickable items
-4. Selecting a loan populates the hidden `loanId` field and shows the selected loan's display name
+---
 
-This is a lightweight implementation of the combobox pattern using tools already installed — no `cmdk` or headless-ui Command component is needed.
+## New Components to Build (from existing primitives)
 
-**Why not add `cmdk`:** The `cmdk` package (used by shadcn's Command component) is a Radix-era dependency. This project uses base-ui primitives. Adding cmdk would introduce a Radix peer-dependency conflict given the project's explicit base-ui choice. The manual Popover + Input pattern is 30-40 lines of code with no new dependencies.
+| Component | File | Built From | Purpose |
+|-----------|------|-----------|---------|
+| `BottomTabBar` | `src/components/layout/bottom-tab-bar.tsx` | `<Link>`, `usePathname`, lucide icons, Tailwind | Mobile-only navigation bar pinned to viewport bottom |
+| `use-mobile` hook | `src/hooks/use-mobile.ts` | `window.matchMedia('(max-width: 767px)')` | Detects mobile viewport for conditional rendering |
+| `MobileCard` slot | Inline in each page component | `<Card>`, `<Badge>`, existing UI primitives | Stacked card layout shown only on `< md` |
 
-**Server Action for loan search:** A new `searchActiveLoansAction(query: string)` action — thin wrapper over a Drizzle query joining `loans` to `customers`, filtering by `ilike` on customer name and `eq(loans.status, 'active')`. Returns `{ id, customerName, principalAmount }` — lightweight.
+These are implementation artifacts, not library additions. They follow the same patterns already established in the codebase.
 
-**Quick-record dialog:** The existing `<Dialog>` component contains the form. The form itself is the current `RecordPaymentForm` minus the navigation, with loan selection prepended. Uses `useTransition` + Server Action — the established mutation pattern.
+---
 
-**Confidence:** HIGH for the pattern; HIGH that no new packages are needed.
+## Tailwind Breakpoint Strategy
+
+The project uses Tailwind v4 with CSS-first configuration. Breakpoints are defined in `globals.css` via `@theme`:
+
+```css
+/* Already in globals.css via @import "tailwindcss" */
+/* Default Tailwind v4 breakpoints apply: */
+/* sm: 640px, md: 768px, lg: 1024px, xl: 1280px */
+```
+
+**Pattern for bottom tab bar visibility:**
+
+```css
+/* Show bottom tab bar only below md breakpoint */
+.bottom-tab-bar {
+  display: flex;   /* visible on mobile */
+}
+
+@media (min-width: 48rem) {  /* md = 768px */
+  .bottom-tab-bar {
+    display: none;
+  }
+}
+```
+
+Tailwind utility equivalent: `flex md:hidden` on the tab bar container.
+
+**Pattern for sidebar visibility:**
+
+```
+hidden md:flex   ← desktop sidebar (already implemented in AppShell)
+```
+
+**Pattern for data table → card layout:**
+
+```
+hidden md:block  ← table wrapper (hide on mobile)
+block md:hidden  ← card list wrapper (show on mobile)
+```
+
+---
+
+## Safe-Area Insets (iOS Notch / Android Cutout)
+
+The bottom tab bar must sit above the home indicator bar on iPhone X+. This requires the `viewport-fit=cover` meta tag and CSS environment variables.
+
+**Required viewport meta tag** (add to `src/app/layout.tsx`):
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+```
+
+**Bottom tab bar padding** (inline style or custom Tailwind utility):
+
+```css
+padding-bottom: env(safe-area-inset-bottom, 0px);
+```
+
+No npm package is needed. This is a browser-native CSS function supported by all modern browsers including Chrome for Android, Safari iOS, and Firefox.
+
+---
+
+## Bottom Tab Bar Design
+
+The app has 9 navigation destinations in the sidebar. A mobile bottom tab bar should show 5 at most (thumb reachability constraint). The approach:
+
+**Primary tabs (always visible in bottom bar):**
+1. Dashboard — `LayoutDashboard` icon
+2. Customers — `Users` icon
+3. Loans — `Banknote` icon
+4. Payments — `CreditCard` icon
+5. More — `Menu` icon (opens a Sheet with the remaining destinations)
+
+**"More" sheet destinations (shown via bottom Sheet on tap):**
+- Watchlist, Creditors, Expenses & Income, Reports, Admin
+
+The "More" sheet uses the existing `<Sheet side="bottom">` component already in the codebase (via `@base-ui/react`). No new components needed.
+
+**Active state detection:** `usePathname()` from `next/navigation` — already used identically in `sidebar.tsx`.
+
+---
+
+## Mobile-Friendly Data Tables
+
+**Pattern:** Dual rendering within the same component — table for `md:` and above, card list for mobile. No new library. Tailwind visibility utilities handle the switch.
+
+```tsx
+{/* Desktop: full table */}
+<div className="hidden md:block">
+  <Table>...</Table>
+</div>
+
+{/* Mobile: stacked card list */}
+<div className="block md:hidden space-y-3">
+  {rows.map(row => (
+    <Card key={row.id} className="p-4">
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="font-medium">{row.name}</p>
+          <p className="text-sm text-muted-foreground">{row.subtitle}</p>
+        </div>
+        <Badge>{row.status}</Badge>
+      </div>
+    </Card>
+  ))}
+</div>
+```
+
+The `<Card>` component is already installed. This pattern is proven and requires zero additional dependencies.
+
+---
+
+## Touch Target Sizing
+
+Apple HIG and Google Material both specify 44×44pt as the minimum touch target. The existing Button component (`size="sm"` = `h-8`) is 32px — too small for primary mobile actions.
+
+**Fix:** Apply `min-h-[44px] min-w-[44px]` on buttons that serve as primary touch targets on mobile. This is a Tailwind utility — no new package needed. The fix is applied via responsive class:
+
+```tsx
+<Button className="h-8 md:h-8 min-h-[44px] md:min-h-0">
+```
+
+Or, more precisely, apply `touch-manipulation` and target enlargement only at `< md` viewport.
+
+---
+
+## Cypress Viewport Testing
+
+The existing Cypress test suite must be updated to test at both mobile and desktop viewports. Cypress 15 (already installed at ^15.12.0) supports `cy.viewport()` natively — no new plugin needed.
+
+**Standard Cypress viewport presets available:**
+- `cy.viewport('iphone-14')` — 390×844
+- `cy.viewport('ipad-2')` — 768×1024
+- `cy.viewport(1280, 800)` — desktop
+
+**Pattern for multi-viewport testing in existing spec files:**
+
+```typescript
+const viewports = [
+  { name: 'mobile', width: 390, height: 844 },
+  { name: 'desktop', width: 1280, height: 800 },
+]
+
+viewports.forEach(({ name, width, height }) => {
+  describe(`${name} viewport`, () => {
+    beforeEach(() => cy.viewport(width, height))
+    // tests here
+  })
+})
+```
+
+No new Cypress plugin is needed. `cypress-real-events` (already installed at ^1.15.0) covers touch events for swipe gesture testing.
 
 ---
 
 ## What NOT to Add
 
-| Package | Reason to skip |
-|---------|----------------|
-| `cmdk` | Radix dependency conflicts with base-ui; manual popover is sufficient |
-| `@tanstack/react-table` | Existing `<Table>` + client-side sort is enough at current data volumes; introduce only if performance issues emerge |
-| `react-hook-form` | Project deliberately avoids it per existing pattern (useTransition + manual validation) |
-| `zod` in Server Actions | Explicitly excluded per project memory: "No Zod in Server Actions" |
-| `nuqs` / URL state libraries | Payments list filter state in React `useState` is adequate; URL sync adds complexity without clear benefit for internal staff tool |
-| Any date library other than date-fns | Already installed at v4; do not add luxon, dayjs, or moment |
+| Package | Why to Avoid | What to Use Instead |
+|---------|-------------|---------------------|
+| `react-responsive` | Adds SSR hydration complexity; `window.matchMedia` hook does the same job in 10 lines | Custom `use-mobile.ts` hook |
+| `use-media` | Extra dependency for a 10-line hook | Custom `use-mobile.ts` hook |
+| `@radix-ui/react-navigation-menu` | Conflicts with `@base-ui/react` — this project explicitly uses base-ui, not Radix | Custom component with `<Link>` + `usePathname` |
+| `framer-motion` | Heavy (100KB+) for tab bar animation; Tailwind transitions + `tw-animate-css` (already installed) are sufficient | `transition-colors duration-150` Tailwind utilities |
+| `react-swipeable` | Bottom sheet swipe is handled by Vaul (already backing the `<Sheet>` component) | Existing `<Sheet>` from `@base-ui/react` |
+| `TanStack Table` (`@tanstack/react-table`) | Overkill for the mobile card pattern; table → card switch is a CSS visibility toggle | `hidden md:block` / `block md:hidden` Tailwind pattern |
+| Any native mobile framework (React Native, Capacitor, Ionic) | Explicitly out of scope — web-only per PROJECT.md | N/A |
+| `next-pwa` / `@ducanh2912/next-pwa` | PWA not in scope for v1.2 | N/A |
 
 ---
 
-## New Service Methods Required (no new libraries)
+## AppShell Restructuring Plan
 
-| Method | File | Pattern Mirrors |
-|--------|------|----------------|
-| `listPayments(filters, page)` | `payment.service.ts` | `searchCustomers()` in `customer.service.ts` |
-| `getDailyCollections(date)` | `payment.service.ts` | `listTransactions()` in `transaction.service.ts` |
-| `searchActiveLoans(query)` | `loan.service.ts` | `searchCustomers()` — ilike on customer name, filter active |
+The current `AppShell` handles mobile via a hamburger button → Sheet drawer for the sidebar. v1.2 replaces this with:
 
----
-
-## New Actions Required (no new libraries)
-
-| Action | File | Notes |
-|--------|------|-------|
-| `listPaymentsAction(filters, page)` | `payment.actions.ts` | Extend existing file |
-| `getDailyCollectionsAction(date)` | `payment.actions.ts` | Extend existing file |
-| `searchActiveLoansAction(query)` | `loan.actions.ts` | Used by quick-record loan picker |
-
----
-
-## New UI Components Required (built from existing primitives)
-
-| Component | Built From | Purpose |
-|-----------|-----------|---------|
-| `PaymentSearchBar` | `<Input>`, `<Select>`, `<Calendar>`, `<Popover>`, `<Button>` | Filter bar for payments list |
-| `LoanSearchCombobox` | `<Popover>`, `<Input>`, TanStack Query | Inline loan picker for quick-record |
-| `QuickRecordPaymentDialog` | `<Dialog>`, `LoanSearchCombobox`, existing form fields | Quick-record without navigation |
-
----
-
-## Drizzle Operators Needed
-
-All are already imported in the codebase. Needed additions to `payment.service.ts`:
-
-```typescript
-import { eq, and, gte, lte, ilike, isNull, asc, desc, count, sql } from "drizzle-orm"
-// gte, lte, ilike, count, sql — already used in transaction.service.ts
-// eq, and, isNull, asc — already used in payment.service.ts
+**Before:**
+```
+[TopBar with hamburger] → [Sheet sidebar on mobile] + [inline sidebar on desktop]
+[main content area]
 ```
 
-A join from `payments` to `loans` to `customers`:
-
-```typescript
-db.select({
-  payment: payments,
-  loanId: loans.id,
-  customerName: customers.fullName,
-})
-.from(payments)
-.innerJoin(loans, eq(payments.loanId, loans.id))
-.innerJoin(customers, eq(loans.customerId, customers.id))
-.where(and(...conditions))
-.orderBy(desc(payments.paymentDate))
-.limit(pageSize)
-.offset(page * pageSize)
+**After:**
+```
+[TopBar — desktop only shows hamburger for collapse, mobile shows no hamburger]
+[sidebar — md:flex hidden on mobile]
+[main content area — pb-16 md:pb-0 to clear bottom tab bar]
+[BottomTabBar — flex md:hidden, position: fixed bottom-0]
 ```
 
-Drizzle supports multi-table joins — this is standard usage, no new operators.
-
----
-
-## Type Additions Required
-
-New TypeScript types in `src/types/index.ts`:
-
-```typescript
-// Payment with joined customer + loan context
-export type PaymentWithContext = Payment & {
-  customerName: string
-  loanId: string
-}
-
-// Filter params for payment list
-export interface PaymentListFilters {
-  customerName?: string
-  dateFrom?: string   // ISO date string
-  dateTo?: string     // ISO date string
-  loanId?: string
-  page?: number
-  pageSize?: number
-}
-
-// Daily collections aggregate
-export interface DailyCollectionsSummary {
-  date: string
-  totalCollected: string       // NUMERIC string
-  paymentCount: number
-  payments: PaymentWithContext[]
-}
-```
-
----
-
-## revalidatePath Coverage
-
-The existing `recordPaymentAction` revalidates `/loans/[loanId]`. The new quick-record action must additionally revalidate:
-
-- `/payments` — the new global list page
-- `/payments/daily` — the new daily view
-
-This requires no new library, just additional `revalidatePath()` calls in the Server Action.
+The `TopBar` hamburger button gets `hidden md:hidden` (remove entirely on mobile) since the bottom tab bar replaces it. The main content area needs `pb-16` (64px) on mobile to prevent content from hiding behind the fixed tab bar.
 
 ---
 
@@ -204,25 +260,29 @@ This requires no new library, just additional `revalidatePath()` calls in the Se
 
 | Area | Confidence | Reason |
 |------|------------|--------|
-| No new libraries needed | HIGH | Direct code inspection of installed packages confirms all primitives exist |
-| Drizzle join + filter pattern | HIGH | `transaction.service.ts` already uses gte/lte/count/sql; `customer.service.ts` uses ilike + pagination |
-| TanStack Query hook pattern | HIGH | `use-customers.ts` is a verbatim template |
-| LoanSearchCombobox from Popover | HIGH | `<Popover>` and `<Input>` are installed; manual implementation avoids cmdk/Radix conflict |
-| Daily collections aggregation | HIGH | `sql\`sum(...)\`` pattern confirmed present in codebase |
-| base-ui combobox (no cmdk) | HIGH | Confirmed: no cmdk in package.json, no Radix imports in project |
+| No new npm packages needed | HIGH | Direct inspection of package.json confirms Tailwind v4, lucide-react, base-ui/react, Sheet, Card all installed |
+| Bottom tab bar implementability | HIGH | Pattern is pure HTML/CSS/React; `usePathname` already used identically in sidebar.tsx |
+| Safe-area-inset browser support | HIGH | MDN documents universal support across Chrome, Safari, Firefox, Edge |
+| Table → card responsive pattern | HIGH | Standard Tailwind `hidden md:block` pattern; Card component already installed |
+| Cypress multi-viewport testing | HIGH | `cy.viewport()` documented in Cypress 15 official docs; cypress-real-events already installed |
+| Touch target fix via Tailwind | HIGH | CSS min-height/min-width are universally supported |
 
 ---
 
 ## Sources
 
 - `/Users/faridmatovu/projects/money-lending/package.json` — installed versions (direct inspection)
-- `/Users/faridmatovu/projects/money-lending/src/services/transaction.service.ts` — gte/lte/sql aggregation pattern
-- `/Users/faridmatovu/projects/money-lending/src/services/customer.service.ts` — ilike + pagination pattern
-- `/Users/faridmatovu/projects/money-lending/src/services/payment.service.ts` — existing payment service patterns
-- `/Users/faridmatovu/projects/money-lending/src/hooks/use-customers.ts` — TanStack Query hook pattern
-- `/Users/faridmatovu/projects/money-lending/src/components/ui/popover.tsx` — base-ui Popover confirmed installed
-- `/Users/faridmatovu/projects/money-lending/src/components/ui/calendar.tsx` — react-day-picker Calendar confirmed installed
-- `/Users/faridmatovu/projects/money-lending/src/app/(app)/customers/page.tsx` — pagination + search pattern
-- `/Users/faridmatovu/projects/money-lending/src/app/(app)/loans/[loanId]/payments/new/record-payment-form.tsx` — existing payment form pattern
-- `/Users/faridmatovu/projects/money-lending/src/actions/payment.actions.ts` — existing action + revalidatePath pattern
-- Project memory: "No Zod in Server Actions", "Use Server Actions instead of Route Handlers", base-ui not Radix
+- `/Users/faridmatovu/projects/money-lending/src/components/layout/app-shell.tsx` — current AppShell structure
+- `/Users/faridmatovu/projects/money-lending/src/components/layout/sidebar.tsx` — `usePathname` active state pattern
+- `/Users/faridmatovu/projects/money-lending/src/components/ui/` — inventory of existing UI primitives
+- [shadcn/ui Tailwind v4 changelog](https://ui.shadcn.com/docs/changelog/2025-02-tailwind-v4) — Tailwind v4 component compatibility confirmed (MEDIUM confidence — WebSearch)
+- [GitHub issue #8847 — Bottom Navigation component request](https://github.com/shadcn-ui/ui/issues/8847) — confirms no official shadcn bottom nav component exists; custom build required (HIGH confidence)
+- [GitHub discussion #5730 — Mobile bottom tab navigation](https://github.com/shadcn-ui/ui/discussions/5730) — community pattern validation (MEDIUM confidence)
+- [MDN env() CSS function](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Values/env) — safe-area-inset universal browser support (HIGH confidence)
+- [Cypress viewport docs](https://docs.cypress.io/api/commands/viewport) — cy.viewport() API confirmation (HIGH confidence)
+- [Tailwind responsive design docs](https://tailwindcss.com/docs/responsive-design) — breakpoint strategy (HIGH confidence)
+
+---
+
+*Stack research for: v1.2 Responsive — Mobile + Desktop layouts*
+*Researched: 2026-03-24*
