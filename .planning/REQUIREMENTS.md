@@ -1,0 +1,91 @@
+# Requirements: Money Lending Management System
+
+**Defined:** 2026-03-24
+**Core Value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
+
+## v1.2 Requirements
+
+Requirements for responsive mobile + desktop milestone. Each maps to roadmap phases.
+
+### Navigation
+
+- [ ] **NAV-01**: Mobile bottom tab bar with 5 primary tabs (Dashboard, Customers, Payments, Loans, More)
+- [ ] **NAV-02**: "More" sheet showing remaining nav items (Creditors, Expenses, Income, Reports, Watchlist)
+- [ ] **NAV-03**: Sidebar hidden on mobile, visible on desktop (md+ breakpoint)
+- [ ] **NAV-04**: Active tab state indicator with smooth transitions
+- [ ] **NAV-05**: Safe-area inset padding for iPhone home indicator
+
+### Responsive Layouts
+
+- [ ] **RESP-01**: Dashboard KPI cards and charts reflow to single column on mobile
+- [ ] **RESP-02**: Data tables switch to stacked card layout on mobile (CSS show/hide, no JS)
+- [ ] **RESP-03**: All forms render single-column on mobile
+- [ ] **RESP-04**: Collapsible filter panels on mobile (expanded by default on desktop)
+- [ ] **RESP-05**: Sticky table headers on scroll (desktop)
+- [ ] **RESP-06**: Remove hardcoded `p-6` padding — use responsive `p-4 md:p-6`
+- [ ] **RESP-07**: Responsive card layouts for: Customers, Loans, Payments, Creditors, Expenses, Income, Watchlist
+
+### Touch Optimization
+
+- [ ] **TOUCH-01**: All interactive elements meet 44px minimum touch target (WCAG 2.5.8)
+- [ ] **TOUCH-02**: DrawerDialog component — dialog on desktop, bottom drawer on mobile
+- [ ] **TOUCH-03**: Swipe gestures for mobile navigation where applicable
+
+### Test Compatibility
+
+- [ ] **TEST-01**: Add `data-testid` attributes to nav elements and table rows before layout changes
+- [ ] **TEST-02**: All existing Cypress specs pass at default (desktop) viewport after responsive changes
+- [ ] **TEST-03**: Mobile viewport test blocks added to all existing Cypress spec files
+- [ ] **TEST-04**: New Cypress specs for bottom tab bar and mobile navigation
+
+## Future Requirements
+
+### Advanced Mobile
+
+- **MOB-01**: Offline mode with service worker caching
+- **MOB-02**: Pull-to-refresh on list pages
+- **MOB-03**: Push notifications via PWA
+
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| Native mobile app (iOS/Android) | Web responsive is sufficient for lending staff |
+| PWA install prompt | Deferred — evaluate after responsive launch |
+| Offline mode | Not required per project constraints |
+| Biometric authentication | Beyond current auth scope |
+
+## Traceability
+
+Which phases cover which requirements. Updated during roadmap creation.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| NAV-01 | — | Pending |
+| NAV-02 | — | Pending |
+| NAV-03 | — | Pending |
+| NAV-04 | — | Pending |
+| NAV-05 | — | Pending |
+| RESP-01 | — | Pending |
+| RESP-02 | — | Pending |
+| RESP-03 | — | Pending |
+| RESP-04 | — | Pending |
+| RESP-05 | — | Pending |
+| RESP-06 | — | Pending |
+| RESP-07 | — | Pending |
+| TOUCH-01 | — | Pending |
+| TOUCH-02 | — | Pending |
+| TOUCH-03 | — | Pending |
+| TEST-01 | — | Pending |
+| TEST-02 | — | Pending |
+| TEST-03 | — | Pending |
+| TEST-04 | — | Pending |
+
+**Coverage:**
+- v1.2 requirements: 19 total
+- Mapped to phases: 0
+- Unmapped: 19 ⚠️
+
+---
+*Requirements defined: 2026-03-24*
+*Last updated: 2026-03-24 after initial definition*
