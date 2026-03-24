@@ -200,7 +200,7 @@ export function DailyCollectionsTab() {
             </TableHeader>
             <TableBody>
               {collections!.rows.map((row) => (
-                <TableRow key={row.paymentId}>
+                <TableRow key={row.paymentId} data-testid="data-row">
                   <TableCell>{row.customerName}</TableCell>
                   <TableCell>
                     <span className="text-xs font-mono tabular-nums">
@@ -278,7 +278,7 @@ export function DailyCollectionsTab() {
             </TableHeader>
             <TableBody>
               {dueLoans!.map((loan) => (
-                <TableRow key={loan.loanId}>
+                <TableRow key={loan.loanId} data-testid="data-row">
                   <TableCell>{loan.customerName}</TableCell>
                   <TableCell>
                     <span className="text-xs font-mono tabular-nums">

@@ -78,7 +78,7 @@ export function CreditorProfileClient({
               </TableHeader>
               <TableBody>
                 {dashboard.investments.map((inv) => (
-                  <TableRow key={inv.id}>
+                  <TableRow key={inv.id} data-testid="data-row">
                     <TableCell className="font-mono tabular-nums">{formatDate(inv.investmentDate)}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{formatUGX(inv.amount)}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{formatRate(inv.interestRateMonthly)}</TableCell>
@@ -110,7 +110,7 @@ export function CreditorProfileClient({
               </TableHeader>
               <TableBody>
                 {repayments.map((repayment) => (
-                  <TableRow key={repayment.id}>
+                  <TableRow key={repayment.id} data-testid="data-row">
                     <TableCell className="font-mono tabular-nums">{formatDate(repayment.repaymentDate)}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{formatUGX(repayment.amount)}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">{formatUGX(repayment.interestPortion)}</TableCell>

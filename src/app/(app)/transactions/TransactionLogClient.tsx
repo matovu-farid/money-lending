@@ -269,7 +269,7 @@ export function TransactionLogClient({
             </TableHeader>
             <TableBody>
               {transactions.map((tx) => (
-                <TableRow key={tx.id}>
+                <TableRow key={tx.id} data-testid="data-row">
                   <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>
                   <TableCell>
                     {tx.type === "credit" ? (

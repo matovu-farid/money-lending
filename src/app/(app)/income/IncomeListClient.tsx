@@ -259,6 +259,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
               {localTransactions.map((tx) => (
                 <TableRow
                   key={tx.id}
+                  data-testid="data-row"
                   className={tx.isOptimistic ? "opacity-50" : ""}
                 >
                   <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>

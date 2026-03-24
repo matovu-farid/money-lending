@@ -105,7 +105,7 @@ export function PortfolioClient({
             </TableHeader>
             <TableBody>
               {data.map((entry) => (
-                <TableRow key={entry.loanId}>
+                <TableRow key={entry.loanId} data-testid="data-row">
                   <TableCell className="font-medium">
                     {entry.customerName}
                   </TableCell>

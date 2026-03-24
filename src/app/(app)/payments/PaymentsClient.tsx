@@ -455,7 +455,7 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
             </TableHeader>
             <TableBody>
               {rows.map((row) => (
-                <TableRow key={row.id}>
+                <TableRow key={row.id} data-testid="data-row">
                   <TableCell className="font-mono tabular-nums">{formatDate(row.paymentDate)}</TableCell>
                   <TableCell>{row.customerName}</TableCell>
                   <TableCell>

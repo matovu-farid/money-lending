@@ -126,7 +126,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto py-3 space-y-4">
+        <nav data-testid="sidebar-nav" className="flex-1 overflow-y-auto py-3 space-y-4">
           {navGroups.map((group, groupIndex) => (
             <div key={groupIndex}>
               {group.label && !collapsed && (

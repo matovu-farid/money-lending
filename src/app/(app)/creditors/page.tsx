@@ -94,7 +94,7 @@ export default async function CreditorsPage() {
           </TableHeader>
           <TableBody>
             {creditors.map((creditor) => (
-              <TableRow key={creditor.id}>
+              <TableRow key={creditor.id} data-testid="data-row">
                 <TableCell className="font-medium">{creditor.name}</TableCell>
                 <TableCell>{creditor.contact}</TableCell>
                 <TableCell>{creditor.address}</TableCell>

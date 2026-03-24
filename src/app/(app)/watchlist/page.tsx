@@ -103,6 +103,7 @@ export default function WatchlistPage() {
               {entries.map((entry) => (
                 <TableRow
                   key={entry.loanId}
+                  data-testid="data-row"
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => router.push(`/customers/${entry.customerId}`)}
                   role="button"
