@@ -239,13 +239,13 @@ describe("Design System — Sovereign Ledger", () => {
 
         // Navigate to loans list to find loan ID
         cy.visit("/loans")
-        cy.get("[data-slot=table] tbody tr", { timeout: 10000 }).should(
+        cy.get("[data-testid='data-row']", { timeout: 10000 }).should(
           "have.length.gte",
           1
         )
 
         // Get the loan ID from the row data and navigate to loan detail
-        cy.get("[data-slot=table] tbody tr")
+        cy.get("[data-testid='data-row']")
           .first()
           .invoke("attr", "data-loan-id")
           .then((loanId) => {
@@ -255,7 +255,7 @@ describe("Design System — Sovereign Ledger", () => {
               cy.url().should("include", "/receipts/disbursement/")
             } else {
               // Fallback: verify the loans list loaded and has rows
-              cy.get("[data-slot=table] tbody tr").should("exist")
+              cy.get("[data-testid='data-row']").should("exist")
             }
           })
       })

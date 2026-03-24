@@ -34,7 +34,7 @@ describe("Admin User Management", () => {
   it("shows Last Active date column (AUTH-04)", () => {
     cy.visit("/admin")
     // en-UG locale formats dates as "21 Mar 2026" (day month year)
-    cy.get("table tbody tr")
+    cy.get("[data-testid='data-row']")
       .first()
       .find("td")
       .last()
