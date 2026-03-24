@@ -71,7 +71,10 @@ Plans:
   3. The active tab is visually highlighted with a smooth indicator transition
   4. At tablet/desktop viewport (768px+), the sidebar is visible and the bottom tab bar is absent from the DOM
   5. On iPhone (viewport-fit=cover), the bottom tab bar clears the home indicator via safe-area-inset-bottom padding
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 12-01-PLAN.md — Build BottomTabBar, MoreSheet, wire into AppShell, clean up TopBar, add viewport export
+- [ ] 12-02-PLAN.md — Cypress E2E tests for mobile navigation and full regression check
 
 ### Phase 13: Responsive Table Primitive + Card Layouts
 **Goal**: All list pages render stacked card layouts on mobile and standard tables on desktop using a single CSS-controlled primitive
@@ -131,7 +134,7 @@ Plans:
 | 9. Design System Overhaul | v1.1 | 6/6 | Complete | 2026-03-23 |
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
 | 11. Test Selector Foundation | 2/2 | Complete    | 2026-03-24 | - |
-| 12. Mobile Navigation | v1.2 | 0/TBD | Not started | - |
+| 12. Mobile Navigation | v1.2 | 0/2 | Not started | - |
 | 13. Responsive Table + Cards | v1.2 | 0/TBD | Not started | - |
 | 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |
 | 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
