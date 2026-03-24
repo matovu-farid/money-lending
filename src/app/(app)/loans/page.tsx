@@ -107,7 +107,7 @@ export default function LoansPage() {
 
   if (isLoading) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <p className="text-muted-foreground">Loading loans...</p>
       </div>
     )
@@ -115,14 +115,14 @@ export default function LoansPage() {
 
   if (isError) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <p className="text-destructive">Error loading loans</p>
       </div>
     )
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
@@ -155,7 +155,7 @@ export default function LoansPage() {
           </TableHeader>
           <TableBody>
             {loans.map((loan) => (
-              <TableRow key={loan.id}>
+              <TableRow key={loan.id} data-testid="data-row">
                 <TableCell className="font-mono text-xs tabular-nums">{loan.id.slice(-5)}</TableCell>
                 <TableCell>{loan.customerName}</TableCell>
                 <TableCell className="text-right font-mono tabular-nums">UGX {formatUGX(loan.principalAmount)}</TableCell>

@@ -23,7 +23,7 @@ export default async function PaymentsPage({
   const initialData = ("data" in result && result.data) ? result.data : { rows: [], total: 0 }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <PaymentsClient
         initialData={initialData}
         initialPage={page}

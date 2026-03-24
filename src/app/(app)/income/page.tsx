@@ -10,7 +10,7 @@ export default async function IncomePage() {
   ])
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <IncomeListClient
         transactions={transactionsResult.data}
         categories={categoriesResult}

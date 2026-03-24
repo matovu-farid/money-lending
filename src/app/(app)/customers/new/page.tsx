@@ -82,7 +82,7 @@ export default function NewCustomerPage() {
   }
 
   return (
-    <div className="p-6 max-w-lg">
+    <div className="p-4 md:p-6 max-w-lg">
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Register Customer</h1>
         <p className="text-muted-foreground text-sm mt-1">

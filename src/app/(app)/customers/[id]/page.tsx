@@ -294,7 +294,7 @@ export default function CustomerProfilePage() {
 
   if (loading) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <p className="text-muted-foreground">Loading customer...</p>
       </div>
     )
@@ -302,7 +302,7 @@ export default function CustomerProfilePage() {
 
   if (notFound || !customer) {
     return (
-      <div className="p-6 space-y-4">
+      <div className="p-4 md:p-6 space-y-4">
         <p className="text-destructive">Customer not found.</p>
         <Button variant="outline" onClick={() => router.push("/customers")}>
           Back to Customers
@@ -317,7 +317,7 @@ export default function CustomerProfilePage() {
     : `Change status to ${pendingStatus ? statusLabel(pendingStatus) : ""}?`
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
+    <div className="p-4 md:p-6 space-y-6 max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">{customer.fullName}</h1>
@@ -549,6 +549,7 @@ export default function CustomerProfilePage() {
                           {item.payments.map((payment) => (
                             <TableRow
                               key={payment.id}
+                              data-testid="data-row"
                               className={cn(payment.deletedAt && "opacity-60")}
                             >
                               <TableCell className={cn(payment.deletedAt && "line-through text-muted-foreground")}>

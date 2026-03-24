@@ -10,7 +10,7 @@ export default async function ExpensesPage() {
   ])
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <ExpenseListClient
         transactions={transactionsResult.data}
         categories={categoriesResult}

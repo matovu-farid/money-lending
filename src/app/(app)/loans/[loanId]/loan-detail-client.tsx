@@ -247,7 +247,7 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
   const loanRef = `LOAN-${loan.id.slice(0, 8).toUpperCase()}`
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
+    <div className="p-4 md:p-6 space-y-6 max-w-5xl">
       {/* Back link */}
       <Link href="/loans" className={cn(buttonVariants({ variant: "outline" }))}>
         Back to Loans
@@ -351,7 +351,7 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
                 const isDeleted = payment.deletedAt !== null
                 const cellClass = isDeleted ? "opacity-60 line-through" : ""
                 return (
-                  <TableRow key={payment.id}>
+                  <TableRow key={payment.id} data-testid="data-row">
                     <TableCell className={cn("font-mono tabular-nums", cellClass)}>
                       {formatDate(payment.paymentDate)}
                     </TableCell>

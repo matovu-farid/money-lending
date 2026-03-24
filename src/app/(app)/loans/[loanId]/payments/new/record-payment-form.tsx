@@ -66,7 +66,7 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
   }
 
   return (
-    <div className="p-6 max-w-xl">
+    <div className="p-4 md:p-6 max-w-xl">
       <div className="mb-4">
         <Link
           href={`/loans/${loanId}`}

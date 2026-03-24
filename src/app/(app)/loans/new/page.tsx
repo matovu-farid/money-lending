@@ -158,7 +158,7 @@ function NewLoanPageInner() {
   }
 
   return (
-    <div className="p-6 max-w-xl">
+    <div className="p-4 md:p-6 max-w-xl">
       <div className="mb-4">
         <h1 className="text-2xl font-semibold tracking-tight">Issue New Loan</h1>
         <p className="text-muted-foreground text-sm mt-1">
@@ -462,7 +462,7 @@ function NewLoanPageInner() {
 
 export default function NewLoanPage() {
   return (
-    <Suspense fallback={<div className="p-6">Loading...</div>}>
+    <Suspense fallback={<div className="p-4 md:p-6">Loading...</div>}>
       <NewLoanPageInner />
     </Suspense>
   )

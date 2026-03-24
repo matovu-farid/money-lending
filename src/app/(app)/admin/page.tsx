@@ -95,7 +95,7 @@ export default function AdminPage() {
 
   if (!session || loading) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <p className="text-muted-foreground">Loading...</p>
       </div>
     )
@@ -103,7 +103,7 @@ export default function AdminPage() {
 
   if (actorLevel < ROLE_LEVELS.admin) {
     return (
-      <div className="p-6">
+      <div className="p-4 md:p-6">
         <p className="text-destructive font-medium">Access denied.</p>
         <p className="text-muted-foreground text-sm mt-1">
           You need Admin or Super Admin permissions to view this page.
@@ -115,7 +115,7 @@ export default function AdminPage() {
   const roleOptions = getRoleOptions(actorRole)
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="p-4 md:p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
@@ -145,7 +145,7 @@ export default function AdminPage() {
               const isUpdating = updatingUserId === user.id
 
               return (
-                <TableRow key={user.id}>
+                <TableRow key={user.id} data-testid="data-row">
                   <TableCell className="font-medium">{user.name}</TableCell>
                   <TableCell>{user.email}</TableCell>
                   <TableCell>
