@@ -124,7 +124,10 @@ Plans:
   1. All existing Cypress spec files pass when run at default (desktop) viewport after all responsive changes
   2. Every existing spec file contains a mobile viewport block (`cy.viewport(390, 844)`) covering rendering, navigation, and key actions
   3. A dedicated spec for the bottom tab bar verifies tab switching, "More" sheet, active state, and safe-area layout at mobile viewport
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 16-01-PLAN.md — Tab bar spec + mobile viewport blocks for table/form/detail specs (14 files)
+- [ ] 16-02-PLAN.md — Mobile viewport blocks for remaining 12 specs + full suite desktop regression
 
 ## Progress
 
@@ -147,4 +150,4 @@ Plans:
 | 13. Responsive Table + Cards | 2/2 | Complete    | 2026-03-25 | - |
 | 14. Forms, Filters & Polish | 2/2 | Complete    | 2026-03-25 | - |
 | 15. Touch Optimization | 2/2 | Complete    | 2026-03-25 | - |
-| 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
+| 16. Cypress Mobile Coverage | v1.2 | 0/2 | Not started | - |
