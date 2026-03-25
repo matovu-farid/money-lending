@@ -111,7 +111,10 @@ Plans:
   1. All buttons, links, and action menu triggers have a minimum 44x44px tap target (WCAG 2.5.8)
   2. Edit and delete dialogs open as bottom drawers on mobile and as centered modals on desktop
   3. Mobile navigation supports swipe gestures where applicable without conflicting with browser back gestures
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 15-01-PLAN.md — Touch targets (button.tsx, DropdownMenuTrigger, FilterPanel) + DrawerDialog component
+- [ ] 15-02-PLAN.md — Migrate all Dialog/Sheet call sites to DrawerDialog, MoreSheet drag handle, Cypress E2E
 
 ### Phase 16: Cypress Mobile Coverage
 **Goal**: All existing Cypress specs pass at desktop viewport and every page has mobile viewport test coverage; tab bar navigation is fully tested
@@ -143,5 +146,5 @@ Plans:
 | 12. Mobile Navigation | v1.2 | 2/2 | Complete | 2026-03-25 |
 | 13. Responsive Table + Cards | 2/2 | Complete    | 2026-03-25 | - |
 | 14. Forms, Filters & Polish | 2/2 | Complete    | 2026-03-25 | - |
-| 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
+| 15. Touch Optimization | v1.2 | 0/2 | Not started | - |
 | 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
