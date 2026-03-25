@@ -29,13 +29,14 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - ✓ DS-01–12: Sovereign Ledger design system — OKLCH tokens, glassmorphism, tonal hierarchy, font-mono numerics — v1.1
 - ✓ TEST-01: Stable data-testid selectors on sidebar nav and data table rows — v1.2 Phase 11
 - ✓ RESP-06: Responsive p-4 md:p-6 page padding across all 22 pages — v1.2 Phase 11
+- ✓ NAV-01–05: Mobile bottom tab bar, More sheet, responsive sidebar/tab switching, active indicator, safe-area padding — v1.2 Phase 12
 
 ### Active
 
 <!-- v1.2 Responsive — making the app work on mobile, tablet, and desktop -->
 
 - [ ] Mobile-first responsive layouts across all pages
-- [ ] Bottom tab bar navigation on mobile
+- [x] Bottom tab bar navigation on mobile
 - [ ] Responsive data tables (card layout on mobile, table on desktop)
 - [ ] Touch-friendly form inputs and actions
 - [ ] Cypress tests updated for responsive viewports
@@ -104,4 +105,4 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | Loans created as active (no pending) | Disbursement is off-app; recording = it happened | ✓ Good |
 
 ---
-*Last updated: 2026-03-25 after Phase 11 (test-selector-foundation) complete*
+*Last updated: 2026-03-25 after Phase 12 (mobile-navigation) complete*
