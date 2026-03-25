@@ -49,7 +49,7 @@ Declared values (multiples of 4). Inherited from project — Phase 15 does not c
 | Touch target minimum height | 44px | All interactive elements at mobile viewport | WCAG 2.5.8 — TOUCH-01 |
 | Touch target minimum width | 44px | Icon buttons and DropdownMenuTrigger at mobile viewport | WCAG 2.5.8 — TOUCH-01 |
 | Drawer popup max height | 90dvh | DrawerDialogContent mobile popup | Prevents drawer covering entire screen |
-| Drag handle bar height | 6px (h-1.5) | DrawerDialog drag handle | Visual affordance for swipe interaction |
+| Drag handle bar height | 8px (h-2) | DrawerDialog drag handle | Visual affordance for swipe interaction |
 | Drag handle bar width | 48px (w-12) | DrawerDialog drag handle | Standard mobile drawer drag indicator |
 | Bottom tab bar height | 56px (h-14) | BottomTabBar | Already meets TOUCH-01; no change needed |
 
@@ -64,7 +64,6 @@ Inherited from project design system. Phase 15 does not introduce new type style
 | Body | 14px (text-sm) | 400 (normal) | 1.5 | globals.css, dialog.tsx |
 | Label | 12.8px (text-[0.8rem]) | 500 (medium) | 1.25 | button.tsx sm size |
 | Heading | 16px (text-base) | 500 (medium) | 1.2 (leading-none) | dialog.tsx DialogTitle, sheet.tsx SheetTitle |
-| Display | 20px (text-xl) | 600 (semibold) | 1.2 | Page headings (h1) — not introduced in Phase 15 |
 
 **Letter spacing:** -0.02em on h1, h2, h3 (globals.css `@layer base`).
 
@@ -137,7 +136,7 @@ Side-sheet edit forms (`PaymentsClient`, `ExpenseListClient`, `IncomeListClient`
 - Padding: `p-4` (16px)
 - z-index: `z-50` (above BottomTabBar at z-40)
 - data-slot: `drawer-dialog-content`
-- Drag handle: `<div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-muted-foreground/30" />` at top of popup
+- Drag handle: `<div className="mx-auto mb-4 h-2 w-12 rounded-full bg-muted-foreground/30" />` at top of popup
 - Overlay: `bg-black/10` fixed inset-0
 - swipeDirection: `"down"` on Drawer.Root
 - Animation: `data-open:animate-in data-open:slide-in-from-bottom` / `data-closed:animate-out data-closed:slide-out-to-bottom`
@@ -206,7 +205,7 @@ Already-compliant elements (no changes needed):
 
 **Visual drag handle** inside `Drawer.Popup` at top:
 ```
-<div className="mx-auto mb-2 h-1.5 w-12 rounded-full bg-muted-foreground/30" />
+<div className="mx-auto mb-2 h-2 w-12 rounded-full bg-muted-foreground/30" />
 ```
 
 **z-index:** Drawer backdrop `z-50`, Drawer popup `z-50` — matches existing Sheet and Dialog; correctly above BottomTabBar at `z-40`.
