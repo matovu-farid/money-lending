@@ -85,7 +85,10 @@ Plans:
   2. At desktop viewport, the same pages show the original table layout — no regressions
   3. The Dashboard KPI cards and charts reflow to a single column on mobile
   4. The card/table switch is controlled by CSS breakpoints with no JavaScript viewport detection (no hydration mismatch)
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 13-01-PLAN.md — Build ResponsiveTable primitive, wire Customers/Creditors/Watchlist, fix Dashboard grid
+- [ ] 13-02-PLAN.md — Wire Loans/Payments/Expenses/Income, full Cypress E2E coverage
 
 ### Phase 14: Forms, Filters, and Table Polish
 **Goal**: All forms render single-column on mobile, filter panels are collapsible, and table headers stick on desktop scroll
@@ -133,9 +136,9 @@ Plans:
 | 8. Quick-Record Workflow | v1.1 | 2/2 | Complete | 2026-03-23 |
 | 9. Design System Overhaul | v1.1 | 6/6 | Complete | 2026-03-23 |
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
-| 11. Test Selector Foundation | 2/2 | Complete    | 2026-03-24 | - |
-| 12. Mobile Navigation | 2/2 | Complete    | 2026-03-25 | - |
-| 13. Responsive Table + Cards | v1.2 | 0/TBD | Not started | - |
+| 11. Test Selector Foundation | v1.2 | 2/2 | Complete | 2026-03-24 |
+| 12. Mobile Navigation | v1.2 | 2/2 | Complete | 2026-03-25 |
+| 13. Responsive Table + Cards | v1.2 | 0/2 | Planning | - |
 | 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |
 | 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
 | 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
