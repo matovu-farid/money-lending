@@ -3,14 +3,7 @@
 import { useEffect, useState, useTransition } from "react"
 import { useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -231,61 +224,73 @@ export function IncomeListClient({ transactions: initialTransactions, categories
           </Button>
         </div>
 
-        {localTransactions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <p className="text-lg font-medium">No income recorded</p>
-            <p className="text-muted-foreground">
-              Record your first income entry to start tracking inflows.
-            </p>
-            <Button
-              onClick={() => { resetForm(); setIsSheetOpen(true) }}
-              disabled={addMutation.isPending}
-            >
-              Add Income
-            </Button>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Notes</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {localTransactions.map((tx) => (
-                <TableRow
-                  key={tx.id}
-                  data-testid="data-row"
-                  className={tx.isOptimistic ? "opacity-50" : ""}
+        <ResponsiveTable<Transaction>
+          columns={[
+            {
+              key: "date",
+              header: "Date",
+              render: (tx) => <span className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</span>,
+            },
+            {
+              key: "category",
+              header: "Category",
+              primary: true,
+              render: (tx) => tx.categoryName,
+            },
+            {
+              key: "amount",
+              header: "Amount",
+              align: "right",
+              render: (tx) => formatAmount(tx.amount),
+            },
+            {
+              key: "notes",
+              header: "Notes",
+              hideInCard: true,
+              render: (tx) => <span className="text-muted-foreground">{tx.description ?? "\u2014"}</span>,
+            },
+            {
+              key: "actions",
+              header: "",
+              hideInCard: false,
+              render: (tx) => (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => setDeleteTarget(tx.id)}
+                  disabled={
+                    tx.isOptimistic ||
+                    deleteMutation.isPending ||
+                    (deleteMutation.variables === tx.id && deleteMutation.isPending)
+                  }
                 >
-                  <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>
-                  <TableCell>{tx.categoryName}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{formatAmount(tx.amount)}</TableCell>
-                  <TableCell className="text-muted-foreground">{tx.description ?? "—"}</TableCell>
-                  <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive"
-                      onClick={() => setDeleteTarget(tx.id)}
-                      disabled={
-                        tx.isOptimistic ||
-                        deleteMutation.isPending ||
-                        (deleteMutation.variables === tx.id && deleteMutation.isPending)
-                      }
-                    >
-                      Delete
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                  Delete
+                </Button>
+              ),
+            },
+          ]}
+          rows={localTransactions}
+          getRowKey={(tx) => tx.id}
+          getRowProps={(tx) => ({
+            "data-testid": "data-row",
+            className: tx.isOptimistic ? "opacity-50" : "",
+          })}
+          emptyState={
+            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+              <p className="text-lg font-medium">No income recorded</p>
+              <p className="text-muted-foreground">
+                Record your first income entry to start tracking inflows.
+              </p>
+              <Button
+                onClick={() => { resetForm(); setIsSheetOpen(true) }}
+                disabled={addMutation.isPending}
+              >
+                Add Income
+              </Button>
+            </div>
+          }
+        />
 
         {/* Add Income Sheet */}
         <Sheet open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) resetForm() }}>
