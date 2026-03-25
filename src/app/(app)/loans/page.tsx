@@ -9,14 +9,7 @@ import { MoreHorizontal, Loader2 } from "lucide-react"
 import { listLoansAction, getCurrentUserRoleAction, deleteLoanAction } from "@/actions/loan.actions"
 import type { LoanWithCustomer, UserRole } from "@/types"
 import { ROLE_LEVELS } from "@/types"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import {
@@ -76,6 +69,70 @@ export default function LoansPage() {
 
   const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
 
+  const loanColumns: Column<LoanWithCustomer>[] = [
+    {
+      key: "slug",
+      header: "Slug",
+      hideInCard: true,
+      render: (loan) => <span className="font-mono text-xs tabular-nums">{loan.id.slice(-5)}</span>,
+    },
+    {
+      key: "customerName",
+      header: "Customer",
+      primary: true,
+      render: (loan) => loan.customerName,
+    },
+    {
+      key: "principalAmount",
+      header: "Principal Amount",
+      cardLabel: "Principal",
+      align: "right",
+      render: (loan) => <>UGX {formatUGX(loan.principalAmount)}</>,
+    },
+    {
+      key: "interestRate",
+      header: "Interest Rate",
+      cardLabel: "Rate",
+      align: "right",
+      render: (loan) => <>{(parseFloat(loan.interestRate) * 100).toFixed(0)}% / month</>,
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (loan) => (
+        <Badge variant={loanStatusVariant(loan.status)}>
+          {loanStatusLabel(loan.status)}
+        </Badge>
+      ),
+    },
+    {
+      key: "startDate",
+      header: "Start Date",
+      cardLabel: "Started",
+      render: (loan) => <span className="font-mono tabular-nums">{formatDate(loan.startDate)}</span>,
+    },
+    ...(isAdmin ? [{
+      key: "actions",
+      header: "Actions",
+      hideInCard: false,
+      render: (loan: LoanWithCustomer) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="Loan actions"
+            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => router.push(`/loans/${loan.id}`)}>View</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => router.push(`/loans/${loan.id}?edit=1`)}>Edit</DropdownMenuItem>
+            <DropdownMenuItem onClick={() => openDeleteDialog(loan.id)} variant="destructive">Delete</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    } satisfies Column<LoanWithCustomer>] : []),
+  ]
+
   function openDeleteDialog(loanId: string) {
     setDeletingLoanId(loanId)
     setDeleteReason("")
@@ -133,76 +190,20 @@ export default function LoansPage() {
         </Link>
       </div>
 
-      {loans.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-          <p className="text-muted-foreground">No loans issued yet.</p>
-          <Link href="/loans/new" className={cn(buttonVariants())}>
-            Issue First Loan
-          </Link>
-        </div>
-      ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Slug</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead className="text-right">Principal Amount</TableHead>
-              <TableHead className="text-right">Interest Rate</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Start Date</TableHead>
-              {isAdmin && <TableHead className="w-12">Actions</TableHead>}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loans.map((loan) => (
-              <TableRow key={loan.id} data-testid="data-row">
-                <TableCell className="font-mono text-xs tabular-nums">{loan.id.slice(-5)}</TableCell>
-                <TableCell>{loan.customerName}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">UGX {formatUGX(loan.principalAmount)}</TableCell>
-                <TableCell className="text-right font-mono tabular-nums">{(parseFloat(loan.interestRate) * 100).toFixed(0)}% / month</TableCell>
-                <TableCell>
-                  <Badge variant={loanStatusVariant(loan.status)}>
-                    {loanStatusLabel(loan.status)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="font-mono tabular-nums">
-                  {formatDate(loan.startDate)}
-                </TableCell>
-                {isAdmin && (
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        aria-label="Loan actions"
-                        className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors"
-                      >
-                        <MoreHorizontal className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => router.push(`/loans/${loan.id}`)}
-                        >
-                          View
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => router.push(`/loans/${loan.id}?edit=1`)}
-                        >
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onClick={() => openDeleteDialog(loan.id)}
-                          variant="destructive"
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                )}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
+      <ResponsiveTable
+        columns={loanColumns}
+        rows={loans}
+        getRowKey={(loan) => loan.id}
+        getRowProps={() => ({ "data-testid": "data-row" })}
+        emptyState={
+          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+            <p className="text-muted-foreground">No loans issued yet.</p>
+            <Link href="/loans/new" className={cn(buttonVariants())}>
+              Issue First Loan
+            </Link>
+          </div>
+        }
+      />
 
       {/* Delete Loan Dialog */}
       <Dialog open={deletingLoanId !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>

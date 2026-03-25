@@ -5,14 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Download, MoreHorizontal } from "lucide-react"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -316,6 +309,83 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
 
+  const paymentColumns: Column<PaymentWithCustomer>[] = [
+    {
+      key: "customerName",
+      header: "Customer",
+      primary: true,
+      render: (row) => row.customerName,
+    },
+    {
+      key: "paymentDate",
+      header: "Date",
+      render: (row) => <span className="font-mono tabular-nums">{formatDate(row.paymentDate)}</span>,
+    },
+    {
+      key: "loanRef",
+      header: "Loan Ref",
+      cardLabel: "Loan",
+      render: (row) => (
+        <span className="text-xs font-mono tabular-nums">
+          LOAN-{row.loanId.slice(0, 8).toUpperCase()}
+        </span>
+      ),
+    },
+    {
+      key: "amount",
+      header: "Amount",
+      align: "right",
+      render: (row) => <>UGX {formatNumberWithCommas(row.amount)}</>,
+    },
+    {
+      key: "interestPortion",
+      header: "Interest",
+      align: "right",
+      hideInCard: true,
+      render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.interestPortion)}</span>,
+    },
+    {
+      key: "principalPortion",
+      header: "Principal",
+      align: "right",
+      hideInCard: true,
+      render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalPortion)}</span>,
+    },
+    {
+      key: "balanceAfter",
+      header: "Balance After",
+      cardLabel: "Balance",
+      align: "right",
+      render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalBalanceAfter)}</span>,
+    },
+    ...(isAdmin ? [{
+      key: "actions",
+      header: "",
+      hideInCard: false,
+      render: (row: PaymentWithCustomer) => (
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            aria-label="Payment actions"
+            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => openEditSheet(row)}>
+              Edit
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => openDeleteDialog(row)}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ),
+    } satisfies Column<PaymentWithCustomer>] : []),
+  ]
+
   return (
     <div className="space-y-4">
       {/* Page header */}
@@ -440,69 +510,12 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
         )
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Loan Ref</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead className="text-right">Interest</TableHead>
-                <TableHead className="text-right">Principal</TableHead>
-                <TableHead className="text-right">Balance After</TableHead>
-                {isAdmin && <TableHead className="w-12"></TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id} data-testid="data-row">
-                  <TableCell className="font-mono tabular-nums">{formatDate(row.paymentDate)}</TableCell>
-                  <TableCell>{row.customerName}</TableCell>
-                  <TableCell>
-                    <span className="text-xs font-mono tabular-nums">
-                      LOAN-{row.loanId.slice(0, 8).toUpperCase()}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.amount)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                    UGX {formatNumberWithCommas(row.interestPortion)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                    UGX {formatNumberWithCommas(row.principalPortion)}
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
-                    UGX {formatNumberWithCommas(row.principalBalanceAfter)}
-                  </TableCell>
-                  {isAdmin && (
-                    <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            className="h-8 w-8 p-0"
-                            aria-label="Payment actions"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEditSheet(row)}>
-                            Edit
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            variant="destructive"
-                            onClick={() => openDeleteDialog(row)}
-                          >
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <ResponsiveTable
+            columns={paymentColumns}
+            rows={rows}
+            getRowKey={(row) => row.id}
+            getRowProps={() => ({ "data-testid": "data-row" })}
+          />
 
           {/* Pagination */}
           {total > pageSize && (
