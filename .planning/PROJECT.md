@@ -32,6 +32,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - ✓ NAV-01–05: Mobile bottom tab bar, More sheet, responsive sidebar/tab switching, active indicator, safe-area padding — v1.2 Phase 12
 - ✓ RESP-01, RESP-02, RESP-07: ResponsiveTable primitive with CSS-only card layouts, all 7 list pages wired, Dashboard KPI grid breakpoints — v1.2 Phase 13
 - ✓ RESP-03, RESP-04, RESP-05: Single-column forms on mobile, collapsible filter panels, sticky table headers — v1.2 Phase 14
+- ✓ TOUCH-01–03: 44px touch targets, responsive DrawerDialog (desktop modal / mobile drawer), swipe-to-close — v1.2 Phase 15
 
 ### Active
 
@@ -41,7 +42,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - [x] Bottom tab bar navigation on mobile
 - [x] Responsive data tables (card layout on mobile, table on desktop)
 - [x] Collapsible filter panels + sticky table headers
-- [ ] Touch-friendly form inputs and actions
+- [x] Touch-friendly form inputs and actions
 - [x] Cypress tests updated for responsive viewports
 
 ### Out of Scope
