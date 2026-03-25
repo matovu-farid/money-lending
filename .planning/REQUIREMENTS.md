@@ -27,8 +27,8 @@ Requirements for responsive mobile + desktop milestone. Each maps to roadmap pha
 
 ### Touch Optimization
 
-- [ ] **TOUCH-01**: All interactive elements meet 44px minimum touch target (WCAG 2.5.8)
-- [ ] **TOUCH-02**: DrawerDialog component — dialog on desktop, bottom drawer on mobile
+- [x] **TOUCH-01**: All interactive elements meet 44px minimum touch target (WCAG 2.5.8)
+- [x] **TOUCH-02**: DrawerDialog component — dialog on desktop, bottom drawer on mobile
 - [ ] **TOUCH-03**: Swipe gestures for mobile navigation where applicable
 
 ### Test Compatibility
@@ -74,8 +74,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RESP-03 | Phase 14 | Complete |
 | RESP-04 | Phase 14 | Complete |
 | RESP-05 | Phase 14 | Complete |
-| TOUCH-01 | Phase 15 | Pending |
-| TOUCH-02 | Phase 15 | Pending |
+| TOUCH-01 | Phase 15 | Complete |
+| TOUCH-02 | Phase 15 | Complete |
 | TOUCH-03 | Phase 15 | Pending |
 | TEST-02 | Phase 16 | Pending |
 | TEST-03 | Phase 16 | Pending |

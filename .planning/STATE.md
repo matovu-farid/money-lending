@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Responsive
 status: unknown
-stopped_at: Completed 14-02-PLAN.md
-last_updated: "2026-03-25T11:14:41.107Z"
+stopped_at: Completed 15-01-PLAN.md
+last_updated: "2026-03-25T15:37:45.205Z"
 progress:
   total_phases: 6
   completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 10
+  completed_plans: 9
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 14 — forms-filters-table-polish
+**Current focus:** Phase 15 — touch-optimization
 
 ## Current Position
 
-Phase: 14 (forms-filters-table-polish) — EXECUTING
+Phase: 15 (touch-optimization) — EXECUTING
 Plan: 1 of 2
 
 ## Performance Metrics
@@ -49,6 +49,7 @@ Plan: 1 of 2
 | Phase 13 P02 | 48 | 3 tasks | 6 files |
 | Phase 14-forms-filters-table-polish P01 | 226 | 2 tasks | 4 files |
 | Phase 14-forms-filters-table-polish P02 | 54 | 2 tasks | 2 files |
+| Phase 15-touch-optimization P01 | 8 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,8 @@ Key decisions affecting v1.2:
 - [Phase 14-01]: CSS-only desktop open state for FilterPanel: md:!block on Collapsible.Panel avoids hydration mismatch — consistent with Phase 12/13 CSS-only pattern
 - [Phase 14-01]: sticky TableHead applied in responsive-table.tsx at call site, not table.tsx base — only desktop scrollable context needs sticky headers
 - [Phase 14-02]: Replaced @base-ui/react Collapsible with plain CSS button+div for FilterPanel: base-ui's hidden HTML attribute on Collapsible.Panel blocks CSS \!important overrides; plain CSS block/hidden toggle with md:\!block is reliable and SSR-safe
+- [Phase 15-touch-optimization]: useMediaQuery defaultMatches:true for DrawerDialog — assumes desktop on SSR to avoid bottom-drawer flash on desktop first paint
+- [Phase 15-touch-optimization]: xs, sm, icon-xs Button variants NOT given touch targets — desktop-only contexts per research
 
 ### Blockers/Concerns
 
@@ -86,6 +89,6 @@ Key decisions affecting v1.2:
 
 ## Session Continuity
 
-Last session: 2026-03-25T11:11:00.751Z
-Stopped at: Completed 14-02-PLAN.md
+Last session: 2026-03-25T15:37:45.203Z
+Stopped at: Completed 15-01-PLAN.md
 Resume file: None
