@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Responsive
 status: unknown
-stopped_at: Completed 14-01-PLAN.md
-last_updated: "2026-03-25T10:13:46.140Z"
+stopped_at: Completed 14-02-PLAN.md
+last_updated: "2026-03-25T11:11:00.756Z"
 progress:
   total_phases: 6
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 8
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -48,6 +48,7 @@ Plan: 1 of 2
 | Phase 13 P01 | 932 | 3 tasks | 9 files |
 | Phase 13 P02 | 48 | 3 tasks | 6 files |
 | Phase 14-forms-filters-table-polish P01 | 226 | 2 tasks | 4 files |
+| Phase 14-forms-filters-table-polish P02 | 54 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -76,6 +77,7 @@ Key decisions affecting v1.2:
 - [Phase 13]: payments-list.cy.ts visibility assertions updated to filter(':visible') pattern after ResponsiveTable introduced dual DOM elements
 - [Phase 14-01]: CSS-only desktop open state for FilterPanel: md:!block on Collapsible.Panel avoids hydration mismatch — consistent with Phase 12/13 CSS-only pattern
 - [Phase 14-01]: sticky TableHead applied in responsive-table.tsx at call site, not table.tsx base — only desktop scrollable context needs sticky headers
+- [Phase 14-02]: Replaced @base-ui/react Collapsible with plain CSS button+div for FilterPanel: base-ui's hidden HTML attribute on Collapsible.Panel blocks CSS \!important overrides; plain CSS block/hidden toggle with md:\!block is reliable and SSR-safe
 
 ### Blockers/Concerns
 
@@ -84,6 +86,6 @@ Key decisions affecting v1.2:
 
 ## Session Continuity
 
-Last session: 2026-03-25T10:13:46.135Z
-Stopped at: Completed 14-01-PLAN.md
+Last session: 2026-03-25T11:11:00.751Z
+Stopped at: Completed 14-02-PLAN.md
 Resume file: None

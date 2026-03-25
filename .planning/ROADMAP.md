@@ -41,7 +41,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 - [x] **Phase 11: Test Selector Foundation** - Scope data-testid attributes and remove hardcoded padding before any layout changes (completed 2026-03-24)
 - [x] **Phase 12: Mobile Navigation** - Bottom tab bar with 5 primary tabs, More sheet, safe-area insets, sidebar hidden on mobile (completed 2026-03-25)
 - [x] **Phase 13: Responsive Table Primitive + Card Layouts** - ResponsiveTable component applied to all list pages; dashboard reflowed to single column (completed 2026-03-25)
-- [ ] **Phase 14: Forms, Filters, and Table Polish** - Single-column forms, collapsible filters, sticky table headers across all pages
+- [x] **Phase 14: Forms, Filters, and Table Polish** - Single-column forms, collapsible filters, sticky table headers across all pages (completed 2026-03-25)
 - [ ] **Phase 15: Touch Optimization** - 44px touch targets, DrawerDialog for mobile, swipe gestures
 - [ ] **Phase 16: Cypress Mobile Coverage** - All existing specs pass at desktop; mobile viewport blocks and tab bar tests added
 
@@ -98,7 +98,7 @@ Plans:
   1. Multi-column form layouts (loan wizard, customer registration, creditor form) collapse to single column at mobile viewport
   2. Filter panels on list pages (Customers, Loans, Payments, Expenses, Income) are collapsed by default on mobile and expanded by default on desktop
   3. Table headers remain visible when scrolling long lists on desktop
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 14-01-PLAN.md — Build FilterPanel component, sticky table headers, wire into Customers and Payments
 - [ ] 14-02-PLAN.md — Cypress E2E tests for forms, filters, and table polish (RESP-03, RESP-04, RESP-05)
@@ -142,6 +142,6 @@ Plans:
 | 11. Test Selector Foundation | v1.2 | 2/2 | Complete | 2026-03-24 |
 | 12. Mobile Navigation | v1.2 | 2/2 | Complete | 2026-03-25 |
 | 13. Responsive Table + Cards | 2/2 | Complete    | 2026-03-25 | - |
-| 14. Forms, Filters & Polish | 1/2 | In Progress|  | - |
+| 14. Forms, Filters & Polish | 2/2 | Complete   | 2026-03-25 | - |
 | 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
 | 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
