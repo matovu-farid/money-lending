@@ -2,9 +2,8 @@ import { Effect, Exit } from "effect"
 import { listCreditors, getSystemCapital } from "@/services/creditor.service"
 import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
-import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
+import { CreditorsTable } from "./creditors-table"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
-import { formatDate } from "@/lib/utils"
 
 function formatUGX(amount: string): string {
   const num = parseFloat(amount)
@@ -75,45 +74,7 @@ export default async function CreditorsPage() {
           </ButtonLink>
         </div>
       ) : (
-        <ResponsiveTable
-          columns={[
-            {
-              key: "name",
-              header: "Name",
-              primary: true,
-              render: (c) => <span className="font-medium">{c.name}</span>,
-            },
-            {
-              key: "contact",
-              header: "Contact",
-              render: (c) => c.contact,
-            },
-            {
-              key: "address",
-              header: "Address",
-              render: (c) => c.address,
-            },
-            {
-              key: "createdAt",
-              header: "Date Added",
-              cardLabel: "Added",
-              render: (c) => <span className="font-mono tabular-nums">{formatDate(c.createdAt)}</span>,
-            },
-            {
-              key: "actions",
-              header: "Actions",
-              hideInCard: false,
-              render: (c) => (
-                <ButtonLink href={`/creditors/${c.id}`} variant="outline" size="sm">
-                  View
-                </ButtonLink>
-              ),
-            },
-          ] as Column<typeof creditors[number]>[]}
-          rows={creditors}
-          getRowKey={(c) => c.id}
-          getRowProps={(_c) => ({ "data-testid": "data-row" })}
-        />
+        <CreditorsTable creditors={creditors} />
       )}
     </div>
   )
