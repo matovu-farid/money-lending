@@ -46,14 +46,14 @@ export function ResponsiveTable<T>({
   return (
     <>
       {/* Desktop: standard table — hidden below md breakpoint */}
-      <div className="hidden md:block">
+      <div className="hidden md:block max-h-[calc(100vh-12rem)] overflow-y-auto">
         <Table>
           <TableHeader>
             <TableRow>
               {columns.map((col) => (
                 <TableHead
                   key={col.key}
-                  className={col.align === "right" ? "text-right" : undefined}
+                  className={cn("sticky top-0 bg-background z-10", col.align === "right" ? "text-right" : undefined)}
                 >
                   {col.header}
                 </TableHead>
