@@ -38,6 +38,7 @@ import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer, type ListPayments
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DailyCollectionsTab } from "./DailyCollectionsTab"
 import { QuickRecordDialog } from "./QuickRecordDialog"
+import { FilterPanel } from "@/components/ui/filter-panel"
 
 interface PaymentsClientProps {
   initialData: { rows: PaymentWithCustomer[]; total: number }
@@ -125,6 +126,14 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
 
   const hasFilters =
     customerName !== "" || dateFrom !== "" || dateTo !== "" || amountMin !== "" || amountMax !== ""
+
+  const activeFilterCount = [
+    customerName !== "",
+    dateFrom !== "",
+    dateTo !== "",
+    amountMin !== "",
+    amountMax !== "",
+  ].filter(Boolean).length
 
   // TanStack Query for paginated data
   const { data, isLoading, isError } = useQuery({
@@ -420,67 +429,69 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
         <TabsContent value="list">
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-end gap-3">
-        <div>
-          <Label className="text-sm">Search by customer name...</Label>
-          <Input
-            placeholder="Search by customer name..."
-            value={customerName}
-            onChange={handleCustomerNameChange}
-            className="w-[220px]"
-          />
+      <FilterPanel label="Filters" activeCount={activeFilterCount}>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <Label className="text-sm">Search by customer name...</Label>
+            <Input
+              placeholder="Search by customer name..."
+              value={customerName}
+              onChange={handleCustomerNameChange}
+              className="w-[220px]"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">From</Label>
+            <input
+              type="date"
+              className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+              value={dateFrom}
+              onChange={handleDateFromChange}
+            />
+          </div>
+          <div>
+            <Label className="text-sm">To</Label>
+            <input
+              type="date"
+              className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+              value={dateTo}
+              onChange={handleDateToChange}
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Min amount</Label>
+            <Input
+              type="text"
+              inputMode="numeric"
+              className="w-[120px]"
+              value={amountMin}
+              onChange={handleAmountMinChange}
+              placeholder="0"
+            />
+          </div>
+          <div>
+            <Label className="text-sm">Max amount</Label>
+            <Input
+              type="text"
+              inputMode="numeric"
+              className="w-[120px]"
+              value={amountMax}
+              onChange={handleAmountMaxChange}
+              placeholder="Any"
+            />
+          </div>
+          {hasFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground"
+              onClick={handleClearFilters}
+            >
+              Clear filters
+            </Button>
+          )}
         </div>
-        <div>
-          <Label className="text-sm">From</Label>
-          <input
-            type="date"
-            className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
-            value={dateFrom}
-            onChange={handleDateFromChange}
-          />
-        </div>
-        <div>
-          <Label className="text-sm">To</Label>
-          <input
-            type="date"
-            className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
-            value={dateTo}
-            onChange={handleDateToChange}
-          />
-        </div>
-        <div>
-          <Label className="text-sm">Min amount</Label>
-          <Input
-            type="text"
-            inputMode="numeric"
-            className="w-[120px]"
-            value={amountMin}
-            onChange={handleAmountMinChange}
-            placeholder="0"
-          />
-        </div>
-        <div>
-          <Label className="text-sm">Max amount</Label>
-          <Input
-            type="text"
-            inputMode="numeric"
-            className="w-[120px]"
-            value={amountMax}
-            onChange={handleAmountMaxChange}
-            placeholder="Any"
-          />
-        </div>
-        {hasFilters && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground"
-            onClick={handleClearFilters}
-          >
-            Clear filters
-          </Button>
-        )}
-      </div>
+      </FilterPanel>
 
       {/* Content */}
       {isLoading ? (
