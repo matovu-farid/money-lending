@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import { Collapsible } from "@base-ui/react/collapsible"
 import { Filter, ChevronDown } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -15,10 +14,14 @@ export function FilterPanel({ children, label = "Filters", activeCount = 0 }: Fi
   const [open, setOpen] = useState(false)
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <Collapsible.Trigger
+    <div>
+      {/* Toggle button — visible on mobile only (md:hidden) */}
+      <button
+        type="button"
         className="flex items-center gap-1 text-sm font-medium text-muted-foreground md:hidden h-8 px-2"
         aria-label="Toggle filters"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
       >
         <Filter size={16} />
         {label}
@@ -28,10 +31,21 @@ export function FilterPanel({ children, label = "Filters", activeCount = 0 }: Fi
           </span>
         )}
         <ChevronDown className={cn("h-4 w-4 transition-transform duration-150 ease-out", open && "rotate-180")} />
-      </Collapsible.Trigger>
-      <Collapsible.Panel data-slot="filter-panel-content" className="overflow-hidden md:!block">
+      </button>
+
+      {/* Panel:
+          - Mobile: shown when `open` is true, hidden otherwise
+          - Desktop (md+): always shown regardless of `open` state via md:!block
+          Using overflow-hidden only on mobile collapsed state to prevent layout shift. */}
+      <div
+        data-slot="filter-panel-content"
+        className={cn(
+          "md:!block",
+          open ? "block" : "hidden"
+        )}
+      >
         {children}
-      </Collapsible.Panel>
-    </Collapsible.Root>
+      </div>
+    </div>
   )
 }
