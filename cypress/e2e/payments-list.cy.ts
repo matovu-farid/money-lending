@@ -291,7 +291,7 @@ describe("Global Payments List (/payments)", () => {
       cy.contains("button", "Keep payment").click()
 
       cy.contains("Delete payment?").should("not.exist")
-      cy.contains("Grace Namubiru").should("be.visible")
+      cy.get("[data-testid='data-row']").filter(":visible").first().should("contain.text", "Grace Namubiru")
     })
 
     it("deletes a payment successfully and shows success toast", () => {
@@ -331,7 +331,7 @@ describe("Global Payments List (/payments)", () => {
       cy.contains("button", "Export CSV").click()
       // Page should still be intact after clicking export
       cy.contains("h1", "Payments").should("be.visible")
-      cy.contains("Grace Namubiru").should("be.visible")
+      cy.get("[data-testid='data-row']").filter(":visible").first().should("contain.text", "Grace Namubiru")
     })
   })
 
