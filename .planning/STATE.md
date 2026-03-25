@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Responsive
 status: unknown
-stopped_at: Completed 13-02-PLAN.md
-last_updated: "2026-03-25T08:56:03.309Z"
+stopped_at: Completed 14-01-PLAN.md
+last_updated: "2026-03-25T10:13:46.140Z"
 progress:
   total_phases: 6
   completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
+  total_plans: 8
+  completed_plans: 7
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 13 — responsive-table-primitive-card-layouts
+**Current focus:** Phase 14 — forms-filters-table-polish
 
 ## Current Position
 
-Phase: 13 (responsive-table-primitive-card-layouts) — EXECUTING
+Phase: 14 (forms-filters-table-polish) — EXECUTING
 Plan: 1 of 2
 
 ## Performance Metrics
@@ -47,6 +47,7 @@ Plan: 1 of 2
 | Phase 12-mobile-navigation P02 | 51 | 2 tasks | 5 files |
 | Phase 13 P01 | 932 | 3 tasks | 9 files |
 | Phase 13 P02 | 48 | 3 tasks | 6 files |
+| Phase 14-forms-filters-table-polish P01 | 226 | 2 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -73,6 +74,8 @@ Key decisions affecting v1.2:
 - [Phase 13-01]: Cypress filter(':visible') required in mobile assertions to distinguish card data-row divs from hidden desktop tr data-rows sharing same data-testid
 - [Phase 13]: hideInCard: true on Payments interest/principal portion columns — mobile cards show Amount and Balance After only
 - [Phase 13]: payments-list.cy.ts visibility assertions updated to filter(':visible') pattern after ResponsiveTable introduced dual DOM elements
+- [Phase 14-01]: CSS-only desktop open state for FilterPanel: md:!block on Collapsible.Panel avoids hydration mismatch — consistent with Phase 12/13 CSS-only pattern
+- [Phase 14-01]: sticky TableHead applied in responsive-table.tsx at call site, not table.tsx base — only desktop scrollable context needs sticky headers
 
 ### Blockers/Concerns
 
@@ -81,6 +84,6 @@ Key decisions affecting v1.2:
 
 ## Session Continuity
 
-Last session: 2026-03-25T08:51:09.474Z
-Stopped at: Completed 13-02-PLAN.md
+Last session: 2026-03-25T10:13:46.135Z
+Stopped at: Completed 14-01-PLAN.md
 Resume file: None

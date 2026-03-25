@@ -20,8 +20,8 @@ Requirements for responsive mobile + desktop milestone. Each maps to roadmap pha
 - [x] **RESP-01**: Dashboard KPI cards and charts reflow to single column on mobile
 - [x] **RESP-02**: Data tables switch to stacked card layout on mobile (CSS show/hide, no JS)
 - [ ] **RESP-03**: All forms render single-column on mobile
-- [ ] **RESP-04**: Collapsible filter panels on mobile (expanded by default on desktop)
-- [ ] **RESP-05**: Sticky table headers on scroll (desktop)
+- [x] **RESP-04**: Collapsible filter panels on mobile (expanded by default on desktop)
+- [x] **RESP-05**: Sticky table headers on scroll (desktop)
 - [x] **RESP-06**: Remove hardcoded `p-6` padding — use responsive `p-4 md:p-6`
 - [x] **RESP-07**: Responsive card layouts for: Customers, Loans, Payments, Creditors, Expenses, Income, Watchlist
 
@@ -72,8 +72,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RESP-02 | Phase 13 | Complete |
 | RESP-07 | Phase 13 | Complete |
 | RESP-03 | Phase 14 | Pending |
-| RESP-04 | Phase 14 | Pending |
-| RESP-05 | Phase 14 | Pending |
+| RESP-04 | Phase 14 | Complete |
+| RESP-05 | Phase 14 | Complete |
 | TOUCH-01 | Phase 15 | Pending |
 | TOUCH-02 | Phase 15 | Pending |
 | TOUCH-03 | Phase 15 | Pending |

@@ -98,7 +98,7 @@ Plans:
   1. Multi-column form layouts (loan wizard, customer registration, creditor form) collapse to single column at mobile viewport
   2. Filter panels on list pages (Customers, Loans, Payments, Expenses, Income) are collapsed by default on mobile and expanded by default on desktop
   3. Table headers remain visible when scrolling long lists on desktop
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 Plans:
 - [ ] 14-01-PLAN.md — Build FilterPanel component, sticky table headers, wire into Customers and Payments
 - [ ] 14-02-PLAN.md — Cypress E2E tests for forms, filters, and table polish (RESP-03, RESP-04, RESP-05)
@@ -142,6 +142,6 @@ Plans:
 | 11. Test Selector Foundation | v1.2 | 2/2 | Complete | 2026-03-24 |
 | 12. Mobile Navigation | v1.2 | 2/2 | Complete | 2026-03-25 |
 | 13. Responsive Table + Cards | 2/2 | Complete    | 2026-03-25 | - |
-| 14. Forms, Filters & Polish | v1.2 | 0/2 | Planning complete | - |
+| 14. Forms, Filters & Polish | 1/2 | In Progress|  | - |
 | 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
 | 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
