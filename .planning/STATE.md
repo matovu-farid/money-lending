@@ -9,7 +9,7 @@ progress:
   total_phases: 6
   completed_phases: 4
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
 ---
 
 # Project State
@@ -23,8 +23,8 @@ See: .planning/PROJECT.md (updated 2026-03-24)
 
 ## Current Position
 
-Phase: 15 (touch-optimization) — EXECUTING
-Plan: 1 of 2
+Phase: 15 (touch-optimization) — COMPLETE
+Plan: 2 of 2
 
 ## Performance Metrics
 
@@ -50,6 +50,7 @@ Plan: 1 of 2
 | Phase 14-forms-filters-table-polish P01 | 226 | 2 tasks | 4 files |
 | Phase 14-forms-filters-table-polish P02 | 54 | 2 tasks | 2 files |
 | Phase 15-touch-optimization P01 | 8 | 2 tasks | 6 files |
+| Phase 15-touch-optimization P02 | 120 | 2 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -81,6 +82,8 @@ Key decisions affecting v1.2:
 - [Phase 14-02]: Replaced @base-ui/react Collapsible with plain CSS button+div for FilterPanel: base-ui's hidden HTML attribute on Collapsible.Panel blocks CSS \!important overrides; plain CSS block/hidden toggle with md:\!block is reliable and SSR-safe
 - [Phase 15-touch-optimization]: useMediaQuery defaultMatches:true for DrawerDialog — assumes desktop on SSR to avoid bottom-drawer flash on desktop first paint
 - [Phase 15-touch-optimization]: xs, sm, icon-xs Button variants NOT given touch targets — desktop-only contexts per research
+- [Phase 15-02]: Base UI Drawer.Viewport required for swipe-to-dismiss — DrawerDialog and MoreSheet updated to include Viewport wrapper
+- [Phase 15-02]: Cypress swipe simulation: dispatch native TouchEvent on viewport.parentElement at popup's own clientRect coordinates — CDP realSwipe and PointerEvents both ignored by DrawerViewport
 
 ### Blockers/Concerns
 
@@ -89,6 +92,6 @@ Key decisions affecting v1.2:
 
 ## Session Continuity
 
-Last session: 2026-03-25T15:37:45.203Z
-Stopped at: Completed 15-01-PLAN.md
+Last session: 2026-03-25T18:53:00Z
+Stopped at: Completed 15-02-PLAN.md
 Resume file: None
