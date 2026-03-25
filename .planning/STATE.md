@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Responsive
 status: unknown
-stopped_at: Completed 12-mobile-navigation-02-PLAN.md
-last_updated: "2026-03-25T00:52:44.060Z"
+stopped_at: Completed 13-01-PLAN.md
+last_updated: "2026-03-25T06:41:49.162Z"
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,11 +19,11 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-24)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Phase 12 — mobile-navigation
+**Current focus:** Phase 13 — responsive-table-primitive-card-layouts
 
 ## Current Position
 
-Phase: 12 (mobile-navigation) — EXECUTING
+Phase: 13 (responsive-table-primitive-card-layouts) — EXECUTING
 Plan: 1 of 2
 
 ## Performance Metrics
@@ -45,6 +45,7 @@ Plan: 1 of 2
 | Phase 11-test-selector-foundation P02 | 56 | 2 tasks | 22 files |
 | Phase 12-mobile-navigation P01 | 138s | 2 tasks | 5 files |
 | Phase 12-mobile-navigation P02 | 51 | 2 tasks | 5 files |
+| Phase 13 P01 | 932 | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -66,6 +67,9 @@ Key decisions affecting v1.2:
 - [Phase 12-mobile-navigation]: viewport export with viewportFit cover added to layout.tsx for iPhone safe-area CSS variable support
 - [Phase 12-mobile-navigation]: Replace pb-[env(safe-area-inset-bottom)] with safe-area-bottom CSS custom property class — Tailwind v4 generates invalid env(...) hint CSS when scanning .planning/ markdown files with env() arbitrary values
 - [Phase 12-mobile-navigation]: Add @source not directives to globals.css to exclude .planning/, cypress/, and **/*.md from Tailwind v4 scanning to prevent markdown class name strings from being compiled as CSS utilities
+- [Phase 13-01]: Creditors server component passes data to CreditorsTable client component — render functions cannot cross Next.js server/client boundary
+- [Phase 13-01]: RowProps extends HTMLAttributes with [key: string]: unknown index signature to allow data-* attributes in TypeScript
+- [Phase 13-01]: Cypress filter(':visible') required in mobile assertions to distinguish card data-row divs from hidden desktop tr data-rows sharing same data-testid
 
 ### Blockers/Concerns
 
@@ -74,6 +78,6 @@ Key decisions affecting v1.2:
 
 ## Session Continuity
 
-Last session: 2026-03-25T00:49:11.258Z
-Stopped at: Completed 12-mobile-navigation-02-PLAN.md
+Last session: 2026-03-25T06:41:49.160Z
+Stopped at: Completed 13-01-PLAN.md
 Resume file: None
