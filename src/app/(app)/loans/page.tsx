@@ -12,9 +12,8 @@ import { ROLE_LEVELS } from "@/types"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -206,8 +205,8 @@ export default function LoansPage() {
       />
 
       {/* Delete Loan Dialog */}
-      <Dialog open={deletingLoanId !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
-        <DialogContent>
+      <DrawerDialog open={deletingLoanId !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
+        <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete loan?</DialogTitle>
           </DialogHeader>
@@ -250,8 +249,8 @@ export default function LoansPage() {
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
     </div>
   )
 }

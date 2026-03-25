@@ -11,9 +11,8 @@ import type { Loan, Payment } from "@/types"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -414,8 +413,8 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
       )}
 
       {/* Edit Payment Dialog */}
-      <Dialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closeEditDialog() }}>
-        <DialogContent>
+      <DrawerDialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closeEditDialog() }}>
+        <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Edit Payment</DialogTitle>
           </DialogHeader>
@@ -474,12 +473,12 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* Delete Payment Dialog */}
-      <Dialog open={deletingPayment !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
-        <DialogContent>
+      <DrawerDialog open={deletingPayment !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
+        <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete payment?</DialogTitle>
           </DialogHeader>
@@ -523,12 +522,12 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* Edit Loan Dialog */}
-      <Dialog open={editingLoan} onOpenChange={(open) => { if (!open) closeLoanEditDialog() }}>
-        <DialogContent>
+      <DrawerDialog open={editingLoan} onOpenChange={(open) => { if (!open) closeLoanEditDialog() }}>
+        <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Edit Loan</DialogTitle>
           </DialogHeader>
@@ -599,12 +598,12 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* Delete Loan Dialog */}
-      <Dialog open={deletingLoan} onOpenChange={(open) => { if (!open) closeLoanDeleteDialog() }}>
-        <DialogContent>
+      <DrawerDialog open={deletingLoan} onOpenChange={(open) => { if (!open) closeLoanDeleteDialog() }}>
+        <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete loan?</DialogTitle>
           </DialogHeader>
@@ -647,8 +646,8 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
     </div>
   )
 }

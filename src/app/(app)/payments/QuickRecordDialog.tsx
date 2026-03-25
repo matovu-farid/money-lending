@@ -5,9 +5,8 @@ import { format } from "date-fns"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import Link from "next/link"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -100,8 +99,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   const isSubmitDisabled = !selectedLoan || !amount || Number(amount) <= 0 || isPending
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-[480px]">
+    <DrawerDialog open={open} onOpenChange={handleOpenChange}>
+      <DrawerDialogContent className="sm:max-w-[480px]">
         {successPaymentId ? (
           <>
             <DialogHeader>
@@ -214,7 +213,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
             </DialogFooter>
           </>
         )}
-      </DialogContent>
-    </Dialog>
+      </DrawerDialogContent>
+    </DrawerDialog>
   )
 }

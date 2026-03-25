@@ -8,16 +8,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetFooter,
-} from "@/components/ui/sheet"
-import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -293,11 +285,11 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
         />
 
         {/* Add Expense Sheet */}
-        <Sheet open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) resetForm() }}>
-          <SheetContent side="right">
-            <SheetHeader>
-              <SheetTitle>Add Expense</SheetTitle>
-            </SheetHeader>
+        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) resetForm() }}>
+          <DrawerDialogContent className="sm:max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Add Expense</DialogTitle>
+            </DialogHeader>
             <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-4">
               <div className="space-y-1.5">
                 <Label htmlFor="expense-date">Date</Label>
@@ -388,18 +380,18 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
 
               {error && <p className="text-sm text-destructive">{error}</p>}
 
-              <SheetFooter>
+              <DialogFooter>
                 <Button type="submit" disabled={addMutation.isPending} className="w-full">
                   {addMutation.isPending ? "Saving..." : "Record Expense"}
                 </Button>
-              </SheetFooter>
+              </DialogFooter>
             </form>
-          </SheetContent>
-        </Sheet>
+          </DrawerDialogContent>
+        </DrawerDialog>
 
         {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
-          <DialogContent>
+        <DrawerDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
+          <DrawerDialogContent>
             <DialogHeader>
               <DialogTitle>Delete expense?</DialogTitle>
               <DialogDescription>
@@ -422,8 +414,8 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                 {deleteMutation.isPending ? "Deleting..." : "Delete expense"}
               </Button>
             </DialogFooter>
-          </DialogContent>
-        </Dialog>
+          </DrawerDialogContent>
+        </DrawerDialog>
       </div>
     </TooltipProvider>
   )

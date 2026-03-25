@@ -10,16 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetFooter,
-} from "@/components/ui/sheet"
-import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -566,11 +558,11 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
       </Tabs>
 
       {/* Edit Payment Sheet */}
-      <Sheet open={editOpen} onOpenChange={setEditOpen}>
-        <SheetContent side="right">
-          <SheetHeader>
-            <SheetTitle>Edit Payment</SheetTitle>
-          </SheetHeader>
+      <DrawerDialog open={editOpen} onOpenChange={setEditOpen}>
+        <DrawerDialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Edit Payment</DialogTitle>
+          </DialogHeader>
           <div className="flex flex-col gap-4 p-4">
             <div className="space-y-1.5">
               <Label htmlFor="edit-payment-date">Date</Label>
@@ -609,20 +601,20 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
               />
             </div>
           </div>
-          <SheetFooter className="px-4">
+          <DialogFooter>
             <Button
               onClick={handleEditSubmit}
               disabled={isEditPending || !editReason.trim()}
             >
               {isEditPending ? "Saving..." : "Save changes"}
             </Button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+          </DialogFooter>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* Delete Payment Dialog */}
-      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <DialogContent>
+      <DrawerDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete payment?</DialogTitle>
             <DialogDescription>
@@ -650,8 +642,8 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
               {isDeletePending ? "Deleting..." : "Delete payment"}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* Quick Record Payment Dialog */}
       <QuickRecordDialog open={quickRecordOpen} onOpenChange={setQuickRecordOpen} />

@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { addInvestmentAction } from "@/app/(app)/creditors/actions"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -76,14 +74,15 @@ export function AddInvestmentDialog({ creditorId }: Props) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => {
-      setOpen(isOpen)
-      if (!isOpen) resetForm()
-    }}>
-      <DialogTrigger render={<Button variant="outline" />}>
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
         Add Investment
-      </DialogTrigger>
-      <DialogContent>
+      </Button>
+      <DrawerDialog open={open} onOpenChange={(isOpen) => {
+        setOpen(isOpen)
+        if (!isOpen) resetForm()
+      }}>
+      <DrawerDialogContent>
         <DialogHeader>
           <DialogTitle>Add Investment</DialogTitle>
         </DialogHeader>
@@ -153,7 +152,8 @@ export function AddInvestmentDialog({ creditorId }: Props) {
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DrawerDialogContent>
+      </DrawerDialog>
+    </>
   )
 }

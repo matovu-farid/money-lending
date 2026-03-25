@@ -5,12 +5,10 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { recordCreditorRepaymentAction } from "@/app/(app)/creditors/actions"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog"
 import {
@@ -90,14 +88,15 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
   }
 
   return (
-    <Dialog open={open} onOpenChange={(isOpen) => {
-      setOpen(isOpen)
-      if (!isOpen) resetForm()
-    }}>
-      <DialogTrigger render={<Button variant="default" />}>
+    <>
+      <Button variant="default" onClick={() => setOpen(true)}>
         Record Repayment
-      </DialogTrigger>
-      <DialogContent>
+      </Button>
+      <DrawerDialog open={open} onOpenChange={(isOpen) => {
+        setOpen(isOpen)
+        if (!isOpen) resetForm()
+      }}>
+      <DrawerDialogContent>
         <DialogHeader>
           <DialogTitle>Record Repayment</DialogTitle>
         </DialogHeader>
@@ -174,7 +173,8 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DrawerDialogContent>
+      </DrawerDialog>
+    </>
   )
 }

@@ -20,9 +20,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
-  Dialog,
-  DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
@@ -428,8 +427,8 @@ export default function CustomerProfilePage() {
       </Card>
 
       {/* Status change confirmation dialog */}
-      <Dialog open={statusDialogOpen} onOpenChange={(open) => { if (!open) handleStatusCancel() }}>
-        <DialogContent showCloseButton={false}>
+      <DrawerDialog open={statusDialogOpen} onOpenChange={(open) => { if (!open) handleStatusCancel() }}>
+        <DrawerDialogContent showCloseButton={false}>
           <DialogHeader>
             <DialogTitle className={isBlacklisted ? "text-destructive" : undefined}>
               {dialogTitle}
@@ -474,8 +473,8 @@ export default function CustomerProfilePage() {
               )}
             </Button>
           </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* Loan History */}
       <div className="space-y-4">

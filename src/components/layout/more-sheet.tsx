@@ -36,7 +36,7 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
           data-testid="more-sheet"
           className="fixed bottom-0 inset-x-0 z-50 bg-background rounded-t-2xl safe-area-bottom"
         >
-          <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-muted-foreground/30" />
+          <div className="mx-auto mt-2 h-2 w-12 rounded-full bg-muted-foreground/30" />
           <nav className="p-4 space-y-1">
             {MORE_ITEMS.map((item) => {
               const Icon = item.icon
