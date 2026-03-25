@@ -2,14 +2,7 @@ import { Effect, Exit } from "effect"
 import { listCreditors, getSystemCapital } from "@/services/creditor.service"
 import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatDate } from "@/lib/utils"
 
@@ -48,7 +41,7 @@ export default async function CreditorsPage() {
       </div>
 
       {/* System Capital KPIs — CRED-06 */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Total Invested"
           value={formatUGX(capital.totalInvested)}
@@ -82,38 +75,45 @@ export default async function CreditorsPage() {
           </ButtonLink>
         </div>
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Name</TableHead>
-              <TableHead>Contact</TableHead>
-              <TableHead>Address</TableHead>
-              <TableHead>Date Added</TableHead>
-              <TableHead>Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {creditors.map((creditor) => (
-              <TableRow key={creditor.id} data-testid="data-row">
-                <TableCell className="font-medium">{creditor.name}</TableCell>
-                <TableCell>{creditor.contact}</TableCell>
-                <TableCell>{creditor.address}</TableCell>
-                <TableCell className="font-mono tabular-nums">
-                  {formatDate(creditor.createdAt)}
-                </TableCell>
-                <TableCell>
-                  <ButtonLink
-                    href={`/creditors/${creditor.id}`}
-                    variant="outline"
-                    size="sm"
-                  >
-                    View
-                  </ButtonLink>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <ResponsiveTable
+          columns={[
+            {
+              key: "name",
+              header: "Name",
+              primary: true,
+              render: (c) => <span className="font-medium">{c.name}</span>,
+            },
+            {
+              key: "contact",
+              header: "Contact",
+              render: (c) => c.contact,
+            },
+            {
+              key: "address",
+              header: "Address",
+              render: (c) => c.address,
+            },
+            {
+              key: "createdAt",
+              header: "Date Added",
+              cardLabel: "Added",
+              render: (c) => <span className="font-mono tabular-nums">{formatDate(c.createdAt)}</span>,
+            },
+            {
+              key: "actions",
+              header: "Actions",
+              hideInCard: false,
+              render: (c) => (
+                <ButtonLink href={`/creditors/${c.id}`} variant="outline" size="sm">
+                  View
+                </ButtonLink>
+              ),
+            },
+          ] as Column<typeof creditors[number]>[]}
+          rows={creditors}
+          getRowKey={(c) => c.id}
+          getRowProps={(_c) => ({ "data-testid": "data-row" })}
+        />
       )}
     </div>
   )

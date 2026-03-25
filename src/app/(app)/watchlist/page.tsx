@@ -12,6 +12,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import type { WatchlistEntry } from "@/types"
 import { formatDate, formatDateTime } from "@/lib/utils"
 
@@ -54,31 +55,34 @@ export default function WatchlistPage() {
       )}
 
       {loading ? (
-        <div className="border rounded-md">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Customer Name</TableHead>
-                <TableHead className="text-right">Loan Amount</TableHead>
-                <TableHead className="text-right">Outstanding Balance</TableHead>
-                <TableHead>Days Overdue</TableHead>
-                <TableHead className="text-right">Daily Rate (UGX)</TableHead>
-                <TableHead>Last Payment</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[1, 2, 3].map((i) => (
-                <TableRow key={i}>
-                  {[1, 2, 3, 4, 5, 6].map((j) => (
-                    <TableCell key={j}>
-                      <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse" />
-                    </TableCell>
-                  ))}
+        <>
+          <div className="hidden md:block border rounded-md">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Customer Name</TableHead>
+                  <TableHead className="text-right">Loan Amount</TableHead>
+                  <TableHead className="text-right">Outstanding Balance</TableHead>
+                  <TableHead>Days Overdue</TableHead>
+                  <TableHead className="text-right">Daily Rate (UGX)</TableHead>
+                  <TableHead>Last Payment</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {[1, 2, 3].map((i) => (
+                  <TableRow key={i}>
+                    {[1, 2, 3, 4, 5, 6].map((j) => (
+                      <TableCell key={j}>
+                        <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse" />
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+          <p className="md:hidden text-muted-foreground">Loading watchlist...</p>
+        </>
       ) : entries.length === 0 ? (
         <div className="py-16 text-center">
           <h2 className="text-lg font-semibold">All borrowers are current.</h2>
@@ -87,41 +91,63 @@ export default function WatchlistPage() {
           </p>
         </div>
       ) : (
-        <div className="border rounded-md">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Customer Name</TableHead>
-                <TableHead className="text-right">Loan Amount</TableHead>
-                <TableHead className="text-right">Outstanding Balance</TableHead>
-                <TableHead>Days Overdue</TableHead>
-                <TableHead className="text-right">Daily Rate (UGX)</TableHead>
-                <TableHead>Last Payment</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {entries.map((entry) => (
-                <TableRow
-                  key={entry.loanId}
-                  data-testid="data-row"
-                  className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => router.push(`/customers/${entry.customerId}`)}
-                  role="button"
-                  aria-label={`View ${entry.customerName}'s profile`}
-                >
-                  <TableCell className="font-medium">{entry.customerName}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{formatUGX(entry.loanAmount)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{formatUGX(entry.outstandingBalance)}</TableCell>
-                  <TableCell>
-                    <OverdueBadge daysOverdue={parseInt(entry.daysOverdue)} />
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">{formatUGX(entry.dailyRate)}</TableCell>
-                  <TableCell className="font-mono tabular-nums">{entry.lastPaymentDate ? formatDate(entry.lastPaymentDate) : "No payments"}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+        <ResponsiveTable
+          columns={[
+            {
+              key: "customerName",
+              header: "Customer Name",
+              cardLabel: "Customer",
+              primary: true,
+              render: (e) => <span className="font-medium">{e.customerName}</span>,
+            },
+            {
+              key: "loanAmount",
+              header: "Loan Amount",
+              cardLabel: "Loan",
+              align: "right",
+              render: (e) => formatUGX(e.loanAmount),
+            },
+            {
+              key: "outstandingBalance",
+              header: "Outstanding Balance",
+              cardLabel: "Outstanding",
+              align: "right",
+              render: (e) => formatUGX(e.outstandingBalance),
+            },
+            {
+              key: "daysOverdue",
+              header: "Days Overdue",
+              cardLabel: "Overdue",
+              render: (e) => <OverdueBadge daysOverdue={parseInt(e.daysOverdue)} />,
+            },
+            {
+              key: "dailyRate",
+              header: "Daily Rate (UGX)",
+              cardLabel: "Daily Rate",
+              align: "right",
+              render: (e) => formatUGX(e.dailyRate),
+            },
+            {
+              key: "lastPayment",
+              header: "Last Payment",
+              cardLabel: "Last Paid",
+              render: (e) => (
+                <span className="font-mono tabular-nums">
+                  {e.lastPaymentDate ? formatDate(e.lastPaymentDate) : "No payments"}
+                </span>
+              ),
+            },
+          ] as Column<WatchlistEntry>[]}
+          rows={entries}
+          getRowKey={(e) => e.loanId}
+          getRowProps={(e) => ({
+            "data-testid": "data-row",
+            className: "cursor-pointer hover:bg-muted/50",
+            onClick: () => router.push(`/customers/${e.customerId}`),
+            role: "button",
+            "aria-label": `View ${e.customerName}'s profile`,
+          })}
+        />
       )}
     </div>
   )

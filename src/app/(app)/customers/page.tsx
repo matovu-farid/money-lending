@@ -6,14 +6,7 @@ import Link from "next/link"
 import { useCustomers } from "@/hooks/use-customers"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
 import type { CustomerSearchParams } from "@/types"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -99,33 +92,37 @@ export default function CustomersPage() {
         </div>
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Contact</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {customers.map((customer) => (
-                <TableRow
-                  key={customer.id}
-                  data-testid="data-row"
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/customers/${customer.id}`)}
-                >
-                  <TableCell className="font-medium">{customer.fullName}</TableCell>
-                  <TableCell>{customer.contact}</TableCell>
-                  <TableCell>
-                    <Badge variant={statusVariant(customer.status)}>
-                      {statusLabel(customer.status)}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <ResponsiveTable
+            columns={[
+              {
+                key: "fullName",
+                header: "Name",
+                primary: true,
+                render: (c) => <span className="font-medium">{c.fullName}</span>,
+              },
+              {
+                key: "contact",
+                header: "Contact",
+                render: (c) => c.contact,
+              },
+              {
+                key: "status",
+                header: "Status",
+                render: (c) => (
+                  <Badge variant={statusVariant(c.status)}>
+                    {statusLabel(c.status)}
+                  </Badge>
+                ),
+              },
+            ] as Column<typeof customers[number]>[]}
+            rows={customers}
+            getRowKey={(c) => c.id}
+            getRowProps={(c) => ({
+              "data-testid": "data-row",
+              className: "cursor-pointer",
+              onClick: () => router.push(`/customers/${c.id}`),
+            })}
+          />
 
           <div className="flex items-center justify-between pt-4">
             <p className="text-sm text-muted-foreground">

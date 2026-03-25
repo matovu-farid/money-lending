@@ -21,11 +21,13 @@ export type Column<T> = {
   cardLabel?: string
 }
 
+export type RowProps = React.HTMLAttributes<HTMLElement> & { [key: string]: unknown }
+
 export type ResponsiveTableProps<T> = {
   columns: Column<T>[]
   rows: T[]
   getRowKey: (row: T) => string
-  getRowProps?: (row: T) => React.HTMLAttributes<HTMLElement>
+  getRowProps?: (row: T) => RowProps
   emptyState?: React.ReactNode
 }
 
