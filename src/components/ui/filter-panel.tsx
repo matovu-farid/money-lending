@@ -18,7 +18,7 @@ export function FilterPanel({ children, label = "Filters", activeCount = 0 }: Fi
       {/* Toggle button — visible on mobile only (md:hidden) */}
       <button
         type="button"
-        className="flex items-center gap-1 text-sm font-medium text-muted-foreground md:hidden h-8 px-2"
+        className="flex items-center gap-1 text-sm font-medium text-muted-foreground md:hidden h-8 min-h-[44px] px-2"
         aria-label="Toggle filters"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}

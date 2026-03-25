@@ -119,7 +119,7 @@ export default function LoansPage() {
         <DropdownMenu>
           <DropdownMenuTrigger
             aria-label="Loan actions"
-            className="flex h-8 w-8 items-center justify-center rounded-md hover:bg-muted transition-colors"
+            className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
           >
             <MoreHorizontal className="h-4 w-4" />
           </DropdownMenuTrigger>
