@@ -40,7 +40,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 
 - [x] **Phase 11: Test Selector Foundation** - Scope data-testid attributes and remove hardcoded padding before any layout changes (completed 2026-03-24)
 - [x] **Phase 12: Mobile Navigation** - Bottom tab bar with 5 primary tabs, More sheet, safe-area insets, sidebar hidden on mobile (completed 2026-03-25)
-- [ ] **Phase 13: Responsive Table Primitive + Card Layouts** - ResponsiveTable component applied to all list pages; dashboard reflowed to single column
+- [x] **Phase 13: Responsive Table Primitive + Card Layouts** - ResponsiveTable component applied to all list pages; dashboard reflowed to single column (completed 2026-03-25)
 - [ ] **Phase 14: Forms, Filters, and Table Polish** - Single-column forms, collapsible filters, sticky table headers across all pages
 - [ ] **Phase 15: Touch Optimization** - 44px touch targets, DrawerDialog for mobile, swipe gestures
 - [ ] **Phase 16: Cypress Mobile Coverage** - All existing specs pass at desktop; mobile viewport blocks and tab bar tests added
@@ -85,7 +85,7 @@ Plans:
   2. At desktop viewport, the same pages show the original table layout — no regressions
   3. The Dashboard KPI cards and charts reflow to a single column on mobile
   4. The card/table switch is controlled by CSS breakpoints with no JavaScript viewport detection (no hydration mismatch)
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 13-01-PLAN.md — Build ResponsiveTable primitive, wire Customers/Creditors/Watchlist, fix Dashboard grid
 - [ ] 13-02-PLAN.md — Wire Loans/Payments/Expenses/Income, full Cypress E2E coverage
@@ -138,7 +138,7 @@ Plans:
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
 | 11. Test Selector Foundation | v1.2 | 2/2 | Complete | 2026-03-24 |
 | 12. Mobile Navigation | v1.2 | 2/2 | Complete | 2026-03-25 |
-| 13. Responsive Table + Cards | 1/2 | In Progress|  | - |
+| 13. Responsive Table + Cards | 2/2 | Complete   | 2026-03-25 | - |
 | 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |
 | 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
 | 16. Cypress Mobile Coverage | v1.2 | 0/TBD | Not started | - |
