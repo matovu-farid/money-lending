@@ -38,8 +38,8 @@ Declared values (all multiples of 4, sourced from Tailwind v4 default scale):
 | Token | px Value | Tailwind Class | Usage |
 |-------|----------|----------------|-------|
 | xs | 4px | `p-1`, `gap-1` | Icon gaps, inline tight padding |
-| sm | 8px | `p-2`, `gap-2` | Compact element spacing, card field row gaps |
-| md | 16px | `p-4`, `gap-4` | Card internal padding, default element spacing |
+| sm | 8px | `p-2`, `gap-2` | Compact element spacing, card field row gaps, card list vertical spacing |
+| md | 16px | `p-4`, `gap-4` | Card internal padding, default element spacing, card detail grid horizontal gap |
 | lg | 24px | `p-6`, `gap-6` | Section padding (desktop only via `md:p-6`) |
 | xl | 32px | `p-8`, `gap-8` | Layout column gaps |
 | 2xl | 48px | `gap-12` | Major section breaks |
@@ -48,8 +48,6 @@ Declared values (all multiples of 4, sourced from Tailwind v4 default scale):
 **Exceptions (this phase):**
 
 - **Mobile card internal padding:** `p-4` fixed (not `p-4 md:p-6`) — cards are mobile-only elements, no responsive override needed.
-- **Card detail grid gaps:** `gap-x-3 gap-y-1` (12px horizontal, 4px vertical) — matches the existing `dl` grid pattern in dashboard activity feed (from RESEARCH.md Pattern 1 code example).
-- **Card list vertical spacing:** `space-y-3` (12px between cards) — a deliberate 12px choice to keep the card list dense without using the full 16px md gap.
 - **Page-level responsive padding:** `p-4 md:p-6` — established in Phase 11 (RESP-06), preserved unchanged.
 
 ---
@@ -58,6 +56,8 @@ Declared values (all multiples of 4, sourced from Tailwind v4 default scale):
 
 All sizes use Tailwind's default rem scale at base 16px. Mono font is mandatory for all currency and numeric values.
 
+**Permitted weights: 400 (regular) and 600 (semibold) only.**
+
 | Role | Tailwind Class | Size | Weight | Font | Line Height | Usage |
 |------|---------------|------|--------|------|-------------|-------|
 | Body | `text-sm` | 14px | 400 (regular) | Geist Sans | 1.5 (Tailwind default) | Table cells, card detail values, filter labels |
@@ -65,11 +65,11 @@ All sizes use Tailwind's default rem scale at base 16px. Mono font is mandatory 
 | Heading | `text-2xl font-semibold tracking-tight` | 24px | 600 (semibold) | Geist Sans | 1.2 | Page `h1` titles (e.g. "Customers", "Loans") |
 | Display | `text-xl font-semibold` | 20px | 600 (semibold) | Geist Sans | 1.2 | Section headings, KPI card titles |
 
+**Card primary field:** `text-sm font-semibold` (14px, weight 600) — the primary field within a mobile card. Uses the semibold weight tier to distinguish it from plain body text detail fields.
+
 **Numeric/currency values:** always `font-mono tabular-nums` (Geist Mono) — applies to amount columns in all 7 list pages and KPI card values. Right-align with `text-right`.
 
 **Heading letter-spacing:** `tracking-tight` (`-0.025em`) — defined in `globals.css` with `-0.02em` on `h1/h2/h3`. Applied via `tracking-tight` on `h1` class.
-
-**Card primary field:** `text-sm font-medium` (14px, weight 500) — the primary (boldest) field within a mobile card. Distinguishable from detail fields but not heading-weight.
 
 ---
 
@@ -99,6 +99,8 @@ All values are CSS custom properties defined in `src/app/globals.css`. Use Tailw
 
 ## Component Specifications
 
+**Focal Point:** The primary visual anchor of each mobile card is the `text-sm font-semibold` primary field at the top of the card (e.g. customer name, loan borrower name). All other detail fields are subordinate to it.
+
 ### ResponsiveTable Primitive
 
 New component at `src/components/ui/responsive-table.tsx`. Marked `"use client"`.
@@ -116,17 +118,19 @@ New component at `src/components/ui/responsive-table.tsx`. Marked `"use client"`
   - `bg-card` = `var(--card)` = white surface
   - `p-4` = 16px internal padding (all sides)
   - `space-y-2` = 8px between primary field and detail grid
-- Primary field: `text-sm font-medium` — full width, top of card
-- Detail grid: `<dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-sm">`
+- Primary field: `text-sm font-semibold` — full width, top of card
+- Detail grid: `<dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">`
+  - `gap-x-4` = 16px horizontal gap between label and value columns
+  - `gap-y-1` = 4px vertical gap between rows
   - `<dt>`: `text-muted-foreground` (label)
   - `<dd>`: default foreground; `text-right font-mono tabular-nums` for numeric/currency columns
-- Card list container: `space-y-3` between cards (12px gap)
+- Card list container: `space-y-2` between cards (8px gap)
 - `data-testid="data-row"` on every card `<div>` — mandatory for Cypress compatibility.
 
 **Actions column placement (for pages with DropdownMenu):**
 - Actions are rendered outside the `<dl>` grid.
 - Position: trailing element in the primary row using `flex justify-between items-center` on the card header `<div>`.
-- The primary field text is `flex-1 text-sm font-medium`. The DropdownMenu trigger floats right.
+- The primary field text is `flex-1 text-sm font-semibold`. The DropdownMenu trigger floats right.
 - Source: RESEARCH.md Pattern 3 + Open Question 1 recommendation.
 
 **Empty state:** passed via `emptyState` prop. The `ResponsiveTable` renders it when `rows.length === 0`. Each page supplies its own empty state node.
