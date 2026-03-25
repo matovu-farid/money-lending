@@ -46,4 +46,32 @@ describe("Borrower Watchlist", () => {
     cy.url().should("include", "/watchlist")
     cy.contains("Watchlist", { timeout: 15000 }).should("be.visible")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders page at mobile and shows tab bar", () => {
+      cy.visit("/watchlist")
+      cy.get("h1").contains("Watchlist", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+
+    it("shows card layout instead of table at mobile when data exists", () => {
+      cy.visit("/watchlist")
+      cy.get("h1").contains("Watchlist", { timeout: 15000 }).should("be.visible")
+      // If there are data rows, they should follow the visible filter pattern
+      cy.get("body").then(($body) => {
+        if ($body.find("[data-testid='data-row']").length > 0) {
+          cy.get("[data-testid='data-row']").filter(":visible").should("have.length.gte", 1)
+        } else {
+          // Empty state is acceptable — just verify table container is hidden at mobile
+          cy.get("[data-slot='table-container']").should("not.be.visible")
+        }
+      })
+    })
+  })
 })

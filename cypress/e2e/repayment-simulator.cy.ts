@@ -87,4 +87,29 @@ describe("Repayment Simulator", () => {
       cy.contains("button", "Simulate").should("be.disabled")
     })
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders loan detail with simulator at mobile and shows tab bar", () => {
+      cy.then(() => {
+        cy.visit(`/loans/${loanId}`)
+        cy.contains("Outstanding Balance", { timeout: 15000 }).should("exist")
+        cy.get("[data-testid='bottom-tab-bar']").should("exist")
+          .should("have.css", "display", "flex")
+        cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+      })
+    })
+
+    it("simulator panel is accessible at mobile", () => {
+      cy.then(() => {
+        cy.visit(`/loans/${loanId}`)
+        cy.contains("Repayment Simulator", { timeout: 15000 }).scrollIntoView().should("exist")
+        cy.get("#simulatorAmount").scrollIntoView().should("be.visible")
+        cy.contains("button", "Simulate").should("be.visible")
+      })
+    })
+  })
 })

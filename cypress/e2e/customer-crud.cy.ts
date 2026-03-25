@@ -151,4 +151,38 @@ describe("Customer CRUD", () => {
       cy.contains("Customer profile")
     })
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders customers list at mobile and shows tab bar", () => {
+      cy.visit("/customers")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+
+    it("customer registration form renders at mobile", () => {
+      cy.visit("/customers/new")
+      cy.get("#fullName").should("be.visible")
+      cy.get("#contact").should("be.visible")
+      cy.get("#address").should("be.visible")
+      cy.contains("button", "Register Customer").should("be.visible")
+    })
+
+    it("shows card layout after creating a customer at mobile", () => {
+      cy.visit("/customers/new")
+      cy.get("#fullName").type("Mobile Test Customer")
+      cy.get("#contact").type("0744444444")
+      cy.get("#address").type("Kampala, Uganda")
+      cy.contains("button", "Register Customer").click()
+      cy.url({ timeout: 10000 }).should("match", /\/customers\/[0-9a-f-]{36}/)
+
+      cy.visit("/customers")
+      cy.get("[data-slot='table-container']").should("not.be.visible")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length.gte", 1)
+    })
+  })
 })

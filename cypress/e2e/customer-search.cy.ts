@@ -100,4 +100,38 @@ describe("Customer Search and Filtering", () => {
     cy.contains("Showing 1", { timeout: 10000 }).should("be.visible")
     cy.contains("of 3 customers").should("be.visible")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders page at mobile and shows tab bar", () => {
+      cy.visit("/customers")
+      cy.contains("Alice Nakato", { timeout: 10000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+
+    it("shows card layout instead of table at mobile", () => {
+      cy.visit("/customers")
+      cy.contains("Alice Nakato", { timeout: 10000 }).should("be.visible")
+      cy.get("[data-slot='table-container']").should("not.be.visible")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length.gte", 1)
+    })
+
+    it("filter panel toggle works at mobile", () => {
+      cy.visit("/customers")
+      cy.contains("Alice Nakato", { timeout: 10000 }).should("be.visible")
+      // Toggle filters button should be visible at mobile
+      cy.get("[aria-label='Toggle filters']").should("be.visible")
+      // Filter panel content should be hidden by default at mobile
+      cy.get("[data-slot='filter-panel-content']").should("not.be.visible")
+      // Click toggle to open
+      cy.get("[aria-label='Toggle filters']").click()
+      // Filter panel content should now be visible
+      cy.get("[data-slot='filter-panel-content']").should("be.visible")
+    })
+  })
 })

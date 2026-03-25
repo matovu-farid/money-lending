@@ -91,4 +91,34 @@ describe("Payment Recording Flow", () => {
       cy.contains("500,000", { timeout: 10000 }).should("be.visible")
     })
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders loan detail page at mobile and shows tab bar", () => {
+      cy.then(() => {
+        cy.visit(`/loans/${loanId}`)
+        cy.contains("Outstanding Balance", { timeout: 15000 }).should("exist")
+        cy.get("[data-testid='bottom-tab-bar']").should("exist")
+          .should("have.css", "display", "flex")
+        cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+      })
+    })
+
+    it("shows card layout for payments after recording at mobile", () => {
+      cy.then(() => {
+        // Record a payment first
+        cy.visit(`/loans/${loanId}`)
+        cy.contains("Record Payment", { timeout: 15000 }).click()
+        cy.get("#amount").type("100000")
+        cy.contains("button", "Record").click()
+        cy.contains("100,000", { timeout: 10000 }).should("be.visible")
+
+        // Payments section should show data-row cards at mobile
+        cy.get("[data-testid='data-row']").filter(":visible").should("have.length.gte", 1)
+      })
+    })
+  })
 })

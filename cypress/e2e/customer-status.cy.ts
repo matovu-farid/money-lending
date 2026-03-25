@@ -94,4 +94,28 @@ describe("Customer Status Management", () => {
     // Status should remain Active
     cy.get("[data-slot=select-trigger]").should("contain", "Active")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders customer detail page at mobile and shows tab bar", () => {
+      cy.then(() => {
+        cy.visit(`/customers/${customerId}`)
+        cy.contains("Status Test Customer", { timeout: 10000 }).should("be.visible")
+        cy.get("[data-testid='bottom-tab-bar']").should("exist")
+          .should("have.css", "display", "flex")
+        cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+      })
+    })
+
+    it("status dropdown trigger is visible at mobile", () => {
+      cy.then(() => {
+        cy.visit(`/customers/${customerId}`)
+        cy.get("[data-slot=select-trigger]", { timeout: 10000 }).should("be.visible")
+          .and("contain", "Active")
+      })
+    })
+  })
 })

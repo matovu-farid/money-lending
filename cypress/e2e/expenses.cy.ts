@@ -101,4 +101,26 @@ describe("Expense CRUD", () => {
       "be.visible",
     );
   });
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844);
+    });
+
+    it("renders page at mobile and shows tab bar", () => {
+      cy.visit("/expenses");
+      cy.get("h1").should("be.visible");
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex");
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible");
+    });
+
+    it("Add Expense opens as drawer at mobile", () => {
+      cy.visit("/expenses");
+      cy.contains("button", "Add Expense", { timeout: 15000 })
+        .scrollIntoView()
+        .click({ force: true });
+      cy.get('[data-slot="drawer-dialog-content"]', { timeout: 5000 }).should("be.visible");
+    });
+  });
 });

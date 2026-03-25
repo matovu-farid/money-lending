@@ -100,4 +100,39 @@ describe("Customer Loan History", () => {
     cy.get("button[aria-label='Collapse']").first().click()
     cy.contains("No payments recorded.").should("not.exist")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders customer detail page at mobile and shows tab bar", () => {
+      cy.then(() => {
+        cy.visit(`/customers/${customerId}`)
+        cy.contains("History Customer", { timeout: 10000 }).should("be.visible")
+        cy.get("[data-testid='bottom-tab-bar']").should("exist")
+          .should("have.css", "display", "flex")
+        cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+      })
+    })
+
+    it("loan history section renders at mobile", () => {
+      cy.then(() => {
+        // Issue a loan first
+        cy.visit(`/loans/new?customerId=${customerId}`)
+        cy.get("#principalAmount").type("500000")
+        cy.contains("button", "Next").click()
+        cy.get("#collateralNature").click()
+        cy.get("[role=option]").contains("Land Title").click()
+        cy.get("[data-base-ui-inert]").should("not.exist")
+        cy.contains("button", "Next").click()
+        cy.contains("button", "Issue Loan").click()
+        cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
+
+        cy.visit(`/customers/${customerId}`)
+        cy.contains("Loan History").should("exist")
+        cy.contains("LOAN-").should("exist")
+      })
+    })
+  })
 })

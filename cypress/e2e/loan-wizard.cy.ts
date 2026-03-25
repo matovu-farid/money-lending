@@ -157,4 +157,25 @@ describe("Loan Issuance Wizard", () => {
     cy.get("#customerId").should("have.value", "Borrower One")
     cy.get("#customerId").should("be.disabled")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders loan wizard at mobile and shows tab bar", () => {
+      cy.visit(`/loans/new?customerId=${customerId}`)
+      cy.contains("Step 1 of 3").should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+
+    it("form fields are interactable at mobile", () => {
+      cy.visit(`/loans/new?customerId=${customerId}`)
+      cy.get("#principalAmount").should("be.visible")
+      cy.get("#principalAmount").type("300000")
+      cy.contains("button", "Next").should("be.visible")
+    })
+  })
 })

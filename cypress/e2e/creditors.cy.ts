@@ -71,4 +71,32 @@ describe("Creditors", () => {
     cy.contains("Investments").should("be.visible")
     cy.contains("Repayments").should("be.visible")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders page at mobile and shows tab bar", () => {
+      cy.visit("/creditors")
+      cy.get("h1").should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+
+    it("shows card layout instead of table at mobile", () => {
+      // Seed a creditor inline so we have data to display
+      cy.visit("/creditors/new")
+      cy.get('input[name="name"]').type("Mobile Creditor Test")
+      cy.get('input[name="contact"]').type("0722222222")
+      cy.get('input[name="address"]').type("Kampala, Uganda")
+      cy.get('input[name="amount"]').type("2000000")
+      cy.contains("button", "Add Creditor").click()
+      cy.url({ timeout: 30000 }).should("match", /\/creditors$/)
+      cy.visit("/creditors")
+      cy.get("[data-slot='table-container']").should("not.be.visible")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length.gte", 1)
+    })
+  })
 })
