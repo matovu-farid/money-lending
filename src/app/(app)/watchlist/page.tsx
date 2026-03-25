@@ -4,14 +4,6 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { getWatchlistAction } from "@/actions/watchlist.actions"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import type { WatchlistEntry } from "@/types"
 import { formatDate, formatDateTime } from "@/lib/utils"
@@ -55,34 +47,14 @@ export default function WatchlistPage() {
       )}
 
       {loading ? (
-        <>
-          <div className="hidden md:block border rounded-md">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Customer Name</TableHead>
-                  <TableHead className="text-right">Loan Amount</TableHead>
-                  <TableHead className="text-right">Outstanding Balance</TableHead>
-                  <TableHead>Days Overdue</TableHead>
-                  <TableHead className="text-right">Daily Rate (UGX)</TableHead>
-                  <TableHead>Last Payment</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {[1, 2, 3].map((i) => (
-                  <TableRow key={i}>
-                    {[1, 2, 3, 4, 5, 6].map((j) => (
-                      <TableCell key={j}>
-                        <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse" />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-          <p className="md:hidden text-muted-foreground">Loading watchlist...</p>
-        </>
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="border rounded-md p-4 space-y-2">
+              <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse" />
+            </div>
+          ))}
+        </div>
       ) : entries.length === 0 ? (
         <div className="py-16 text-center">
           <h2 className="text-lg font-semibold">All borrowers are current.</h2>
