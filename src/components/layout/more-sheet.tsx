@@ -32,9 +32,10 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
     <Drawer.Root open={open} onOpenChange={onOpenChange} swipeDirection="down">
       <Drawer.Portal>
         <Drawer.Backdrop className="fixed inset-0 z-50 bg-black/20" />
+        <Drawer.Viewport className="fixed inset-0 z-50 flex items-end pointer-events-none">
         <Drawer.Popup
           data-testid="more-sheet"
-          className="fixed bottom-0 inset-x-0 z-50 bg-background rounded-t-2xl safe-area-bottom"
+          className="w-full bg-background rounded-t-2xl safe-area-bottom pointer-events-auto"
         >
           <div className="mx-auto mt-2 h-2 w-12 rounded-full bg-muted-foreground/30" />
           <nav className="p-4 space-y-1">
@@ -63,6 +64,7 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
             })}
           </nav>
         </Drawer.Popup>
+        </Drawer.Viewport>
       </Drawer.Portal>
     </Drawer.Root>
   )

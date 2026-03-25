@@ -62,35 +62,37 @@ function DrawerDialogContent({
   return (
     <Drawer.Portal>
       <Drawer.Backdrop className="fixed inset-0 z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-[24px]" />
-      <Drawer.Popup
-        data-slot="drawer-dialog-content"
-        className={cn(
-          "fixed bottom-0 inset-x-0 z-50 flex flex-col bg-white/85 rounded-t-xl p-4 max-h-[90dvh] overflow-y-auto",
-          "data-open:animate-in data-open:slide-in-from-bottom",
-          "data-closed:animate-out data-closed:slide-out-to-bottom",
-          className
-        )}
-        {...props}
-      >
-        {/* Drag handle */}
-        <div className="mx-auto mb-4 h-2 w-12 rounded-full bg-muted-foreground/30" />
-        {children}
-        {showCloseButton !== false && (
-          <Drawer.Close
-            render={
-              <Button
-                variant="ghost"
-                className="absolute top-2 right-2"
-                size="icon-sm"
-                aria-label="Close"
-              />
-            }
-          >
-            <XIcon />
-            <span className="sr-only">Close</span>
-          </Drawer.Close>
-        )}
-      </Drawer.Popup>
+      <Drawer.Viewport className="fixed inset-0 z-50 flex items-end pointer-events-none">
+        <Drawer.Popup
+          data-slot="drawer-dialog-content"
+          className={cn(
+            "w-full flex flex-col bg-white/85 rounded-t-xl p-4 max-h-[90dvh] overflow-y-auto pointer-events-auto",
+            "data-open:animate-in data-open:slide-in-from-bottom",
+            "data-closed:animate-out data-closed:slide-out-to-bottom",
+            className
+          )}
+          {...props}
+        >
+          {/* Drag handle */}
+          <div className="mx-auto mb-4 h-2 w-12 rounded-full bg-muted-foreground/30" />
+          {children}
+          {showCloseButton !== false && (
+            <Drawer.Close
+              render={
+                <Button
+                  variant="ghost"
+                  className="absolute top-2 right-2"
+                  size="icon-sm"
+                  aria-label="Close"
+                />
+              }
+            >
+              <XIcon />
+              <span className="sr-only">Close</span>
+            </Drawer.Close>
+          )}
+        </Drawer.Popup>
+      </Drawer.Viewport>
     </Drawer.Portal>
   )
 }
