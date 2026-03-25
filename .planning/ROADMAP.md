@@ -39,7 +39,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 **Milestone Goal:** Make the entire app usable on mobile, tablet, and desktop — bottom tab bar navigation, responsive card layouts for all list pages, touch-friendly interactions, and full Cypress coverage at mobile viewport.
 
 - [x] **Phase 11: Test Selector Foundation** - Scope data-testid attributes and remove hardcoded padding before any layout changes (completed 2026-03-24)
-- [ ] **Phase 12: Mobile Navigation** - Bottom tab bar with 5 primary tabs, More sheet, safe-area insets, sidebar hidden on mobile
+- [x] **Phase 12: Mobile Navigation** - Bottom tab bar with 5 primary tabs, More sheet, safe-area insets, sidebar hidden on mobile (completed 2026-03-25)
 - [ ] **Phase 13: Responsive Table Primitive + Card Layouts** - ResponsiveTable component applied to all list pages; dashboard reflowed to single column
 - [ ] **Phase 14: Forms, Filters, and Table Polish** - Single-column forms, collapsible filters, sticky table headers across all pages
 - [ ] **Phase 15: Touch Optimization** - 44px touch targets, DrawerDialog for mobile, swipe gestures
@@ -71,7 +71,7 @@ Plans:
   3. The active tab is visually highlighted with a smooth indicator transition
   4. At tablet/desktop viewport (768px+), the sidebar is visible and the bottom tab bar is absent from the DOM
   5. On iPhone (viewport-fit=cover), the bottom tab bar clears the home indicator via safe-area-inset-bottom padding
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 12-01-PLAN.md — Build BottomTabBar, MoreSheet, wire into AppShell, clean up TopBar, add viewport export
 - [ ] 12-02-PLAN.md — Cypress E2E tests for mobile navigation and full regression check
@@ -134,7 +134,7 @@ Plans:
 | 9. Design System Overhaul | v1.1 | 6/6 | Complete | 2026-03-23 |
 | 10. Verification & Doc Cleanup | v1.1 | 1/1 | Complete | 2026-03-24 |
 | 11. Test Selector Foundation | 2/2 | Complete    | 2026-03-24 | - |
-| 12. Mobile Navigation | 1/2 | In Progress|  | - |
+| 12. Mobile Navigation | 2/2 | Complete   | 2026-03-25 | - |
 | 13. Responsive Table + Cards | v1.2 | 0/TBD | Not started | - |
 | 14. Forms, Filters & Polish | v1.2 | 0/TBD | Not started | - |
 | 15. Touch Optimization | v1.2 | 0/TBD | Not started | - |
