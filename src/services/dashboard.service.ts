@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { auditLog } from "@/lib/db/schema/audit"
+import { customers } from "@/lib/db/schema/customers"
 import { eq, isNull, sum, desc, and, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
@@ -81,6 +82,12 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
+const formatAmount = (amount: string | number | undefined): string => {
+  if (amount === undefined || amount === null) return "?"
+  const n = typeof amount === "string" ? parseFloat(amount) : amount
+  return n.toLocaleString("en-US")
+}
+
 export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -92,33 +99,73 @@ export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseE
         .orderBy(desc(auditLog.occurredAt))
         .limit(10)
 
-      return recentEntries.map((entry) => {
+      const items: ActivityFeedItem[] = []
+
+      for (const entry of recentEntries) {
         let type: ActivityFeedItem["type"] = "payment_received"
         let description = ""
+        let loanId: string | undefined
+        let customerId: string | undefined
+        let detail: ActivityFeedItem["detail"]
 
-        if (entry.entityType === "loan" && entry.action === "create") {
+        if (entry.entityType === "loan" && entry.action === "loan.create") {
           type = "loan_issued"
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
-          description = `Loan issued — UGX ${afterVal.principalAmount ?? "?"}`
-        } else if (entry.entityType === "payment" && entry.action === "create") {
+          const amount = formatAmount(afterVal.principalAmount)
+          customerId = afterVal.customerId as string | undefined
+          loanId = entry.entityId
+
+          // Look up customer name if customerId is available
+          let customerName: string | undefined
+          if (customerId) {
+            const [customer] = await db
+              .select({ fullName: customers.fullName })
+              .from(customers)
+              .where(eq(customers.id, customerId))
+              .limit(1)
+            customerName = customer?.fullName
+          }
+
+          description = customerName
+            ? `Loan issued to ${customerName} — UGX ${amount}`
+            : `Loan issued — UGX ${amount}`
+
+          detail = {
+            amount: afterVal.principalAmount,
+            collateral: afterVal.collateral?.nature,
+          }
+        } else if (entry.entityType === "payment" && entry.action === "payment.create") {
           type = "payment_received"
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
-          description = `Payment received — UGX ${afterVal.amount ?? "?"}`
-        } else if (entry.entityType === "payment" && entry.action === "delete") {
+          const amount = formatAmount(afterVal.amount)
+          loanId = afterVal.loanId as string | undefined
+          description = `Payment received — UGX ${amount}`
+          detail = {
+            interestPortion: afterVal.interestPortion,
+            principalPortion: afterVal.principalPortion,
+          }
+        } else if (entry.entityType === "payment" && entry.action === "payment.delete") {
           type = "payment_received"
-          description = `Payment deleted`
+          description = "Payment deleted"
+        } else if (entry.entityType === "payment" && entry.action === "payment.update") {
+          type = "payment_received"
+          description = "Payment updated"
         } else {
           description = `${entry.entityType} ${entry.action}`
         }
 
-        return {
+        items.push({
           id: entry.id,
           type,
           description,
           timestamp: entry.occurredAt,
-          loanId: entry.entityType === "loan" ? entry.entityId : undefined,
-        }
-      })
+          loanId,
+          customerId,
+          detail,
+        })
+      }
+
+      return items
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
