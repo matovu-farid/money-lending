@@ -43,7 +43,7 @@ Full details: [milestones/v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md)
 - [x] **Phase 13: Responsive Table Primitive + Card Layouts** - ResponsiveTable component applied to all list pages; dashboard reflowed to single column (completed 2026-03-25)
 - [x] **Phase 14: Forms, Filters, and Table Polish** - Single-column forms, collapsible filters, sticky table headers across all pages (completed 2026-03-25)
 - [x] **Phase 15: Touch Optimization** - 44px touch targets, DrawerDialog for mobile, swipe gestures (completed 2026-03-25)
-- [ ] **Phase 16: Cypress Mobile Coverage** - All existing specs pass at desktop; mobile viewport blocks and tab bar tests added
+- [x] **Phase 16: Cypress Mobile Coverage** - All existing specs pass at desktop; mobile viewport blocks and tab bar tests added (completed 2026-03-26)
 
 ## Phase Details
 
@@ -124,7 +124,7 @@ Plans:
   1. All existing Cypress spec files pass when run at default (desktop) viewport after all responsive changes
   2. Every existing spec file contains a mobile viewport block (`cy.viewport(390, 844)`) covering rendering, navigation, and key actions
   3. A dedicated spec for the bottom tab bar verifies tab switching, "More" sheet, active state, and safe-area layout at mobile viewport
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 Plans:
 - [ ] 16-01-PLAN.md — Tab bar spec + mobile viewport blocks for table/form/detail specs (14 files)
 - [ ] 16-02-PLAN.md — Mobile viewport blocks for remaining 12 specs + full suite desktop regression
@@ -150,4 +150,4 @@ Plans:
 | 13. Responsive Table + Cards | 2/2 | Complete    | 2026-03-25 | - |
 | 14. Forms, Filters & Polish | 2/2 | Complete    | 2026-03-25 | - |
 | 15. Touch Optimization | 2/2 | Complete    | 2026-03-25 | - |
-| 16. Cypress Mobile Coverage | 1/2 | In Progress|  | - |
+| 16. Cypress Mobile Coverage | 2/2 | Complete   | 2026-03-26 | - |
