@@ -214,6 +214,20 @@ describe("Design System — Sovereign Ledger", () => {
     })
   })
 
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders design system page at mobile", () => {
+      cy.visit("/dashboard")
+      cy.get("h1", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
+
   // -------------------------------------------------------------------------
   // 5. Print media — receipt page renders without error
   // -------------------------------------------------------------------------

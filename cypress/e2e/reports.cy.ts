@@ -62,4 +62,18 @@ describe("Reports", () => {
     cy.contains("Assets, liabilities, and equity").should("be.visible")
     cy.contains("Full audit trail").should("be.visible")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders reports page at mobile with tab bar", () => {
+      cy.visit("/reports")
+      cy.contains("Reports", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
 })

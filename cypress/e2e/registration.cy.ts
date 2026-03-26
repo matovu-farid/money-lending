@@ -77,4 +77,18 @@ describe("User Registration", () => {
       expect(result.role).to.eq("unassigned")
     })
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders registration form at mobile", () => {
+      cy.visit("/register")
+      cy.contains("Create your account", { timeout: 10000 }).should("be.visible")
+      cy.get("#name").should("be.visible")
+      cy.get("#email").should("be.visible")
+      cy.get("#password").should("be.visible")
+    })
+  })
 })

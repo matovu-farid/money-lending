@@ -65,4 +65,18 @@ describe("Transaction Log", () => {
     cy.get("[data-slot='select-trigger']").first().invoke("text").should("match", /income/i)
     cy.url().should("include", "/transactions")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders transactions page at mobile with tab bar", () => {
+      cy.visit("/transactions")
+      cy.contains("Transactions", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
 })

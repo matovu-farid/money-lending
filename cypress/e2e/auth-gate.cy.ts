@@ -79,4 +79,15 @@ describe("Auth Gate (proxy.ts)", () => {
     cy.visit("/login")
     cy.url({ timeout: 10000 }).should("include", "/dashboard")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("redirects unauthenticated user at mobile", () => {
+      cy.visit("/dashboard")
+      cy.url({ timeout: 10000 }).should("include", "/login")
+    })
+  })
 })

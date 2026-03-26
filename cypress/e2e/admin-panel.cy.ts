@@ -125,4 +125,18 @@ describe("Admin User Management", () => {
       cy.contains("Access denied")
     })
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders admin panel at mobile with tab bar", () => {
+      cy.visit("/admin")
+      cy.get("h1", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
 })
