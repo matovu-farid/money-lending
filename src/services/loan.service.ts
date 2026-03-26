@@ -4,7 +4,7 @@ import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
-import { eq } from "drizzle-orm"
+import { eq, desc } from "drizzle-orm"
 import {
   DatabaseError,
   CustomerNotFound,
@@ -13,7 +13,7 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan } from "@/types"
+import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
 
 /**
  * Validates that a customer has all required fields for loan issuance (CUST-04).
@@ -131,9 +131,31 @@ export const getLoan = (
     )
   )
 
-export const listLoans = (): Effect.Effect<Loan[], DatabaseError> =>
+export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
   Effect.tryPromise({
-    try: () => db.select().from(loans),
+    try: async () => {
+      const rows = await db
+        .select({
+          id: loans.id,
+          customerId: loans.customerId,
+          principalAmount: loans.principalAmount,
+          interestRate: loans.interestRate,
+          minInterestDays: loans.minInterestDays,
+          startDate: loans.startDate,
+          status: loans.status,
+          interestRateOverride: loans.interestRateOverride,
+          minPeriodOverride: loans.minPeriodOverride,
+          issuedBy: loans.issuedBy,
+          createdAt: loans.createdAt,
+          updatedAt: loans.updatedAt,
+          deletedAt: loans.deletedAt,
+          customerName: customers.fullName,
+        })
+        .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
+        .orderBy(desc(loans.createdAt))
+      return rows
+    },
     catch: (e) => new DatabaseError({ cause: e }),
   })
 

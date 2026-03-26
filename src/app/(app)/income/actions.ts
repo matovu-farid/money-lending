@@ -32,8 +32,9 @@ export async function deleteIncomeAction(id: string) {
 
 export async function createIncomeCategoryAction(input: CreateCategoryInput) {
   const session = await getSessionOrThrow()
-  await Effect.runPromise(createCategory(input, session.user.id))
+  const category = await Effect.runPromise(createCategory(input, session.user.id))
   revalidatePath("/income")
+  return category
 }
 
 export async function deleteIncomeCategoryAction(id: string) {

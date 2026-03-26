@@ -32,8 +32,9 @@ export async function deleteExpenseAction(id: string) {
 
 export async function createExpenseCategoryAction(input: CreateCategoryInput) {
   const session = await getSessionOrThrow()
-  await Effect.runPromise(createCategory(input, session.user.id))
+  const category = await Effect.runPromise(createCategory(input, session.user.id))
   revalidatePath("/expenses")
+  return category
 }
 
 export async function deleteExpenseCategoryAction(id: string) {
