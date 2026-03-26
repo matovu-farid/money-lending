@@ -58,8 +58,15 @@ Full decision log in PROJECT.md Key Decisions table.
 
 - [v1.0]: Effect.js services close over module-scope db — full Context.Tag/Layer DI deferred
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260326-9ss | Remove PGLite from project completely | 2026-03-26 | 666da20 | [260326-9ss-remove-pglite](./quick/260326-9ss-remove-pglite-from-the-project-completel/) |
+
 ## Session Continuity
 
+Last activity: 2026-03-26 - Completed quick task 260326-9ss: Remove PGLite from project
 Last session: 2026-03-26T04:08:27.757Z
 Stopped at: Completed quick task 260326-9ss: Remove PGLite from project
 Resume file: None
