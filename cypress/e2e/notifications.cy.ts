@@ -53,4 +53,18 @@ describe("In-App Notifications", () => {
     cy.get("button[aria-label='Notifications']").click()
     cy.contains("Notifications").should("be.visible")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("notification bell is accessible at mobile", () => {
+      cy.visit("/dashboard")
+      cy.get("button[aria-label='Notifications']").should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
 })

@@ -179,4 +179,18 @@ describe("Daily Collections Tab", () => {
       cy.contains("No payments were recorded for", { timeout: 15000 }).should("be.visible")
     })
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders daily collections page at mobile with tab bar", () => {
+      cy.visit("/payments?tab=daily")
+      cy.contains("Total Collected", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
 })

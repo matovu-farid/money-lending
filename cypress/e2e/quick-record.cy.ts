@@ -193,4 +193,18 @@ describe("Quick-Record Payment Workflow", () => {
     // Payments list should show the new payment
     cy.contains("Quick Record Borrower", { timeout: 10000 }).should("be.visible")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders payments page at mobile with tab bar", () => {
+      cy.visit("/payments")
+      cy.contains("button", "Record Payment", { timeout: 15000 }).should("be.visible")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+  })
 })

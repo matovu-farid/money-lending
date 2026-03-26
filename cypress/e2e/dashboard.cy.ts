@@ -79,4 +79,24 @@ describe("Executive Dashboard", () => {
     cy.visit("/dashboard")
     cy.contains("No recent activity yet.").should("not.exist")
   })
+
+  context("at mobile viewport (390x844)", () => {
+    beforeEach(() => {
+      cy.viewport(390, 844)
+    })
+
+    it("renders dashboard at mobile and shows tab bar", () => {
+      cy.visit("/dashboard")
+      cy.get("[data-testid='bottom-tab-bar']").should("exist")
+        .should("have.css", "display", "flex")
+      cy.get("[data-testid='sidebar-nav']").should("not.be.visible")
+    })
+
+    it("KPI cards are visible at mobile", () => {
+      cy.visit("/dashboard")
+      cy.contains("Loans Outstanding").should("be.visible")
+      cy.contains("Repayments Collected").should("be.visible")
+      cy.contains("Interest Earned").should("be.visible")
+    })
+  })
 })
