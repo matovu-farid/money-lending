@@ -1,5 +1,27 @@
 # Milestones
 
+## v1.2 Responsive (Shipped: 2026-03-26)
+
+**Phases completed:** 6 phases, 12 plans
+
+**Key accomplishments:**
+
+1. Test Selector Foundation — Scoped data-testid selectors on sidebar nav and all data table rows; responsive p-4 md:p-6 padding across 22 pages
+2. Mobile Navigation — Bottom tab bar with 5 primary tabs + More sheet, CSS-only show/hide, safe-area inset padding for iPhone
+3. ResponsiveTable Primitive — Generic CSS-only card/table component wired to all 7 list pages; Dashboard KPI grid breakpoints
+4. Forms, Filters & Polish — FilterPanel collapsible wrapper, sticky table headers, single-column form layouts on mobile
+5. Touch Optimization — 44px WCAG touch targets, DrawerDialog (modal on desktop, bottom drawer on mobile), swipe-to-dismiss
+6. Cypress Mobile Coverage — Mobile viewport blocks in all 29+ spec files, dedicated tab-bar spec, full desktop regression
+
+**Stats:**
+
+- Files modified: 122
+- Lines: +13,150 / -904
+- Timeline: 7 days (2026-03-19 → 2026-03-26)
+- Git range: feat(11-01) → feat(16-02)
+
+---
+
 ## v1.1 Payments (Shipped: 2026-03-24)
 
 **Phases completed:** 5 phases, 13 plans

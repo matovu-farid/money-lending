@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A web-based platform for a lending business to manage the full loan lifecycle — from customer onboarding and loan issuance through daily interest calculation, repayment collection, and financial reporting. Tracks investor (creditor) capital, operational expenses, and generates monthly financial statements (P&L, Balance Sheet). Includes PDF/Excel export, borrower watchlist, repayment simulator, and in-app alerts. Desktop and tablet use by lending staff.
+A web-based platform for a lending business to manage the full loan lifecycle — from customer onboarding and loan issuance through daily interest calculation, repayment collection, and financial reporting. Tracks investor (creditor) capital, operational expenses, and generates monthly financial statements (P&L, Balance Sheet). Includes PDF/Excel export, borrower watchlist, repayment simulator, and in-app alerts. Fully responsive across mobile, tablet, and desktop with bottom tab bar navigation and touch-optimized interactions.
 
 ## Core Value
 
@@ -33,17 +33,11 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - ✓ RESP-01, RESP-02, RESP-07: ResponsiveTable primitive with CSS-only card layouts, all 7 list pages wired, Dashboard KPI grid breakpoints — v1.2 Phase 13
 - ✓ RESP-03, RESP-04, RESP-05: Single-column forms on mobile, collapsible filter panels, sticky table headers — v1.2 Phase 14
 - ✓ TOUCH-01–03: 44px touch targets, responsive DrawerDialog (desktop modal / mobile drawer), swipe-to-close — v1.2 Phase 15
+- ✓ TEST-02–04: All Cypress specs pass at desktop, mobile viewport blocks in all specs, dedicated tab-bar spec — v1.2 Phase 16
 
 ### Active
 
-<!-- v1.2 Responsive — making the app work on mobile, tablet, and desktop -->
-
-- [ ] Mobile-first responsive layouts across all pages
-- [x] Bottom tab bar navigation on mobile
-- [x] Responsive data tables (card layout on mobile, table on desktop)
-- [x] Collapsible filter panels + sticky table headers
-- [x] Touch-friendly form inputs and actions
-- [x] Cypress tests updated for responsive viewports
+(None — planning next milestone)
 
 ### Out of Scope
 
@@ -58,19 +52,8 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ## Context
 
-- **Shipped:** v1.1 Payments on 2026-03-24 (~67,000 LOC TypeScript, 414 files); v1.0 MVP on 2026-03-22
-
-## Current Milestone: v1.2 Responsive
-
-**Goal:** Make the entire app responsive across mobile, tablet, and desktop using shadcn components, with a bottom tab bar for mobile navigation.
-
-**Target features:**
-- Bottom tab bar navigation for mobile
-- Responsive layouts for all pages (dashboard, customers, loans, payments, collections, creditors, expenses, income, reports)
-- Mobile-friendly data tables (stacked cards on small screens)
-- Touch-optimized forms, dialogs, and action menus
-- Cypress tests adapted to work across viewports
-- **Tech stack:** Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS, shadcn/ui (base-ui primitives)
+- **Shipped:** v1.2 Responsive on 2026-03-26 (122 files changed, +13,150 lines); v1.1 Payments on 2026-03-24; v1.0 MVP on 2026-03-22
+- **Tech stack:** Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS v4, shadcn/ui (base-ui primitives)
 - **Requirements doc:** `private_docs/Money_Lending_App_Requirements.docx` (v1.0, Feb 16 2026)
 - **Known tech debt:**
   - INFR-06: Effect.js services close over module-scope db — full Context.Tag/Layer DI deferred
@@ -107,6 +90,12 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 | base-ui primitives (not Radix) | shadcn@latest uses @base-ui/react — no asChild prop, render prop pattern | ✓ Good |
 | TanStack Query for expense/income only | Full app-wide adoption deferred — useTransition handles most cases | ✓ Good |
 | Loans created as active (no pending) | Disbursement is off-app; recording = it happened | ✓ Good |
+| CSS-only responsive show/hide | No JS viewport detection — avoids hydration mismatch (flex md:hidden pattern) | ✓ Good |
+| ResponsiveTable<T> generic primitive | Single component for all 7 list pages, Column<T> config drives card/table | ✓ Good |
+| DrawerDialog responsive component | Dialog on desktop (md+), Drawer on mobile — useMediaQuery from @base-ui/react | ✓ Good |
+| FilterPanel with CSS-only desktop expand | md:!block overrides hidden state — same SSR-safe pattern as nav | ✓ Good |
+| Tailwind v4 @source exclusions | Exclude .planning/, cypress/, **/*.md from utility scanning to prevent markdown pollution | ✓ Good |
+| safe-area CSS custom property | CSS var instead of Tailwind env() arbitrary value — Tailwind v4 generates invalid CSS from env() | ✓ Good |
 
 ---
-*Last updated: 2026-03-25 after Phase 14 (forms-filters-table-polish) complete*
+*Last updated: 2026-03-26 after v1.2 Responsive milestone*

@@ -98,6 +98,55 @@
 
 ---
 
+## Milestone: v1.2 — Responsive
+
+**Shipped:** 2026-03-26
+**Phases:** 6 | **Plans:** 12 | **Files changed:** 122
+
+### What Was Built
+- Test selector foundation: data-testid on sidebar nav and all data table rows, responsive padding across 22 pages
+- Mobile bottom tab bar with 5 tabs + More sheet, CSS-only show/hide, safe-area inset padding
+- ResponsiveTable<T> generic primitive with CSS-only card/table switch for all 7 list pages
+- FilterPanel collapsible component for mobile, sticky table headers for desktop scroll
+- 44px WCAG touch targets on all interactive elements, DrawerDialog (desktop modal / mobile drawer)
+- Full Cypress mobile viewport coverage across 29+ spec files with dedicated tab-bar spec
+
+### What Worked
+- CSS-only responsive pattern (flex md:hidden) consistently avoided hydration mismatch across all 6 phases
+- Phasing test selectors (Phase 11) before layout changes prevented cascading Cypress breakage
+- Single ResponsiveTable primitive + Column<T> config eliminated per-page card layout code
+- DrawerDialog abstraction cleanly encapsulated desktop/mobile dialog split — 9 call sites migrated in one plan
+- All 19/19 requirements shipped without gaps
+
+### What Was Inefficient
+- Tailwind v4 @source scanning picked up env() arbitrary values from .planning/ markdown files — required @source exclusions discovery mid-phase
+- base-ui Collapsible.Panel uses hidden HTML attribute which blocks CSS !important overrides — had to replace with plain CSS in Phase 14
+- PGLite/Next.js test server infrastructure failure blocked Phase 16 Task 3 (integration test suite)
+- Phase 16 plans had 26 spec files across 2 plans — could have been parallelized better
+
+### Patterns Established
+- CSS-only responsive: flex md:hidden / hidden md:flex for all mobile/desktop switches
+- ResponsiveTable<T> Column<T> config with primary, hideInCard, cardLabel for card rendering
+- DrawerDialog pattern: useMediaQuery → Dialog (md+) or Drawer.Root (mobile)
+- FilterPanel: plain CSS block/hidden toggle with md:!block for desktop-always-visible
+- Cypress mobile viewport: context('at mobile viewport') block inside describe(), after all it() blocks
+- Cypress force:true for tab bar clicks to bypass Next.js dev-mode overlays
+- Cypress h1 selector for page heading assertions at mobile (avoids matching hidden sidebar links)
+
+### Key Lessons
+1. Tailwind v4 scans all project files by default — markdown with CSS-like strings will generate junk utilities; @source exclusions are essential
+2. base-ui Collapsible uses hidden HTML attribute — incompatible with CSS !important overrides; use plain CSS for hybrid server/client toggle patterns
+3. CSS-only responsive patterns are consistently safer than JS-based viewport detection for SSR apps
+4. Test selector scoping BEFORE layout changes is load-bearing — prevents N×M selector breakage across all specs
+5. filter(':visible') in Cypress is required when CSS-only show/hide creates dual DOM elements for same data
+
+### Cost Observations
+- Model mix: primarily opus for planning/execution
+- Sessions: ~8 across 7 days
+- Notable: 6 phases shipped in one week with full Cypress coverage at both viewports
+
+---
+
 ## Cross-Milestone Trends
 
 ### Process Evolution
@@ -106,6 +155,7 @@
 |-----------|---------|--------|------------|
 | v1.0 | 175 | 5 | Initial build — established all patterns |
 | v1.1 | ~96 | 5 | Payments first-class page + design system overhaul |
+| v1.2 | ~24 | 6 | Full responsive mobile support + Cypress mobile coverage |
 
 ### Top Lessons (Verified Across Milestones)
 
@@ -115,3 +165,5 @@
 4. Data-layer-first per phase (service → action → tests → UI) produces clean contracts for dependent phases
 5. Milestone audit before archival catches documentation gaps that would otherwise ship as tech debt
 6. Design system changes are best done as a dedicated phase, not incrementally
+7. CSS-only responsive patterns avoid hydration mismatch in SSR apps — consistently safer than JS viewport detection
+8. Test selector scoping before layout changes prevents cascading spec breakage
