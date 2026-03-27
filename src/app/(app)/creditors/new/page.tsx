@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -12,57 +13,52 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn, formatNumberWithCommas, stripCommas } from "@/lib/utils"
 
+interface CreditorFormValues {
+  name: string
+  contact: string
+  address: string
+  amount: string
+  interestRateMonthly: string
+  investmentDate: string
+}
+
 export default function NewCreditorPage() {
   const router = useRouter()
-
-  // Creditor fields
-  const [name, setName] = useState("")
-  const [contact, setContact] = useState("")
-  const [address, setAddress] = useState("")
-
-  // Investment fields
-  const [amount, setAmount] = useState("")
-  const [interestRateMonthly, setInterestRateMonthly] = useState("10")
-  const [investmentDate, setInvestmentDate] = useState(
-    () => new Date().toISOString().split("T")[0]
-  )
-
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({})
   const [isPending, startTransition] = useTransition()
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<CreditorFormValues>({
+    defaultValues: {
+      name: "",
+      contact: "",
+      address: "",
+      amount: "",
+      interestRateMonthly: "10",
+      investmentDate: new Date().toISOString().split("T")[0],
+    },
+  })
 
-    const errors: Record<string, string> = {}
-    if (!name.trim()) errors.name = "Name is required"
-    if (!contact.trim()) errors.contact = "Contact is required"
-    if (!address.trim()) errors.address = "Address is required"
-    if (!amount.trim() || isNaN(Number(amount)) || Number(amount) <= 0) {
-      errors.amount = "A valid investment amount is required"
-    }
-    if (!interestRateMonthly.trim() || isNaN(Number(interestRateMonthly))) {
-      errors.interestRateMonthly = "Interest rate is required"
-    }
+  const watchedAmount = watch("amount")
 
-    if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors)
-      return
-    }
-
-    setFieldErrors({})
+  function onSubmit(data: CreditorFormValues) {
     startTransition(async () => {
       try {
         const creditor = await createCreditorAction({
-          name: name.trim(),
-          contact: contact.trim(),
-          address: address.trim(),
+          name: data.name.trim(),
+          contact: data.contact.trim(),
+          address: data.address.trim(),
         })
 
         await addInvestmentAction({
           creditorId: creditor.id,
-          amount: amount.trim(),
-          interestRateMonthly: (Number(interestRateMonthly) / 100).toString(),
-          investmentDate,
+          amount: data.amount.trim(),
+          interestRateMonthly: (Number(data.interestRateMonthly) / 100).toString(),
+          investmentDate: data.investmentDate,
         })
 
         router.push("/creditors")
@@ -87,20 +83,18 @@ export default function NewCreditorPage() {
             <CardTitle>Creditor Information</CardTitle>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4" id="creditor-form">
+            <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" id="creditor-form">
               <div className="space-y-1">
                 <Label htmlFor="name">Name</Label>
                 <Input
                   id="name"
-                  name="name"
                   type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. John Investor"
                   disabled={isPending}
+                  {...register("name", { required: "Name is required", validate: v => v.trim() !== "" || "Name is required" })}
                 />
-                {fieldErrors.name && (
-                  <p className="text-destructive text-xs">{fieldErrors.name}</p>
+                {errors.name && (
+                  <p className="text-destructive text-xs">{errors.name.message}</p>
                 )}
               </div>
 
@@ -108,15 +102,13 @@ export default function NewCreditorPage() {
                 <Label htmlFor="contact">Contact</Label>
                 <Input
                   id="contact"
-                  name="contact"
                   type="text"
-                  value={contact}
-                  onChange={(e) => setContact(e.target.value)}
                   placeholder="Phone number or email"
                   disabled={isPending}
+                  {...register("contact", { required: "Contact is required", validate: v => v.trim() !== "" || "Contact is required" })}
                 />
-                {fieldErrors.contact && (
-                  <p className="text-destructive text-xs">{fieldErrors.contact}</p>
+                {errors.contact && (
+                  <p className="text-destructive text-xs">{errors.contact.message}</p>
                 )}
               </div>
 
@@ -124,15 +116,13 @@ export default function NewCreditorPage() {
                 <Label htmlFor="address">Address</Label>
                 <Input
                   id="address"
-                  name="address"
                   type="text"
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
                   placeholder="e.g. Kampala, Uganda"
                   disabled={isPending}
+                  {...register("address", { required: "Address is required", validate: v => v.trim() !== "" || "Address is required" })}
                 />
-                {fieldErrors.address && (
-                  <p className="text-destructive text-xs">{fieldErrors.address}</p>
+                {errors.address && (
+                  <p className="text-destructive text-xs">{errors.address.message}</p>
                 )}
               </div>
             </form>
@@ -151,18 +141,33 @@ export default function NewCreditorPage() {
                   <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
                   <Input
                     id="amount"
-                    name="amount"
                     type="text"
                     inputMode="numeric"
-                    value={formatNumberWithCommas(amount)}
-                    onChange={(e) => setAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                    form="creditor-form"
+                    value={formatNumberWithCommas(watchedAmount)}
+                    onChange={(e) => {
+                      const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
+                      setValue("amount", raw, { shouldValidate: true })
+                    }}
                     placeholder="e.g. 5,000,000"
                     disabled={isPending}
                     className="flex-1"
                   />
+                  <input
+                    type="hidden"
+                    form="creditor-form"
+                    {...register("amount", {
+                      required: "A valid investment amount is required",
+                      validate: v => {
+                        const n = Number(v)
+                        if (isNaN(n) || n <= 0) return "A valid investment amount is required"
+                        return true
+                      },
+                    })}
+                  />
                 </div>
-                {fieldErrors.amount && (
-                  <p className="text-destructive text-xs">{fieldErrors.amount}</p>
+                {errors.amount && (
+                  <p className="text-destructive text-xs">{errors.amount.message}</p>
                 )}
               </div>
 
@@ -171,20 +176,22 @@ export default function NewCreditorPage() {
                 <div className="flex items-center gap-2">
                   <Input
                     id="interestRateMonthly"
-                    name="interestRateMonthly"
                     type="number"
                     min="0"
                     max="100"
                     step="0.01"
-                    value={interestRateMonthly}
-                    onChange={(e) => setInterestRateMonthly(e.target.value)}
+                    form="creditor-form"
                     disabled={isPending}
                     className="flex-1"
+                    {...register("interestRateMonthly", {
+                      required: "Interest rate is required",
+                      validate: v => !isNaN(Number(v)) || "Interest rate is required",
+                    })}
                   />
                   <span className="text-sm text-muted-foreground font-medium w-6 shrink-0">%</span>
                 </div>
-                {fieldErrors.interestRateMonthly && (
-                  <p className="text-destructive text-xs">{fieldErrors.interestRateMonthly}</p>
+                {errors.interestRateMonthly && (
+                  <p className="text-destructive text-xs">{errors.interestRateMonthly.message}</p>
                 )}
               </div>
 
@@ -192,12 +199,12 @@ export default function NewCreditorPage() {
                 <Label htmlFor="investmentDate">Date</Label>
                 <Input
                   id="investmentDate"
-                  name="investmentDate"
                   type="date"
-                  value={investmentDate}
-                  onChange={(e) => setInvestmentDate(e.target.value)}
+                  form="creditor-form"
                   disabled={isPending}
+                  {...register("investmentDate", { required: "Date is required" })}
                 />
+                {errors.investmentDate && <p className="text-sm text-destructive">{errors.investmentDate.message}</p>}
               </div>
             </div>
           </CardContent>

@@ -9,6 +9,7 @@ import {
   TrendingUp,
   BarChart3,
   AlertTriangle,
+  Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -18,6 +19,7 @@ const MORE_ITEMS = [
   { label: "Income", href: "/income", icon: TrendingUp },
   { label: "Reports", href: "/reports", icon: BarChart3 },
   { label: "Watchlist", href: "/watchlist", icon: AlertTriangle },
+  { label: "Admin", href: "/admin", icon: Shield },
 ]
 
 interface MoreSheetProps {
@@ -38,7 +40,7 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
           className="w-full bg-background rounded-t-2xl safe-area-bottom pointer-events-auto"
         >
           <div className="mx-auto mt-2 h-2 w-12 rounded-full bg-muted-foreground/30" />
-          <nav className="p-4 space-y-1">
+          <nav aria-label="More navigation" className="p-4 space-y-1">
             {MORE_ITEMS.map((item) => {
               const Icon = item.icon
               const isActive =
@@ -50,6 +52,7 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
                   href={item.href}
                   data-testid={`more-item-${item.label.toLowerCase()}`}
                   onClick={() => onOpenChange(false)}
+                  aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-3 text-sm transition-colors",
                     isActive

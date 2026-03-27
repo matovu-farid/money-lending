@@ -11,6 +11,7 @@ import {
 import type { PaymentAllocation } from "@/lib/interest"
 import BigNumber from "bignumber.js"
 import type { Loan, Payment } from "@/types"
+import { formatCurrency } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -28,16 +29,6 @@ interface SimulatorResult {
   currentOutstanding: string
   currentUnpaidInterest: string
   afterUnpaidInterest: string
-}
-
-function formatUGX(amount: string | null | undefined): string {
-  if (!amount) return "—"
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "—"
-  return new Intl.NumberFormat("en-UG", {
-    style: "decimal",
-    maximumFractionDigits: 0,
-  }).format(num)
 }
 
 export function SimulatorPanel({ loan, payments }: SimulatorPanelProps) {
@@ -171,11 +162,11 @@ export function SimulatorPanel({ loan, payments }: SimulatorPanelProps) {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Outstanding Balance</span>
-                    <span className="font-medium">UGX {formatUGX(result.currentOutstanding)}</span>
+                    <span className="font-medium">{formatCurrency(result.currentOutstanding)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Unpaid Interest</span>
-                    <span className="font-medium">UGX {formatUGX(result.currentUnpaidInterest)}</span>
+                    <span className="font-medium">{formatCurrency(result.currentUnpaidInterest)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Days Coverage</span>
@@ -199,13 +190,13 @@ export function SimulatorPanel({ loan, payments }: SimulatorPanelProps) {
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Outstanding Balance</span>
                     <span className={amountChanged ? "font-semibold" : "font-medium"}>
-                      UGX {formatUGX(result.allocation.principalBalanceAfter)}
+                      {formatCurrency(result.allocation.principalBalanceAfter)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Unpaid Interest</span>
                     <span className={interestChanged ? "font-semibold" : "font-medium"}>
-                      UGX {formatUGX(result.afterUnpaidInterest)}
+                      {formatCurrency(result.afterUnpaidInterest)}
                     </span>
                   </div>
                   <div className="flex justify-between">

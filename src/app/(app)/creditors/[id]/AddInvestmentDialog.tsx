@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { addInvestmentAction } from "@/app/(app)/creditors/actions"
@@ -20,47 +21,50 @@ interface Props {
   creditorId: string
 }
 
+interface InvestmentFormValues {
+  amount: string
+  interestRate: string
+  date: string
+}
+
 export function AddInvestmentDialog({ creditorId }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [amount, setAmount] = useState("")
-  const [interestRate, setInterestRate] = useState("10")
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
-  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm<InvestmentFormValues>({
+    defaultValues: {
+      amount: "",
+      interestRate: "10",
+      date: new Date().toISOString().split("T")[0],
+    },
+  })
+
+  const watchedAmount = watch("amount")
 
   function resetForm() {
-    setAmount("")
-    setInterestRate("10")
-    setDate(new Date().toISOString().split("T")[0])
-    setErrors({})
+    reset({
+      amount: "",
+      interestRate: "10",
+      date: new Date().toISOString().split("T")[0],
+    })
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-
-    const newErrors: Record<string, string> = {}
-    if (!amount.trim() || isNaN(Number(amount)) || Number(amount) <= 0) {
-      newErrors.amount = "Valid amount is required"
-    }
-    if (!interestRate.trim() || isNaN(Number(interestRate))) {
-      newErrors.interestRate = "Valid interest rate is required"
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors)
-      return
-    }
-
-    setErrors({})
-
+  function onSubmit(data: InvestmentFormValues) {
     startTransition(async () => {
       try {
         await addInvestmentAction({
           creditorId,
-          amount: amount.trim(),
-          interestRateMonthly: (Number(interestRate) / 100).toString(),
-          investmentDate: date,
+          amount: data.amount.trim(),
+          interestRateMonthly: (Number(data.interestRate) / 100).toString(),
+          investmentDate: data.date,
         })
 
         toast.success("Investment added successfully")
@@ -86,7 +90,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         <DialogHeader>
           <DialogTitle>Add Investment</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1">
             <Label htmlFor="inv-amount">Amount</Label>
             <div className="flex items-center gap-2">
@@ -95,15 +99,29 @@ export function AddInvestmentDialog({ creditorId }: Props) {
                 id="inv-amount"
                 type="text"
                 inputMode="numeric"
-                value={formatNumberWithCommas(amount)}
-                onChange={(e) => setAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                value={formatNumberWithCommas(watchedAmount)}
+                onChange={(e) => {
+                  const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
+                  setValue("amount", raw, { shouldValidate: true })
+                }}
                 placeholder="e.g. 5,000,000"
                 disabled={isPending}
                 className="flex-1"
               />
+              <input
+                type="hidden"
+                {...register("amount", {
+                  required: "Valid amount is required",
+                  validate: v => {
+                    const n = Number(v)
+                    if (isNaN(n) || n <= 0) return "Valid amount is required"
+                    return true
+                  },
+                })}
+              />
             </div>
             {errors.amount && (
-              <p className="text-destructive text-xs">{errors.amount}</p>
+              <p className="text-destructive text-xs">{errors.amount.message}</p>
             )}
           </div>
 
@@ -116,15 +134,17 @@ export function AddInvestmentDialog({ creditorId }: Props) {
                 min="0"
                 max="100"
                 step="0.01"
-                value={interestRate}
-                onChange={(e) => setInterestRate(e.target.value)}
                 disabled={isPending}
                 className="flex-1"
+                {...register("interestRate", {
+                  required: "Valid interest rate is required",
+                  validate: v => !isNaN(Number(v)) || "Valid interest rate is required",
+                })}
               />
               <span className="text-sm text-muted-foreground font-medium w-6 shrink-0">%</span>
             </div>
             {errors.interestRate && (
-              <p className="text-destructive text-xs">{errors.interestRate}</p>
+              <p className="text-destructive text-xs">{errors.interestRate.message}</p>
             )}
           </div>
 
@@ -133,10 +153,10 @@ export function AddInvestmentDialog({ creditorId }: Props) {
             <Input
               id="inv-date"
               type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
               disabled={isPending}
+              {...register("date", { required: "Date is required" })}
             />
+            {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
           </div>
 
           <DialogFooter showCloseButton>

@@ -18,7 +18,7 @@ export function FilterPanel({ children, label = "Filters", activeCount = 0 }: Fi
       {/* Toggle button — visible on mobile only (md:hidden) */}
       <button
         type="button"
-        className="flex items-center gap-1 text-sm font-medium text-muted-foreground md:hidden h-8 min-h-[44px] px-2"
+        className="flex items-center gap-1 text-sm font-medium text-muted-foreground md:hidden h-8 min-h-[44px] px-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none rounded-md"
         aria-label="Toggle filters"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
@@ -26,7 +26,7 @@ export function FilterPanel({ children, label = "Filters", activeCount = 0 }: Fi
         <Filter size={16} />
         {label}
         {activeCount > 0 && (
-          <span className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs w-5 h-5">
+          <span className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs min-w-5 h-5 px-1">
             {activeCount}
           </span>
         )}

@@ -9,12 +9,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorProfileClient } from "./CreditorProfileClient"
 import type { CreditorRepayment, CreditorInvestment } from "@/types"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
-}
+import { formatCurrency } from "@/lib/utils"
 
 interface Props {
   params: Promise<{ id: string }>
@@ -71,22 +66,22 @@ export default async function CreditorProfilePage({ params }: Props) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Total Invested"
-          value={formatUGX(dashboard.totalInvested)}
+          value={formatCurrency(dashboard.totalInvested)}
           icon={Landmark}
         />
         <KpiCard
           label="Interest Accrued"
-          value={formatUGX(dashboard.interestAccrued)}
+          value={formatCurrency(dashboard.interestAccrued)}
           icon={TrendingUp}
         />
         <KpiCard
           label="Repayments Made"
-          value={formatUGX(dashboard.repaymentsMade)}
+          value={formatCurrency(dashboard.repaymentsMade)}
           icon={CreditCard}
         />
         <KpiCard
           label="Outstanding Balance"
-          value={formatUGX(dashboard.outstandingBalance)}
+          value={formatCurrency(dashboard.outstandingBalance)}
           icon={DollarSign}
         />
       </div>

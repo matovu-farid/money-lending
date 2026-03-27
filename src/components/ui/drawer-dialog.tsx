@@ -66,7 +66,7 @@ function DrawerDialogContent({
         <Drawer.Popup
           data-slot="drawer-dialog-content"
           className={cn(
-            "w-full flex flex-col bg-white/85 rounded-t-xl p-4 max-h-[90dvh] overflow-y-auto pointer-events-auto",
+            "w-full flex flex-col bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/85 rounded-t-xl p-4 max-h-[90dvh] overflow-y-auto pointer-events-auto",
             "data-open:animate-in data-open:slide-in-from-bottom",
             "data-closed:animate-out data-closed:slide-out-to-bottom",
             className

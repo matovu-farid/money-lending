@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { authClient, useSession } from "@/lib/auth-client"
@@ -45,34 +46,28 @@ function getRoleOptions(actorRole: UserRole): UserRole[] {
 export default function AdminPage() {
   const router = useRouter()
   const { data: session } = useSession()
-  const [users, setUsers] = useState<AdminUser[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
 
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
+  const isAdmin = actorLevel >= ROLE_LEVELS.admin
 
-  useEffect(() => {
-    if (!session) return
-
-    if (actorLevel < ROLE_LEVELS.admin) {
-      setLoading(false)
-      return
-    }
-
-    authClient.admin.listUsers({ query: { limit: 100 } }).then((result) => {
+  const { data: users = [], isLoading, isFetching } = useQuery<AdminUser[]>({
+    queryKey: ["admin-users", session?.user?.id],
+    queryFn: async () => {
+      const result = await authClient.admin.listUsers({ query: { limit: 100 } })
       if (result.error) {
         toast.error("Failed to load users")
-        setLoading(false)
-        return
+        return []
       }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const rawUsers = (result.data as any)?.users ?? []
-      setUsers(rawUsers as AdminUser[])
-      setLoading(false)
-    })
-  }, [session, actorLevel])
+      return rawUsers as AdminUser[]
+    },
+    enabled: !!session && isAdmin,
+  })
 
   function handleRoleChange(userId: string, newRole: UserRole) {
     setUpdatingUserId(userId)
@@ -85,14 +80,15 @@ export default function AdminPage() {
         return
       }
 
-      setUsers((prev) =>
-        prev.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      queryClient.setQueryData<AdminUser[]>(["admin-users", session?.user?.id], (prev) =>
+        (prev ?? []).map((u) => (u.id === userId ? { ...u, role: newRole } : u))
       )
       toast.success(`Role updated to ${newRole}`)
       router.refresh()
     })
   }
 
+  const loading = isAdmin ? (isLoading && isFetching) : !session
   if (!session || loading) {
     return (
       <div className="p-4 md:p-6">
@@ -133,7 +129,7 @@ export default function AdminPage() {
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Last Active</TableHead>
+              <TableHead>Joined</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

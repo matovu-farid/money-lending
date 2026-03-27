@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
+import { useForm } from "react-hook-form"
 import { useMutation } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
@@ -35,7 +36,7 @@ import {
   deleteExpenseAction,
   createExpenseCategoryAction,
 } from "./actions"
-import { formatNumberWithCommas, stripCommas, formatDate } from "@/lib/utils"
+import { formatNumberWithCommas, stripCommas, formatDate, formatCurrency } from "@/lib/utils"
 import type { CreateExpenseInput } from "@/types"
 
 type Transaction = {
@@ -65,10 +66,11 @@ interface ExpenseListClientProps {
   categories: Category[]
 }
 
-
-function formatAmount(amount: string): string {
-  const num = parseFloat(amount)
-  return `UGX ${num.toLocaleString("en-UG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+type ExpenseFormValues = {
+  date: string
+  categoryId: string
+  amount: string
+  notes: string
 }
 
 export function ExpenseListClient({ transactions: initialTransactions, categories: initialCategories }: ExpenseListClientProps) {
@@ -76,38 +78,44 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
   const [newCategoryName, setNewCategoryName] = useState("")
-  const [categories, setCategories] = useState<Category[]>(initialCategories)
-  const [localTransactions, setLocalTransactions] = useState<Transaction[]>(initialTransactions)
+  const [optimisticTransactions, setOptimisticTransactions] = useState<Transaction[]>([])
+  const [removedTransactionIds, setRemovedTransactionIds] = useState<Set<string>>(new Set())
+  const [optimisticCategories, setOptimisticCategories] = useState<Category[]>([])
   const [_isCategoryPending, startCategoryTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
 
-  // Sync with server data when revalidation brings new props
-  useEffect(() => {
-    setLocalTransactions(initialTransactions)
-  }, [initialTransactions])
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm<ExpenseFormValues>({
+    defaultValues: {
+      date: "",
+      categoryId: "",
+      amount: "",
+      notes: "",
+    },
+  })
 
-  useEffect(() => {
-    setCategories(initialCategories)
-  }, [initialCategories])
+  const watchedCategoryId = watch("categoryId")
+  const watchedAmount = watch("amount")
 
-  // Form state
-  const [formDate, setFormDate] = useState("")
-  const [formCategoryId, setFormCategoryId] = useState("")
-  const [formAmount, setFormAmount] = useState("")
-  const [formNotes, setFormNotes] = useState("")
+  const displayedTransactions = useMemo(() => {
+    const filtered = initialTransactions.filter(t => !removedTransactionIds.has(t.id))
+    return [...optimisticTransactions, ...filtered]
+  }, [initialTransactions, optimisticTransactions, removedTransactionIds])
 
-  function resetForm() {
-    setFormDate("")
-    setFormCategoryId("")
-    setFormAmount("")
-    setFormNotes("")
-    setError(null)
-  }
+  const displayedCategories = useMemo(
+    () => [...initialCategories, ...optimisticCategories],
+    [initialCategories, optimisticCategories],
+  )
 
   const addMutation = useMutation({
     mutationFn: (input: CreateExpenseInput) => recordExpenseAction(input),
     onMutate: async (input) => {
-      const category = categories.find((c) => c.id === input.categoryId)
+      const category = displayedCategories.find((c) => c.id === input.categoryId)
       const optimistic: Transaction = {
         id: `optimistic-${Date.now()}`,
         type: "debit",
@@ -122,55 +130,60 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
         createdAt: new Date().toISOString() as unknown as Date,
         isOptimistic: true,
       }
-      const previous = [...localTransactions]
-      setLocalTransactions((prev) => [optimistic, ...prev])
-      return { previous, optimisticId: optimistic.id }
+      setOptimisticTransactions((prev) => [optimistic, ...prev])
+      return { optimisticId: optimistic.id }
     },
     onError: (_err, _input, context) => {
-      if (context?.previous) setLocalTransactions(context.previous)
+      if (context?.optimisticId) {
+        setOptimisticTransactions((prev) => prev.filter((t) => t.id !== context.optimisticId))
+      }
       toast.error("Failed to record expense")
     },
     onSuccess: (_result, _input, context) => {
-      // Remove the optimistic row — page revalidation will bring in the real data
       if (context?.optimisticId) {
-        setLocalTransactions((prev) =>
-          prev.filter((t) => t.id !== context.optimisticId)
-        )
+        setOptimisticTransactions((prev) => prev.filter((t) => t.id !== context.optimisticId))
       }
       toast.success("Expense recorded")
       setIsSheetOpen(false)
-      resetForm()
+      reset()
     },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (transactionId: string) => deleteExpenseAction(transactionId),
     onMutate: async (transactionId) => {
-      const previous = [...localTransactions]
-      setLocalTransactions((prev) => prev.filter((t) => t.id !== transactionId))
+      setRemovedTransactionIds((prev) => new Set(prev).add(transactionId))
       setDeleteTarget(null)
-      return { previous }
+      return { transactionId }
     },
     onError: (_err, _id, context) => {
-      if (context?.previous) setLocalTransactions(context.previous)
+      if (context?.transactionId) {
+        setRemovedTransactionIds((prev) => {
+          const next = new Set(prev)
+          next.delete(context.transactionId)
+          return next
+        })
+      }
       toast.error("Failed to delete expense")
     },
-    onSuccess: () => {
+    onSuccess: (_result, _id, context) => {
+      if (context?.transactionId) {
+        setRemovedTransactionIds((prev) => {
+          const next = new Set(prev)
+          next.delete(context.transactionId)
+          return next
+        })
+      }
       toast.success("Expense deleted")
     },
   })
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!formDate || !formCategoryId || !formAmount) {
-      setError("Date, category, and amount are required.")
-      return
-    }
+  function onFormSubmit(data: ExpenseFormValues) {
     const input: CreateExpenseInput = {
-      categoryId: formCategoryId,
-      amount: formAmount,
-      transactionDate: formDate,
-      notes: formNotes || undefined,
+      categoryId: data.categoryId,
+      amount: data.amount,
+      transactionDate: data.date,
+      notes: data.notes || undefined,
     }
     addMutation.mutate(input)
   }
@@ -191,11 +204,11 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
           type: created.type,
           isDefault: created.isDefault,
         }
-        setCategories((prev) => [...prev, newCat])
+        setOptimisticCategories((prev) => [...prev, newCat])
         setNewCategoryName("")
         setIsAddCategoryOpen(false)
       } catch {
-        setError("Failed to add category.")
+        toast.error("Failed to add category.")
       }
     })
   }
@@ -209,7 +222,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Business expenditure tracking</p>
           </div>
           <Button
-            onClick={() => { resetForm(); setIsSheetOpen(true) }}
+            onClick={() => { reset(); setIsSheetOpen(true) }}
             disabled={addMutation.isPending}
           >
             Add Expense
@@ -233,7 +246,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
               key: "amount",
               header: "Amount",
               align: "right",
-              render: (tx) => formatAmount(tx.amount),
+              render: (tx) => formatCurrency(tx.amount),
             },
             {
               key: "notes",
@@ -262,7 +275,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
               ),
             },
           ]}
-          rows={localTransactions}
+          rows={displayedTransactions}
           getRowKey={(tx) => tx.id}
           getRowProps={(tx) => ({
             "data-testid": "data-row",
@@ -275,7 +288,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                 Record your first expense to start tracking outflows.
               </p>
               <Button
-                onClick={() => { resetForm(); setIsSheetOpen(true) }}
+                onClick={() => { reset(); setIsSheetOpen(true) }}
                 disabled={addMutation.isPending}
               >
                 Add Expense
@@ -285,37 +298,44 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
         />
 
         {/* Add Expense Sheet */}
-        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) resetForm() }}>
+        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) reset() }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>Add Expense</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="flex flex-col gap-4 p-4">
+            <form onSubmit={handleSubmit(onFormSubmit)} className="flex flex-col gap-4 p-4">
               <div className="space-y-1.5">
                 <Label htmlFor="expense-date">Date</Label>
                 <Input
                   id="expense-date"
                   type="date"
-                  value={formDate}
-                  onChange={(e) => setFormDate(e.target.value)}
-                  required
+                  {...register("date", { required: "Date is required" })}
                 />
+                {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="expense-category">Category</Label>
-                <Select value={formCategoryId} onValueChange={(value) => { if (value !== null) setFormCategoryId(value) }}>
+                <Select
+                  value={watchedCategoryId}
+                  onValueChange={(value) => { if (value !== null) setValue("categoryId", value, { shouldValidate: true }) }}
+                >
                   <SelectTrigger id="expense-category" className="w-full">
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
-                    {categories.map((cat) => (
+                    {displayedCategories.map((cat) => (
                       <SelectItem key={cat.id} value={cat.id}>
                         {cat.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                <input
+                  type="hidden"
+                  {...register("categoryId", { required: "Category is required" })}
+                />
+                {errors.categoryId && <p className="text-sm text-destructive">{errors.categoryId.message}</p>}
                 <Popover open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen}>
                   <PopoverTrigger
                     render={
@@ -360,25 +380,31 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                     type="text"
                     inputMode="numeric"
                     className="pl-12"
-                    value={formatNumberWithCommas(formAmount)}
-                    onChange={(e) => setFormAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
-                    required
+                    value={formatNumberWithCommas(watchedAmount)}
+                    onChange={(e) => {
+                      const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
+                      setValue("amount", raw, { shouldValidate: true })
+                    }}
+                  />
+                  <input
+                    type="hidden"
+                    {...register("amount", { required: "Amount is required" })}
                   />
                 </div>
+                {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
               </div>
 
               <div className="space-y-1.5">
                 <Label htmlFor="expense-notes">Notes (optional)</Label>
                 <Textarea
                   id="expense-notes"
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
+                  {...register("notes")}
                   placeholder="Add any notes..."
                   rows={3}
                 />
               </div>
 
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}
 
               <DialogFooter>
                 <Button type="submit" disabled={addMutation.isPending} className="w-full">

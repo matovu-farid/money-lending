@@ -1,32 +1,50 @@
-"use client"
+"use client";
 
-import { useEffect, useState, useTransition, useRef } from "react"
-import { useParams, useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import Link from "next/link"
-import { toast } from "sonner"
-import { ChevronDown, ChevronUp, Loader2 } from "lucide-react"
-import { getCustomerAction, updateCustomerAction, changeCustomerStatusAction } from "@/actions/customer.actions"
-import { listLoansAction } from "@/actions/loan.actions"
-import { getPaymentsByLoanAction } from "@/actions/payment.actions"
-import { OverdueBadge } from "@/components/watchlist/overdue-badge"
-import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
-import BigNumber from "bignumber.js"
-import type { Customer, Loan, Payment, CustomerStatus } from "@/types"
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import { useState, useCallback, useTransition } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useForm } from "react-hook-form";
+import Link from "next/link";
+import { toast } from "sonner";
+import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import {
+  getCustomerAction,
+  updateCustomerAction,
+  changeCustomerStatusAction,
+} from "@/actions/customer.actions";
+import { listLoansAction } from "@/actions/loan.actions";
+import { getPaymentsByLoanAction } from "@/actions/payment.actions";
+import { OverdueBadge } from "@/components/watchlist/overdue-badge";
+import {
+  calculateDaysOverdue,
+  calculateDailyRate,
+  calculateInterest,
+} from "@/lib/interest";
+import BigNumber from "bignumber.js";
+import type { Customer, Loan, Payment, CustomerStatus } from "@/types";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DrawerDialog,
+  DrawerDialogContent,
+} from "@/components/ui/drawer-dialog";
 import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -34,269 +52,310 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table"
-import { cn, formatDate } from "@/lib/utils"
+} from "@/components/ui/table";
+import { cn, formatDate, formatCurrency } from "@/lib/utils";
 
-function formatUGX(amount: string | number): string {
-  const num = typeof amount === "string" ? parseFloat(amount) : amount
-  return new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)
-}
-
-function statusVariant(status: string): "default" | "destructive" | "secondary" {
-  if (status === "active") return "default"
-  if (status === "blacklisted") return "destructive"
-  return "secondary"
+function statusVariant(
+  status: string,
+): "default" | "destructive" | "secondary" {
+  if (status === "active") return "default";
+  if (status === "blacklisted") return "destructive";
+  return "secondary";
 }
 
 function statusLabel(status: string): string {
-  if (status === "active") return "Active"
-  if (status === "blacklisted") return "Blacklisted"
-  return "Inactive"
+  if (status === "active") return "Active";
+  if (status === "blacklisted") return "Blacklisted";
+  return "Inactive";
 }
 
 function loanStatusVariant(status: string): "default" | "outline" {
-  if (status === "active") return "default"
-  return "outline"
+  if (status === "active") return "default";
+  return "outline";
 }
 
 function loanStatusLabel(status: string): string {
-  if (status === "fully_paid") return "Fully Paid"
-  return status.charAt(0).toUpperCase() + status.slice(1)
+  if (status === "fully_paid") return "Fully Paid";
+  return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
-
 interface LoanWithPayments {
-  loan: Loan
-  payments: Payment[]
-  expanded: boolean
-  loadingPayments: boolean
-  daysOverdue: number
+  loan: Loan;
+  payments: Payment[];
+  expanded: boolean;
+  loadingPayments: boolean;
+  daysOverdue: number;
+}
+
+type LoanUIOverride = Pick<
+  LoanWithPayments,
+  "payments" | "expanded" | "loadingPayments"
+> & { daysOverdue?: number };
+
+interface EditFormValues {
+  fullName: string;
+  contact: string;
+  address: string;
 }
 
 export default function CustomerProfilePage() {
-  const params = useParams()
-  const router = useRouter()
-  const queryClient = useQueryClient()
-  const customerId = params.id as string
+  const params = useParams();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const customerId = params.id as string;
 
   // Fetch customer via useQuery — cached for 60s (provider staleTime),
   // so navigating away (e.g. /loans/new) and back serves from cache instantly.
-  const { data: customer, isLoading: customerLoading, isError: notFound } = useQuery<Customer>({
+  const {
+    data: customer,
+    isLoading: customerLoading,
+    isError: notFound,
+  } = useQuery<Customer>({
     queryKey: ["customer", customerId],
     queryFn: async () => {
-      const result = await getCustomerAction(customerId)
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const result = await getCustomerAction(customerId);
+      if ("error" in result) throw new Error(result.error);
+      return result.data;
     },
-  })
+  });
 
   // Fetch this customer's loans via useQuery
-  const { data: fetchedLoanItems, isLoading: loansLoading } = useQuery<LoanWithPayments[]>({
+  const { data: fetchedLoanItems, isLoading: loansLoading } = useQuery<
+    LoanWithPayments[]
+  >({
     queryKey: ["customer-loans", customerId],
     queryFn: async () => {
-      const loansResult = await listLoansAction()
-      if (!("data" in loansResult) || !loansResult.data) return []
-      const customerLoans = loansResult.data.filter((l) => l.customerId === customerId)
-      const now = new Date()
+      const loansResult = await listLoansAction();
+      if (!("data" in loansResult) || !loansResult.data) return [];
+      const customerLoans = loansResult.data.filter(
+        (l) => l.customerId === customerId,
+      );
+      const now = new Date();
       return customerLoans.map((loan) => {
         const totalDaysElapsed = Math.floor(
-          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-        )
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
+          (now.getTime() - new Date(loan.startDate).getTime()) /
+            (1000 * 60 * 60 * 24),
+        );
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate;
+        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays;
         const totalInterestAccrued = calculateInterest(
-          loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
-        )
-        const dailyRate = calculateDailyRate(effectiveRate)
+          loan.principalAmount,
+          effectiveRate,
+          totalDaysElapsed,
+          effectiveMinDays,
+        );
+        const dailyRate = calculateDailyRate(effectiveRate);
         const daysOverdueBN = calculateDaysOverdue(
-          totalInterestAccrued.toFixed(2), "0", dailyRate.toFixed(10)
-        )
+          totalInterestAccrued.toFixed(2),
+          "0",
+          dailyRate.toFixed(10),
+        );
         return {
           loan,
           payments: [],
           expanded: false,
           loadingPayments: false,
           daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
-        }
-      })
+        };
+      });
     },
-  })
+  });
 
-  // Local state for expansion/payment tracking — synced from query data
-  const [loanItems, setLoanItems] = useState<LoanWithPayments[]>([])
-  useEffect(() => {
-    if (!fetchedLoanItems) return
-    setLoanItems((prev) => {
-      // Preserve expanded/payments state for items that already exist
-      const prevMap = new Map(prev.map((li) => [li.loan.id, li]))
-      return fetchedLoanItems.map((item) => {
-        const existing = prevMap.get(item.loan.id)
-        if (existing) return { ...item, payments: existing.payments, expanded: existing.expanded, loadingPayments: existing.loadingPayments }
-        return item
+  // UI-only overrides (expanded, payments, loadingPayments) keyed by loan id
+  const [uiOverrides, setUiOverrides] = useState<Map<string, LoanUIOverride>>(
+    new Map(),
+  );
+
+  // Derive loanItems by merging query data with UI overrides
+  const loanItems = fetchedLoanItems
+    ? fetchedLoanItems.map((item) => {
+        const override = uiOverrides.get(item.loan.id);
+        return override ? { ...item, ...override } : item;
       })
-    })
-  }, [fetchedLoanItems])
+    : [];
 
-  const loading = customerLoading || loansLoading
+  // Helper to update UI overrides for a specific loan
+  const updateLoanItem = useCallback(
+    (
+      index: number,
+      updater: (item: LoanWithPayments) => Partial<LoanWithPayments>,
+    ) => {
+      if (!fetchedLoanItems) return;
+      const base = fetchedLoanItems[index];
+      if (!base) return;
+      setUiOverrides((prev) => {
+        const next = new Map(prev);
+        const current = next.get(base.loan.id) ?? {
+          payments: base.payments,
+          expanded: base.expanded,
+          loadingPayments: base.loadingPayments,
+          daysOverdue: base.daysOverdue,
+        };
+        const merged = {
+          ...current,
+          ...updater({ ...base, ...current }),
+        } as LoanUIOverride;
+        next.set(base.loan.id, merged);
+        return next;
+      });
+    },
+    [fetchedLoanItems],
+  );
 
-  // Edit state
-  const [editing, setEditing] = useState(false)
-  const [editFullName, setEditFullName] = useState("")
-  const [editContact, setEditContact] = useState("")
-  const [editAddress, setEditAddress] = useState("")
-  const [isEditPending, startEditTransition] = useTransition()
+  const loading = customerLoading || loansLoading;
 
-  // Init edit form fields when customer data arrives
-  const editInitRef = useRef<string | null>(null)
-  useEffect(() => {
-    if (customer && editInitRef.current !== customer.id) {
-      editInitRef.current = customer.id
-      setEditFullName(customer.fullName)
-      setEditContact(customer.contact)
-      setEditAddress(customer.address)
-    }
-  }, [customer])
+  // Edit state — react-hook-form
+  const [editing, setEditing] = useState(false);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<EditFormValues>();
+  const [isEditPending, startEditTransition] = useTransition();
 
   // Status change state
-  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
-  const [pendingStatus, setPendingStatus] = useState<CustomerStatus | null>(null)
-  const [statusReason, setStatusReason] = useState("")
-  const [isStatusPending, startStatusTransition] = useTransition()
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<CustomerStatus | null>(
+    null,
+  );
+  const [statusReason, setStatusReason] = useState("");
+  const [isStatusPending, startStatusTransition] = useTransition();
 
   function handleEditStart() {
-    if (!customer) return
-    setEditFullName(customer.fullName)
-    setEditContact(customer.contact)
-    setEditAddress(customer.address)
-    setEditing(true)
+    if (!customer) return;
+    reset({
+      fullName: customer.fullName,
+      contact: customer.contact,
+      address: customer.address,
+    });
+    setEditing(true);
   }
 
   function handleEditCancel() {
-    setEditing(false)
+    setEditing(false);
   }
 
-  function handleEditSave() {
-    if (!customer) return
+  function onEditSubmit(data: EditFormValues) {
+    if (!customer) return;
     startEditTransition(async () => {
       const result = await updateCustomerAction(customerId, {
-        fullName: editFullName.trim() || undefined,
-        contact: editContact.trim() || undefined,
-        address: editAddress.trim() || undefined,
-      })
+        fullName: data.fullName.trim() || undefined,
+        contact: data.contact.trim() || undefined,
+        address: data.address.trim() || undefined,
+      });
 
       if ("error" in result) {
-        toast.error(result.error)
-        return
+        toast.error(result.error);
+        return;
       }
 
-      queryClient.setQueryData(["customer", customerId], result.data)
-      setEditing(false)
-      toast.success("Customer updated successfully")
-    })
+      queryClient.setQueryData(["customer", customerId], result.data);
+      setEditing(false);
+      toast.success("Customer updated successfully");
+    });
   }
 
   function handleStatusSelect(newStatus: string | null) {
-    if (!newStatus || !customer) return
-    if (newStatus === customer.status) return
-    setPendingStatus(newStatus as CustomerStatus)
-    setStatusReason("")
-    setStatusDialogOpen(true)
+    if (!newStatus || !customer) return;
+    if (newStatus === customer.status) return;
+    setPendingStatus(newStatus as CustomerStatus);
+    setStatusReason("");
+    setStatusDialogOpen(true);
   }
 
   function handleStatusConfirm() {
-    if (!customer || !pendingStatus || statusReason.trim().length < 10) return
+    if (!customer || !pendingStatus || statusReason.trim().length < 10) return;
     startStatusTransition(async () => {
       const result = await changeCustomerStatusAction({
         customerId: customer.id,
         newStatus: pendingStatus,
         reason: statusReason,
-      })
+      });
       if ("error" in result) {
-        toast.error(result.error)
-        return
+        toast.error(result.error);
+        return;
       }
-      queryClient.setQueryData(["customer", customerId], result.data)
-      setStatusDialogOpen(false)
-      toast.success(`${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`)
-      setPendingStatus(null)
-      setStatusReason("")
-    })
+      queryClient.setQueryData(["customer", customerId], result.data);
+      setStatusDialogOpen(false);
+      toast.success(
+        `${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`,
+      );
+      setPendingStatus(null);
+      setStatusReason("");
+    });
   }
 
   function handleStatusCancel() {
-    setStatusDialogOpen(false)
-    setPendingStatus(null)
-    setStatusReason("")
+    setStatusDialogOpen(false);
+    setPendingStatus(null);
+    setStatusReason("");
   }
 
   async function handleToggleLoan(index: number) {
-    const item = loanItems[index]
-    if (!item) return
+    const item = loanItems[index];
+    if (!item) return;
 
     if (item.expanded) {
-      setLoanItems((prev) =>
-        prev.map((li, i) => (i === index ? { ...li, expanded: false } : li))
-      )
-      return
+      updateLoanItem(index, () => ({ expanded: false }));
+      return;
     }
 
     if (item.payments.length === 0) {
-      setLoanItems((prev) =>
-        prev.map((li, i) => (i === index ? { ...li, loadingPayments: true, expanded: true } : li))
-      )
+      updateLoanItem(index, () => ({ loadingPayments: true, expanded: true }));
 
-      const result = await getPaymentsByLoanAction(item.loan.id)
+      const result = await getPaymentsByLoanAction(item.loan.id);
       if ("data" in result && result.data) {
-        const fetchedPayments = result.data
-        const now = new Date()
-        const loan = item.loan
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
+        const fetchedPayments = result.data;
+        const now = new Date();
+        const loan = item.loan;
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate;
+        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays;
         const totalDaysElapsed = Math.floor(
-          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-        )
+          (now.getTime() - new Date(loan.startDate).getTime()) /
+            (1000 * 60 * 60 * 24),
+        );
         const totalInterestAccrued = calculateInterest(
-          loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
-        )
-        const activePayments = fetchedPayments.filter((p) => !p.deletedAt)
+          loan.principalAmount,
+          effectiveRate,
+          totalDaysElapsed,
+          effectiveMinDays,
+        );
+        const activePayments = fetchedPayments.filter((p) => !p.deletedAt);
         const totalInterestPaid = activePayments.reduce(
-          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-        )
-        const dailyRate = calculateDailyRate(effectiveRate)
+          (s, p) => s.plus(new BigNumber(p.interestPortion)),
+          new BigNumber(0),
+        );
+        const dailyRate = calculateDailyRate(effectiveRate);
         const daysOverdueBN = calculateDaysOverdue(
-          totalInterestAccrued.toFixed(2), totalInterestPaid.toFixed(2), dailyRate.toFixed(10)
-        )
+          totalInterestAccrued.toFixed(2),
+          totalInterestPaid.toFixed(2),
+          dailyRate.toFixed(10),
+        );
 
-        setLoanItems((prev) =>
-          prev.map((li, i) =>
-            i === index
-              ? {
-                  ...li,
-                  payments: fetchedPayments,
-                  loadingPayments: false,
-                  daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
-                }
-              : li
-          )
-        )
+        updateLoanItem(index, () => ({
+          payments: fetchedPayments,
+          loadingPayments: false,
+          daysOverdue: loan.status === "active" ? daysOverdueBN.toNumber() : 0,
+        }));
       } else {
-        setLoanItems((prev) =>
-          prev.map((li, i) => (i === index ? { ...li, loadingPayments: false } : li))
-        )
+        updateLoanItem(index, () => ({ loadingPayments: false }));
       }
     } else {
-      setLoanItems((prev) =>
-        prev.map((li, i) => (i === index ? { ...li, expanded: true } : li))
-      )
+      updateLoanItem(index, () => ({ expanded: true }));
     }
   }
 
   if (loading) {
     return (
       <div className="p-4 md:p-6">
-        <p className="text-muted-foreground">Loading customer...</p>
+        <div className="space-y-4">
+          <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="h-32 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+          <div className="h-24 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+        </div>
       </div>
-    )
+    );
   }
 
   if (notFound || !customer) {
@@ -307,20 +366,24 @@ export default function CustomerProfilePage() {
           Back to Customers
         </Button>
       </div>
-    )
+    );
   }
 
-  const isBlacklisted = pendingStatus === "blacklisted"
+  const isBlacklisted = pendingStatus === "blacklisted";
   const dialogTitle = isBlacklisted
     ? `Blacklist ${customer.fullName}?`
-    : `Change status to ${pendingStatus ? statusLabel(pendingStatus) : ""}?`
+    : `Change status to ${pendingStatus ? statusLabel(pendingStatus) : ""}?`;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">{customer.fullName}</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Customer profile</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {customer.fullName}
+          </h1>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
+            Customer profile
+          </p>
         </div>
         <Link
           href={`/loans/new?customerId=${customerId}`}
@@ -344,36 +407,58 @@ export default function CustomerProfilePage() {
         </CardHeader>
         <CardContent>
           {editing ? (
-            <div className="space-y-4">
+            <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
               <div className="space-y-1">
                 <Label htmlFor="edit-fullName">Full Name</Label>
                 <Input
                   id="edit-fullName"
-                  value={editFullName}
-                  onChange={(e) => setEditFullName(e.target.value)}
+                  {...register("fullName", {
+                    required: "Full name is required",
+                    minLength: {
+                      value: 2,
+                      message: "Full name must be at least 2 characters",
+                    },
+                  })}
                   disabled={isEditPending}
                 />
+                {errors.fullName && (
+                  <p className="text-xs text-destructive">
+                    {errors.fullName.message}
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="edit-contact">Contact</Label>
                 <Input
                   id="edit-contact"
-                  value={editContact}
-                  onChange={(e) => setEditContact(e.target.value)}
+                  {...register("contact", {
+                    required: "Contact is required",
+                  })}
                   disabled={isEditPending}
                 />
+                {errors.contact && (
+                  <p className="text-xs text-destructive">
+                    {errors.contact.message}
+                  </p>
+                )}
               </div>
               <div className="space-y-1">
                 <Label htmlFor="edit-address">Physical Address</Label>
                 <Input
                   id="edit-address"
-                  value={editAddress}
-                  onChange={(e) => setEditAddress(e.target.value)}
+                  {...register("address", {
+                    required: "Address is required",
+                  })}
                   disabled={isEditPending}
                 />
+                {errors.address && (
+                  <p className="text-xs text-destructive">
+                    {errors.address.message}
+                  </p>
+                )}
               </div>
               <div className="flex gap-3">
-                <Button onClick={handleEditSave} disabled={isEditPending}>
+                <Button type="submit" disabled={isEditPending}>
                   {isEditPending ? (
                     <>
                       <Loader2 className="animate-spin mr-2 h-4 w-4" />
@@ -383,11 +468,16 @@ export default function CustomerProfilePage() {
                     "Save"
                   )}
                 </Button>
-                <Button variant="outline" onClick={handleEditCancel} disabled={isEditPending}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleEditCancel}
+                  disabled={isEditPending}
+                >
                   Cancel
                 </Button>
               </div>
-            </div>
+            </form>
           ) : (
             <dl className="space-y-3 text-sm">
               <div>
@@ -427,15 +517,23 @@ export default function CustomerProfilePage() {
       </Card>
 
       {/* Status change confirmation dialog */}
-      <DrawerDialog open={statusDialogOpen} onOpenChange={(open) => { if (!open) handleStatusCancel() }}>
+      <DrawerDialog
+        open={statusDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) handleStatusCancel();
+        }}
+      >
         <DrawerDialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle className={isBlacklisted ? "text-destructive" : undefined}>
+            <DialogTitle
+              className={isBlacklisted ? "text-destructive" : undefined}
+            >
               {dialogTitle}
             </DialogTitle>
             {isBlacklisted && (
               <DialogDescription>
-                This will prevent {customer.fullName} from receiving new loans. Active loans will continue. Provide a reason.
+                This will prevent {customer.fullName} from receiving new loans.
+                Active loans will continue. Provide a reason.
               </DialogDescription>
             )}
           </DialogHeader>
@@ -449,13 +547,20 @@ export default function CustomerProfilePage() {
               placeholder="Provide a reason for this status change..."
               disabled={isStatusPending}
             />
-            {statusReason.trim().length > 0 && statusReason.trim().length < 10 && (
-              <p className="text-xs text-destructive">Reason must be at least 10 characters</p>
-            )}
+            {statusReason.trim().length > 0 &&
+              statusReason.trim().length < 10 && (
+                <p className="text-xs text-destructive">
+                  Reason must be at least 10 characters
+                </p>
+              )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={handleStatusCancel} disabled={isStatusPending}>
+            <Button
+              variant="outline"
+              onClick={handleStatusCancel}
+              disabled={isStatusPending}
+            >
               Cancel
             </Button>
             <Button
@@ -481,7 +586,9 @@ export default function CustomerProfilePage() {
         <h2 className="text-xl font-semibold">Loan History</h2>
 
         {loanItems.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No loans on record for this customer.</p>
+          <p className="text-sm text-muted-foreground">
+            No loans on record for this customer.
+          </p>
         ) : (
           loanItems.map((item, index) => (
             <Card key={item.loan.id}>
@@ -495,9 +602,12 @@ export default function CustomerProfilePage() {
                       <Badge variant={loanStatusVariant(item.loan.status)}>
                         {loanStatusLabel(item.loan.status)}
                       </Badge>
-                      {item.loan.status === "active" && item.daysOverdue > 0 && (
-                        <OverdueBadge daysOverdue={Math.round(item.daysOverdue)} />
-                      )}
+                      {item.loan.status === "active" &&
+                        item.daysOverdue > 0 && (
+                          <OverdueBadge
+                            daysOverdue={Math.round(item.daysOverdue)}
+                          />
+                        )}
                     </div>
                     <p className="text-xs text-muted-foreground font-mono">
                       Issued {formatDate(item.loan.startDate)}
@@ -520,56 +630,100 @@ export default function CustomerProfilePage() {
               <CardContent>
                 <div className="space-y-1">
                   <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums">
-                    UGX {formatUGX(item.loan.principalAmount)}
+                    {formatCurrency(item.loan.principalAmount)}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    <span className="font-mono tabular-nums">{(parseFloat(item.loan.interestRate) * 100).toFixed(0)}%</span> per month
+                    <span className="font-mono tabular-nums">
+                      {(parseFloat(item.loan.interestRate) * 100).toFixed(0)}%
+                    </span>{" "}
+                    per month
                   </p>
                 </div>
 
                 {item.expanded && (
                   <div className="mt-4">
                     {item.loadingPayments ? (
-                      <p className="text-sm text-muted-foreground">Loading payments...</p>
+                      <p className="text-sm text-muted-foreground">
+                        Loading payments...
+                      </p>
                     ) : item.payments.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No payments recorded.</p>
+                      <p className="text-sm text-muted-foreground">
+                        No payments recorded.
+                      </p>
                     ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right">Interest</TableHead>
-                            <TableHead className="text-right">Principal</TableHead>
-                            <TableHead className="text-right">Balance After</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {item.payments.map((payment) => (
-                            <TableRow
-                              key={payment.id}
-                              data-testid="data-row"
-                              className={cn(payment.deletedAt && "opacity-60")}
-                            >
-                              <TableCell className={cn(payment.deletedAt && "line-through text-muted-foreground")}>
-                                {formatDate(payment.paymentDate)}
-                              </TableCell>
-                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
-                                UGX {formatUGX(payment.amount)}
-                              </TableCell>
-                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
-                                UGX {formatUGX(payment.interestPortion)}
-                              </TableCell>
-                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
-                                UGX {formatUGX(payment.principalPortion)}
-                              </TableCell>
-                              <TableCell className={cn("text-right font-mono tabular-nums", payment.deletedAt && "line-through text-muted-foreground")}>
-                                UGX {formatUGX(payment.principalBalanceAfter)}
-                              </TableCell>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Date</TableHead>
+                              <TableHead className="text-right">Amount</TableHead>
+                              <TableHead className="text-right">
+                                Interest
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Principal
+                              </TableHead>
+                              <TableHead className="text-right">
+                                Balance After
+                              </TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {item.payments.map((payment) => (
+                              <TableRow
+                                key={payment.id}
+                                data-testid="data-row"
+                                className={cn(payment.deletedAt && "opacity-60")}
+                              >
+                                <TableCell
+                                  className={cn(
+                                    payment.deletedAt &&
+                                      "line-through text-muted-foreground",
+                                  )}
+                                >
+                                  {formatDate(payment.paymentDate)}
+                                </TableCell>
+                                <TableCell
+                                  className={cn(
+                                    "text-right font-mono tabular-nums",
+                                    payment.deletedAt &&
+                                      "line-through text-muted-foreground",
+                                  )}
+                                >
+                                  {formatCurrency(payment.amount)}
+                                </TableCell>
+                                <TableCell
+                                  className={cn(
+                                    "text-right font-mono tabular-nums",
+                                    payment.deletedAt &&
+                                      "line-through text-muted-foreground",
+                                  )}
+                                >
+                                  {formatCurrency(payment.interestPortion)}
+                                </TableCell>
+                                <TableCell
+                                  className={cn(
+                                    "text-right font-mono tabular-nums",
+                                    payment.deletedAt &&
+                                      "line-through text-muted-foreground",
+                                  )}
+                                >
+                                  {formatCurrency(payment.principalPortion)}
+                                </TableCell>
+                                <TableCell
+                                  className={cn(
+                                    "text-right font-mono tabular-nums",
+                                    payment.deletedAt &&
+                                      "line-through text-muted-foreground",
+                                  )}
+                                >
+                                  {formatCurrency(payment.principalBalanceAfter)}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     )}
                   </div>
                 )}
@@ -579,5 +733,5 @@ export default function CustomerProfilePage() {
         )}
       </div>
     </div>
-  )
+  );
 }

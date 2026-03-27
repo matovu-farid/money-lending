@@ -8,16 +8,21 @@ interface KpiCardProps {
   icon: LucideIcon
   subtitle?: string
   valueClassName?: string
+  loading?: boolean
 }
 
-export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName }: KpiCardProps) {
+export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName, loading }: KpiCardProps) {
   return (
     <Card>
       <CardContent className="pt-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-            <p className={cn("text-2xl font-semibold font-mono tracking-tight tabular-nums", valueClassName)}>{value}</p>
+            {loading ? (
+              <div className="h-8 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+            ) : (
+              <p className={cn("text-2xl font-semibold font-mono tracking-tight tabular-nums", valueClassName)}>{value}</p>
+            )}
             {subtitle && (
               <p className="text-sm text-muted-foreground">{subtitle}</p>
             )}

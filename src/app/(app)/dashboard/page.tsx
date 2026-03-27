@@ -1,29 +1,13 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp } from "lucide-react"
 import { getDashboardAction } from "@/actions/dashboard.actions"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { DashboardKPIs, ActivityFeedItem } from "@/types"
-import { formatDate } from "@/lib/utils"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
-}
-
-function relativeTime(date: Date): string {
-  const now = new Date()
-  const diffMs = now.getTime() - new Date(date).getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  if (diffMins < 60) return `${diffMins} minutes ago`
-  const diffHours = Math.floor(diffMins / 60)
-  if (diffHours < 24) return `${diffHours} hours ago`
-  const diffDays = Math.floor(diffHours / 24)
-  return `${diffDays} days ago`
-}
+import { formatDate, formatCurrency, formatRelativeTime } from "@/lib/utils"
 
 function activityIcon(type: ActivityFeedItem["type"]) {
   if (type === "loan_issued") return <Landmark className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -47,7 +31,7 @@ function formatDetailValue(key: string, value: string | number | null | undefine
   const str = String(value)
   if (["amount", "interestPortion", "principalPortion"].includes(key)) {
     const num = parseFloat(str)
-    if (!isNaN(num)) return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
+    if (!isNaN(num)) return formatCurrency(num)
   }
   if (key === "interestRate") {
     const num = parseFloat(str)
@@ -60,23 +44,18 @@ function formatDetailValue(key: string, value: string | number | null | undefine
 }
 
 export default function DashboardPage() {
-  const [kpis, setKpis] = useState<DashboardKPIs | null>(null)
-  const [activity, setActivity] = useState<ActivityFeedItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const { data, isLoading: loading, error: queryError } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => {
+      const result = await getDashboardAction()
+      if (result.error) throw new Error(result.error)
+      return result.data!
+    },
+  })
+  const kpis = data?.kpis ?? null
+  const activity = data?.activity ?? []
+  const error = queryError?.message ?? null
   const [expandedId, setExpandedId] = useState<string | null>(null)
-
-  useEffect(() => {
-    getDashboardAction().then((result) => {
-      if (result.error) {
-        setError(result.error)
-      } else if (result.data) {
-        setKpis(result.data.kpis)
-        setActivity(result.data.activity)
-      }
-      setLoading(false)
-    })
-  }, [])
 
   return (
     <div className="space-y-8">
@@ -93,34 +72,40 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <KpiCard
           label="Loans Outstanding"
-          value={loading ? "—" : formatUGX(kpis?.loansOutstanding ?? "0")}
+          value={formatCurrency(kpis?.loansOutstanding ?? "0")}
           icon={Banknote}
+          loading={loading}
         />
         <KpiCard
           label="Repayments Collected"
-          value={loading ? "—" : formatUGX(kpis?.repaymentsCollected ?? "0")}
+          value={formatCurrency(kpis?.repaymentsCollected ?? "0")}
           icon={CreditCard}
+          loading={loading}
         />
         <KpiCard
           label="Interest Earned"
-          value={loading ? "—" : formatUGX(kpis?.interestEarned ?? "0")}
+          value={formatCurrency(kpis?.interestEarned ?? "0")}
           icon={TrendingUp}
+          loading={loading}
         />
         <KpiCard
           label="Active Borrowers"
-          value={loading ? "—" : String(kpis?.activeBorrowers ?? 0)}
+          value={String(kpis?.activeBorrowers ?? 0)}
           icon={Users}
+          loading={loading}
         />
         <KpiCard
           label="Overdue Count"
-          value={loading ? "—" : String(kpis?.overdueCount ?? 0)}
+          value={String(kpis?.overdueCount ?? 0)}
           icon={AlertTriangle}
           valueClassName={kpis && kpis.overdueCount > 0 ? "text-destructive" : undefined}
+          loading={loading}
         />
         <KpiCard
           label="Capital in System"
-          value={loading ? "—" : formatUGX(kpis?.capitalInSystem ?? "0")}
+          value={formatCurrency(kpis?.capitalInSystem ?? "0")}
           icon={Landmark}
+          loading={loading}
         />
       </div>
 
@@ -166,7 +151,7 @@ export default function DashboardPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm">{item.description}</p>
                         <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                          {relativeTime(item.timestamp)}
+                          {formatRelativeTime(item.timestamp)}
                         </p>
                       </div>
                       {hasDetail && (

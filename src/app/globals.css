@@ -11,7 +11,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -81,12 +81,12 @@
   --input: oklch(0.9 0 0);                /* surface_container_highest #e2e2e4 */
   --ring: oklch(0.35 0.2 264);            /* tertiary Electric Blue #002f9c */
 
-  /* Charts — keep existing neutral scale */
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Charts — hue-varied for series distinction */
+  --chart-1: oklch(0.55 0.18 264);
+  --chart-2: oklch(0.60 0.14 150);
+  --chart-3: oklch(0.65 0.12 80);
+  --chart-4: oklch(0.50 0.15 30);
+  --chart-5: oklch(0.55 0.10 300);
 
   /* Radius — sharp financial terminal */
   --radius: 0.5rem;                        /* was 0.625rem */
@@ -120,12 +120,12 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --ring: oklch(0.55 0.22 264);
+  --chart-1: oklch(0.62 0.18 264);
+  --chart-2: oklch(0.65 0.14 150);
+  --chart-3: oklch(0.70 0.12 80);
+  --chart-4: oklch(0.55 0.15 30);
+  --chart-5: oklch(0.60 0.10 300);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
@@ -133,7 +133,7 @@
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.55 0.22 264);
 }
 
 @layer base {
@@ -188,5 +188,9 @@
   .receipt-body * {
     box-shadow: none !important;
     border-color: #ccc !important;
+  }
+  .receipt-body dt,
+  .receipt-body .text-muted-foreground {
+    color: #444 !important;
   }
 }

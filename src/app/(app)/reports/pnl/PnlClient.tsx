@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import {
   Select,
@@ -15,15 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { PnlData } from "@/types"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", {
-    style: "decimal",
-    maximumFractionDigits: 0,
-  }).format(num)}`
-}
+import { formatCurrency } from "@/lib/utils"
 
 function getMonthOptions(): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = []
@@ -70,7 +63,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch {
-      // silently fail — user can retry
+      toast.error("Export failed. Please try again.")
     }
   }
 
@@ -136,13 +129,13 @@ export function PnlClient({ data, period }: PnlClientProps) {
                   {data.income.map((row) => (
                     <tr key={row.category} className="border-b border-muted">
                       <td className="py-2">{row.category}</td>
-                      <td className="py-2 text-right font-mono tabular-nums">{formatUGX(row.amount)}</td>
+                      <td className="py-2 text-right font-mono tabular-nums">{formatCurrency(row.amount)}</td>
                     </tr>
                   ))}
                   <tr className="font-semibold bg-muted/30">
                     <td className="py-2 px-1">Total Income</td>
                     <td className="py-2 px-1 text-right font-mono tabular-nums">
-                      {formatUGX(data.totalIncome)}
+                      {formatCurrency(data.totalIncome)}
                     </td>
                   </tr>
                 </tbody>
@@ -165,13 +158,13 @@ export function PnlClient({ data, period }: PnlClientProps) {
                   {data.expenses.map((row) => (
                     <tr key={row.category} className="border-b border-muted">
                       <td className="py-2">{row.category}</td>
-                      <td className="py-2 text-right font-mono tabular-nums">{formatUGX(row.amount)}</td>
+                      <td className="py-2 text-right font-mono tabular-nums">{formatCurrency(row.amount)}</td>
                     </tr>
                   ))}
                   <tr className="font-semibold bg-muted/30">
                     <td className="py-2 px-1">Total Expenses</td>
                     <td className="py-2 px-1 text-right font-mono tabular-nums">
-                      {formatUGX(data.totalExpenses)}
+                      {formatCurrency(data.totalExpenses)}
                     </td>
                   </tr>
                 </tbody>
@@ -189,7 +182,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
                       : "text-destructive font-mono tabular-nums"
                   }
                 >
-                  {formatUGX(data.netProfit)}
+                  {formatCurrency(data.netProfit)}
                 </span>
               </div>
             </div>

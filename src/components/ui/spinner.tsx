@@ -13,9 +13,11 @@ export function Spinner({
   return (
     <span
       data-testid="spinner"
+      role="status"
+      aria-label={children ? undefined : "Loading"}
       className={cn("inline-flex items-center gap-2", className)}
     >
-      <Loader2 className="h-4 w-4 animate-spin" />
+      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
       {children}
     </span>
   )

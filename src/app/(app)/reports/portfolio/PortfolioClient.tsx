@@ -11,15 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { PortfolioEntry } from "@/types"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", {
-    style: "decimal",
-    maximumFractionDigits: 0,
-  }).format(num)}`
-}
+import { formatCurrency } from "@/lib/utils"
 
 interface PortfolioClientProps {
   data: PortfolioEntry[]
@@ -88,15 +80,15 @@ export function PortfolioClient({
       ) : (
         <div className="rounded-lg border overflow-x-auto">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 bg-background z-10">
               <TableRow>
-                <TableHead>Customer Name</TableHead>
-                <TableHead className="text-right">Loan Amount (UGX)</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead className="text-right">Loan Amount</TableHead>
                 <TableHead className="text-right">
-                  Outstanding Balance (UGX)
+                  Outstanding
                 </TableHead>
                 <TableHead className="text-right">
-                  Interest Accrued (UGX)
+                  Interest Accrued
                 </TableHead>
                 <TableHead className="text-right">Days Overdue</TableHead>
                 <TableHead>Status</TableHead>
@@ -110,13 +102,13 @@ export function PortfolioClient({
                     {entry.customerName}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
-                    {formatUGX(entry.principalAmount)}
+                    {formatCurrency(entry.principalAmount)}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
-                    {formatUGX(entry.outstandingBalance)}
+                    {formatCurrency(entry.outstandingBalance)}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
-                    {formatUGX(entry.interestAccrued)}
+                    {formatCurrency(entry.interestAccrued)}
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">
                     {entry.daysOverdue}

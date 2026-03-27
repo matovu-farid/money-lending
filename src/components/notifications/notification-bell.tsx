@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -16,37 +17,25 @@ import {
   markAllAsReadAction,
 } from "@/actions/notification.actions"
 import type { Notification } from "@/types"
-import { cn } from "@/lib/utils"
-
-function formatRelativeTime(date: Date | string): string {
-  const d = typeof date === "string" ? new Date(date) : date
-  const now = new Date()
-  const diffMs = now.getTime() - d.getTime()
-  const diffMins = Math.floor(diffMs / (1000 * 60))
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-  if (diffMins < 1) return "Just now"
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  return `${diffDays}d ago`
-}
+import { cn, formatRelativeTime } from "@/lib/utils"
 
 export function NotificationBell() {
   const router = useRouter()
-  const [unreadCount, setUnreadCount] = useState(0)
+  const queryClient = useQueryClient()
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loadingNotifications, setLoadingNotifications] = useState(false)
   const [open, setOpen] = useState(false)
 
-  // Fetch unread count on mount (no polling — refresh on navigation only)
-  useEffect(() => {
-    getUnreadCountAction().then((result) => {
-      if ("data" in result) {
-        setUnreadCount(result.data ?? 0)
-      }
-    })
-  }, [])
+  // Fetch unread count with polling every 60s
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ["notifications", "unread-count"],
+    queryFn: async () => {
+      const result = await getUnreadCountAction()
+      if ("data" in result) return result.data ?? 0
+      return 0
+    },
+    refetchInterval: 60000,
+  })
 
   // Fetch full notification list when popover opens (lazy load)
   function handleOpenChange(isOpen: boolean) {
@@ -70,7 +59,10 @@ export function NotificationBell() {
       setNotifications((prev) =>
         prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
       )
-      setUnreadCount((prev) => Math.max(0, prev - 1))
+      queryClient.setQueryData(
+        ["notifications", "unread-count"],
+        (prev: number) => Math.max(0, (prev ?? 0) - 1)
+      )
     }
 
     // Navigate to the loan detail page
@@ -82,7 +74,7 @@ export function NotificationBell() {
     const result = await markAllAsReadAction()
     if ("data" in result) {
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
-      setUnreadCount(0)
+      queryClient.setQueryData(["notifications", "unread-count"], 0)
     }
   }
 
@@ -107,7 +99,7 @@ export function NotificationBell() {
           )}
         />
         {unreadCount > 0 && (
-          <span className="bg-primary text-primary-foreground text-xs rounded-full h-5 w-5 flex items-center justify-center absolute -top-1 -right-1">
+          <span className="bg-red-600 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center absolute -top-1 -right-1">
             {displayCount}
           </span>
         )}

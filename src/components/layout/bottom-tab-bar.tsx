@@ -29,9 +29,10 @@ export function BottomTabBar({ onMoreClick, className }: BottomTabBarProps) {
 
   return (
     <nav
+      aria-label="Main navigation"
       data-testid="bottom-tab-bar"
       className={cn(
-        "fixed bottom-0 inset-x-0 z-40 h-14 bg-background border-t border-border safe-area-bottom",
+        "fixed bottom-0 inset-x-0 z-40 bg-background border-t border-border safe-area-bottom",
         className
       )}
     >
@@ -65,6 +66,7 @@ export function BottomTabBar({ onMoreClick, className }: BottomTabBarProps) {
               key={tab.href}
               href={tab.href}
               data-testid={`bottom-tab-${tab.label.toLowerCase()}`}
+              aria-current={isActive ? "page" : undefined}
               className={cn(
                 "flex-1 flex flex-col items-center justify-center gap-1 relative",
                 "transition-colors duration-200",

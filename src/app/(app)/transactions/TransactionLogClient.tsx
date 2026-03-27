@@ -52,12 +52,7 @@ interface TransactionLogClientProps {
   filters: TransactionLogFilters
 }
 
-import { formatDate } from "@/lib/utils"
-
-function formatAmount(amount: string): string {
-  const num = parseFloat(amount)
-  return `UGX ${num.toLocaleString("en-UG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
+import { formatDate, formatCurrency } from "@/lib/utils"
 
 // Map transaction type to filter select value
 function typeToSelectValue(type?: string): string {
@@ -256,48 +251,50 @@ export function TransactionLogClient({
         </div>
       ) : (
         <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead>Description</TableHead>
-                <TableHead className="text-right">Amount</TableHead>
-                <TableHead>Recorded By</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {transactions.map((tx) => (
-                <TableRow key={tx.id} data-testid="data-row">
-                  <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>
-                  <TableCell>
-                    {tx.type === "credit" ? (
-                      <Badge className="text-green-600 border-green-200 bg-green-50">
-                        Income
-                      </Badge>
-                    ) : (
-                      <Badge className="text-destructive border-destructive/20 bg-destructive/5">
-                        Expense
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>{tx.categoryName}</TableCell>
-                  <TableCell className="text-muted-foreground max-w-[200px] truncate">
-                    {tx.description ?? "—"}
-                  </TableCell>
-                  <TableCell
-                    className={`text-right font-mono tabular-nums ${tx.type === "credit" ? "text-green-600" : "text-destructive"}`}
-                  >
-                    {formatAmount(tx.amount)}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-xs">
-                    {tx.recordedBy}
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Recorded By</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {transactions.map((tx) => (
+                  <TableRow key={tx.id} data-testid="data-row">
+                    <TableCell className="font-mono tabular-nums">{formatDate(tx.transactionDate)}</TableCell>
+                    <TableCell>
+                      {tx.type === "credit" ? (
+                        <Badge className="text-green-600 border-green-200 bg-green-50">
+                          Income
+                        </Badge>
+                      ) : (
+                        <Badge className="text-destructive border-destructive/20 bg-destructive/5">
+                          Expense
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>{tx.categoryName}</TableCell>
+                    <TableCell className="text-muted-foreground max-w-[200px] truncate">
+                      {tx.description ?? "—"}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right font-mono tabular-nums ${tx.type === "credit" ? "text-green-600" : "text-destructive"}`}
+                    >
+                      {formatCurrency(tx.amount)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-xs">
+                      {tx.recordedBy}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
 
           {/* Pagination */}
           {total > pageSize && (

@@ -67,8 +67,10 @@ export default function CustomersPage() {
       <CustomerSearchBar onSearch={handleSearch} loading={isLoading} />
 
       {isLoading ? (
-        <div>
-          <p className="text-muted-foreground">Loading customers...</p>
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
+          ))}
         </div>
       ) : customers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">

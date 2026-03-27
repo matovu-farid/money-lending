@@ -126,7 +126,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav data-testid="sidebar-nav" className="flex-1 overflow-y-auto py-3 space-y-4">
+        <nav aria-label="Main navigation" data-testid="sidebar-nav" className="flex-1 overflow-y-auto py-3 space-y-4">
           {navGroups.map((group, groupIndex) => (
             <div key={groupIndex}>
               {group.label && !collapsed && (
@@ -143,8 +143,8 @@ export function Sidebar({ onClose }: SidebarProps) {
                     pathname === item.href || pathname.startsWith(item.href + "/")
                   const Icon = item.icon
 
-                  const navContent = (
-                    <li key={item.href}>
+                  const navLink = (
+                    <>
                       {item.disabled ? (
                         <span
                           className={cn(
@@ -160,6 +160,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                         <Link
                           href={item.href}
                           onClick={onClose}
+                          aria-current={isActive ? "page" : undefined}
                           className={cn(
                             "flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
                             isActive
@@ -171,37 +172,41 @@ export function Sidebar({ onClose }: SidebarProps) {
                           {!collapsed && <span>{item.label}</span>}
                         </Link>
                       )}
-                    </li>
+                    </>
                   )
 
                   // Always wrap in tooltip when collapsed
                   if (collapsed) {
                     return (
-                      <Tooltip key={item.href}>
-                        <TooltipTrigger render={<span />} className="w-full block">
-                          {navContent}
-                        </TooltipTrigger>
-                        <TooltipContent side="right">
-                          {item.label}
-                          {item.disabled && " (Coming soon)"}
-                        </TooltipContent>
-                      </Tooltip>
+                      <li key={item.href}>
+                        <Tooltip>
+                          <TooltipTrigger render={<span className="block w-full" />}>
+                            {navLink}
+                          </TooltipTrigger>
+                          <TooltipContent side="right">
+                            {item.label}
+                            {item.disabled && " (Coming soon)"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </li>
                     )
                   }
 
                   // Wrap disabled items in tooltip when expanded
                   if (item.disabled && !collapsed) {
                     return (
-                      <Tooltip key={item.href}>
-                        <TooltipTrigger render={<span />} className="w-full block">
-                          {navContent}
-                        </TooltipTrigger>
-                        <TooltipContent side="right">Coming soon</TooltipContent>
-                      </Tooltip>
+                      <li key={item.href}>
+                        <Tooltip>
+                          <TooltipTrigger render={<span className="block w-full" />}>
+                            {navLink}
+                          </TooltipTrigger>
+                          <TooltipContent side="right">Coming soon</TooltipContent>
+                        </Tooltip>
+                      </li>
                     )
                   }
 
-                  return navContent
+                  return <li key={item.href}>{navLink}</li>
                 })}
               </ul>
             </div>
@@ -248,7 +253,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                  className="h-8 w-full text-muted-foreground hover:text-destructive hover:bg-destructive/10"
                   onClick={handleSignOut}
                   aria-label="Sign out"
                 >

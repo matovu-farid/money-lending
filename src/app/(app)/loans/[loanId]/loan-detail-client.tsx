@@ -34,7 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
-import { cn, formatDate } from "@/lib/utils"
+import { cn, formatDate, formatCurrency } from "@/lib/utils"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -42,13 +42,6 @@ interface LoanDetailClientProps {
   customerName: string | null
   canModify: boolean
   openEditOnMount?: boolean
-}
-
-function formatUGX(amount: string | null | undefined): string {
-  if (!amount) return "—"
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "—"
-  return new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)
 }
 
 function formatDateForInput(date: Date | string | null | undefined): string {
@@ -264,7 +257,7 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
         <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mt-3">
           <div>
             <dt className="text-xs text-muted-foreground">Principal</dt>
-            <dd className="font-medium font-mono tabular-nums">UGX {formatUGX(loan.principalAmount)}</dd>
+            <dd className="font-medium font-mono tabular-nums">{formatCurrency(loan.principalAmount)}</dd>
           </div>
           <div>
             <dt className="text-xs text-muted-foreground">Interest Rate</dt>
@@ -282,7 +275,7 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
       {/* Outstanding Balance focal point */}
       <div className="rounded-lg border border-border bg-card p-6">
         <p className="text-xs text-muted-foreground">Outstanding Balance</p>
-        <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums mt-1">UGX {formatUGX(outstandingBalance)}</p>
+        <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums mt-1">{formatCurrency(outstandingBalance)}</p>
         <div className="flex gap-3 mt-4 flex-wrap">
           <Link
             href={`/loans/${loan.id}/payments/new`}
@@ -333,74 +326,76 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
             </Link>
           </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Date</TableHead>
-                <TableHead className="text-right">Amount (UGX)</TableHead>
-                <TableHead className="text-right">Interest Paid (UGX)</TableHead>
-                <TableHead className="text-right">Principal Paid (UGX)</TableHead>
-                <TableHead className="text-right">Balance After (UGX)</TableHead>
-                <TableHead>Recorded By</TableHead>
-                <TableHead className="w-12">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {payments.map((payment) => {
-                const isDeleted = payment.deletedAt !== null
-                const cellClass = isDeleted ? "opacity-60 line-through" : ""
-                return (
-                  <TableRow key={payment.id} data-testid="data-row">
-                    <TableCell className={cn("font-mono tabular-nums", cellClass)}>
-                      {formatDate(payment.paymentDate)}
-                    </TableCell>
-                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                      {formatUGX(payment.amount)}
-                    </TableCell>
-                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                      {formatUGX(payment.interestPortion)}
-                    </TableCell>
-                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                      {formatUGX(payment.principalPortion)}
-                    </TableCell>
-                    <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                      {formatUGX(payment.principalBalanceAfter)}
-                    </TableCell>
-                    <TableCell className={cn("font-mono text-xs", cellClass)}>
-                      {payment.recordedBy.slice(0, 8)}
-                    </TableCell>
-                    <TableCell>
-                      {isDeleted ? (
-                        <span className="text-xs text-muted-foreground">Deleted</span>
-                      ) : (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            aria-label="Payment actions"
-                            className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
-                          >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => openEditDialog(payment)}
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Amount (UGX)</TableHead>
+                  <TableHead className="text-right">Interest Paid (UGX)</TableHead>
+                  <TableHead className="text-right">Principal Paid (UGX)</TableHead>
+                  <TableHead className="text-right">Balance After (UGX)</TableHead>
+                  <TableHead>Recorded By</TableHead>
+                  <TableHead className="w-12">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payments.map((payment) => {
+                  const isDeleted = payment.deletedAt !== null
+                  const cellClass = isDeleted ? "opacity-60 line-through" : ""
+                  return (
+                    <TableRow key={payment.id} data-testid="data-row">
+                      <TableCell className={cn("font-mono tabular-nums", cellClass)}>
+                        {formatDate(payment.paymentDate)}
+                      </TableCell>
+                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
+                        {formatCurrency(payment.amount)}
+                      </TableCell>
+                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
+                        {formatCurrency(payment.interestPortion)}
+                      </TableCell>
+                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
+                        {formatCurrency(payment.principalPortion)}
+                      </TableCell>
+                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
+                        {formatCurrency(payment.principalBalanceAfter)}
+                      </TableCell>
+                      <TableCell className={cn("font-mono text-xs", cellClass)}>
+                        {payment.recordedBy.slice(0, 8)}
+                      </TableCell>
+                      <TableCell>
+                        {isDeleted ? (
+                          <span className="text-xs text-muted-foreground">Deleted</span>
+                        ) : (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              aria-label="Payment actions"
+                              className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
                             >
-                              Edit Payment
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => openDeleteDialog(payment)}
-                              variant="destructive"
-                            >
-                              Delete Payment
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onClick={() => openEditDialog(payment)}
+                              >
+                                Edit Payment
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => openDeleteDialog(payment)}
+                                variant="destructive"
+                              >
+                                Delete Payment
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
         )}
       </div>
 

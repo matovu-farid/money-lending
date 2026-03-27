@@ -26,12 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { cn, formatDate } from "@/lib/utils"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  return new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)
-}
+import { cn, formatDate, formatCurrency } from "@/lib/utils"
 
 function loanStatusVariant(status: string): "default" | "outline" {
   if (status === "active") return "default"
@@ -86,7 +81,7 @@ export default function LoansPage() {
       header: "Principal Amount",
       cardLabel: "Principal",
       align: "right",
-      render: (loan) => <>UGX {formatUGX(loan.principalAmount)}</>,
+      render: (loan) => <>{formatCurrency(loan.principalAmount)}</>,
     },
     {
       key: "interestRate",
@@ -163,8 +158,10 @@ export default function LoansPage() {
 
   if (isLoading) {
     return (
-      <div className="p-4 md:p-6">
-        <p className="text-muted-foreground">Loading loans...</p>
+      <div className="p-4 md:p-6 space-y-3">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
+        ))}
       </div>
     )
   }

@@ -1,36 +1,26 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { getWatchlistAction } from "@/actions/watchlist.actions"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import type { WatchlistEntry } from "@/types"
-import { formatDate, formatDateTime } from "@/lib/utils"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
-}
+import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
 
 export default function WatchlistPage() {
   const router = useRouter()
-  const [entries, setEntries] = useState<WatchlistEntry[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [calculatedAt] = useState(() => new Date())
-
-  useEffect(() => {
-    getWatchlistAction().then((result) => {
-      if (result.error) {
-        setError(result.error)
-      } else if (result.data) {
-        setEntries(result.data)
-      }
-      setLoading(false)
-    })
-  }, [])
+  const { data, isLoading: loading, error: queryError, dataUpdatedAt } = useQuery({
+    queryKey: ["watchlist"],
+    queryFn: async () => {
+      const result = await getWatchlistAction()
+      if (result.error) throw new Error(result.error)
+      return result.data!
+    },
+  })
+  const entries = data ?? []
+  const error = queryError?.message ?? null
+  const calculatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : new Date()
 
   return (
     <div className="space-y-6">
@@ -77,14 +67,14 @@ export default function WatchlistPage() {
               header: "Loan Amount",
               cardLabel: "Loan",
               align: "right",
-              render: (e) => formatUGX(e.loanAmount),
+              render: (e) => formatCurrency(e.loanAmount),
             },
             {
               key: "outstandingBalance",
               header: "Outstanding Balance",
               cardLabel: "Outstanding",
               align: "right",
-              render: (e) => formatUGX(e.outstandingBalance),
+              render: (e) => formatCurrency(e.outstandingBalance),
             },
             {
               key: "daysOverdue",
@@ -97,7 +87,7 @@ export default function WatchlistPage() {
               header: "Daily Rate (UGX)",
               cardLabel: "Daily Rate",
               align: "right",
-              render: (e) => formatUGX(e.dailyRate),
+              render: (e) => formatCurrency(e.dailyRate),
             },
             {
               key: "lastPayment",

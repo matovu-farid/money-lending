@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { recordCreditorRepaymentAction } from "@/app/(app)/creditors/actions"
@@ -21,15 +22,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatNumberWithCommas, stripCommas } from "@/lib/utils"
+import { formatNumberWithCommas, stripCommas, formatCurrency } from "@/lib/utils"
 import type { CreditorInvestment } from "@/types"
-
-function formatUGX(amount: string | null | undefined): string {
-  if (!amount) return "UGX 0"
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
-}
 
 interface Props {
   creditorId: string
@@ -37,44 +31,50 @@ interface Props {
   outstandingBalance: string
 }
 
+interface RepaymentFormValues {
+  investmentId: string
+  amount: string
+  date: string
+}
+
 export function RecordRepaymentDialog({ creditorId, investments, outstandingBalance }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
-  const [investmentId, setInvestmentId] = useState("")
-  const [amount, setAmount] = useState("")
-  const [date, setDate] = useState(() => new Date().toISOString().split("T")[0])
-  const [errors, setErrors] = useState<Record<string, string>>({})
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm<RepaymentFormValues>({
+    defaultValues: {
+      investmentId: "",
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+    },
+  })
+
+  const watchedAmount = watch("amount")
+  const watchedInvestmentId = watch("investmentId")
 
   function resetForm() {
-    setInvestmentId("")
-    setAmount("")
-    setDate(new Date().toISOString().split("T")[0])
-    setErrors({})
+    reset({
+      investmentId: "",
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+    })
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-
-    const newErrors: Record<string, string> = {}
-    if (!investmentId) newErrors.investmentId = "Please select an investment"
-    if (!amount.trim() || isNaN(Number(amount)) || Number(amount) <= 0) {
-      newErrors.amount = "Valid amount is required"
-    }
-
-    if (Object.keys(newErrors).length > 0) {
-      setErrors(newErrors)
-      return
-    }
-
-    setErrors({})
-
+  function onSubmit(data: RepaymentFormValues) {
     startTransition(async () => {
       try {
         await recordCreditorRepaymentAction({
-          investmentId,
-          amount: amount.trim(),
-          repaymentDate: date,
+          investmentId: data.investmentId,
+          amount: data.amount.trim(),
+          repaymentDate: data.date,
         })
 
         toast.success("Repayment recorded successfully")
@@ -100,18 +100,18 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
         <DialogHeader>
           <DialogTitle>Record Repayment</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           {/* Outstanding balance reference */}
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
             <span className="text-muted-foreground">Outstanding Balance: </span>
-            <span className="font-medium font-mono tabular-nums">{formatUGX(outstandingBalance)}</span>
+            <span className="font-medium font-mono tabular-nums">{formatCurrency(outstandingBalance)}</span>
           </div>
 
           <div className="space-y-1">
             <Label htmlFor="repay-investment">Investment</Label>
             <Select
-              value={investmentId}
-              onValueChange={(value) => setInvestmentId(value ?? "")}
+              value={watchedInvestmentId}
+              onValueChange={(value) => setValue("investmentId", value ?? "", { shouldValidate: true })}
             >
               <SelectTrigger id="repay-investment" className="w-full">
                 <SelectValue placeholder="Select investment" />
@@ -119,13 +119,17 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
               <SelectContent>
                 {investments.map((inv) => (
                   <SelectItem key={inv.id} value={inv.id}>
-                    <span className="font-mono tabular-nums">{formatUGX(inv.amount)}</span>{" — "}<span className="font-mono tabular-nums">{new Date(inv.investmentDate).toLocaleDateString("en-UG")}</span>
+                    <span className="font-mono tabular-nums">{formatCurrency(inv.amount)}</span>{" — "}<span className="font-mono tabular-nums">{new Date(inv.investmentDate).toLocaleDateString("en-UG")}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <input
+              type="hidden"
+              {...register("investmentId", { required: "Please select an investment" })}
+            />
             {errors.investmentId && (
-              <p className="text-destructive text-xs">{errors.investmentId}</p>
+              <p className="text-destructive text-xs">{errors.investmentId.message}</p>
             )}
           </div>
 
@@ -137,15 +141,29 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
                 id="repay-amount"
                 type="text"
                 inputMode="numeric"
-                value={formatNumberWithCommas(amount)}
-                onChange={(e) => setAmount(stripCommas(e.target.value).replace(/[^0-9.]/g, ""))}
+                value={formatNumberWithCommas(watchedAmount)}
+                onChange={(e) => {
+                  const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
+                  setValue("amount", raw, { shouldValidate: true })
+                }}
                 placeholder="e.g. 500,000"
                 disabled={isPending}
                 className="flex-1"
               />
+              <input
+                type="hidden"
+                {...register("amount", {
+                  required: "Valid amount is required",
+                  validate: v => {
+                    const n = Number(v)
+                    if (isNaN(n) || n <= 0) return "Valid amount is required"
+                    return true
+                  },
+                })}
+              />
             </div>
             {errors.amount && (
-              <p className="text-destructive text-xs">{errors.amount}</p>
+              <p className="text-destructive text-xs">{errors.amount.message}</p>
             )}
           </div>
 
@@ -154,10 +172,10 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
             <Input
               id="repay-date"
               type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
               disabled={isPending}
+              {...register("date", { required: "Date is required" })}
             />
+            {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
           </div>
 
           <DialogFooter showCloseButton>

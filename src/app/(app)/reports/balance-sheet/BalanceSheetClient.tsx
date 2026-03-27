@@ -1,5 +1,6 @@
 "use client"
 
+import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import {
   Select,
@@ -15,15 +16,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import type { BalanceSheetData } from "@/types"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", {
-    style: "decimal",
-    maximumFractionDigits: 0,
-  }).format(num)}`
-}
+import { formatCurrency } from "@/lib/utils"
 
 function getMonthOptions(): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = []
@@ -73,7 +66,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
     } catch {
-      // silently fail — user can retry
+      toast.error("Export failed. Please try again.")
     }
   }
 
@@ -128,13 +121,13 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                 <tr className="border-b border-muted">
                   <td className="py-2">Total Loans Outstanding</td>
                   <td className="py-2 text-right font-mono tabular-nums">
-                    {formatUGX(data.assets.totalLoansOutstanding)}
+                    {formatCurrency(data.assets.totalLoansOutstanding)}
                   </td>
                 </tr>
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Assets</td>
                   <td className="py-2 px-1 text-right font-mono tabular-nums">
-                    {formatUGX(data.assets.totalLoansOutstanding)}
+                    {formatCurrency(data.assets.totalLoansOutstanding)}
                   </td>
                 </tr>
               </tbody>
@@ -151,13 +144,13 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                 <tr className="border-b border-muted">
                   <td className="py-2">Total Creditor Balances</td>
                   <td className="py-2 text-right font-mono tabular-nums">
-                    {formatUGX(data.liabilities.totalCreditorBalances)}
+                    {formatCurrency(data.liabilities.totalCreditorBalances)}
                   </td>
                 </tr>
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Liabilities</td>
                   <td className="py-2 px-1 text-right font-mono tabular-nums">
-                    {formatUGX(data.liabilities.totalCreditorBalances)}
+                    {formatCurrency(data.liabilities.totalCreditorBalances)}
                   </td>
                 </tr>
               </tbody>
@@ -174,19 +167,19 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                 <tr className="border-b border-muted">
                   <td className="py-2">Share Capital</td>
                   <td className="py-2 text-right font-mono tabular-nums">
-                    {formatUGX(data.equity.shareCapital)}
+                    {formatCurrency(data.equity.shareCapital)}
                   </td>
                 </tr>
                 <tr className="border-b border-muted">
                   <td className="py-2">Retained Earnings</td>
                   <td className="py-2 text-right font-mono tabular-nums">
-                    {formatUGX(data.equity.retainedEarnings)}
+                    {formatCurrency(data.equity.retainedEarnings)}
                   </td>
                 </tr>
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Equity</td>
                   <td className="py-2 px-1 text-right font-mono tabular-nums">
-                    {formatUGX(data.equity.totalEquity)}
+                    {formatCurrency(data.equity.totalEquity)}
                   </td>
                 </tr>
               </tbody>
@@ -198,7 +191,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
             <div className="flex items-center justify-between font-bold text-base">
               <span>Total Liabilities + Equity</span>
               <span className="font-mono tabular-nums">
-                {formatUGX(String(totalLiabilitiesPlusEquity))}
+                {formatCurrency(String(totalLiabilitiesPlusEquity))}
               </span>
             </div>
           </div>

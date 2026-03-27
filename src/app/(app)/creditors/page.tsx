@@ -4,12 +4,7 @@ import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
-
-function formatUGX(amount: string): string {
-  const num = parseFloat(amount)
-  if (isNaN(num)) return "UGX 0"
-  return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
-}
+import { formatCurrency } from "@/lib/utils"
 
 const defaultCapital = {
   totalInvested: "0.00",
@@ -43,22 +38,22 @@ export default async function CreditorsPage() {
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Total Invested"
-          value={formatUGX(capital.totalInvested)}
+          value={formatCurrency(capital.totalInvested)}
           icon={Landmark}
         />
         <KpiCard
           label="Total Interest Accrued"
-          value={formatUGX(capital.totalInterestAccrued)}
+          value={formatCurrency(capital.totalInterestAccrued)}
           icon={TrendingUp}
         />
         <KpiCard
           label="Total Repayments"
-          value={formatUGX(capital.totalRepaymentsMade)}
+          value={formatCurrency(capital.totalRepaymentsMade)}
           icon={CreditCard}
         />
         <KpiCard
           label="Total Outstanding"
-          value={formatUGX(capital.totalOutstanding)}
+          value={formatCurrency(capital.totalOutstanding)}
           icon={DollarSign}
         />
       </div>

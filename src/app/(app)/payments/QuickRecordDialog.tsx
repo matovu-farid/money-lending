@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { format } from "date-fns"
+import { useForm } from "react-hook-form"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import Link from "next/link"
@@ -25,15 +26,31 @@ interface QuickRecordDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-const todayStr = format(new Date(), "yyyy-MM-dd")
+interface QuickRecordFormValues {
+  amount: string
+  paymentDate: string
+}
 
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
   const queryClient = useQueryClient()
   const [selectedLoan, setSelectedLoan] = useState<ActiveLoanSearchResult | null>(null)
-  const [amount, setAmount] = useState("")
-  const [paymentDate, setPaymentDate] = useState(todayStr)
   const [successPaymentId, setSuccessPaymentId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+
+  const {
+    register,
+    handleSubmit,
+    watch,
+    reset,
+    formState: { errors },
+  } = useForm<QuickRecordFormValues>({
+    defaultValues: {
+      amount: "",
+      paymentDate: format(new Date(), "yyyy-MM-dd"),
+    },
+  })
+
+  const amount = watch("amount")
 
   const { data: recentLoans = [] } = useQuery({
     queryKey: ["recentLoans"],
@@ -47,8 +64,10 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
 
   function resetForm() {
     setSelectedLoan(null)
-    setAmount("")
-    setPaymentDate(format(new Date(), "yyyy-MM-dd"))
+    reset({
+      amount: "",
+      paymentDate: format(new Date(), "yyyy-MM-dd"),
+    })
     setSuccessPaymentId(null)
   }
 
@@ -69,14 +88,14 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     setSelectedLoan(activeLoan)
   }
 
-  function handleSubmit() {
-    if (!selectedLoan || !amount || Number(amount) <= 0) return
+  function onSubmit(data: QuickRecordFormValues) {
+    if (!selectedLoan) return
 
     startTransition(async () => {
       const result = await recordPaymentAction({
         loanId: selectedLoan.loanId,
-        amount,
-        paymentDate: new Date(paymentDate + "T12:00:00").toISOString(),
+        amount: data.amount,
+        paymentDate: new Date(data.paymentDate + "T12:00:00").toISOString(),
       })
 
       if ("error" in result) {
@@ -96,7 +115,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     })
   }
 
-  const isSubmitDisabled = !selectedLoan || !amount || Number(amount) <= 0 || isPending
+  const isSubmitDisabled = !selectedLoan || isPending
 
   return (
     <DrawerDialog open={open} onOpenChange={handleOpenChange}>
@@ -132,85 +151,93 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
             <DialogHeader>
               <DialogTitle>Record Payment</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-2">
-              {/* Recently-collected chips */}
-              {recentLoans.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Recent</p>
-                  <div className="flex flex-wrap gap-2">
-                    {recentLoans.map((loan) => (
-                      <Button
-                        key={loan.loanId}
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleChipClick(loan)}
-                      >
-                        {loan.customerName}&nbsp;·&nbsp;LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
-                      </Button>
-                    ))}
+            <form onSubmit={handleSubmit(onSubmit)}>
+              <div className="space-y-4 py-2">
+                {/* Recently-collected chips */}
+                {recentLoans.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold">Recent</p>
+                    <div className="flex flex-wrap gap-2">
+                      {recentLoans.map((loan) => (
+                        <Button
+                          key={loan.loanId}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleChipClick(loan)}
+                        >
+                          {loan.customerName}&nbsp;·&nbsp;LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
+                        </Button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* Loan search */}
-              <div className="space-y-1.5">
-                <Label>Loan</Label>
-                <LoanSearchCombobox
-                  selectedLoan={selectedLoan}
-                  onSelect={setSelectedLoan}
-                  onClear={() => setSelectedLoan(null)}
-                />
-              </div>
-
-              {/* Amount */}
-              <div className="space-y-1.5">
-                <Label htmlFor="quick-record-amount">Amount (UGX)</Label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    UGX
-                  </span>
-                  <Input
-                    id="quick-record-amount"
-                    type="number"
-                    min="1"
-                    step="1"
-                    className="pl-12"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    disabled={!selectedLoan}
+                {/* Loan search */}
+                <div className="space-y-1.5">
+                  <Label>Loan</Label>
+                  <LoanSearchCombobox
+                    selectedLoan={selectedLoan}
+                    onSelect={setSelectedLoan}
+                    onClear={() => setSelectedLoan(null)}
                   />
                 </div>
+
+                {/* Amount */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="quick-record-amount">Amount (UGX)</Label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
+                      UGX
+                    </span>
+                    <Input
+                      id="quick-record-amount"
+                      type="text"
+                      inputMode="numeric"
+                      className="pl-12"
+                      disabled={!selectedLoan}
+                      {...register("amount", {
+                        required: "Amount is required",
+                        validate: v => Number(v) > 0 || "Amount must be greater than 0",
+                      })}
+                    />
+                  </div>
+                  {errors.amount && (
+                    <p className="text-sm text-destructive">{errors.amount.message}</p>
+                  )}
+                </div>
+
+                {/* Payment date */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="quick-record-date">Payment Date</Label>
+                  <Input
+                    id="quick-record-date"
+                    type="date"
+                    {...register("paymentDate", { required: "Payment date is required" })}
+                  />
+                  {errors.paymentDate && (
+                    <p className="text-sm text-destructive">{errors.paymentDate.message}</p>
+                  )}
+                </div>
               </div>
 
-              {/* Payment date */}
-              <div className="space-y-1.5">
-                <Label htmlFor="quick-record-date">Payment Date</Label>
-                <Input
-                  id="quick-record-date"
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                Close
-              </Button>
-              <Button
-                variant="default"
-                disabled={isSubmitDisabled}
-                onClick={handleSubmit}
-              >
-                {isPending ? (
-                  <Spinner>Recording...</Spinner>
-                ) : (
-                  "Record Payment"
-                )}
-              </Button>
-            </DialogFooter>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+                  Close
+                </Button>
+                <Button
+                  type="submit"
+                  variant="default"
+                  disabled={isSubmitDisabled}
+                >
+                  {isPending ? (
+                    <Spinner>Recording...</Spinner>
+                  ) : (
+                    "Record Payment"
+                  )}
+                </Button>
+              </DialogFooter>
+            </form>
           </>
         )}
       </DrawerDialogContent>

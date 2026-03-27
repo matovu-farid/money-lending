@@ -7,29 +7,22 @@ interface OverdueBadgeProps {
 }
 
 export function OverdueBadge({ daysOverdue, className }: OverdueBadgeProps) {
-  let bgClass: string
-  let textClass: string
-  let label: string
+  const severity =
+    daysOverdue >= 30
+      ? { colorClass: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300", prefix: "Critical" }
+      : daysOverdue >= 15
+        ? { colorClass: "bg-yellow-100 text-yellow-800 dark:bg-yellow-950 dark:text-yellow-300", prefix: "At-risk" }
+        : { colorClass: "bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300", prefix: "" }
 
-  if (daysOverdue >= 30) {
-    bgClass = "bg-red-100"
-    textClass = "text-red-800"
-    label = `${daysOverdue} days`
-  } else if (daysOverdue >= 15) {
-    bgClass = "bg-yellow-100"
-    textClass = "text-yellow-800"
-    label = `${daysOverdue} days`
-  } else {
-    bgClass = "bg-green-100"
-    textClass = "text-green-800"
-    label = `${daysOverdue} days`
-  }
+  const label = severity.prefix
+    ? `${severity.prefix} · ${daysOverdue}d`
+    : `${daysOverdue}d`
 
   return (
     <Badge
       variant="outline"
-      className={cn(bgClass, textClass, "border-0", className)}
-      aria-label={`${daysOverdue} days overdue`}
+      className={cn(severity.colorClass, "border-0", className)}
+      aria-label={`${severity.prefix || "Overdue"} — ${daysOverdue} days overdue`}
     >
       {label}
     </Badge>
