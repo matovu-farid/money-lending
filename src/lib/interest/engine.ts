@@ -75,7 +75,12 @@ export function calculateDaysOverdue(
     return new BigNumber(0)
   }
 
-  return unpaidInterest.dividedBy(new BigNumber(currentDailyRate))
+  const rate = new BigNumber(currentDailyRate)
+  if (rate.isZero()) {
+    return new BigNumber(0)
+  }
+
+  return unpaidInterest.dividedBy(rate)
 }
 
 /**

@@ -16,7 +16,11 @@ export function formatNumberWithCommas(value: string): string {
   const cleaned = value.replace(/[^0-9.]/g, "")
   if (!cleaned) return ""
 
-  const parts = cleaned.split(".")
+  let parts = cleaned.split(".")
+  if (parts.length > 2) {
+    // Multiple dots: keep only first dot
+    parts = [parts[0], parts.slice(1).join("")]
+  }
   // Format integer part with commas
   const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",")
   if (parts.length > 1) {

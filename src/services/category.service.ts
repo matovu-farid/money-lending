@@ -97,17 +97,16 @@ export const createCategory = (
 > =>
   Effect.tryPromise({
     try: async () => {
-      const [category] = await db
-        .insert(transactionCategories)
-        .values({
-          name: input.name,
-          type: input.type,
-          isDefault: false,
-        })
-        .returning()
+      return await db.transaction(async (tx) => {
+        const [category] = await tx
+          .insert(transactionCategories)
+          .values({
+            name: input.name,
+            type: input.type,
+            isDefault: false,
+          })
+          .returning()
 
-      // Audit log (outside transaction — single insert, no atomicity requirement)
-      await db.transaction(async (tx) => {
         await writeAuditLog(tx, {
           actorId,
           action: "category.create",
@@ -116,9 +115,9 @@ export const createCategory = (
           beforeValue: null,
           afterValue: category,
         })
-      })
 
-      return category
+        return category
+      })
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })

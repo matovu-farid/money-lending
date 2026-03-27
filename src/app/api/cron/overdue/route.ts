@@ -8,10 +8,10 @@ import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/l
 import { createNotificationsForLoan } from "@/services/notification.service"
 import BigNumber from "bignumber.js"
 
-export async function GET(request: NextRequest) {
-  // Auth: verify cron secret
-  const cronSecret = request.headers.get("x-cron-secret")
-  if (cronSecret !== process.env.CRON_SECRET) {
+export async function POST(request: NextRequest) {
+  // Auth: verify cron secret via Authorization Bearer header
+  const authHeader = request.headers.get("authorization")
+  if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 

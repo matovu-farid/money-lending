@@ -21,6 +21,10 @@ import type {
   RecentlyCollectedLoan,
 } from "@/types"
 
+function escapeLikePattern(input: string): string {
+  return input.replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 /**
  * Computes integer calendar days between two dates.
  * Math.floor is acceptable for non-monetary integer day-count (Phase 1 decision).
@@ -283,7 +287,7 @@ export const editPayment = (
         // Update loan status based on final balance
         if (refreshed.length > 0) {
           const lastBalance = refreshed[refreshed.length - 1].principalBalanceAfter
-          if (lastBalance === "0.00" || lastBalance === "0") {
+          if (new BigNumber(lastBalance).isZero()) {
             await tx
               .update(loans)
               .set({ status: "fully_paid", updatedAt: new Date() })
@@ -423,7 +427,7 @@ export const deletePayment = (
             .where(eq(loans.id, payment.loanId))
         } else {
           const lastBalance = refreshed[refreshed.length - 1].principalBalanceAfter
-          if (lastBalance === "0.00" || lastBalance === "0") {
+          if (new BigNumber(lastBalance).isZero()) {
             await tx
               .update(loans)
               .set({ status: "fully_paid", updatedAt: now })
@@ -495,7 +499,7 @@ export const listPayments = (
       if (input.dateTo) conditions.push(lte(payments.paymentDate, new Date(input.dateTo + "T23:59:59.999Z")))
       if (input.amountMin) conditions.push(gte(payments.amount, input.amountMin))
       if (input.amountMax) conditions.push(lte(payments.amount, input.amountMax))
-      if (input.customerName) conditions.push(ilike(customers.fullName, `%${input.customerName}%`))
+      if (input.customerName) conditions.push(ilike(customers.fullName, `%${escapeLikePattern(input.customerName)}%`))
 
       const where = and(...conditions)
 
@@ -587,7 +591,7 @@ export const searchActiveLoans = (
           and(
             eq(loans.status, "active"),
             isNull(loans.deletedAt),
-            ilike(customers.fullName, `%${query.trim()}%`)
+            ilike(customers.fullName, `%${escapeLikePattern(query.trim())}%`)
           )
         )
         .limit(10)

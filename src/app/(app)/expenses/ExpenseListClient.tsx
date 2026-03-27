@@ -166,14 +166,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
       }
       toast.error("Failed to delete expense")
     },
-    onSuccess: (_result, _id, context) => {
-      if (context?.transactionId) {
-        setRemovedTransactionIds((prev) => {
-          const next = new Set(prev)
-          next.delete(context.transactionId)
-          return next
-        })
-      }
+    onSuccess: () => {
       toast.success("Expense deleted")
     },
   })

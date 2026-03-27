@@ -1,4 +1,7 @@
 import { Effect } from "effect"
+import { NextResponse } from "next/server"
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
 import { getPnlData } from "@/services/report.service"
 import { generatePnlPdf } from "@/services/export/pdf.service"
 import { generatePnlExcel } from "@/services/export/excel.service"
@@ -10,6 +13,11 @@ function getLastCompletedMonth(): string {
 }
 
 export async function GET(request: Request) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
   const { searchParams } = new URL(request.url)
   const format = searchParams.get("format") ?? "pdf"
   const period = searchParams.get("period") ?? getLastCompletedMonth()

@@ -40,7 +40,7 @@ export function NotificationBell() {
   // Fetch full notification list when popover opens (lazy load)
   function handleOpenChange(isOpen: boolean) {
     setOpen(isOpen)
-    if (isOpen && notifications.length === 0) {
+    if (isOpen) {
       setLoadingNotifications(true)
       getNotificationsAction().then((result) => {
         if ("data" in result) {

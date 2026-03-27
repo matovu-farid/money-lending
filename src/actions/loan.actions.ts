@@ -67,6 +67,9 @@ export async function updateLoanAction(input: UpdateLoanInput) {
   if (input.principalAmount !== undefined && !/^\d+(\.\d{1,2})?$/.test(input.principalAmount)) {
     return { error: "Principal must be a valid decimal number" }
   }
+  if (input.principalAmount !== undefined && parseFloat(input.principalAmount) <= 0) {
+    return { error: "Principal must be greater than zero" }
+  }
 
   try {
     const data = await Effect.runPromise(updateLoan(input, session.user.id))
@@ -121,6 +124,9 @@ export async function createLoanAction(input: CreateLoanInput) {
   }
   if (!input.principalAmount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.principalAmount)) {
     return { error: "Principal must be a valid decimal number" }
+  }
+  if (parseFloat(input.principalAmount) <= 0) {
+    return { error: "Principal must be greater than zero" }
   }
   if (!input.startDate?.trim()) {
     return { error: "Start date is required" }

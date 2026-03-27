@@ -11,6 +11,10 @@ import BigNumber from "bignumber.js"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, CustomerStatus } from "@/types"
 import type { Customer } from "@/types"
 
+function escapeLikePattern(input: string): string {
+  return input.replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 export const createCustomer = (
   input: CreateCustomerInput
 ): Effect.Effect<Customer, DatabaseError> =>
@@ -76,7 +80,7 @@ export const searchCustomers = (
   Effect.tryPromise({
     try: async () => {
       const conditions = []
-      if (params.name) conditions.push(ilike(customers.fullName, `%${params.name}%`))
+      if (params.name) conditions.push(ilike(customers.fullName, `%${escapeLikePattern(params.name)}%`))
       if (params.status?.length) conditions.push(inArray(customers.status, params.status))
 
       const whereClause = conditions.length ? and(...conditions) : undefined
@@ -207,7 +211,7 @@ export const changeCustomerStatus = (
       })
     },
     catch: (e) => {
-      if (e instanceof CustomerNotFound) throw e
+      if (e instanceof CustomerNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })

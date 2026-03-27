@@ -171,14 +171,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
       }
       toast.error("Failed to delete income")
     },
-    onSuccess: (_result, _id, context) => {
-      if (context?.transactionId) {
-        setRemovedTransactionIds((prev) => {
-          const next = new Set(prev)
-          next.delete(context.transactionId)
-          return next
-        })
-      }
+    onSuccess: () => {
       toast.success("Income deleted")
     },
   })

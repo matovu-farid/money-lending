@@ -36,6 +36,9 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
   if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount)) {
     return { error: "Amount must be a valid decimal number (e.g. 150000 or 150000.00)" }
   }
+  if (parseFloat(input.amount) <= 0) {
+    return { error: "Amount must be greater than zero" }
+  }
   if (!input.paymentDate?.trim()) {
     return { error: "Payment date is required" }
   }
@@ -210,6 +213,10 @@ export async function getPaymentsByLoanAction(loanId: string) {
     return { error: "Unauthorized" }
   }
 
+  if (!loanId?.trim()) {
+    return { error: "Loan ID is required" }
+  }
+
   try {
     const rows = await db
       .select()
@@ -233,8 +240,13 @@ export async function searchActiveLoansAction(query: string) {
     return { error: "Unauthorized" }
   }
 
+  const trimmed = query?.trim() ?? ""
+  if (!trimmed) {
+    return { data: [] }
+  }
+
   try {
-    const data = await Effect.runPromise(searchActiveLoans(query))
+    const data = await Effect.runPromise(searchActiveLoans(trimmed))
     return { data }
   } catch {
     return { error: "Internal server error" }

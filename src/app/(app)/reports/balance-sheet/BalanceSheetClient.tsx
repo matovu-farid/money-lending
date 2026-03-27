@@ -15,6 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import BigNumber from "bignumber.js"
 import type { BalanceSheetData } from "@/types"
 import { formatCurrency } from "@/lib/utils"
 
@@ -70,9 +71,9 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
     }
   }
 
-  const totalLiabilitiesPlusEquity =
-    parseFloat(data.liabilities.totalCreditorBalances) +
-    parseFloat(data.equity.totalEquity)
+  const totalLiabilitiesPlusEquity = new BigNumber(data.liabilities.totalCreditorBalances)
+    .plus(data.equity.totalEquity)
+    .toFixed(2)
 
   return (
     <div className="space-y-4">

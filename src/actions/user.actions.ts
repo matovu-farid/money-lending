@@ -17,6 +17,11 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
 
   const { userId, role: targetRole } = input
 
+  // Prevent self-role-assignment
+  if (userId === session.user.id) {
+    return { error: "Cannot change your own role" }
+  }
+
   // Validate input at runtime (TypeScript types are erased at runtime)
   if (!userId || typeof userId !== "string") {
     return { error: "User ID is required" }

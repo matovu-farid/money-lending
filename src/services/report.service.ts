@@ -12,7 +12,6 @@ import {
   gte,
   lte,
   isNull,
-  asc,
   desc,
   sql,
 } from "drizzle-orm"
@@ -287,9 +286,9 @@ export const getPortfolioData = (): Effect.Effect<
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
 
-        // Interest accrued using engine.ts
+        // Interest accrued using engine.ts (based on principalAmount for consistency with dashboard/watchlist)
         const interestAccrued = calculateInterest(
-          outstandingBalance.toFixed(2),
+          loan.principalAmount,
           effectiveRate,
           totalDaysElapsed,
           effectiveMinDays

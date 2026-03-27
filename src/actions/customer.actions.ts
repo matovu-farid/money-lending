@@ -5,7 +5,8 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
 import { CustomerNotFound, DatabaseError } from "@/lib/errors"
-import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput } from "@/types"
+import { ROLE_LEVELS, type UserRole } from "@/types"
+import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput, CustomerStatus } from "@/types"
 
 export async function listCustomersAction() {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -112,6 +113,20 @@ export async function changeCustomerStatusAction(input: ChangeStatusInput) {
     return { error: "Unauthorized" }
   }
 
+  // Only admin+ can change customer status
+  const role = (session.user.role ?? "unassigned") as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+    return { error: "Forbidden" }
+  }
+
+  // Runtime validation
+  if (!input.customerId?.trim()) {
+    return { error: "Customer ID is required" }
+  }
+  const validStatuses: CustomerStatus[] = ["active", "blacklisted", "inactive"]
+  if (!input.newStatus || !validStatuses.includes(input.newStatus)) {
+    return { error: "Invalid status" }
+  }
   if (!input.reason?.trim() || input.reason.trim().length < 10) {
     return { error: "Reason must be at least 10 characters" }
   }

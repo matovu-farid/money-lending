@@ -4,7 +4,6 @@ import { db } from "@/lib/db"
 import { systemSettings } from "@/lib/db/schema/settings"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
-import { eq } from "drizzle-orm"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 
 // LOAN-11 vs AUTH-03 resolution:
@@ -54,31 +53,21 @@ export async function updateSettingAction(input: UpdateSettingInput) {
     return { error: "Setting value is required" }
   }
 
-  const existing = await db
-    .select()
-    .from(systemSettings)
-    .where(eq(systemSettings.key, input.key))
-
-  if (existing.length > 0) {
-    const [updated] = await db
-      .update(systemSettings)
-      .set({
+  const [result] = await db
+    .insert(systemSettings)
+    .values({
+      key: input.key,
+      value: input.value,
+      updatedBy: session.user.id,
+    })
+    .onConflictDoUpdate({
+      target: systemSettings.key,
+      set: {
         value: input.value,
         updatedBy: session.user.id,
         updatedAt: new Date(),
-      })
-      .where(eq(systemSettings.key, input.key))
-      .returning()
-    return { data: updated }
-  } else {
-    const [created] = await db
-      .insert(systemSettings)
-      .values({
-        key: input.key,
-        value: input.value,
-        updatedBy: session.user.id,
-      })
-      .returning()
-    return { data: created }
-  }
+      },
+    })
+    .returning()
+  return { data: result }
 }

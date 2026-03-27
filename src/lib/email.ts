@@ -14,6 +14,10 @@ type NotificationPayload = {
   timestamp: Date
 }
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 const SUBJECT_MAP: Record<NotificationEvent, string> = {
   "payment.created": "Payment recorded",
   "payment.updated": "Payment updated",
@@ -54,9 +58,9 @@ export async function sendAdminNotification(
         <h2 style="color: #333;">${SUBJECT_MAP[event]}</h2>
         <table style="border-collapse: collapse; width: 100%;">
           <tr><td style="padding: 8px; color: #666;">Event</td><td style="padding: 8px;">${SUBJECT_MAP[event]}</td></tr>
-          <tr><td style="padding: 8px; color: #666;">Actor</td><td style="padding: 8px;">${payload.actorName} (${payload.actorEmail})</td></tr>
-          <tr><td style="padding: 8px; color: #666;">Loan ref</td><td style="padding: 8px; font-family: monospace;">${payload.loanRef}</td></tr>
-          <tr><td style="padding: 8px; color: #666;">Amount</td><td style="padding: 8px;">UGX ${payload.amount}</td></tr>
+          <tr><td style="padding: 8px; color: #666;">Actor</td><td style="padding: 8px;">${escapeHtml(payload.actorName)} (${escapeHtml(payload.actorEmail)})</td></tr>
+          <tr><td style="padding: 8px; color: #666;">Loan ref</td><td style="padding: 8px; font-family: monospace;">${escapeHtml(payload.loanRef)}</td></tr>
+          <tr><td style="padding: 8px; color: #666;">Amount</td><td style="padding: 8px;">UGX ${escapeHtml(payload.amount)}</td></tr>
           <tr><td style="padding: 8px; color: #666;">Timestamp</td><td style="padding: 8px;">${formattedTimestamp}</td></tr>
         </table>
         <p style="color: #999; font-size: 12px; margin-top: 24px;">This is an automated notification from the lending system.</p>
