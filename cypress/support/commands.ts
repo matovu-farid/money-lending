@@ -34,16 +34,27 @@ Cypress.Commands.add(
     cy.get("#confirmPassword").type(password)
     cy.get("button[type=submit]").click()
 
-    // Registration redirects to /pending-approval.
-    // First user is auto-promoted to superAdmin by databaseHook, so proxy bounces to /dashboard.
-    // Subsequent users stay at /pending-approval until promoted.
+    // Registration may redirect to /verify-email (email verification required)
+    // or /pending-approval / /dashboard (when CYPRESS=true disables verification).
     cy.url({ timeout: 15000 }).should("satisfy", (url: string) =>
-      url.includes("/dashboard") || url.includes("/pending-approval")
+      url.includes("/dashboard") ||
+      url.includes("/pending-approval") ||
+      url.includes("/verify-email")
     )
 
-    // If user landed on /pending-approval, promote them and re-login
     cy.url().then((url) => {
-      if (url.includes("/pending-approval")) {
+      if (url.includes("/verify-email")) {
+        // Email verification required: promote user (sets email_verified=true, invalidates session)
+        // then log in fresh
+        cy.task("db:promoteUser", { email, role: "superAdmin" })
+        cy.clearCookies()
+        cy.visit("/login")
+        cy.get("#email").type(email)
+        cy.get("#password").type(password)
+        cy.get("button[type=submit]").click()
+        cy.url({ timeout: 15000 }).should("include", "/dashboard")
+      } else if (url.includes("/pending-approval")) {
+        // User registered but needs role promotion
         cy.task("db:promoteUser", { email, role: "superAdmin" })
         cy.clearCookies()
         cy.visit("/login")
@@ -52,6 +63,7 @@ Cypress.Commands.add(
         cy.get("button[type=submit]").click()
         cy.url({ timeout: 15000 }).should("include", "/dashboard")
       }
+      // else: already on /dashboard — first user auto-promoted, no action needed
     })
 
     cy.wrap(email)
