@@ -3,13 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: "Completed quick task 260326-dei: Add 6 recommended libraries"
-last_updated: "2026-03-26T09:42:00.000Z"
+stopped_at: Completed 01-unify-loans-and-watchlist-pages plan 01
+last_updated: "2026-03-31T13:12:01.770Z"
+last_activity: 2026-03-31
 progress:
-  total_phases: 0
+  total_phases: 1
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
 ---
 
 # Project State
@@ -19,11 +20,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-03-26)
 
 **Core value:** A loan officer can register a customer, issue a loan, collect payments, and print a receipt — the lending business is fully operational.
-**Current focus:** Planning next milestone
+**Current focus:** Phase 01 — unify-loans-and-watchlist-pages
 
 ## Current Position
 
-Milestone v1.2 Responsive — SHIPPED 2026-03-26
+Phase: 01 (unify-loans-and-watchlist-pages) — EXECUTING
+Plan: 1 of 2
 
 ## Performance Metrics
 
@@ -47,12 +49,20 @@ Milestone v1.2 Responsive — SHIPPED 2026-03-26
 | Phase 15-touch-optimization P02 | 120 | 2 tasks | 13 files |
 | Phase 16-cypress-mobile-coverage P01 | 38min | 3 tasks | 14 files |
 | Phase 16-cypress-mobile-coverage P02 | 45 | 2 tasks | 12 files |
+| Phase 01-unify-loans-and-watchlist-pages P01 | 12 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
 ### Decisions
 
 Full decision log in PROJECT.md Key Decisions table.
+
+- [Phase 01-unify-loans-and-watchlist-pages]: computeOverdue now fetches payments for ALL loan statuses to return LoanListEntry[] with outstandingBalance, dailyRate, lastPaymentDate for every loan
+- [Phase 01-unify-loans-and-watchlist-pages]: watchlist/page.tsx adapted to use useLoans hook until Plan 02 replaces it — eliminates dead code path
+
+### Roadmap Evolution
+
+- Phase 1 added: Unify Loans and Watchlist Pages
 
 ### Blockers/Concerns
 
@@ -68,7 +78,7 @@ Full decision log in PROJECT.md Key Decisions table.
 
 ## Session Continuity
 
-Last activity: 2026-03-26 - Completed quick task 260326-dei: Add 6 recommended libraries
-Last session: 2026-03-26T09:42:00.000Z
-Stopped at: Completed quick task 260326-dei: Add 6 recommended libraries
+Last activity: 2026-03-31
+Last session: 2026-03-31T13:12:01.769Z
+Stopped at: Completed 01-unify-loans-and-watchlist-pages plan 01
 Resume file: None
