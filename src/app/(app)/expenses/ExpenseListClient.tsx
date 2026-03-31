@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
@@ -36,7 +36,10 @@ import {
   deleteExpenseAction,
   createExpenseCategoryAction,
 } from "./actions"
-import { formatNumberWithCommas, stripCommas, formatDate, formatCurrency } from "@/lib/utils"
+import { MoneyInput } from "@/components/ui/money-input"
+import { formatDate, formatCurrency } from "@/lib/utils"
+import { PageHeader } from "@/components/ui/page-header"
+import { queryKeys } from "@/hooks/query-keys"
 import type { CreateExpenseInput } from "@/types"
 
 type Transaction = {
@@ -74,6 +77,7 @@ type ExpenseFormValues = {
 }
 
 export function ExpenseListClient({ transactions: initialTransactions, categories: initialCategories }: ExpenseListClientProps) {
+  const queryClient = useQueryClient()
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
@@ -89,6 +93,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
     setValue,
     watch,
     reset,
+    control,
     formState: { errors },
   } = useForm<ExpenseFormValues>({
     defaultValues: {
@@ -100,7 +105,6 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
   })
 
   const watchedCategoryId = watch("categoryId")
-  const watchedAmount = watch("amount")
 
   const displayedTransactions = useMemo(() => {
     const filtered = initialTransactions.filter(t => !removedTransactionIds.has(t.id))
@@ -139,13 +143,21 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
       }
       toast.error("Failed to record expense")
     },
-    onSuccess: (_result, _input, context) => {
+    onSuccess: (result, _input, context) => {
       if (context?.optimisticId) {
         setOptimisticTransactions((prev) => prev.filter((t) => t.id !== context.optimisticId))
+      }
+      if (result && "error" in result) {
+        toast.error(result.error)
+        return
       }
       toast.success("Expense recorded")
       setIsSheetOpen(false)
       reset()
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.expenses.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     },
   })
 
@@ -169,6 +181,10 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
     onSuccess: () => {
       toast.success("Expense deleted")
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.expenses.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+    },
   })
 
   function onFormSubmit(data: ExpenseFormValues) {
@@ -181,21 +197,25 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
     addMutation.mutate(input)
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!deleteTarget) return
     deleteMutation.mutate(deleteTarget)
   }
 
-  async function handleAddCategory() {
+  function handleAddCategory() {
     if (!newCategoryName.trim()) return
     startCategoryTransition(async () => {
       try {
         const created = await createExpenseCategoryAction({ name: newCategoryName.trim(), type: "expense" })
+        if ("error" in created) {
+          toast.error(created.error)
+          return
+        }
         const newCat: Category = {
-          id: created.id,
-          name: created.name,
-          type: created.type,
-          isDefault: created.isDefault,
+          id: created.data.id,
+          name: created.data.name,
+          type: created.data.type,
+          isDefault: created.data.isDefault,
         }
         setOptimisticCategories((prev) => [...prev, newCat])
         setNewCategoryName("")
@@ -209,18 +229,14 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
   return (
     <TooltipProvider>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Expenses</h1>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Business expenditure tracking</p>
-          </div>
+        <PageHeader title="Expenses" subtitle="Business expenditure tracking">
           <Button
             onClick={() => { reset(); setIsSheetOpen(true) }}
             disabled={addMutation.isPending}
           >
             Add Expense
           </Button>
-        </div>
+        </PageHeader>
 
         <ResponsiveTable<Transaction>
           columns={[
@@ -257,11 +273,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                   size="sm"
                   className="text-destructive hover:text-destructive"
                   onClick={() => setDeleteTarget(tx.id)}
-                  disabled={
-                    tx.isOptimistic ||
-                    deleteMutation.isPending ||
-                    (deleteMutation.variables === tx.id && deleteMutation.isPending)
-                  }
+                  disabled={tx.isOptimistic || deleteMutation.isPending}
                 >
                   Delete
                 </Button>
@@ -290,7 +302,6 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
           }
         />
 
-        {/* Add Expense Sheet */}
         <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) reset() }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
@@ -362,30 +373,13 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                 </Popover>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="expense-amount">Amount</Label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    UGX
-                  </span>
-                  <Input
-                    id="expense-amount"
-                    type="text"
-                    inputMode="numeric"
-                    className="pl-12"
-                    value={formatNumberWithCommas(watchedAmount)}
-                    onChange={(e) => {
-                      const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
-                      setValue("amount", raw, { shouldValidate: true })
-                    }}
-                  />
-                  <input
-                    type="hidden"
-                    {...register("amount", { required: "Amount is required" })}
-                  />
-                </div>
-                {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
-              </div>
+              <MoneyInput
+                name="amount"
+                control={control}
+                label="Amount"
+                required="Amount is required"
+                id="expense-amount"
+              />
 
               <div className="space-y-1.5">
                 <Label htmlFor="expense-notes">Notes (optional)</Label>
@@ -408,7 +402,6 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
           </DrawerDialogContent>
         </DrawerDialog>
 
-        {/* Delete Confirmation Dialog */}
         <DrawerDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
           <DrawerDialogContent>
             <DialogHeader>

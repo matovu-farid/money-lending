@@ -16,8 +16,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
+import { MoneyInput } from "@/components/ui/money-input"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { getRecentlyCollectedLoansAction, recordPaymentAction } from "@/actions/payment.actions"
+import { queryKeys } from "@/hooks/query-keys"
 import { formatNumberWithCommas } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
 
@@ -42,6 +44,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     handleSubmit,
     watch,
     reset,
+    control,
     formState: { errors },
   } = useForm<QuickRecordFormValues>({
     defaultValues: {
@@ -53,7 +56,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   const amount = watch("amount")
 
   const { data: recentLoans = [] } = useQuery({
-    queryKey: ["recentLoans"],
+    queryKey: queryKeys.recentLoans.list(),
     queryFn: async () => {
       const r = await getRecentlyCollectedLoansAction()
       return "error" in r ? [] : r.data
@@ -108,10 +111,10 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       }
 
       setSuccessPaymentId(result.data.id)
-      queryClient.invalidateQueries({ queryKey: ["payments"] })
-      queryClient.invalidateQueries({ queryKey: ["recentLoans"] })
-      queryClient.invalidateQueries({ queryKey: ["daily-collections"] })
-      queryClient.invalidateQueries({ queryKey: ["loans-due-today"] })
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.recentLoans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loansDueToday.all })
     })
   }
 
@@ -184,28 +187,14 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                 </div>
 
                 {/* Amount */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="quick-record-amount">Amount (UGX)</Label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                      UGX
-                    </span>
-                    <Input
-                      id="quick-record-amount"
-                      type="text"
-                      inputMode="numeric"
-                      className="pl-12"
-                      disabled={!selectedLoan}
-                      {...register("amount", {
-                        required: "Amount is required",
-                        validate: v => Number(v) > 0 || "Amount must be greater than 0",
-                      })}
-                    />
-                  </div>
-                  {errors.amount && (
-                    <p className="text-sm text-destructive">{errors.amount.message}</p>
-                  )}
-                </div>
+                <MoneyInput
+                  name="amount"
+                  control={control}
+                  label="Amount (UGX)"
+                  required="Amount is required"
+                  disabled={!selectedLoan}
+                  id="quick-record-amount"
+                />
 
                 {/* Payment date */}
                 <div className="space-y-1.5">

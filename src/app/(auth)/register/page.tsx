@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { useForm } from "react-hook-form"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { signUp } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,50 +18,54 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 
+function autoCapitalize(value: string): string {
+  return value.replace(/\b\w/g, (c) => c.toUpperCase())
+}
+
+interface RegisterFormValues {
+  name: string
+  email: string
+  password: string
+  confirmPassword: string
+}
+
 export default function RegisterPage() {
   const router = useRouter()
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setError(null)
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    setError,
+    formState: { errors },
+  } = useForm<RegisterFormValues>({
+    defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
+  })
 
-    if (!name.trim()) {
-      setError("Name is required.")
-      return
-    }
-
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.")
-      return
-    }
-
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.")
+  function onSubmit(data: RegisterFormValues) {
+    if (data.password !== data.confirmPassword) {
+      setError("confirmPassword", { message: "Passwords do not match." })
       return
     }
 
     startTransition(async () => {
       const result = await signUp.email({
-        name: name.trim(),
-        email,
-        password,
+        name: data.name.trim(),
+        email: data.email,
+        password: data.password,
       })
 
       if (result.error) {
-        setError(result.error.message ?? "Registration failed. Please try again.")
+        setError("root", {
+          message: result.error.message ?? "Registration failed. Please try again.",
+        })
         return
       }
 
-      // After signup, redirect to pending-approval.
-      // The first registered user is auto-promoted to superAdmin by Plan 01-03's databaseHook,
-      // and proxy.ts will immediately redirect them to /dashboard since their role is not "unassigned".
-      router.push("/pending-approval")
+      router.push("/verify-email")
       router.refresh()
     })
   }
@@ -72,18 +77,24 @@ export default function RegisterPage() {
         <CardDescription>Fill in your details to get started</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="name">Full Name</Label>
             <Input
               id="name"
               type="text"
               placeholder="John Doe"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
               autoComplete="name"
+              disabled={isPending}
+              {...register("name", {
+                required: "Name is required",
+                validate: v => v.trim() !== "" || "Name is required",
+                onChange: (e) => setValue("name", autoCapitalize(e.target.value)),
+              })}
             />
+            {errors.name && (
+              <p className="text-sm text-destructive">{errors.name.message}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
@@ -91,40 +102,83 @@ export default function RegisterPage() {
               id="email"
               type="email"
               placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
               autoComplete="email"
+              disabled={isPending}
+              {...register("email", { required: "Email is required" })}
             />
+            {errors.email && (
+              <p className="text-sm text-destructive">{errors.email.message}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                className="pr-10"
+                disabled={isPending}
+                {...register("password", {
+                  required: "Password is required",
+                  minLength: { value: 8, message: "Password must be at least 8 characters" },
+                })}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword((prev) => !prev)}
+                tabIndex={-1}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+            {errors.password && (
+              <p className="text-sm text-destructive">{errors.password.message}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="confirmPassword">Confirm Password</Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              placeholder="••••••••"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              required
-              autoComplete="new-password"
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type={showConfirmPassword ? "text" : "password"}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                className="pr-10"
+                disabled={isPending}
+                {...register("confirmPassword", {
+                  required: "Please confirm your password",
+                })}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowConfirmPassword((prev) => !prev)}
+                tabIndex={-1}
+                aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+              >
+                {showConfirmPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+            {errors.confirmPassword && (
+              <p className="text-sm text-destructive">{errors.confirmPassword.message}</p>
+            )}
           </div>
 
-          {error && (
+          {errors.root && (
             <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              {error}
+              {errors.root.message}
             </p>
           )}
 

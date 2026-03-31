@@ -19,6 +19,7 @@ import { payments } from "@/lib/db/schema/payments"
 import { eq, and, isNull, asc } from "drizzle-orm"
 import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
 import BigNumber from "bignumber.js"
+import { generateLoansExcel } from "@/services/export/excel.service"
 
 export async function getCollateralNaturesAction(): Promise<string[]> {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -193,6 +194,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       let outstandingBalance = loan.principalAmount
       let dailyRate = "0"
       let lastPaymentDate: Date | null = null
+      let unpaidInterest = "0"
 
       // Fetch payments for ALL loans (needed for outstandingBalance, lastPaymentDate)
       const loanPayments = await db
@@ -221,15 +223,18 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
           (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
         )
 
+        const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaid)
+        unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
+
         const daysOverdueBN = calculateDaysOverdue(
-          totalInterestAccrued.toFixed(2),
-          totalInterestPaid.toFixed(2),
-          dailyInterestAmount.toFixed(2)
+          totalInterestAccrued,
+          totalInterestPaid,
+          dailyInterestAmount
         )
-        daysOverdue = daysOverdueBN.toNumber()
+        daysOverdue = Math.floor(daysOverdueBN.toNumber())
       }
 
-      return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate }
+      return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }
     })
   )
 }
@@ -254,6 +259,37 @@ export async function listLoansWithOverdueAction() {
   try {
     const allLoans = await Effect.runPromise(listLoans())
     return { data: await computeOverdue(allLoans) }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function exportLoansExcelAction(filter?: "all" | "critical" | "at-risk" | "early") {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const allLoans = await Effect.runPromise(listLoans())
+    let entries = await computeOverdue(allLoans)
+
+    // Apply filter if specified
+    if (filter && filter !== "all") {
+      entries = entries.filter((entry) => {
+        if (entry.daysOverdue < 0) return false
+        if (filter === "critical") return entry.daysOverdue >= 30
+        if (filter === "at-risk") return entry.daysOverdue >= 25 && entry.daysOverdue < 30
+        if (filter === "early") return entry.daysOverdue >= 0 && entry.daysOverdue < 25
+        return true
+      })
+    }
+
+    if (entries.length === 0) {
+      return { error: "No loans to export" }
+    }
+
+    const buffer = await generateLoansExcel(entries)
+    const base64 = buffer.toString("base64")
+    return { data: base64 }
   } catch {
     return { error: "Internal server error" }
   }

@@ -81,7 +81,7 @@ describe("Payment Recording Flow", () => {
       cy.visit(`/loans/${loanId}`)
 
       // Note the initial outstanding balance
-      cy.contains("Outstanding Balance", { timeout: 15000 }).should("be.visible")
+      cy.contains("Principal Balance", { timeout: 15000 }).should("be.visible")
 
       cy.contains("Record Payment").click()
       cy.get("#amount").type("500000")
@@ -100,7 +100,7 @@ describe("Payment Recording Flow", () => {
     it("renders loan detail page at mobile and shows tab bar", () => {
       cy.then(() => {
         cy.visit(`/loans/${loanId}`)
-        cy.contains("Outstanding Balance", { timeout: 15000 }).should("exist")
+        cy.contains("Principal Balance", { timeout: 15000 }).should("exist")
         cy.get("[data-testid='bottom-tab-bar']").should("exist")
           .should("have.css", "display", "flex")
         cy.get("[data-testid='sidebar-nav']").should("not.be.visible")

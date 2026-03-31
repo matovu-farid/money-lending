@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -15,7 +15,9 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatNumberWithCommas, stripCommas } from "@/lib/utils"
+import { MoneyInput } from "@/components/ui/money-input"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { queryKeys } from "@/hooks/query-keys"
 
 interface Props {
   creditorId: string
@@ -28,15 +30,14 @@ interface InvestmentFormValues {
 }
 
 export function AddInvestmentDialog({ creditorId }: Props) {
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
+    control,
     reset,
     formState: { errors },
   } = useForm<InvestmentFormValues>({
@@ -46,8 +47,6 @@ export function AddInvestmentDialog({ creditorId }: Props) {
       date: new Date().toISOString().split("T")[0],
     },
   })
-
-  const watchedAmount = watch("amount")
 
   function resetForm() {
     reset({
@@ -60,17 +59,22 @@ export function AddInvestmentDialog({ creditorId }: Props) {
   function onSubmit(data: InvestmentFormValues) {
     startTransition(async () => {
       try {
-        await addInvestmentAction({
+        const result = await addInvestmentAction({
           creditorId,
           amount: data.amount.trim(),
           interestRateMonthly: (Number(data.interestRate) / 100).toString(),
           investmentDate: data.date,
         })
+        if ("error" in result) {
+          toast.error(result.error)
+          return
+        }
 
         toast.success("Investment added successfully")
         setOpen(false)
         resetForm()
-        router.refresh()
+        queryClient.invalidateQueries({ queryKey: queryKeys.creditors.all })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to add investment")
       }
@@ -91,42 +95,31 @@ export function AddInvestmentDialog({ creditorId }: Props) {
           <DialogTitle>Add Investment</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div className="space-y-1">
-            <Label htmlFor="inv-amount">Amount</Label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
-              <Input
-                id="inv-amount"
-                type="text"
-                inputMode="numeric"
-                value={formatNumberWithCommas(watchedAmount)}
-                onChange={(e) => {
-                  const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
-                  setValue("amount", raw, { shouldValidate: true })
-                }}
-                placeholder="e.g. 5,000,000"
-                disabled={isPending}
-                className="flex-1"
-              />
-              <input
-                type="hidden"
-                {...register("amount", {
-                  required: "Valid amount is required",
-                  validate: v => {
-                    const n = Number(v)
-                    if (isNaN(n) || n <= 0) return "Valid amount is required"
-                    return true
-                  },
-                })}
-              />
-            </div>
-            {errors.amount && (
-              <p className="text-destructive text-xs">{errors.amount.message}</p>
-            )}
-          </div>
+          <MoneyInput
+            name="amount"
+            control={control}
+            label="Amount"
+            required="Valid amount is required"
+            placeholder="e.g. 5,000,000"
+            disabled={isPending}
+            id="inv-amount"
+          />
 
           <div className="space-y-1">
-            <Label htmlFor="inv-rate">Monthly Interest Rate</Label>
+            <Label htmlFor="inv-rate" className="inline-flex items-center gap-1">
+              Monthly Interest Rate
+              <InfoPopover>
+                <p className="font-semibold text-sm mb-1">Creditor Interest Rate</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  The monthly rate you pay the creditor on their investment. This is a cost to the business — different from the rate charged to borrowers.
+                </p>
+                <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
+                  <p className="font-medium">Example:</p>
+                  <p>Creditor invests UGX 10,000,000 at 5%/month</p>
+                  <p>You owe the creditor UGX 500,000/month in interest</p>
+                </div>
+              </InfoPopover>
+            </Label>
             <div className="flex items-center gap-2">
               <Input
                 id="inv-rate"
@@ -144,7 +137,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
               <span className="text-sm text-muted-foreground font-medium w-6 shrink-0">%</span>
             </div>
             {errors.interestRate && (
-              <p className="text-destructive text-xs">{errors.interestRate.message}</p>
+              <p className="text-sm text-destructive">{errors.interestRate.message}</p>
             )}
           </div>
 

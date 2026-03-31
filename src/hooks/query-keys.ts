@@ -35,6 +35,8 @@ export const queryKeys = {
     list: (params: Omit<ListPaymentsInput, "page" | "pageSize">, page: number) =>
       [...queryKeys.payments.all, params, page] as const,
     detail: (id: string) => [...queryKeys.payments.all, id] as const,
+    byLoan: (loanId: string) =>
+      [...queryKeys.payments.all, "byLoan", loanId] as const,
   },
 
   adminUsers: {

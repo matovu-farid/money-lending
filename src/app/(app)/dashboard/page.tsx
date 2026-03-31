@@ -1,12 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { useQuery } from "@tanstack/react-query"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp } from "lucide-react"
-import { getDashboardAction } from "@/actions/dashboard.actions"
+import { useDashboard } from "@/hooks/use-dashboard"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import type { DashboardKPIs, ActivityFeedItem } from "@/types"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { PageHeader } from "@/components/ui/page-header"
+import type { ActivityFeedItem } from "@/types"
 import { formatDate, formatCurrency, formatRelativeTime } from "@/lib/utils"
 
 function activityIcon(type: ActivityFeedItem["type"]) {
@@ -44,14 +45,7 @@ function formatDetailValue(key: string, value: string | number | null | undefine
 }
 
 export default function DashboardPage() {
-  const { data, isLoading: loading, error: queryError } = useQuery({
-    queryKey: ["dashboard"],
-    queryFn: async () => {
-      const result = await getDashboardAction()
-      if (result.error) throw new Error(result.error)
-      return result.data!
-    },
-  })
+  const { data, isLoading: loading, error: queryError } = useDashboard()
   const kpis = data?.kpis ?? null
   const activity = data?.activity ?? []
   const error = queryError?.message ?? null
@@ -59,10 +53,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Portfolio health at a glance</p>
-      </div>
+      <PageHeader title="Dashboard" subtitle="Portfolio health at a glance" />
 
       {error && (
         <p className="text-sm text-destructive">{error}</p>
@@ -75,24 +66,62 @@ export default function DashboardPage() {
           value={formatCurrency(kpis?.loansOutstanding ?? "0")}
           icon={Banknote}
           loading={loading}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Loans Outstanding</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Total principal still owed across all active loans. This is the remaining balance after subtracting the principal portions of all payments made.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Does not include accrued interest — only the unpaid principal.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Repayments Collected"
           value={formatCurrency(kpis?.repaymentsCollected ?? "0")}
           icon={CreditCard}
           loading={loading}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Repayments Collected</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Total amount of all payments received across all loans (both interest and principal portions combined).
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Interest Earned"
           value={formatCurrency(kpis?.interestEarned ?? "0")}
           icon={TrendingUp}
           loading={loading}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Interest Earned</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Total interest portions collected from all payments. When a borrower pays, interest is deducted first before any principal reduction.
+              </p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                Interest = Principal × (Monthly Rate ÷ 30) × Days
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Active Borrowers"
           value={String(kpis?.activeBorrowers ?? 0)}
           icon={Users}
           loading={loading}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Active Borrowers</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Number of unique customers who have at least one active (not fully paid) loan.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Overdue Count"
@@ -100,12 +129,37 @@ export default function DashboardPage() {
           icon={AlertTriangle}
           valueClassName={kpis && kpis.overdueCount > 0 ? "text-destructive" : undefined}
           loading={loading}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Overdue Count</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Number of active loans where unpaid interest exceeds 30 days worth. A loan is overdue when the borrower has not paid enough interest to cover the time elapsed.
+              </p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                Days overdue = Unpaid Interest ÷ Daily Interest Amount
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Flagged when days overdue reaches 30 or more.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Capital in System"
           value={formatCurrency(kpis?.capitalInSystem ?? "0")}
           icon={Landmark}
           loading={loading}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Capital in System</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Total outstanding balance owed to creditors (investors). This is the net amount of creditor investments minus repayments made back to them.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Represents the external funding currently deployed in the lending business.
+              </p>
+            </InfoPopover>
+          }
         />
       </div>
 
@@ -169,7 +223,7 @@ export default function DashboardPage() {
                             return (
                               <div key={key} className="contents">
                                 <dt className="text-muted-foreground">{label}</dt>
-                                <dd className={["amount", "interestPortion", "principalPortion", "interestRate"].includes(key) ? "font-mono tabular-nums" : undefined}>{formatDetailValue(key, value)}</dd>
+                                <dd className={["amount", "interestPortion", "principalPortion", "interestRate"].includes(key) ? "font-mono tabular-nums" : undefined}>{formatDetailValue(key, value as string | number | null | undefined)}</dd>
                               </div>
                             )
                           })}

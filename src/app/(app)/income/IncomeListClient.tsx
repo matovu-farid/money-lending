@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
-import { useMutation } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
@@ -36,7 +36,10 @@ import {
   deleteIncomeAction,
   createIncomeCategoryAction,
 } from "./actions"
-import { formatNumberWithCommas, stripCommas, formatDate, formatCurrency } from "@/lib/utils"
+import { MoneyInput } from "@/components/ui/money-input"
+import { formatDate, formatCurrency } from "@/lib/utils"
+import { PageHeader } from "@/components/ui/page-header"
+import { queryKeys } from "@/hooks/query-keys"
 import type { CreateIncomeInput } from "@/types"
 
 type Transaction = {
@@ -74,6 +77,7 @@ type IncomeFormValues = {
 }
 
 export function IncomeListClient({ transactions: initialTransactions, categories: initialCategories }: IncomeListClientProps) {
+  const queryClient = useQueryClient()
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
@@ -89,6 +93,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     setValue,
     watch,
     reset,
+    control,
     formState: { errors },
   } = useForm<IncomeFormValues>({
     defaultValues: {
@@ -100,7 +105,6 @@ export function IncomeListClient({ transactions: initialTransactions, categories
   })
 
   const watchedCategoryId = watch("categoryId")
-  const watchedAmount = watch("amount")
 
   const displayedTransactions = useMemo(() => {
     const filtered = initialTransactions.filter(t => !removedTransactionIds.has(t.id))
@@ -115,8 +119,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
   const addMutation = useMutation({
     mutationFn: (input: CreateIncomeInput) => recordIncomeAction(input),
     onMutate: async (input) => {
-      const allCategories = [...initialCategories, ...optimisticCategories]
-      const category = allCategories.find((c) => c.id === input.categoryId)
+      const category = displayedCategories.find((c) => c.id === input.categoryId)
       const optimistic: Transaction = {
         id: `optimistic-${Date.now()}`,
         type: "credit",
@@ -142,15 +145,23 @@ export function IncomeListClient({ transactions: initialTransactions, categories
       }
       toast.error("Failed to record income")
     },
-    onSuccess: (_result, _input, context) => {
+    onSuccess: (result, _input, context) => {
       if (context?.optimisticId) {
         setOptimisticTransactions((prev) =>
           prev.filter((t) => t.id !== context.optimisticId)
         )
       }
+      if (result && "error" in result) {
+        toast.error(result.error)
+        return
+      }
       toast.success("Income recorded")
       setIsSheetOpen(false)
       reset()
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.income.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     },
   })
 
@@ -174,6 +185,10 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     onSuccess: () => {
       toast.success("Income deleted")
     },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.income.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+    },
   })
 
   function onFormSubmit(data: IncomeFormValues) {
@@ -186,21 +201,25 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     addMutation.mutate(input)
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!deleteTarget) return
     deleteMutation.mutate(deleteTarget)
   }
 
-  async function handleAddCategory() {
+  function handleAddCategory() {
     if (!newCategoryName.trim()) return
     startCategoryTransition(async () => {
       try {
         const created = await createIncomeCategoryAction({ name: newCategoryName.trim(), type: "income" })
+        if ("error" in created) {
+          toast.error(created.error)
+          return
+        }
         const newCat: Category = {
-          id: created.id,
-          name: created.name,
-          type: created.type,
-          isDefault: created.isDefault,
+          id: created.data.id,
+          name: created.data.name,
+          type: created.data.type,
+          isDefault: created.data.isDefault,
         }
         setOptimisticCategories((prev) => [...prev, newCat])
         setNewCategoryName("")
@@ -214,18 +233,14 @@ export function IncomeListClient({ transactions: initialTransactions, categories
   return (
     <TooltipProvider>
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Income</h1>
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Revenue and other income</p>
-          </div>
+        <PageHeader title="Income" subtitle="Revenue and other income">
           <Button
             onClick={() => { reset(); setIsSheetOpen(true) }}
             disabled={addMutation.isPending}
           >
             Add Income
           </Button>
-        </div>
+        </PageHeader>
 
         <ResponsiveTable<Transaction>
           columns={[
@@ -262,11 +277,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                   size="sm"
                   className="text-destructive hover:text-destructive"
                   onClick={() => setDeleteTarget(tx.id)}
-                  disabled={
-                    tx.isOptimistic ||
-                    deleteMutation.isPending ||
-                    (deleteMutation.variables === tx.id && deleteMutation.isPending)
-                  }
+                  disabled={tx.isOptimistic || deleteMutation.isPending}
                 >
                   Delete
                 </Button>
@@ -295,7 +306,6 @@ export function IncomeListClient({ transactions: initialTransactions, categories
           }
         />
 
-        {/* Add Income Sheet */}
         <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) reset() }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
@@ -367,30 +377,13 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                 </Popover>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="income-amount">Amount</Label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-                    UGX
-                  </span>
-                  <Input
-                    id="income-amount"
-                    type="text"
-                    inputMode="numeric"
-                    className="pl-12"
-                    value={formatNumberWithCommas(watchedAmount)}
-                    onChange={(e) => {
-                      const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
-                      setValue("amount", raw, { shouldValidate: true })
-                    }}
-                  />
-                  <input
-                    type="hidden"
-                    {...register("amount", { required: "Amount is required" })}
-                  />
-                </div>
-                {errors.amount && <p className="text-sm text-destructive">{errors.amount.message}</p>}
-              </div>
+              <MoneyInput
+                name="amount"
+                control={control}
+                label="Amount"
+                required="Amount is required"
+                id="income-amount"
+              />
 
               <div className="space-y-1.5">
                 <Label htmlFor="income-notes">Notes (optional)</Label>
@@ -413,7 +406,6 @@ export function IncomeListClient({ transactions: initialTransactions, categories
           </DrawerDialogContent>
         </DrawerDialog>
 
-        {/* Delete Confirmation Dialog */}
         <DrawerDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
           <DrawerDialogContent>
             <DialogHeader>

@@ -3,10 +3,24 @@
 import { useState, useTransition, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { MoreHorizontal, Loader2 } from "lucide-react"
+import {
+  MoreHorizontal,
+  Loader2,
+  Pencil,
+  Trash2,
+  ArrowLeft,
+  Calendar,
+  Percent,
+  Banknote,
+  Receipt,
+  UserCircle,
+} from "lucide-react"
 import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
 import { updateLoanAction, deleteLoanAction } from "@/actions/loan.actions"
+import { useLoanPayments } from "@/hooks/use-payments"
+import { queryKeys } from "@/hooks/query-keys"
 import type { Loan, Payment } from "@/types"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
@@ -34,14 +48,16 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { cn, formatDate, formatCurrency } from "@/lib/utils"
 
 interface LoanDetailClientProps {
   loan: Loan
-  payments: Payment[]
+  initialPayments: Payment[]
   customerName: string | null
   canModify: boolean
   openEditOnMount?: boolean
+  userNameMap: Record<string, string>
 }
 
 function formatDateForInput(date: Date | string | null | undefined): string {
@@ -60,22 +76,23 @@ function loanStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-export function LoanDetailClient({ loan, payments, customerName, canModify, openEditOnMount }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap }: LoanDetailClientProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
 
-  // Edit payment dialog state
+  // Use TanStack Query for payments so subsequent navigations are cached
+  const { data: payments = initialPayments } = useLoanPayments(loan.id, true, initialPayments)
+
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [editAmount, setEditAmount] = useState("")
   const [editDate, setEditDate] = useState("")
   const [editReason, setEditReason] = useState("")
   const [isEditPending, startEditTransition] = useTransition()
 
-  // Delete payment dialog state
   const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
   const [deleteReason, setDeleteReason] = useState("")
   const [isDeletePending, startDeleteTransition] = useTransition()
 
-  // Edit loan dialog state
   const [editingLoan, setEditingLoan] = useState(false)
   const [loanPrincipal, setLoanPrincipal] = useState(loan.principalAmount)
   const [loanInterestRate, setLoanInterestRate] = useState(
@@ -85,12 +102,10 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
   const [loanEditReason, setLoanEditReason] = useState("")
   const [isLoanEditPending, startLoanEditTransition] = useTransition()
 
-  // Delete loan dialog state
   const [deletingLoan, setDeletingLoan] = useState(false)
   const [loanDeleteReason, setLoanDeleteReason] = useState("")
   const [isLoanDeletePending, startLoanDeleteTransition] = useTransition()
 
-  // Auto-open edit dialog if navigated from list with ?edit=1
   useEffect(() => {
     if (openEditOnMount && canModify) {
       openLoanEditDialog()
@@ -98,12 +113,18 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Outstanding balance: last active payment's principalBalanceAfter, or loan principal if none
-  const activePayments = payments.filter((p) => p.deletedAt === null)
+  const activePayments = payments
+    .filter((p) => p.deletedAt === null)
+    .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
   const outstandingBalance =
     activePayments.length > 0
       ? activePayments[activePayments.length - 1].principalBalanceAfter
       : loan.principalAmount
+
+  const principalNum = parseFloat(loan.principalAmount)
+  const balanceNum = parseFloat(outstandingBalance)
+  const totalPaid = principalNum - balanceNum
+  const repaymentPercent = principalNum > 0 ? Math.min(100, Math.round((totalPaid / principalNum) * 100)) : 0
 
   function openEditDialog(payment: Payment) {
     setEditingPayment(payment)
@@ -155,10 +176,13 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
   function handleEditSubmit() {
     if (!editingPayment) return
     startEditTransition(async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.loans.all })
+      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
+
       const result = await editPaymentAction({
         paymentId: editingPayment.id,
         amount: editAmount.trim(),
-        paymentDate: editDate ? editDate + "T00:00:00.000Z" : undefined,
+        paymentDate: editDate ? editDate + "T12:00:00" : undefined,
         reason: editReason.trim(),
       })
 
@@ -169,15 +193,23 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
 
       toast("Payment updated")
       closeEditDialog()
-      router.refresh()
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     })
   }
 
   function handleDeleteSubmit() {
     if (!deletingPayment) return
+    const deletedId = deletingPayment.id
     startDeleteTransition(async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
+      await queryClient.cancelQueries({ queryKey: queryKeys.loans.all })
+
       const result = await deletePaymentAction({
-        paymentId: deletingPayment.id,
+        paymentId: deletedId,
         reason: deleteReason.trim(),
       })
 
@@ -188,13 +220,16 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
 
       toast("Payment deleted")
       closeDeleteDialog()
-      router.refresh()
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     })
   }
 
   function handleLoanEditSubmit() {
     startLoanEditTransition(async () => {
-      // Convert interest rate from percentage display (e.g. "10") to decimal (e.g. "0.10")
       const interestRateDecimal = loanInterestRate.trim()
         ? (parseFloat(loanInterestRate) / 100).toFixed(10)
         : undefined
@@ -214,7 +249,10 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
 
       toast("Loan updated")
       closeLoanEditDialog()
-      router.refresh()
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     })
   }
 
@@ -232,6 +270,9 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
 
       toast("Loan deleted")
       closeLoanDeleteDialog()
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
       router.push("/loans")
     })
   }
@@ -239,167 +280,315 @@ export function LoanDetailClient({ loan, payments, customerName, canModify, open
   const loanRef = `LOAN-${loan.id.slice(0, 8).toUpperCase()}`
 
   return (
-    <div className="p-4 md:p-6 space-y-6 max-w-5xl">
-      {/* Back link */}
-      <Link href="/loans" className={cn(buttonVariants({ variant: "outline" }))}>
-        Back to Loans
-      </Link>
-
-      {/* Loan header */}
-      <div className="space-y-2">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span className="font-mono text-xs text-muted-foreground">{loanRef}</span>
-          <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
+    <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-6xl mx-auto">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Link
+            href="/loans"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            aria-label="Back to Loans"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Link>
+          <div>
+            <div className="flex items-center gap-2.5">
+              {customerName && (
+                <h1 className="text-xl font-semibold tracking-tight">{customerName}</h1>
+              )}
+              <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
+              <InfoPopover>
+                <p className="font-semibold text-sm mb-1">Loan Status</p>
+                <div className="text-xs text-muted-foreground space-y-1.5">
+                  <p><strong>Pending</strong> — Loan created but not yet disbursed. No interest accrues.</p>
+                  <p><strong>Active</strong> — Money has been given to the borrower. Interest accrues daily.</p>
+                  <p><strong>Fully Paid</strong> — Outstanding balance has reached zero. No further payments needed.</p>
+                </div>
+              </InfoPopover>
+            </div>
+            <p className="text-xs text-muted-foreground font-mono mt-0.5">{loanRef}</p>
+          </div>
         </div>
-        {customerName && (
-          <p className="text-lg font-semibold tracking-tight">{customerName}</p>
+
+        {canModify && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={openLoanEditDialog}>
+              <Pencil className="h-3.5 w-3.5 mr-1.5" />
+              Edit
+            </Button>
+            <Button variant="outline" size="sm" onClick={openLoanDeleteDialog} className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30">
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Delete
+            </Button>
+          </div>
         )}
-        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm mt-3">
-          <div>
-            <dt className="text-xs text-muted-foreground">Principal</dt>
-            <dd className="font-medium font-mono tabular-nums">{formatCurrency(loan.principalAmount)}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Interest Rate</dt>
-            <dd className="font-medium font-mono tabular-nums">
-              {(parseFloat(loan.interestRate) * 100).toFixed(1)}% / month
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs text-muted-foreground">Start Date</dt>
-            <dd className="font-medium font-mono tabular-nums">{formatDate(loan.startDate)}</dd>
-          </div>
-        </dl>
       </div>
 
-      {/* Outstanding Balance focal point */}
-      <div className="rounded-lg border border-border bg-card p-6">
-        <p className="text-xs text-muted-foreground">Outstanding Balance</p>
-        <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums mt-1">{formatCurrency(outstandingBalance)}</p>
-        <div className="flex gap-3 mt-4 flex-wrap">
-          <Link
-            href={`/loans/${loan.id}/payments/new`}
-            className={cn(buttonVariants())}
-          >
-            Record Payment
-          </Link>
-          <Link
-            href={`/receipts/disbursement/${loan.id}`}
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Print Receipt
-          </Link>
-          {canModify && (
-            <>
-              <Button
-                variant="outline"
-                onClick={openLoanEditDialog}
-              >
-                Edit Loan
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={openLoanDeleteDialog}
-              >
-                Delete Loan
-              </Button>
-            </>
-          )}
+      {/* Loan Details Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
+            <Banknote className="h-4 w-4" />
+            <span className="text-xs font-medium uppercase tracking-wider">Principal</span>
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Principal Amount</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                The original amount disbursed to the borrower. Interest is calculated on the remaining principal balance, not this original amount.
+              </p>
+            </InfoPopover>
+          </div>
+          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
+            {formatCurrency(loan.principalAmount)}
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
+            <Percent className="h-4 w-4" />
+            <span className="text-xs font-medium uppercase tracking-wider">Interest Rate</span>
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Monthly Interest Rate</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                The rate charged per 30-day period. Interest accrues daily using this formula:
+              </p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                Daily Interest = Balance × (Rate ÷ 30)
+              </p>
+              <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
+                <p className="font-medium">Example (10% / month):</p>
+                <p>UGX 1,000,000 × (0.10 ÷ 30) = UGX 3,333/day</p>
+              </div>
+            </InfoPopover>
+          </div>
+          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
+            {(parseFloat(loan.interestRate) * 100).toFixed(1)}%
+            <span className="text-sm font-normal text-muted-foreground ml-1">/ month</span>
+          </p>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
+            <Calendar className="h-4 w-4" />
+            <span className="text-xs font-medium uppercase tracking-wider">Start Date</span>
+          </div>
+          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
+            {formatDate(loan.startDate)}
+          </p>
         </div>
       </div>
 
-      {/* Payments section */}
-      <div className="space-y-4">
-        <h2 className="text-lg font-semibold">Payments</h2>
-
-        {payments.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <p className="text-lg font-semibold">No payments recorded</p>
-            <p className="text-sm text-muted-foreground">
-              Record the first payment against this loan to start tracking repayments.
+      {/* Principal Balance Card */}
+      <div className="rounded-xl border border-border bg-card p-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+          <div className="space-y-3 flex-1">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+              Principal Balance
+              <InfoPopover>
+                <p className="font-semibold text-sm mb-1">Principal Balance</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  The remaining principal the borrower still owes. This decreases only when a payment exceeds the accrued interest — the excess reduces the principal.
+                </p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Different from the total amount owed, which also includes unpaid interest.
+                </p>
+                <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                  Payment → Interest first, then Principal
+                </p>
+              </InfoPopover>
             </p>
+            <p className="text-3xl font-bold font-mono tracking-tight tabular-nums">
+              {formatCurrency(outstandingBalance)}
+            </p>
+            {/* Repayment progress */}
+            <div className="space-y-1.5 max-w-md">
+              <div className="flex justify-between text-xs text-muted-foreground">
+                <span>{repaymentPercent}% repaid</span>
+                <span>{formatCurrency(totalPaid)} of {formatCurrency(loan.principalAmount)}</span>
+              </div>
+              <div className="h-2 rounded-full bg-muted overflow-hidden">
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-all duration-500",
+                    repaymentPercent === 100
+                      ? "bg-green-500"
+                      : repaymentPercent >= 50
+                        ? "bg-primary"
+                        : "bg-primary/70"
+                  )}
+                  style={{ width: `${repaymentPercent}%` }}
+                />
+              </div>
+            </div>
+          </div>
+          <div className="flex gap-2 flex-wrap">
+            {loan.status === "active" && (
+              <Link
+                href={`/loans/${loan.id}/payments/new`}
+                className={cn(buttonVariants())}
+              >
+                <Banknote className="h-4 w-4 mr-1.5" />
+                Record Payment
+              </Link>
+            )}
             <Link
-              href={`/loans/${loan.id}/payments/new`}
-              className={cn(buttonVariants())}
+              href={`/receipts/disbursement/${loan.id}`}
+              className={cn(buttonVariants({ variant: "outline" }))}
             >
-              Record Payment
+              <Receipt className="h-4 w-4 mr-1.5" />
+              Print Receipt
             </Link>
           </div>
+        </div>
+      </div>
+
+      {/* Payments Section */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold tracking-tight">Payment History</h2>
+          {activePayments.length > 0 && (
+            <span className="text-xs text-muted-foreground font-mono tabular-nums">
+              {activePayments.length} payment{activePayments.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+
+        {payments.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-muted/30 flex flex-col items-center justify-center py-16 gap-3 text-center">
+            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
+              <Banknote className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <p className="text-sm font-medium">No payments recorded</p>
+            <p className="text-xs text-muted-foreground max-w-xs">
+              Record the first payment against this loan to start tracking repayments.
+            </p>
+            {loan.status === "active" && (
+              <Link
+                href={`/loans/${loan.id}/payments/new`}
+                className={cn(buttonVariants({ size: "sm" }), "mt-2")}
+              >
+                Record Payment
+              </Link>
+            )}
+          </div>
         ) : (
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Amount (UGX)</TableHead>
-                  <TableHead className="text-right">Interest Paid (UGX)</TableHead>
-                  <TableHead className="text-right">Principal Paid (UGX)</TableHead>
-                  <TableHead className="text-right">Balance After (UGX)</TableHead>
-                  <TableHead>Recorded By</TableHead>
-                  <TableHead className="w-12">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {payments.map((payment) => {
-                  const isDeleted = payment.deletedAt !== null
-                  const cellClass = isDeleted ? "opacity-60 line-through" : ""
-                  return (
-                    <TableRow key={payment.id} data-testid="data-row">
-                      <TableCell className={cn("font-mono tabular-nums", cellClass)}>
-                        {formatDate(payment.paymentDate)}
-                      </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                        {formatCurrency(payment.amount)}
-                      </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                        {formatCurrency(payment.interestPortion)}
-                      </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                        {formatCurrency(payment.principalPortion)}
-                      </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums", cellClass)}>
-                        {formatCurrency(payment.principalBalanceAfter)}
-                      </TableCell>
-                      <TableCell className={cn("font-mono text-xs", cellClass)}>
-                        {payment.recordedBy.slice(0, 8)}
-                      </TableCell>
-                      <TableCell>
-                        {isDeleted ? (
-                          <span className="text-xs text-muted-foreground">Deleted</span>
-                        ) : (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              aria-label="Payment actions"
-                              className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() => openEditDialog(payment)}
+          <div className="rounded-xl border border-border overflow-hidden">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50 hover:bg-muted/50">
+                    <TableHead className="text-xs font-medium uppercase tracking-wider">Date</TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Amount</TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        Interest
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Interest Portion</p>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            The part of this payment that covers accrued interest. Interest is always paid first before any principal reduction.
+                          </p>
+                          <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                            Interest = Balance × (Rate ÷ 30) × Days Since Last Payment
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Minimum 30 days of interest is charged, even for early payments.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        Principal
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Principal Portion</p>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            The part of this payment that reduces the outstanding balance. Only the amount left after covering interest goes toward principal.
+                          </p>
+                          <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
+                            <p className="font-medium">Example:</p>
+                            <p>Payment: UGX 150,000 − Interest: UGX 100,000</p>
+                            <p>= UGX 50,000 applied to principal</p>
+                          </div>
+                        </InfoPopover>
+                      </span>
+                    </TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        Balance After
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Balance After Payment</p>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            The remaining principal balance after this payment was applied. When this reaches zero, the loan is fully paid.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider">Recorded By</TableHead>
+                    <TableHead className="w-12"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {payments.map((payment) => {
+                    const isDeleted = payment.deletedAt !== null
+                    const cellClass = isDeleted ? "opacity-50 line-through" : ""
+                    const recorderName = userNameMap[payment.recordedBy] ?? payment.recordedBy.slice(0, 8)
+                    return (
+                      <TableRow key={payment.id} data-testid="data-row" className={isDeleted ? "bg-muted/20" : ""}>
+                        <TableCell className={cn("font-mono tabular-nums text-sm", cellClass)}>
+                          {formatDate(payment.paymentDate)}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                          {formatCurrency(payment.amount)}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm text-muted-foreground", cellClass)}>
+                          {formatCurrency(payment.interestPortion)}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm text-muted-foreground", cellClass)}>
+                          {formatCurrency(payment.principalPortion)}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm font-medium", cellClass)}>
+                          {formatCurrency(payment.principalBalanceAfter)}
+                        </TableCell>
+                        <TableCell className={cn("text-sm", cellClass)}>
+                          <div className="flex items-center gap-1.5">
+                            <UserCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                            <span className="truncate max-w-[120px]">{recorderName}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {isDeleted ? (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">Deleted</Badge>
+                          ) : (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                aria-label="Payment actions"
+                                className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
                               >
-                                Edit Payment
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => openDeleteDialog(payment)}
-                                variant="destructive"
-                              >
-                                Delete Payment
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
+                                <MoreHorizontal className="h-4 w-4" />
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                  onClick={() => openEditDialog(payment)}
+                                >
+                                  Edit Payment
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => openDeleteDialog(payment)}
+                                  variant="destructive"
+                                >
+                                  Delete Payment
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Repayment Simulator */}
       {loan.status === "active" && (
         <SimulatorPanel
           loan={loan}

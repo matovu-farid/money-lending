@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { useForm } from "react-hook-form"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { signIn } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,24 +18,36 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 
+interface LoginFormValues {
+  email: string
+  password: string
+}
+
 export default function LoginPage() {
   const router = useRouter()
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault()
-    setError(null)
+  const {
+    register,
+    handleSubmit,
+    setError,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    defaultValues: { email: "", password: "" },
+  })
+
+  function onSubmit(data: LoginFormValues) {
     startTransition(async () => {
       const result = await signIn.email({
-        email,
-        password,
+        email: data.email,
+        password: data.password,
       })
 
       if (result.error) {
-        setError(result.error.message ?? "Invalid email or password. Please try again.")
+        setError("root", {
+          message: result.error.message ?? "Invalid email or password. Please try again.",
+        })
         return
       }
 
@@ -51,18 +64,20 @@ export default function LoginPage() {
         <CardDescription>Enter your email and password to continue</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
             <Input
               id="email"
               type="email"
               placeholder="you@example.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
               autoComplete="email"
+              disabled={isPending}
+              {...register("email", { required: "Email is required" })}
             />
+            {errors.email && (
+              <p className="text-sm text-destructive">{errors.email.message}</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
@@ -74,20 +89,38 @@ export default function LoginPage() {
                 Forgot your password?
               </Link>
             </div>
-            <Input
-              id="password"
-              type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              autoComplete="current-password"
-            />
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                autoComplete="current-password"
+                className="pr-10"
+                disabled={isPending}
+                {...register("password", { required: "Password is required" })}
+              />
+              <button
+                type="button"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowPassword((prev) => !prev)}
+                tabIndex={-1}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+            {errors.password && (
+              <p className="text-sm text-destructive">{errors.password.message}</p>
+            )}
           </div>
 
-          {error && (
+          {errors.root && (
             <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              {error}
+              {errors.root.message}
             </p>
           )}
 

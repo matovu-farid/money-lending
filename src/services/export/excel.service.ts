@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs"
-import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
+import type { PnlData, BalanceSheetData, PortfolioEntry, LoanListEntry } from "@/types"
 
 // Transaction type for Excel export
 type TransactionRow = {
@@ -74,7 +74,6 @@ export async function generatePortfolioExcel(
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Loan Portfolio")
 
-  // Header row
   const headerRow = sheet.addRow([
     "Customer",
     "Loan Amount (UGX)",
@@ -86,14 +85,12 @@ export async function generatePortfolioExcel(
   ])
   applyHeaderStyle(headerRow)
 
-  // Freeze pane & auto-filter
   sheet.views = [{ state: "frozen", ySplit: 1 }]
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: 7 },
   }
 
-  // Data rows
   data.forEach((entry, idx) => {
     const row = sheet.addRow([
       entry.customerName,
@@ -105,7 +102,6 @@ export async function generatePortfolioExcel(
       entry.riskFlag ? "At Risk" : "",
     ])
 
-    // Apply UGX number format to amount columns
     row.getCell(2).numFmt = UGX_FORMAT
     row.getCell(3).numFmt = UGX_FORMAT
     row.getCell(4).numFmt = UGX_FORMAT
@@ -123,13 +119,11 @@ export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet(`P&L ${data.period}`)
 
-  // Title rows
   const titleRow = sheet.addRow(["Profit & Loss Statement", data.period])
   titleRow.getCell(1).font = { bold: true, size: 14 }
   titleRow.getCell(2).font = { size: 11 }
   sheet.addRow([]) // blank separator
 
-  // Income section header
   const incomeHeader = sheet.addRow(["Income Category", "Amount (UGX)"])
   applyHeaderStyle(incomeHeader)
   sheet.views = [{ state: "frozen", ySplit: 4 }]
@@ -140,7 +134,6 @@ export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
     applyDataRowStyle(dataRow, idx % 2 === 1)
   })
 
-  // Total Income subtotal row
   const totalIncomeRow = sheet.addRow([
     "Total Income",
     parseFloat(data.totalIncome),
@@ -156,7 +149,6 @@ export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
 
   sheet.addRow([]) // blank separator
 
-  // Expense section header
   const expenseHeader = sheet.addRow(["Expense Category", "Amount (UGX)"])
   applyHeaderStyle(expenseHeader)
 
@@ -166,7 +158,6 @@ export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
     applyDataRowStyle(dataRow, idx % 2 === 1)
   })
 
-  // Total Expenses subtotal row
   const totalExpensesRow = sheet.addRow([
     "Total Expenses",
     parseFloat(data.totalExpenses),
@@ -182,7 +173,6 @@ export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
 
   sheet.addRow([]) // blank separator
 
-  // Net Profit row
   const netProfitRow = sheet.addRow(["Net Profit", parseFloat(data.netProfit)])
   netProfitRow.getCell(1).font = { bold: true, size: 12 }
   netProfitRow.getCell(2).font = { bold: true, size: 12 }
@@ -200,13 +190,11 @@ export async function generateBalanceSheetExcel(
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Balance Sheet")
 
-  // Title
   const titleRow = sheet.addRow(["Balance Sheet", `As of: ${data.asOf}`])
   titleRow.getCell(1).font = { bold: true, size: 14 }
   titleRow.getCell(2).font = { size: 11 }
   sheet.addRow([])
 
-  // Assets section
   const assetsHeader = sheet.addRow(["Assets", "Amount (UGX)"])
   applyHeaderStyle(assetsHeader)
 
@@ -218,7 +206,6 @@ export async function generateBalanceSheetExcel(
   applyDataRowStyle(assetsRow, false)
   sheet.addRow([])
 
-  // Liabilities section
   const liabHeader = sheet.addRow(["Liabilities", "Amount (UGX)"])
   applyHeaderStyle(liabHeader)
 
@@ -230,7 +217,6 @@ export async function generateBalanceSheetExcel(
   applyDataRowStyle(liabRow, false)
   sheet.addRow([])
 
-  // Equity section
   const equityHeader = sheet.addRow(["Equity", "Amount (UGX)"])
   applyHeaderStyle(equityHeader)
 
@@ -248,7 +234,6 @@ export async function generateBalanceSheetExcel(
   teRow.getCell(2).numFmt = UGX_FORMAT
   sheet.addRow([])
 
-  // Total Liabilities + Equity
   const liabPlusEquity =
     parseFloat(data.liabilities.totalCreditorBalances) +
     parseFloat(data.equity.totalEquity)
@@ -270,7 +255,6 @@ export async function generateTransactionsExcel(
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Transaction Log")
 
-  // Header
   const headerRow = sheet.addRow([
     "Date",
     "Type",
@@ -281,14 +265,12 @@ export async function generateTransactionsExcel(
   ])
   applyHeaderStyle(headerRow)
 
-  // Freeze pane & auto-filter
   sheet.views = [{ state: "frozen", ySplit: 1 }]
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: 6 },
   }
 
-  // Data rows
   data.forEach((tx, idx) => {
     const row = sheet.addRow([
       formatDateStr(tx.transactionDate),
@@ -304,6 +286,122 @@ export async function generateTransactionsExcel(
   })
 
   setColumnWidths(sheet, [14, 10, 24, 32, 18, 20])
+
+  const buffer = await workbook.xlsx.writeBuffer()
+  return Buffer.from(buffer)
+}
+
+export async function generateLoansExcel(
+  data: LoanListEntry[]
+): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook()
+  workbook.creator = "Sovereign Ledger"
+  workbook.created = new Date()
+
+  const sheet = workbook.addWorksheet("Active Loans")
+
+  // Title row
+  const titleRow = sheet.addRow([
+    `Sovereign Ledger — Active Loans Report`,
+    "",
+    "",
+    "",
+    `Generated: ${formatDateStr(new Date())}`,
+  ])
+  titleRow.getCell(1).font = { bold: true, size: 16, color: { argb: "FF1F2937" } }
+  titleRow.getCell(5).font = { size: 11, italic: true, color: { argb: "FF6B7280" } }
+  sheet.mergeCells("A1:D1")
+
+  // Blank separator
+  sheet.addRow([])
+
+  // Header row
+  const headerRow = sheet.addRow([
+    "Customer Name",
+    "Principal Amount (UGX)",
+    "Principal Balance (UGX)",
+    "Total Due (UGX)",
+    "Last Payment",
+  ])
+  applyHeaderStyle(headerRow)
+
+  // Freeze panes below header (row 3 is the header, so freeze at row 4)
+  sheet.views = [{ state: "frozen", ySplit: 3 }]
+
+  // Auto-filter on the header row
+  sheet.autoFilter = {
+    from: { row: 3, column: 1 },
+    to: { row: 3, column: 5 },
+  }
+
+  let totalPrincipal = 0
+  let totalOutstanding = 0
+  let totalOwed = 0
+
+  // Data rows
+  data.forEach((entry, idx) => {
+    const principal = parseFloat(entry.principalAmount)
+    const outstanding = parseFloat(entry.outstandingBalance)
+    const owed = outstanding + parseFloat(entry.unpaidInterest)
+    totalPrincipal += principal
+    totalOutstanding += outstanding
+    totalOwed += owed
+
+    const row = sheet.addRow([
+      entry.customerName,
+      principal,
+      outstanding,
+      owed,
+      entry.lastPaymentDate ? formatDateStr(entry.lastPaymentDate) : "No payments",
+    ])
+
+    row.getCell(2).numFmt = UGX_FORMAT
+    row.getCell(2).alignment = { horizontal: "right" }
+    row.getCell(3).numFmt = UGX_FORMAT
+    row.getCell(3).alignment = { horizontal: "right" }
+    row.getCell(4).numFmt = UGX_FORMAT
+    row.getCell(4).alignment = { horizontal: "right" }
+
+    applyDataRowStyle(row, idx % 2 === 1)
+  })
+
+  // Blank separator before summary
+  sheet.addRow([])
+
+  // Summary row
+  const summaryRow = sheet.addRow([
+    "TOTAL",
+    totalPrincipal,
+    totalOutstanding,
+    totalOwed,
+    `${data.length} loan${data.length === 1 ? "" : "s"}`,
+  ])
+  summaryRow.getCell(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.getCell(2).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.getCell(2).numFmt = UGX_FORMAT
+  summaryRow.getCell(2).alignment = { horizontal: "right" }
+  summaryRow.getCell(3).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.getCell(3).numFmt = UGX_FORMAT
+  summaryRow.getCell(3).alignment = { horizontal: "right" }
+  summaryRow.getCell(4).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.getCell(4).numFmt = UGX_FORMAT
+  summaryRow.getCell(4).alignment = { horizontal: "right" }
+  summaryRow.getCell(5).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.eachCell((cell) => {
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1F2937" },
+    }
+    cell.border = {
+      top: { style: "thin", color: { argb: "FFE5E7EB" } },
+      left: { style: "thin", color: { argb: "FFE5E7EB" } },
+      bottom: { style: "thin", color: { argb: "FFE5E7EB" } },
+      right: { style: "thin", color: { argb: "FFE5E7EB" } },
+    }
+  })
+
+  setColumnWidths(sheet, [30, 24, 24, 24, 18])
 
   const buffer = await workbook.xlsx.writeBuffer()
   return Buffer.from(buffer)

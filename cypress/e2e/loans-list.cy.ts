@@ -88,13 +88,10 @@ describe("Loans List (Unified)", () => {
       cy.visit("/loans")
       cy.contains("Customer Name", { timeout: 10000 }).should("exist")
       cy.contains("Principal Amount").should("exist")
-      cy.contains("Outstanding Balance").should("exist")
-      cy.contains("Interest Rate").should("exist")
-      cy.contains("Status").should("exist")
+      cy.contains("Principal Balance").should("exist")
+      cy.contains("Total Due").should("exist")
       cy.contains("Days Overdue").should("exist")
-      cy.contains("Daily Rate (UGX)").should("exist")
       cy.contains("Last Payment").should("exist")
-      cy.contains("Start Date").should("exist")
     })
 
     it("shows filter empty state when no loans match", () => {

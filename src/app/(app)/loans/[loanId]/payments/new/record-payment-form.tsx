@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useTransition } from "react"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
+import { useForm } from "react-hook-form"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -9,8 +11,11 @@ import { recordPaymentAction } from "@/actions/payment.actions"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { MoneyInput } from "@/components/ui/money-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { queryKeys } from "@/hooks/query-keys"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { cn } from "@/lib/utils"
 
 interface RecordPaymentFormProps {
@@ -21,38 +26,37 @@ function todayISODate(): string {
   return new Date().toISOString().split("T")[0]
 }
 
+interface PaymentFormValues {
+  paymentDate: string
+  amount: string
+  note: string
+}
+
 export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
   const router = useRouter()
-
-  const [paymentDate, setPaymentDate] = useState(todayISODate())
-  const [amount, setAmount] = useState("")
-  const [note, setNote] = useState("")
+  const queryClient = useQueryClient()
   const [isPending, startTransition] = useTransition()
 
-  const [errors, setErrors] = useState<{ amount?: string; paymentDate?: string }>({})
+  const {
+    register,
+    handleSubmit,
+    control,
+    formState: { errors },
+  } = useForm<PaymentFormValues>({
+    defaultValues: {
+      paymentDate: todayISODate(),
+      amount: "",
+      note: "",
+    },
+  })
 
-  function validate(): boolean {
-    const nextErrors: { amount?: string; paymentDate?: string } = {}
-    if (!paymentDate.trim()) {
-      nextErrors.paymentDate = "Payment date is required"
-    }
-    if (!amount.trim() || !/^\d+(\.\d{1,2})?$/.test(amount.trim())) {
-      nextErrors.amount = "Amount must be a valid number (e.g. 150000 or 150000.50)"
-    }
-    setErrors(nextErrors)
-    return Object.keys(nextErrors).length === 0
-  }
-
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!validate()) return
-
+  function onSubmit(data: PaymentFormValues) {
     startTransition(async () => {
       const result = await recordPaymentAction({
         loanId,
-        paymentDate: paymentDate + "T00:00:00.000Z",
-        amount: amount.trim(),
-        note: note.trim() || undefined,
+        paymentDate: data.paymentDate + "T12:00:00",
+        amount: data.amount.trim(),
+        note: data.note.trim() || undefined,
       })
 
       if ("error" in result) {
@@ -61,6 +65,11 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
       }
 
       toast.success("Payment recorded successfully")
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.payments.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans.all }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all }),
+      ])
       router.push(`/loans/${loanId}`)
     })
   }
@@ -80,57 +89,59 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
 
       <Card>
         <CardHeader>
-          <CardTitle>Payment Details</CardTitle>
+          <CardTitle className="inline-flex items-center gap-1">
+            Payment Details
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">How Payments Are Allocated</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Every payment is split automatically: interest is paid first, then any remainder reduces the principal balance.
+              </p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                Payment → Interest portion + Principal portion
+              </p>
+              <p className="text-xs text-muted-foreground mb-2">
+                A minimum of 30 days interest is always charged, even if paying early. Any amount is accepted — there is no minimum payment.
+              </p>
+              <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
+                <p className="font-medium">Example:</p>
+                <p>Balance: UGX 1,000,000 at 10%/month</p>
+                <p>After 30 days interest = UGX 100,000</p>
+                <p>Pay UGX 150,000 → UGX 100,000 interest + UGX 50,000 principal</p>
+              </div>
+            </InfoPopover>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Payment Date */}
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="paymentDate">Payment Date</Label>
               <Input
                 id="paymentDate"
                 type="date"
-                value={paymentDate}
-                onChange={(e) => setPaymentDate(e.target.value)}
                 disabled={isPending}
+                {...register("paymentDate", { required: "Payment date is required" })}
               />
               {errors.paymentDate && (
-                <p className="text-destructive text-xs">{errors.paymentDate}</p>
+                <p className="text-sm text-destructive">{errors.paymentDate.message}</p>
               )}
             </div>
 
-            {/* Amount */}
-            <div className="space-y-1">
-              <Label htmlFor="amount">Amount (UGX)</Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground font-medium px-2 py-2 bg-muted rounded-lg border border-input select-none">
-                  UGX
-                </span>
-                <Input
-                  id="amount"
-                  type="text"
-                  inputMode="numeric"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="e.g. 150000"
-                  disabled={isPending}
-                  className="flex-1"
-                />
-              </div>
-              {errors.amount && (
-                <p className="text-destructive text-xs">{errors.amount}</p>
-              )}
-            </div>
+            <MoneyInput
+              name="amount"
+              control={control}
+              label="Amount (UGX)"
+              required="Amount must be a valid number (e.g. 150000 or 150000.50)"
+              disabled={isPending}
+              id="amount"
+            />
 
-            {/* Note (optional) */}
             <div className="space-y-1">
               <Label htmlFor="note">Note</Label>
               <Textarea
                 id="note"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
                 placeholder="Optional note"
                 disabled={isPending}
+                {...register("note")}
               />
             </div>
 

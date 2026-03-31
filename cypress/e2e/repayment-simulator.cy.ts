@@ -54,7 +54,7 @@ describe("Repayment Simulator", () => {
       // Should show Current and After cards
       cy.contains("Current").should("be.visible")
       cy.contains("After Simulated Payment").should("be.visible")
-      cy.contains("Outstanding Balance").should("be.visible")
+      cy.contains("Principal Balance").should("be.visible")
     })
   })
 
@@ -96,7 +96,7 @@ describe("Repayment Simulator", () => {
     it("renders loan detail with simulator at mobile and shows tab bar", () => {
       cy.then(() => {
         cy.visit(`/loans/${loanId}`)
-        cy.contains("Outstanding Balance", { timeout: 15000 }).should("exist")
+        cy.contains("Principal Balance", { timeout: 15000 }).should("exist")
         cy.get("[data-testid='bottom-tab-bar']").should("exist")
           .should("have.css", "display", "flex")
         cy.get("[data-testid='sidebar-nav']").should("not.be.visible")

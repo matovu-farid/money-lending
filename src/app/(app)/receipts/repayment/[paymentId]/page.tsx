@@ -5,7 +5,6 @@ import { customers } from "@/lib/db/schema/customers"
 import { user } from "@/lib/db/schema/auth"
 import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Separator } from "@/components/ui/separator"
 import { PrintButton } from "@/app/(app)/receipts/disbursement/[loanId]/print-button"
 import { formatDate } from "@/lib/utils"
 
@@ -74,101 +73,158 @@ export default async function RepaymentReceiptPage({
 
 
   const receiptNumber = `PAY-${paymentId.slice(0, 8).toUpperCase()}`
-  const loanReference = loan ? `LOAN-${loan.id.slice(0, 8).toUpperCase()}` : "—"
+  const loanReference = loan ? `LOAN-${loan.id.slice(0, 8).toUpperCase()}` : "\u2014"
 
   return (
-    <div className="container max-w-2xl mx-auto p-4 md:p-6 print:p-0 print:max-w-none print:container-none">
-      {/* RCPT-03 blocked state */}
-      {isBlocked && (
-        <Alert variant="destructive" className="mb-4 print:hidden">
-          <AlertTitle>Cannot print receipt</AlertTitle>
-          <AlertDescription>
-            The following required details are missing:{" "}
-            {missingFields.join(", ")}. Update the loan or payment record to
-            enable printing.
-          </AlertDescription>
-        </Alert>
-      )}
+    <div className="min-h-screen bg-muted print:bg-white print:min-h-0">
+      <div className="container max-w-[560px] mx-auto p-4 md:p-8 print:p-0 print:max-w-none print:container-none">
+        {/* RCPT-03 blocked state */}
+        {isBlocked && (
+          <Alert variant="destructive" className="mb-4 print:hidden">
+            <AlertTitle>Cannot print receipt</AlertTitle>
+            <AlertDescription>
+              The following required details are missing:{" "}
+              {missingFields.join(", ")}. Update the loan or payment record to
+              enable printing.
+            </AlertDescription>
+          </Alert>
+        )}
 
-      {/* Print button — hidden during print */}
-      <div className="print:hidden flex justify-end mb-4">
-        <PrintButton disabled={isBlocked} />
-      </div>
-
-      {/* Receipt body */}
-      <div className="receipt-body bg-white text-black border border-border rounded-lg p-8 print:border-none print:rounded-none print:p-0">
-        {/* Header */}
-        <div className="mb-4">
-          <h1 className="text-lg font-semibold tracking-tight">Payment Receipt</h1>
-          <p className="font-mono text-xs text-muted-foreground mt-1">
-            {receiptNumber}
-          </p>
+        {/* Print button — hidden during print */}
+        <div className="print:hidden mb-6">
+          <PrintButton disabled={isBlocked} />
         </div>
 
-        <Separator className="mb-4" />
-
-        {/* Receipt fields */}
-        <dl className="space-y-3">
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Date</dt>
-            <dd className="text-sm">{formatDate(payment.paymentDate)}</dd>
+        {/* Receipt body */}
+        <div className="receipt-body bg-white text-black border border-border rounded-lg shadow-sm p-8 md:p-10 print:border-none print:rounded-none print:shadow-none print:p-0">
+          {/* Header */}
+          <div className="text-center mb-0">
+            <h1 className="text-base font-bold tracking-[0.25em] uppercase font-sans">
+              Sovereign Ledger
+            </h1>
+            <p className="text-[11px] tracking-[0.08em] uppercase text-gray-500 mt-1">
+              Payment Receipt
+            </p>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Customer name</dt>
-            <dd className="text-sm">{customer?.fullName ?? "—"}</dd>
+          <div className="flex items-center justify-between mt-4 mb-0">
+            <span className="font-mono text-xs font-semibold tracking-wide">
+              {receiptNumber}
+            </span>
+            <span className="text-xs text-gray-600">
+              {formatDate(payment.paymentDate)}
+            </span>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Loan reference</dt>
-            <dd className="font-mono text-xs">{loanReference}</dd>
+          <hr className="border-black mt-3 mb-5" />
+
+          {/* Customer Details */}
+          <div className="mb-1">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Customer Details
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Name</td>
+                  <td className="py-1 text-right font-medium">{customer?.fullName ?? "\u2014"}</td>
+                </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Loan Reference</td>
+                  <td className="py-1 text-right font-mono text-xs">{loanReference}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <Separator />
+          <hr className="border-gray-200 my-4 print:border-gray-400" />
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Payment amount</dt>
-            <dd className="text-sm font-medium font-mono tabular-nums">
-              {formatCurrency(payment.amount)}
-            </dd>
+          {/* Payment Breakdown */}
+          <div className="mb-1">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Payment Breakdown
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Amount Paid</td>
+                  <td className="py-1 text-right font-bold font-mono tabular-nums text-base">
+                    {formatCurrency(payment.amount)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Interest Portion</td>
+                  <td className="py-1 text-right font-mono tabular-nums">
+                    {formatCurrency(payment.interestPortion)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Principal Portion</td>
+                  <td className="py-1 text-right font-mono tabular-nums">
+                    {formatCurrency(payment.principalPortion)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Interest paid</dt>
-            <dd className="text-sm font-mono tabular-nums">{formatCurrency(payment.interestPortion)}</dd>
+          <hr className="border-gray-200 my-4 print:border-gray-400" />
+
+          {/* Balance */}
+          <div className="mb-1">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Balance
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Principal Balance</td>
+                  <td className="py-1 text-right font-bold font-mono tabular-nums">
+                    {formatCurrency(payment.principalBalanceAfter)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Principal paid</dt>
-            <dd className="text-sm font-mono tabular-nums">
-              {formatCurrency(payment.principalPortion)}
-            </dd>
+          <hr className="border-gray-200 my-4 print:border-gray-400" />
+
+          {/* Officer */}
+          <div className="mb-0">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Officer
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Received By</td>
+                  <td className="py-1 text-right font-medium">{recordingUser?.name ?? "\u2014"}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <Separator />
-
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">
-              Outstanding balance after payment
-            </dt>
-            <dd className="text-sm font-medium font-mono tabular-nums">
-              {formatCurrency(payment.principalBalanceAfter)}
-            </dd>
+          {/* Signature lines */}
+          <div className="mt-10 grid grid-cols-2 gap-8">
+            <div>
+              <div className="border-b border-black mb-1 h-8" />
+              <p className="text-[10px] text-gray-500 text-center">Customer Signature</p>
+            </div>
+            <div>
+              <div className="border-b border-black mb-1 h-8" />
+              <p className="text-[10px] text-gray-500 text-center">Officer Signature</p>
+            </div>
           </div>
 
-          <Separator />
-
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Received by</dt>
-            <dd className="text-sm">{recordingUser?.name ?? "—"}</dd>
-          </div>
-        </dl>
-
-        {/* Footer */}
-        <Separator className="mt-6 mb-4" />
-        <p className="text-xs text-muted-foreground text-center">
-          This is an official receipt from the lending system.
-        </p>
+          {/* Footer */}
+          <hr className="border-black mt-8 mb-3" />
+          <p className="text-[10px] text-gray-400 text-center">
+            Sovereign Ledger &mdash; Official Receipt
+          </p>
+          <p className="text-[9px] text-gray-400 text-center mt-1">
+            Printed on {new Date().toLocaleDateString("en-UG", { year: "numeric", month: "long", day: "numeric" })} at {new Date().toLocaleTimeString("en-UG", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
       </div>
     </div>
   )

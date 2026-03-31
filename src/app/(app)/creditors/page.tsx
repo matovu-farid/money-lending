@@ -5,6 +5,8 @@ import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { PageHeader } from "@/components/ui/page-header"
 
 const defaultCapital = {
   totalInvested: "0.00",
@@ -24,15 +26,11 @@ export default async function CreditorsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Creditors</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Capital sources and obligations</p>
-        </div>
+      <PageHeader title="Creditors" subtitle="Capital sources and obligations">
         <ButtonLink href="/creditors/new">
           Add Creditor
         </ButtonLink>
-      </div>
+      </PageHeader>
 
       {/* System Capital KPIs — CRED-06 */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -40,21 +38,64 @@ export default async function CreditorsPage() {
           label="Total Invested"
           value={formatCurrency(capital.totalInvested)}
           icon={Landmark}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Total Invested</p>
+              <p className="text-xs text-muted-foreground">
+                Sum of all capital invested by all creditors. This is the total money borrowed from creditors to fund lending operations.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Total Interest Accrued"
           value={formatCurrency(capital.totalInterestAccrued)}
           icon={TrendingUp}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Total Interest Accrued</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Total interest owed to creditors based on their investment amounts and agreed rates. This is a cost to the business.
+              </p>
+              <p className="text-xs font-semibold mb-1">Formula</p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+                For each investment: Principal Balance x (Monthly Rate / 30) x Days Since Last Repayment
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Total Repayments"
           value={formatCurrency(capital.totalRepaymentsMade)}
           icon={CreditCard}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Total Repayments</p>
+              <p className="text-xs text-muted-foreground">
+                Total amount paid back to creditors (both principal and interest portions). Reduces the outstanding obligation to creditors.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Total Outstanding"
           value={formatCurrency(capital.totalOutstanding)}
           icon={DollarSign}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Total Outstanding</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                The current total obligation to all creditors.
+              </p>
+              <p className="text-xs font-semibold mb-1">Formula</p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                Total Outstanding = Remaining Principal + Accrued Interest
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Compare this against your loan portfolio to assess business health.
+              </p>
+            </InfoPopover>
+          }
         />
       </div>
 

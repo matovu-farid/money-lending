@@ -241,7 +241,7 @@ export function DailyCollectionsTab() {
               <TableRow>
                 <TableHead>Customer</TableHead>
                 <TableHead>Loan Ref</TableHead>
-                <TableHead>Outstanding Balance</TableHead>
+                <TableHead>Principal Balance</TableHead>
                 <TableHead>Days Since Last Payment</TableHead>
                 <TableHead>Last Payment</TableHead>
               </TableRow>
@@ -271,7 +271,7 @@ export function DailyCollectionsTab() {
               <TableRow>
                 <TableHead>Customer</TableHead>
                 <TableHead>Loan Ref</TableHead>
-                <TableHead className="text-right">Outstanding Balance</TableHead>
+                <TableHead className="text-right">Principal Balance</TableHead>
                 <TableHead>Days Since Last Payment</TableHead>
                 <TableHead>Last Payment</TableHead>
               </TableRow>

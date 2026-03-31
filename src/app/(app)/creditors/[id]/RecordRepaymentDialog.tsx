@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -22,7 +22,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { formatNumberWithCommas, stripCommas, formatCurrency } from "@/lib/utils"
+import { MoneyInput } from "@/components/ui/money-input"
+import { queryKeys } from "@/hooks/query-keys"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { formatCurrency } from "@/lib/utils"
 import type { CreditorInvestment } from "@/types"
 
 interface Props {
@@ -38,7 +41,7 @@ interface RepaymentFormValues {
 }
 
 export function RecordRepaymentDialog({ creditorId, investments, outstandingBalance }: Props) {
-  const router = useRouter()
+  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -47,6 +50,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     handleSubmit,
     setValue,
     watch,
+    control,
     reset,
     formState: { errors },
   } = useForm<RepaymentFormValues>({
@@ -57,7 +61,6 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     },
   })
 
-  const watchedAmount = watch("amount")
   const watchedInvestmentId = watch("investmentId")
 
   function resetForm() {
@@ -71,16 +74,21 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
   function onSubmit(data: RepaymentFormValues) {
     startTransition(async () => {
       try {
-        await recordCreditorRepaymentAction({
+        const result = await recordCreditorRepaymentAction({
           investmentId: data.investmentId,
           amount: data.amount.trim(),
           repaymentDate: data.date,
         })
+        if ("error" in result) {
+          toast.error(result.error)
+          return
+        }
 
         toast.success("Repayment recorded successfully")
         setOpen(false)
         resetForm()
-        router.refresh()
+        queryClient.invalidateQueries({ queryKey: queryKeys.creditors.all })
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to record repayment")
       }
@@ -98,12 +106,27 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
       }}>
       <DrawerDialogContent>
         <DialogHeader>
-          <DialogTitle>Record Repayment</DialogTitle>
+          <DialogTitle className="inline-flex items-center gap-1">
+            Record Repayment
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Creditor Repayment</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                A payment made back to the creditor (investor). This reduces the outstanding balance you owe them. Select which investment this repayment applies to.
+              </p>
+            </InfoPopover>
+          </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Outstanding balance reference */}
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
-            <span className="text-muted-foreground">Outstanding Balance: </span>
+            <span className="text-muted-foreground inline-flex items-center gap-1">
+              Outstanding Balance:
+              <InfoPopover>
+                <p className="font-semibold text-sm mb-1">Outstanding Balance</p>
+                <p className="text-xs text-muted-foreground">
+                  Total amount still owed to this creditor across all their investments, minus any repayments already made.
+                </p>
+              </InfoPopover>
+            </span>
             <span className="font-medium font-mono tabular-nums">{formatCurrency(outstandingBalance)}</span>
           </div>
 
@@ -129,43 +152,19 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
               {...register("investmentId", { required: "Please select an investment" })}
             />
             {errors.investmentId && (
-              <p className="text-destructive text-xs">{errors.investmentId.message}</p>
+              <p className="text-sm text-destructive">{errors.investmentId.message}</p>
             )}
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="repay-amount">Amount</Label>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
-              <Input
-                id="repay-amount"
-                type="text"
-                inputMode="numeric"
-                value={formatNumberWithCommas(watchedAmount)}
-                onChange={(e) => {
-                  const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
-                  setValue("amount", raw, { shouldValidate: true })
-                }}
-                placeholder="e.g. 500,000"
-                disabled={isPending}
-                className="flex-1"
-              />
-              <input
-                type="hidden"
-                {...register("amount", {
-                  required: "Valid amount is required",
-                  validate: v => {
-                    const n = Number(v)
-                    if (isNaN(n) || n <= 0) return "Valid amount is required"
-                    return true
-                  },
-                })}
-              />
-            </div>
-            {errors.amount && (
-              <p className="text-destructive text-xs">{errors.amount.message}</p>
-            )}
-          </div>
+          <MoneyInput
+            name="amount"
+            control={control}
+            label="Amount"
+            required="Valid amount is required"
+            placeholder="e.g. 500,000"
+            disabled={isPending}
+            id="repay-amount"
+          />
 
           <div className="space-y-1">
             <Label htmlFor="repay-date">Date</Label>

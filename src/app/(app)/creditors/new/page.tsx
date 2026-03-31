@@ -11,7 +11,10 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { cn, formatNumberWithCommas, stripCommas } from "@/lib/utils"
+import { MoneyInput } from "@/components/ui/money-input"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { cn } from "@/lib/utils"
+import { PageHeader } from "@/components/ui/page-header"
 
 interface CreditorFormValues {
   name: string
@@ -29,8 +32,7 @@ export default function NewCreditorPage() {
   const {
     register,
     handleSubmit,
-    setValue,
-    watch,
+    control,
     formState: { errors },
   } = useForm<CreditorFormValues>({
     defaultValues: {
@@ -43,23 +45,29 @@ export default function NewCreditorPage() {
     },
   })
 
-  const watchedAmount = watch("amount")
-
   function onSubmit(data: CreditorFormValues) {
     startTransition(async () => {
       try {
-        const creditor = await createCreditorAction({
+        const creditorResult = await createCreditorAction({
           name: data.name.trim(),
           contact: data.contact.trim(),
           address: data.address.trim(),
         })
+        if ("error" in creditorResult) {
+          toast.error(creditorResult.error)
+          return
+        }
 
-        await addInvestmentAction({
-          creditorId: creditor.id,
+        const investmentResult = await addInvestmentAction({
+          creditorId: creditorResult.data.id,
           amount: data.amount.trim(),
           interestRateMonthly: (Number(data.interestRateMonthly) / 100).toString(),
           investmentDate: data.investmentDate,
         })
+        if ("error" in investmentResult) {
+          toast.error(investmentResult.error)
+          return
+        }
 
         router.push("/creditors")
       } catch (err: any) {
@@ -70,12 +78,11 @@ export default function NewCreditorPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-lg">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold">Add Creditor</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Register a new creditor and record their initial investment.
-        </p>
-      </div>
+      <PageHeader
+        title="Add Creditor"
+        subtitle="Register a new creditor and record their initial investment."
+        className="mb-6"
+      />
 
       <div className="space-y-6">
         <Card>
@@ -94,7 +101,7 @@ export default function NewCreditorPage() {
                   {...register("name", { required: "Name is required", validate: v => v.trim() !== "" || "Name is required" })}
                 />
                 {errors.name && (
-                  <p className="text-destructive text-xs">{errors.name.message}</p>
+                  <p className="text-sm text-destructive">{errors.name.message}</p>
                 )}
               </div>
 
@@ -108,7 +115,7 @@ export default function NewCreditorPage() {
                   {...register("contact", { required: "Contact is required", validate: v => v.trim() !== "" || "Contact is required" })}
                 />
                 {errors.contact && (
-                  <p className="text-destructive text-xs">{errors.contact.message}</p>
+                  <p className="text-sm text-destructive">{errors.contact.message}</p>
                 )}
               </div>
 
@@ -122,7 +129,7 @@ export default function NewCreditorPage() {
                   {...register("address", { required: "Address is required", validate: v => v.trim() !== "" || "Address is required" })}
                 />
                 {errors.address && (
-                  <p className="text-destructive text-xs">{errors.address.message}</p>
+                  <p className="text-sm text-destructive">{errors.address.message}</p>
                 )}
               </div>
             </form>
@@ -135,44 +142,35 @@ export default function NewCreditorPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="amount">Amount Invested</Label>
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
-                  <Input
-                    id="amount"
-                    type="text"
-                    inputMode="numeric"
-                    form="creditor-form"
-                    value={formatNumberWithCommas(watchedAmount)}
-                    onChange={(e) => {
-                      const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
-                      setValue("amount", raw, { shouldValidate: true })
-                    }}
-                    placeholder="e.g. 5,000,000"
-                    disabled={isPending}
-                    className="flex-1"
-                  />
-                  <input
-                    type="hidden"
-                    form="creditor-form"
-                    {...register("amount", {
-                      required: "A valid investment amount is required",
-                      validate: v => {
-                        const n = Number(v)
-                        if (isNaN(n) || n <= 0) return "A valid investment amount is required"
-                        return true
-                      },
-                    })}
-                  />
-                </div>
-                {errors.amount && (
-                  <p className="text-destructive text-xs">{errors.amount.message}</p>
-                )}
-              </div>
+              <MoneyInput
+                name="amount"
+                control={control}
+                label="Amount Invested"
+                required="A valid investment amount is required"
+                placeholder="e.g. 5,000,000"
+                disabled={isPending}
+                id="amount"
+              />
 
               <div className="space-y-1">
-                <Label htmlFor="interestRateMonthly">Monthly Interest Rate</Label>
+                <Label htmlFor="interestRateMonthly" className="inline-flex items-center gap-1">
+                  Monthly Interest Rate
+                  <InfoPopover>
+                    <p className="font-semibold text-sm mb-1">Creditor Interest Rate</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      The monthly rate you pay the creditor on their investment. This is a cost to your business.
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      This is different from the loan interest rate (what borrowers pay you). Your profit margin is the difference between the two.
+                    </p>
+                    <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
+                      <p className="font-medium">Example:</p>
+                      <p>Creditor rate: 5%/month (you pay them)</p>
+                      <p>Loan rate: 10%/month (borrowers pay you)</p>
+                      <p>Margin: 5%/month on deployed capital</p>
+                    </div>
+                  </InfoPopover>
+                </Label>
                 <div className="flex items-center gap-2">
                   <Input
                     id="interestRateMonthly"
@@ -191,7 +189,7 @@ export default function NewCreditorPage() {
                   <span className="text-sm text-muted-foreground font-medium w-6 shrink-0">%</span>
                 </div>
                 {errors.interestRateMonthly && (
-                  <p className="text-destructive text-xs">{errors.interestRateMonthly.message}</p>
+                  <p className="text-sm text-destructive">{errors.interestRateMonthly.message}</p>
                 )}
               </div>
 

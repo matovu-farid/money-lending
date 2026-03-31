@@ -43,6 +43,13 @@
       "when": 1774259156555,
       "tag": "0005_polite_makkari",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1774993613417,
+      "tag": "0006_complete_bill_hollister",
+      "breakpoints": true
     }
   ]
 }

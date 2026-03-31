@@ -4,7 +4,8 @@ import { getLoan } from "@/services/loan.service"
 import { getPaymentsForLoan } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
-import { eq } from "drizzle-orm"
+import { user } from "@/lib/db/schema/auth"
+import { eq, inArray } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -50,6 +51,23 @@ export default async function LoanDetailPage({
     // Non-critical — page still renders without customer name
   }
 
+  // Resolve recordedBy user IDs to names
+  const userNameMap: Record<string, string> = {}
+  const uniqueUserIds = [...new Set(payments.map((p) => p.recordedBy))]
+  if (uniqueUserIds.length > 0) {
+    try {
+      const users = await db
+        .select({ id: user.id, name: user.name })
+        .from(user)
+        .where(inArray(user.id, uniqueUserIds))
+      for (const u of users) {
+        userNameMap[u.id] = u.name
+      }
+    } catch {
+      // Non-critical — falls back to truncated ID
+    }
+  }
+
   // Determine canModify based on role
   const session = await auth.api.getSession({ headers: await headers() })
   const role = ((session?.user?.role ?? "unassigned") as UserRole)
@@ -73,10 +91,11 @@ export default async function LoanDetailPage({
   return (
     <LoanDetailClient
       loan={loan}
-      payments={payments}
+      initialPayments={payments}
       customerName={customerName}
       canModify={canModify}
       openEditOnMount={openEdit}
+      userNameMap={userNameMap}
     />
   )
 }

@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Download, MoreHorizontal } from "lucide-react"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
@@ -23,21 +23,18 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { listPaymentsAction, editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
+import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
 import { formatNumberWithCommas, formatDate } from "@/lib/utils"
-import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer, type ListPaymentsInput } from "@/types"
+import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer } from "@/types"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DailyCollectionsTab } from "./DailyCollectionsTab"
 import { QuickRecordDialog } from "./QuickRecordDialog"
+import { usePayments } from "@/hooks/use-payments"
+import { queryKeys } from "@/hooks/query-keys"
 import { FilterPanel } from "@/components/ui/filter-panel"
-
-interface PaymentsClientProps {
-  initialData: { rows: PaymentWithCustomer[]; total: number }
-  initialPage: number
-  initialFilters: ListPaymentsInput
-  initialTab?: "list" | "daily"
-}
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
   const headers = ["Date", "Customer", "Loan Ref", "Amount", "Interest", "Principal", "Balance After"]
@@ -62,13 +59,13 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
   URL.revokeObjectURL(url)
 }
 
-export function PaymentsClient({ initialData, initialPage, initialFilters, initialTab }: PaymentsClientProps) {
+export function PaymentsClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const { data: session } = useSession()
 
-  const activeTab = initialTab ?? (searchParams.get("tab") as "list" | "daily") ?? "list"
+  const activeTab = (searchParams.get("tab") as "list" | "daily") ?? "list"
 
   function handleTabChange(tab: string) {
     const params = new URLSearchParams(searchParams.toString())
@@ -92,13 +89,13 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
 
   const [quickRecordOpen, setQuickRecordOpen] = useState(false)
 
-  // Filter state (initialized from server-rendered filters)
-  const [customerName, setCustomerName] = useState(initialFilters.customerName ?? "")
-  const [dateFrom, setDateFrom] = useState(initialFilters.dateFrom ?? "")
-  const [dateTo, setDateTo] = useState(initialFilters.dateTo ?? "")
-  const [amountMin, setAmountMin] = useState(initialFilters.amountMin ?? "")
-  const [amountMax, setAmountMax] = useState(initialFilters.amountMax ?? "")
-  const [page, setPage] = useState(initialPage)
+  // Filter state (initialized from URL search params)
+  const [customerName, setCustomerName] = useState(searchParams.get("customerName") ?? "")
+  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") ?? "")
+  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "")
+  const [amountMin, setAmountMin] = useState(searchParams.get("amountMin") ?? "")
+  const [amountMax, setAmountMax] = useState(searchParams.get("amountMax") ?? "")
+  const [page, setPage] = useState(Number(searchParams.get("page") ?? 1))
 
   // Edit sheet state
   const [editOpen, setEditOpen] = useState(false)
@@ -106,13 +103,119 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
   const [editAmount, setEditAmount] = useState("")
   const [editDate, setEditDate] = useState("")
   const [editReason, setEditReason] = useState("")
-  const [isEditPending, startEditTransition] = useTransition()
 
   // Delete dialog state
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<PaymentWithCustomer | null>(null)
   const [deleteReason, setDeleteReason] = useState("")
-  const [isDeletePending, startDeleteTransition] = useTransition()
+
+  // Edit mutation with optimistic update
+  const editMutation = useMutation({
+    mutationFn: (input: { paymentId: string; amount?: string; paymentDate?: string; reason: string }) =>
+      editPaymentAction(input),
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
+
+      const previousPayments = queryClient.getQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
+        { queryKey: queryKeys.payments.all },
+      )
+
+      queryClient.setQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
+        { queryKey: queryKeys.payments.all },
+        (old) => {
+          if (!old) return old
+          return {
+            ...old,
+            rows: old.rows.map((p) =>
+              p.id === input.paymentId
+                ? {
+                    ...p,
+                    ...(input.amount != null ? { amount: input.amount } : {}),
+                    ...(input.paymentDate != null ? { paymentDate: new Date(input.paymentDate) } : {}),
+                  }
+                : p,
+            ),
+          }
+        },
+      )
+
+      return { previousPayments }
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previousPayments) {
+        for (const [key, data] of context.previousPayments) {
+          queryClient.setQueryData(key, data)
+        }
+      }
+      toast.error("Failed to update payment")
+    },
+    onSuccess: (result, _input, context) => {
+      if ("error" in result) {
+        if (context?.previousPayments) {
+          for (const [key, data] of context.previousPayments) {
+            queryClient.setQueryData(key, data)
+          }
+        }
+        toast.error(result.error ?? "Failed to update payment")
+        return
+      }
+      toast.success("Payment updated")
+      setEditOpen(false)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+    },
+  })
+
+  // Delete mutation with optimistic update
+  const deleteMutation = useMutation({
+    mutationFn: (input: { paymentId: string; reason: string }) =>
+      deletePaymentAction(input),
+    onMutate: async (input) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
+
+      const previousPayments = queryClient.getQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
+        { queryKey: queryKeys.payments.all },
+      )
+
+      queryClient.setQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
+        { queryKey: queryKeys.payments.all },
+        (old) => {
+          if (!old) return old
+          return {
+            rows: old.rows.filter((p) => p.id !== input.paymentId),
+            total: old.total - 1,
+          }
+        },
+      )
+
+      return { previousPayments }
+    },
+    onError: (_err, _input, context) => {
+      if (context?.previousPayments) {
+        for (const [key, data] of context.previousPayments) {
+          queryClient.setQueryData(key, data)
+        }
+      }
+      toast.error("Failed to delete payment")
+    },
+    onSuccess: (result, _input, context) => {
+      if ("error" in result) {
+        if (context?.previousPayments) {
+          for (const [key, data] of context.previousPayments) {
+            queryClient.setQueryData(key, data)
+          }
+        }
+        toast.error("Failed to delete payment")
+        return
+      }
+      toast.success("Payment deleted")
+      setDeleteOpen(false)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+    },
+  })
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -128,30 +231,15 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
   ].filter(Boolean).length
 
   // TanStack Query for paginated data
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["payments", page, dateFrom, dateTo, amountMin, amountMax, customerName],
-    queryFn: async () => {
-      const result = await listPaymentsAction({
-        page,
-        pageSize: 25,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        amountMin: amountMin || undefined,
-        amountMax: amountMax || undefined,
-        customerName: customerName || undefined,
-      })
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-    initialData: page === initialPage &&
-      customerName === (initialFilters.customerName ?? "") &&
-      dateFrom === (initialFilters.dateFrom ?? "") &&
-      dateTo === (initialFilters.dateTo ?? "") &&
-      amountMin === (initialFilters.amountMin ?? "") &&
-      amountMax === (initialFilters.amountMax ?? "")
-      ? initialData
-      : undefined,
-  })
+  const filterParams = {
+    dateFrom: dateFrom || undefined,
+    dateTo: dateTo || undefined,
+    amountMin: amountMin || undefined,
+    amountMax: amountMax || undefined,
+    customerName: customerName || undefined,
+  }
+
+  const { data, isLoading, isError } = usePayments(filterParams, page)
 
   const rows = data?.rows ?? []
   const total = data?.total ?? 0
@@ -272,37 +360,19 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
 
   function handleEditSubmit() {
     if (!selectedPayment) return
-    startEditTransition(async () => {
-      const result = await editPaymentAction({
-        paymentId: selectedPayment.id,
-        amount: editAmount || undefined,
-        paymentDate: editDate || undefined,
-        reason: editReason,
-      })
-      if ("error" in result) {
-        toast.error(result.error ?? "Failed to update payment")
-        return
-      }
-      toast.success("Payment updated")
-      setEditOpen(false)
-      queryClient.invalidateQueries({ queryKey: ["payments"] })
+    editMutation.mutate({
+      paymentId: selectedPayment.id,
+      amount: editAmount || undefined,
+      paymentDate: editDate || undefined,
+      reason: editReason,
     })
   }
 
   function handleDeleteSubmit() {
     if (!deleteTarget) return
-    startDeleteTransition(async () => {
-      const result = await deletePaymentAction({
-        paymentId: deleteTarget.id,
-        reason: deleteReason,
-      })
-      if ("error" in result) {
-        toast.error("Failed to delete payment")
-        return
-      }
-      toast.success("Payment deleted")
-      setDeleteOpen(false)
-      queryClient.invalidateQueries({ queryKey: ["payments"] })
+    deleteMutation.mutate({
+      paymentId: deleteTarget.id,
+      reason: deleteReason,
     })
   }
 
@@ -340,21 +410,57 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
     },
     {
       key: "interestPortion",
-      header: "Interest",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Interest
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Interest Portion</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The part of this payment that covers accrued interest. Payments always cover interest first before reducing principal.
+            </p>
+            <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+              Interest = Balance × (Monthly Rate ÷ 30) × Days
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       align: "right",
       hideInCard: true,
       render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.interestPortion)}</span>,
     },
     {
       key: "principalPortion",
-      header: "Principal",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Principal
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Principal Portion</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The amount left over after interest is covered. This reduces the borrower&apos;s outstanding balance.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              If the payment is less than or equal to accrued interest, the principal portion will be zero.
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       align: "right",
       hideInCard: true,
       render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalPortion)}</span>,
     },
     {
       key: "balanceAfter",
-      header: "Balance After",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Balance After
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Balance After Payment</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The remaining principal balance on the loan after this payment was applied. When it reaches zero, the loan is fully paid.
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       cardLabel: "Balance",
       align: "right",
       render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalBalanceAfter)}</span>,
@@ -390,27 +496,21 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
   return (
     <div className="space-y-4">
       {/* Page header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Payment history and collections</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button onClick={() => setQuickRecordOpen(true)}>
-            Record Payment
+      <PageHeader title="Payments" subtitle="Payment history and collections">
+        <Button onClick={() => setQuickRecordOpen(true)}>
+          Record Payment
+        </Button>
+        {activeTab === "list" && (
+          <Button
+            variant="outline"
+            disabled={rows.length === 0}
+            onClick={() => exportToCsv(rows)}
+          >
+            <Download className="h-4 w-4 mr-2" />
+            Export CSV
           </Button>
-          {activeTab === "list" && (
-            <Button
-              variant="outline"
-              disabled={rows.length === 0}
-              onClick={() => exportToCsv(rows)}
-            >
-              <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
-          )}
-        </div>
-      </div>
+        )}
+      </PageHeader>
 
       <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
@@ -487,7 +587,11 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
 
       {/* Content */}
       {isLoading ? (
-        <p className="text-muted-foreground p-6">Loading payments...</p>
+        <div className="space-y-3">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
+          ))}
+        </div>
       ) : isError ? (
         <p className="text-muted-foreground p-6">
           Failed to load payments. Refresh the page or contact support if the problem persists.
@@ -604,9 +708,9 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
           <DialogFooter>
             <Button
               onClick={handleEditSubmit}
-              disabled={isEditPending || !editReason.trim()}
+              disabled={editMutation.isPending || !editReason.trim()}
             >
-              {isEditPending ? "Saving..." : "Save changes"}
+              {editMutation.isPending ? "Saving..." : "Save changes"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>
@@ -636,10 +740,10 @@ export function PaymentsClient({ initialData, initialPage, initialFilters, initi
             </Button>
             <Button
               variant="destructive"
-              disabled={!deleteReason.trim() || isDeletePending}
+              disabled={!deleteReason.trim() || deleteMutation.isPending}
               onClick={handleDeleteSubmit}
             >
-              {isDeletePending ? "Deleting..." : "Delete payment"}
+              {deleteMutation.isPending ? "Deleting..." : "Delete payment"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>

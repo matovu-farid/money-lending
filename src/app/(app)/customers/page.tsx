@@ -10,6 +10,8 @@ import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { PageHeader } from "@/components/ui/page-header"
 
 function statusVariant(status: string): "default" | "destructive" | "secondary" {
   if (status === "active") return "default"
@@ -54,15 +56,11 @@ export default function CustomersPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Customers</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Customer portfolio overview</p>
-        </div>
+      <PageHeader title="Customers" subtitle="Customer portfolio overview">
         <Link href="/customers/new" className={cn(buttonVariants())}>
           Add Customer
         </Link>
-      </div>
+      </PageHeader>
 
       <CustomerSearchBar onSearch={handleSearch} loading={isLoading} />
 
@@ -109,7 +107,23 @@ export default function CustomersPage() {
               },
               {
                 key: "status",
-                header: "Status",
+                header: (
+                  <span className="inline-flex items-center gap-1">
+                    Status
+                    <InfoPopover>
+                      <p className="font-semibold text-sm mb-1">Customer Status</p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        <span className="font-semibold">Active</span> &mdash; Customer is in good standing and eligible for new loans.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        <span className="font-semibold">Blacklisted</span> &mdash; Customer has been flagged and cannot receive new loans. This is set manually by an admin or loan officer.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-semibold">Inactive</span> &mdash; Customer has no active loans and hasn&apos;t had activity recently.
+                      </p>
+                    </InfoPopover>
+                  </span>
+                ),
                 render: (c) => (
                   <Badge variant={statusVariant(c.status)}>
                     {statusLabel(c.status)}
@@ -121,8 +135,12 @@ export default function CustomersPage() {
             getRowKey={(c) => c.id}
             getRowProps={(c) => ({
               "data-testid": "data-row",
-              className: "cursor-pointer",
-              onClick: () => router.push(`/customers/${c.id}`),
+              className: c.id.startsWith("optimistic-")
+                ? "opacity-50 cursor-default"
+                : "cursor-pointer",
+              onClick: c.id.startsWith("optimistic-")
+                ? undefined
+                : () => router.push(`/customers/${c.id}`),
             })}
           />
 

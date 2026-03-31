@@ -8,6 +8,8 @@
 
 @custom-variant dark (&:is(.dark *));
 
+
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -146,6 +148,9 @@
   html {
     @apply font-sans;
   }
+  button, [role="button"] {
+    cursor: pointer;
+  }
   /* Sovereign Ledger: tight tracking on headings */
   h1, h2, h3 {
     letter-spacing: -0.02em;
@@ -173,24 +178,75 @@
     --background: oklch(1 0 0);   /* pure white for printing */
     --foreground: oklch(0 0 0);   /* pure black for printing */
   }
+
   .print-hidden {
     display: none !important;
   }
+
+  /* Hide all non-receipt chrome */
   body {
-    background: white;
-    color: black;
+    background: white !important;
+    color: black !important;
+    margin: 0;
+    padding: 0;
   }
+
+  /* Hide sidebar, nav, header, footer — everything outside receipt */
+  nav,
+  aside,
+  header:not(.receipt-body header),
+  [data-sidebar],
+  [role="navigation"] {
+    display: none !important;
+  }
+
+  /* Receipt container */
   .receipt-body {
-    max-width: 100%;
+    max-width: 500px;
+    margin: 0 auto;
     font-family: var(--font-geist-sans), sans-serif;
-    padding: 2rem;
+    padding: 1.5rem;
+    background: white !important;
+    color: black !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
   }
+
   .receipt-body * {
     box-shadow: none !important;
-    border-color: #ccc !important;
   }
-  .receipt-body dt,
+
+  /* Section dividers: thin lines */
+  .receipt-body hr {
+    border-width: 0.5pt;
+    border-style: solid;
+  }
+
+  /* Labels */
+  .receipt-body .text-gray-400,
+  .receipt-body .text-gray-500,
+  .receipt-body .text-gray-600,
   .receipt-body .text-muted-foreground {
     color: #444 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Ensure monospace numbers are crisp */
+  .receipt-body .font-mono {
+    font-family: var(--font-geist-mono), ui-monospace, monospace;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Signature lines must be visible */
+  .receipt-body .border-b {
+    border-bottom: 0.5pt solid black !important;
+  }
+
+  /* Page settings */
+  @page {
+    margin: 10mm;
+    size: auto;
   }
 }

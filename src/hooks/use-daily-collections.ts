@@ -5,40 +5,27 @@ import {
   getDailyCollectionsAction,
   getLoansDueTodayAction,
 } from "@/actions/daily-collections.actions"
+import { queryKeys } from "./query-keys"
+import { unwrapAction } from "./query-utils"
 import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 
-/**
- * Returns aggregated collections summary for a given YYYY-MM-DD date.
- * Query key includes date so TanStack Query refetches automatically when
- * the user navigates between dates.
- */
 export function useDailyCollections(date: string) {
   return useQuery<DailyCollectionsSummary>({
-    queryKey: ["daily-collections", date],
+    queryKey: queryKeys.dailyCollections.byDate(date),
     queryFn: async () => {
       const result = await getDailyCollectionsAction(date)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data
+      return unwrapAction(result as { data: DailyCollectionsSummary } | { error: string })
     },
+    staleTime: 30_000,
   })
 }
 
-/**
- * Returns all active loans where the last payment (or start date) was 30+
- * days ago, sorted by daysSinceLastPayment descending.
- * staleTime of 5 minutes since this list doesn't change per-date.
- */
 export function useLoansDueToday() {
   return useQuery<LoanDueToday[]>({
-    queryKey: ["loans-due-today"],
+    queryKey: queryKeys.loansDueToday.all,
     queryFn: async () => {
       const result = await getLoansDueTodayAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data
+      return unwrapAction(result as { data: LoanDueToday[] } | { error: string })
     },
     staleTime: 5 * 60 * 1000,
   })

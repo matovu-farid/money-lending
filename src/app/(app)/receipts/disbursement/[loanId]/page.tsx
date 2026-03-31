@@ -5,7 +5,6 @@ import { customers } from "@/lib/db/schema/customers"
 import { user } from "@/lib/db/schema/auth"
 import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Separator } from "@/components/ui/separator"
 import { PrintButton } from "./print-button"
 import { formatDate } from "@/lib/utils"
 
@@ -59,107 +58,155 @@ export default async function DisbursementReceiptPage({
   const minPeriodDisplay = `${loan.minPeriodOverride ?? loan.minInterestDays} days`
 
   return (
-    <div className="container max-w-2xl mx-auto p-4 md:p-6 print:p-0 print:max-w-none print:container-none">
-      {/* RCPT-03 blocked state */}
-      {isBlocked && (
-        <Alert variant="destructive" className="mb-4 print:hidden">
-          <AlertTitle>Cannot print receipt</AlertTitle>
-          <AlertDescription>
-            The following required details are missing:{" "}
-            {missingFields.join(", ")}. Update the loan or customer record to
-            enable printing.
-          </AlertDescription>
-        </Alert>
-      )}
+    <div className="min-h-screen bg-muted print:bg-white print:min-h-0">
+      <div className="container max-w-[560px] mx-auto p-4 md:p-8 print:p-0 print:max-w-none print:container-none">
+        {/* RCPT-03 blocked state */}
+        {isBlocked && (
+          <Alert variant="destructive" className="mb-4 print:hidden">
+            <AlertTitle>Cannot print receipt</AlertTitle>
+            <AlertDescription>
+              The following required details are missing:{" "}
+              {missingFields.join(", ")}. Update the loan or customer record to
+              enable printing.
+            </AlertDescription>
+          </Alert>
+        )}
 
-      {/* Print button — hidden during print */}
-      <div className="print:hidden flex justify-end mb-4">
-        <PrintButton
-          disabled={isBlocked}
-        />
-      </div>
-
-      {/* Receipt body */}
-      <div className="receipt-body bg-white text-black border border-border rounded-lg p-8 print:border-none print:rounded-none print:p-0">
-        {/* Header */}
-        <div className="mb-4">
-          <h1 className="text-lg font-semibold tracking-tight">Loan Disbursement Receipt</h1>
-          <p className="font-mono text-xs text-muted-foreground mt-1">
-            {receiptNumber}
-          </p>
+        {/* Print button — hidden during print */}
+        <div className="print:hidden mb-6">
+          <PrintButton disabled={isBlocked} />
         </div>
 
-        <Separator className="mb-4" />
-
-        {/* Receipt fields */}
-        <dl className="space-y-3">
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Date</dt>
-            <dd className="text-sm">{formatDate(loan.startDate)}</dd>
+        {/* Receipt body */}
+        <div className="receipt-body bg-white text-black border border-border rounded-lg shadow-sm p-8 md:p-10 print:border-none print:rounded-none print:shadow-none print:p-0">
+          {/* Header */}
+          <div className="text-center mb-0">
+            <h1 className="text-base font-bold tracking-[0.25em] uppercase font-sans">
+              Sovereign Ledger
+            </h1>
+            <p className="text-[11px] tracking-[0.08em] uppercase text-gray-500 mt-1">
+              Loan Disbursement Receipt
+            </p>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Customer name</dt>
-            <dd className="text-sm">{customer?.fullName ?? "—"}</dd>
+          <div className="flex items-center justify-between mt-4 mb-0">
+            <span className="font-mono text-xs font-semibold tracking-wide">
+              {receiptNumber}
+            </span>
+            <span className="text-xs text-gray-600">
+              {formatDate(loan.startDate)}
+            </span>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Customer contact</dt>
-            <dd className="text-sm">{customer?.contact ?? "—"}</dd>
+          <hr className="border-black mt-3 mb-5" />
+
+          {/* Customer Details */}
+          <div className="mb-1">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Customer Details
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Name</td>
+                  <td className="py-1 text-right font-medium">{customer?.fullName ?? "\u2014"}</td>
+                </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Contact</td>
+                  <td className="py-1 text-right">{customer?.contact ?? "\u2014"}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <Separator />
+          <hr className="border-gray-200 my-4 print:border-gray-400" />
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Loan amount</dt>
-            <dd className="text-sm font-medium font-mono tabular-nums">
-              {formatCurrency(loan.principalAmount)}
-            </dd>
+          {/* Loan Details */}
+          <div className="mb-1">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Loan Details
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Loan Amount</td>
+                  <td className="py-1 text-right font-bold font-mono tabular-nums text-base">
+                    {formatCurrency(loan.principalAmount)}
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Interest Rate</td>
+                  <td className="py-1 text-right">{interestRateDisplay}</td>
+                </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Min. Interest Period</td>
+                  <td className="py-1 text-right">{minPeriodDisplay}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Interest rate</dt>
-            <dd className="text-sm">{interestRateDisplay}</dd>
+          <hr className="border-gray-200 my-4 print:border-gray-400" />
+
+          {/* Collateral */}
+          <div className="mb-1">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Collateral
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Nature</td>
+                  <td className="py-1 text-right">{collateralRecord?.nature ?? "\u2014"}</td>
+                </tr>
+                {collateralRecord?.description && (
+                  <tr>
+                    <td className="py-1 text-gray-500 align-top">Description</td>
+                    <td className="py-1 text-right">{collateralRecord.description}</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
 
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">
-              Minimum interest period
-            </dt>
-            <dd className="text-sm">{minPeriodDisplay}</dd>
+          <hr className="border-gray-200 my-4 print:border-gray-400" />
+
+          {/* Officer */}
+          <div className="mb-0">
+            <h2 className="text-[10px] font-semibold tracking-[0.12em] uppercase text-gray-400 mb-2">
+              Officer
+            </h2>
+            <table className="w-full text-sm">
+              <tbody>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top w-[40%]">Issued By</td>
+                  <td className="py-1 text-right font-medium">{issuingUser?.name ?? "\u2014"}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
-          <Separator />
-
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">
-              Collateral (nature)
-            </dt>
-            <dd className="text-sm">{collateralRecord?.nature ?? "—"}</dd>
-          </div>
-
-          {collateralRecord?.description && (
-            <div className="flex justify-between">
-              <dt className="text-xs text-muted-foreground">
-                Collateral (description)
-              </dt>
-              <dd className="text-sm">{collateralRecord.description}</dd>
+          {/* Signature lines */}
+          <div className="mt-10 grid grid-cols-2 gap-8">
+            <div>
+              <div className="border-b border-black mb-1 h-8" />
+              <p className="text-[10px] text-gray-500 text-center">Customer Signature</p>
             </div>
-          )}
-
-          <Separator />
-
-          <div className="flex justify-between">
-            <dt className="text-xs text-muted-foreground">Issued by</dt>
-            <dd className="text-sm">{issuingUser?.name ?? "—"}</dd>
+            <div>
+              <div className="border-b border-black mb-1 h-8" />
+              <p className="text-[10px] text-gray-500 text-center">Officer Signature</p>
+            </div>
           </div>
-        </dl>
 
-        {/* Footer */}
-        <Separator className="mt-6 mb-4" />
-        <p className="text-xs text-muted-foreground text-center">
-          This is an official receipt from the lending system.
-        </p>
+          {/* Footer */}
+          <hr className="border-black mt-8 mb-3" />
+          <p className="text-[10px] text-gray-400 text-center">
+            Sovereign Ledger &mdash; Official Receipt
+          </p>
+          <p className="text-[9px] text-gray-400 text-center mt-1">
+            Printed on {new Date().toLocaleDateString("en-UG", { year: "numeric", month: "long", day: "numeric" })} at {new Date().toLocaleTimeString("en-UG", { hour: "2-digit", minute: "2-digit" })}
+          </p>
+        </div>
       </div>
     </div>
   )

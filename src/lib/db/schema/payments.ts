@@ -22,4 +22,8 @@ export const payments = pgTable("payments", {
   index("idx_payments_active_date")
     .on(table.paymentDate)
     .where(sql`deleted_at IS NULL`),
+  index("idx_payments_loan_id").on(table.loanId),
+  index("idx_payments_loan_deleted")
+    .on(table.loanId, table.paymentDate)
+    .where(sql`deleted_at IS NULL`),
 ])

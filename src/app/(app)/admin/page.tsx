@@ -1,12 +1,12 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useTransition } from "react"
+import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Loader2 } from "lucide-react"
-import { authClient, useSession } from "@/lib/auth-client"
+import { useSession } from "@/lib/auth-client"
 import { assignRole } from "@/actions/user.actions"
+import { useAdminUsers, type AdminUser } from "@/hooks/use-admin-users"
+import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import {
   Table,
@@ -24,16 +24,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { PageHeader } from "@/components/ui/page-header"
 import { formatDate } from "@/lib/utils"
-
-interface AdminUser {
-  id: string
-  name: string
-  email: string
-  role: string
-  banned: boolean | null
-  createdAt: Date | string
-}
 
 function getRoleOptions(actorRole: UserRole): UserRole[] {
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
@@ -44,47 +37,38 @@ function getRoleOptions(actorRole: UserRole): UserRole[] {
 
 
 export default function AdminPage() {
-  const router = useRouter()
   const { data: session } = useSession()
   const queryClient = useQueryClient()
-  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [, startTransition] = useTransition()
 
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
   const isAdmin = actorLevel >= ROLE_LEVELS.admin
 
-  const { data: users = [], isLoading, isFetching } = useQuery<AdminUser[]>({
-    queryKey: ["admin-users", session?.user?.id],
-    queryFn: async () => {
-      const result = await authClient.admin.listUsers({ query: { limit: 100 } })
-      if (result.error) {
-        toast.error("Failed to load users")
-        return []
-      }
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const rawUsers = (result.data as any)?.users ?? []
-      return rawUsers as AdminUser[]
-    },
-    enabled: !!session && isAdmin,
-  })
+  const { data: users = [], isLoading, isFetching } = useAdminUsers(!!session && isAdmin)
 
   function handleRoleChange(userId: string, newRole: UserRole) {
-    setUpdatingUserId(userId)
     startTransition(async () => {
+      // Snapshot previous state for rollback
+      const previous = queryClient.getQueryData<AdminUser[]>(queryKeys.adminUsers.list())
+
+      // Optimistically update the user's role in cache
+      queryClient.setQueryData<AdminUser[]>(queryKeys.adminUsers.list(), (old) =>
+        old?.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
+      )
+
       const result = await assignRole({ userId, role: newRole })
-      setUpdatingUserId(null)
 
       if ("error" in result) {
+        // Rollback on error
+        queryClient.setQueryData(queryKeys.adminUsers.list(), previous)
         toast.error(result.error)
         return
       }
 
-      queryClient.setQueryData<AdminUser[]>(["admin-users", session?.user?.id], (prev) =>
-        (prev ?? []).map((u) => (u.id === userId ? { ...u, role: newRole } : u))
-      )
+      // Revalidate to get server truth
+      queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers.all })
       toast.success(`Role updated to ${newRole}`)
-      router.refresh()
     })
   }
 
@@ -112,12 +96,7 @@ export default function AdminPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">System administration</p>
-        </div>
-      </div>
+      <PageHeader title="Admin" subtitle="System administration" />
 
       {users.length === 0 ? (
         <p className="text-muted-foreground">No users found.</p>
@@ -127,7 +106,20 @@ export default function AdminPage() {
             <TableRow>
               <TableHead>Name</TableHead>
               <TableHead>Email</TableHead>
-              <TableHead>Role</TableHead>
+              <TableHead>
+                <span className="inline-flex items-center gap-1">
+                  Role
+                  <InfoPopover>
+                    <p className="font-semibold text-sm mb-1">User Roles</p>
+                    <div className="text-xs text-muted-foreground space-y-1.5">
+                      <p><strong>Super Admin</strong> — Full system access. Can manage all users, change any role, and access all settings. Only the first registered user gets this role automatically.</p>
+                      <p><strong>Admin</strong> — Can manage loans, customers, payments, and assign roles to users below their level. Cannot modify Super Admin accounts.</p>
+                      <p><strong>Loan Officer</strong> — Can create customers, issue loans, and record payments. Cannot access admin settings or change roles.</p>
+                      <p><strong>Unassigned</strong> — New users start here. Cannot perform any actions until a role is assigned by an admin.</p>
+                    </div>
+                  </InfoPopover>
+                </span>
+              </TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Joined</TableHead>
             </TableRow>
@@ -138,7 +130,6 @@ export default function AdminPage() {
               const userLevel = ROLE_LEVELS[userRole] ?? 0
               // Can only assign roles to users with a level below the actor's level
               const canChangeRole = userLevel < actorLevel && roleOptions.length > 0
-              const isUpdating = updatingUserId === user.id
 
               return (
                 <TableRow key={user.id} data-testid="data-row">
@@ -152,7 +143,6 @@ export default function AdminPage() {
                           onValueChange={(val: string | null) =>
                             val && handleRoleChange(user.id, val as UserRole)
                           }
-                          disabled={isUpdating}
                         >
                           <SelectTrigger className="w-36" size="sm">
                             <SelectValue>
@@ -178,7 +168,6 @@ export default function AdminPage() {
                             : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
                         </span>
                       )}
-                      {isUpdating && <Loader2 className="animate-spin h-4 w-4 text-muted-foreground" />}
                     </div>
                   </TableCell>
                   <TableCell>

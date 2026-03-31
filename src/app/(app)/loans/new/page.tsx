@@ -1,20 +1,23 @@
 "use client"
 
-import { Suspense, useRef, useState, useTransition } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { Loader2 } from "lucide-react"
-import { toast } from "sonner"
 import { getCustomerAction } from "@/actions/customer.actions"
-import { createLoanAction, getCollateralNaturesAction } from "@/actions/loan.actions"
+import { getCollateralNaturesAction } from "@/actions/loan.actions"
+import { useCreateLoan } from "@/hooks/use-create-loan"
+import { queryKeys } from "@/hooks/query-keys"
 import { calculateLoanSummary } from "@/lib/interest"
-import type { CreateLoanInput, CollateralInput } from "@/types"
+import type { CollateralInput } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatNumberWithCommas, stripCommas, formatDate, formatCurrency } from "@/lib/utils"
+import { MoneyInput } from "@/components/ui/money-input"
+import { formatDate, formatCurrency } from "@/lib/utils"
+import { PageHeader } from "@/components/ui/page-header"
 
 function todayISODate(): string {
   return new Date().toISOString().split("T")[0]
@@ -30,9 +33,9 @@ interface LoanFormValues {
 }
 
 function NewLoanPageInner() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
+  const createLoan = useCreateLoan()
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
   const [step, setStep] = useState(1)
@@ -42,6 +45,7 @@ function NewLoanPageInner() {
     watch,
     setValue,
     trigger,
+    control,
     handleSubmit: rhfHandleSubmit,
     formState: { errors },
   } = useForm<LoanFormValues>({
@@ -70,7 +74,7 @@ function NewLoanPageInner() {
   const natureInputRef = useRef<HTMLInputElement>(null)
   const suggestionsRef = useRef<HTMLUListElement>(null)
 
-  const [isPending, startTransition] = useTransition()
+  const isPending = createLoan.isPending
 
   // Fetch known collateral natures for autocomplete
   const { data: knownNatures = [] } = useQuery({
@@ -86,10 +90,10 @@ function NewLoanPageInner() {
 
   // Resolve pre-filled customer name from cache or fetch
   const cachedCustomer = prefilledCustomerId
-    ? queryClient.getQueryData<{ fullName: string }>(["customer", prefilledCustomerId])
+    ? queryClient.getQueryData<{ fullName: string }>(queryKeys.customers.detail(prefilledCustomerId))
     : undefined
   const { data: customerName = null } = useQuery({
-    queryKey: ["customer", prefilledCustomerId],
+    queryKey: queryKeys.customers.detail(prefilledCustomerId),
     queryFn: async () => {
       const result = await getCustomerAction(prefilledCustomerId)
       if ("data" in result && result.data) {
@@ -127,48 +131,20 @@ function NewLoanPageInner() {
   }
 
   function onSubmit(data: LoanFormValues) {
-    startTransition(async () => {
-      const collateral: CollateralInput = {
-        nature: data.collateralNature,
-        description: data.collateralDescription.trim() || undefined,
-      }
+    const collateral: CollateralInput = {
+      nature: data.collateralNature,
+      description: data.collateralDescription.trim() || undefined,
+    }
 
-      const input: CreateLoanInput = {
-        customerId: data.customerId,
-        principalAmount: data.principalAmount,
-        interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
-        minInterestDays: 30,
-        startDate: new Date(data.startDate).toISOString(),
-        collateral,
-      }
-
-      const result = await createLoanAction(input)
-
-      if ("error" in result) {
-        if (result.error === "Incomplete loan requirements" && "details" in result) {
-          const details = result.details as { missing?: string[] }
-          toast.error(`Missing fields: ${details.missing?.join(", ") ?? "unknown"}`)
-        } else {
-          toast.error(result.error)
-        }
-        return
-      }
-
-      toast.success("Loan issued successfully")
-      router.push(`/customers/${data.customerId}`)
+    createLoan.mutate({
+      customerId: data.customerId,
+      principalAmount: data.principalAmount,
+      interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
+      minInterestDays: 30,
+      startDate: new Date(data.startDate).toISOString(),
+      collateral,
     })
   }
-
-  // Register principalAmount with validation rules for trigger() to work
-  // (the input is controlled via setValue due to comma formatting)
-  register("principalAmount", {
-    required: "Amount is required",
-    validate: (v) => {
-      const n = parseFloat(v)
-      if (isNaN(n) || n <= 0) return "Amount must be greater than 0"
-      return true
-    },
-  })
 
   // Merge the react-hook-form register ref with our local ref for the collateral nature input
   const { ref: rhfNatureRef, ...collateralNatureRegistration } = register("collateralNature", {
@@ -177,12 +153,11 @@ function NewLoanPageInner() {
 
   return (
     <div className="p-4 md:p-6 max-w-xl">
-      <div className="mb-4">
-        <h1 className="text-2xl font-semibold tracking-tight">Issue New Loan</h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Step {step} of 3
-        </p>
-      </div>
+      <PageHeader
+        title="Issue New Loan"
+        subtitle={`Step ${step} of 3`}
+        className="mb-4"
+      />
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 mb-6">
@@ -239,27 +214,17 @@ function NewLoanPageInner() {
                   />
                 )}
                 {errors.customerId && (
-                  <p className="text-destructive text-xs">{errors.customerId.message}</p>
+                  <p className="text-sm text-destructive">{errors.customerId.message}</p>
                 )}
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="principalAmount">Amount (UGX)</Label>
-                <Input
-                  id="principalAmount"
-                  type="text"
-                  inputMode="numeric"
-                  value={formatNumberWithCommas(principalAmount)}
-                  onChange={(e) => {
-                    const raw = stripCommas(e.target.value).replace(/[^0-9.]/g, "")
-                    setValue("principalAmount", raw, { shouldValidate: true })
-                  }}
-                  placeholder="e.g. 1,000,000"
-                />
-                {errors.principalAmount && (
-                  <p className="text-destructive text-xs">{errors.principalAmount.message}</p>
-                )}
-              </div>
+              <MoneyInput
+                name="principalAmount"
+                control={control}
+                label="Amount (UGX)"
+                required="Amount is required"
+                id="principalAmount"
+              />
 
               <div className="space-y-1">
                 <Label htmlFor="startDate">Start Date</Label>
@@ -271,7 +236,7 @@ function NewLoanPageInner() {
                   })}
                 />
                 {errors.startDate && (
-                  <p className="text-destructive text-xs">{errors.startDate.message}</p>
+                  <p className="text-sm text-destructive">{errors.startDate.message}</p>
                 )}
               </div>
 
@@ -293,7 +258,7 @@ function NewLoanPageInner() {
                   })}
                 />
                 {errors.interestRateDisplay && (
-                  <p className="text-destructive text-xs">{errors.interestRateDisplay.message}</p>
+                  <p className="text-sm text-destructive">{errors.interestRateDisplay.message}</p>
                 )}
               </div>
 
@@ -381,7 +346,7 @@ function NewLoanPageInner() {
                   </ul>
                 )}
                 {errors.collateralNature && (
-                  <p className="text-destructive text-xs">{errors.collateralNature.message}</p>
+                  <p className="text-sm text-destructive">{errors.collateralNature.message}</p>
                 )}
               </div>
 

@@ -13,7 +13,7 @@ import {
 
 export type Column<T> = {
   key: string
-  header: string
+  header: React.ReactNode
   render: (row: T) => React.ReactNode
   primary?: boolean
   hideInCard?: boolean
@@ -63,12 +63,16 @@ export function ResponsiveTable<T>({
           <TableBody>
             {rows.map((row) => {
               const rowProps = getRowProps?.(row) ?? {}
+              const isClickable = !!rowProps.onClick
               return (
                 <TableRow key={getRowKey(row)} {...rowProps}>
                   {columns.map((col) => (
                     <TableCell
                       key={col.key}
-                      className={col.align === "right" ? "text-right" : undefined}
+                      className={cn(
+                        col.align === "right" ? "text-right" : undefined,
+                        isClickable ? "cursor-pointer" : undefined
+                      )}
                     >
                       {col.render(row)}
                     </TableCell>

@@ -1,40 +1,35 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useLoans } from "@/hooks/use-loans"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import type { LoanListEntry } from "@/types"
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
+import { exportLoansExcelAction } from "@/actions/loan.actions"
+import { toast } from "sonner"
+import { Download } from "lucide-react"
+import { InfoPopover } from "@/components/ui/info-popover"
+import { PageHeader } from "@/components/ui/page-header"
 
 type FilterCategory = "all" | "critical" | "at-risk" | "early"
 
 function categorize(daysOverdue: number): Exclude<FilterCategory, "all"> {
   if (daysOverdue >= 30) return "critical"
-  if (daysOverdue >= 15) return "at-risk"
+  if (daysOverdue >= 25) return "at-risk"
   return "early"
 }
 
 function criticalityRank(entry: LoanListEntry): number {
   if (entry.daysOverdue >= 30) return 0
-  if (entry.daysOverdue >= 15) return 1
-  if (entry.daysOverdue >= 1) return 2
+  if (entry.daysOverdue >= 25) return 1
+  if (entry.daysOverdue >= 0) return 2
   return 3
 }
 
-function loanStatusVariant(status: string): "default" | "outline" {
-  if (status === "active") return "default"
-  return "outline"
-}
-
-function loanStatusLabel(status: string): string {
-  if (status === "fully_paid") return "Fully Paid"
-  return status.charAt(0).toUpperCase() + status.slice(1)
-}
 
 export default function LoansPage() {
   const router = useRouter()
@@ -44,6 +39,42 @@ export default function LoansPage() {
   const calculatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : new Date()
 
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all")
+  const [isExporting, setIsExporting] = useState(false)
+
+  const handleExportExcel = useCallback(async () => {
+    setIsExporting(true)
+    try {
+      const result = await exportLoansExcelAction(activeFilter)
+      if (result.error) {
+        toast.error(result.error)
+        return
+      }
+      if (!result.data) return
+
+      const byteString = atob(result.data)
+      const bytes = new Uint8Array(byteString.length)
+      for (let i = 0; i < byteString.length; i++) {
+        bytes[i] = byteString.charCodeAt(i)
+      }
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      const dateStr = new Date().toISOString().slice(0, 10)
+      a.href = url
+      a.download = `sovereign-ledger-loans-${dateStr}.xlsx`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      toast.success("Excel file downloaded")
+    } catch {
+      toast.error("Failed to export loans")
+    } finally {
+      setIsExporting(false)
+    }
+  }, [activeFilter])
 
   const sortedEntries = useMemo(() => {
     return [...entries].sort((a, b) => {
@@ -60,7 +91,7 @@ export default function LoansPage() {
       early: [] as LoanListEntry[],
     }
     for (const entry of sortedEntries) {
-      if (entry.daysOverdue <= 0) continue
+      if (entry.daysOverdue < 0) continue
       const cat = categorize(entry.daysOverdue)
       if (cat === "critical") groups.critical.push(entry)
       else if (cat === "at-risk") groups.atRisk.push(entry)
@@ -112,51 +143,118 @@ export default function LoansPage() {
     },
     {
       key: "principalAmount",
-      header: "Principal Amount",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Principal Amount
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Principal Amount</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The original amount disbursed to the borrower.
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              This does not change &mdash; it&apos;s the base amount the loan was issued for.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Interest is calculated on the outstanding balance, not the original principal.
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       cardLabel: "Principal",
-      align: "right",
       render: (e) => formatCurrency(e.principalAmount),
     },
     {
       key: "outstandingBalance",
-      header: "Outstanding Balance",
-      cardLabel: "Outstanding",
-      align: "right",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Principal Balance
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Principal Balance</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The remaining principal that the borrower still owes.
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Starts equal to the principal amount and decreases as payments are made.
+            </p>
+            <p className="text-xs font-semibold mb-1">Formula</p>
+            <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+              Principal Balance = Principal &minus; Total Principal Payments Made
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Note: This does NOT include unpaid interest.
+            </p>
+          </InfoPopover>
+        </span>
+      ),
+      cardLabel: "Principal Bal.",
       render: (e) => formatCurrency(e.outstandingBalance),
     },
     {
-      key: "interestRate",
-      header: "Interest Rate",
-      cardLabel: "Rate",
-      align: "right",
-      render: (e) => <>{(parseFloat(e.interestRate) * 100).toFixed(0)}% / month</>,
-    },
-    {
-      key: "status",
-      header: "Status",
-      cardLabel: "Status",
-      render: (e) => (
-        <Badge variant={loanStatusVariant(e.status)}>{loanStatusLabel(e.status)}</Badge>
+      key: "totalOwed",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Total Due
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Total Due</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The total amount the borrower must pay right now to fully settle the loan.
+            </p>
+            <p className="text-xs font-semibold mb-1">Formula</p>
+            <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+              Total Due = Principal Balance + Unpaid Interest
+            </p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Where Unpaid Interest = Total Interest Accrued &minus; Total Interest Paid
+            </p>
+            <p className="text-xs text-muted-foreground">
+              This figure changes daily as interest continues to accrue.
+            </p>
+          </InfoPopover>
+        </span>
       ),
+      cardLabel: "Total Due",
+      render: (e) => {
+        const totalOwed = parseFloat(e.outstandingBalance) + parseFloat(e.unpaidInterest)
+        return formatCurrency(totalOwed.toString())
+      },
     },
     {
       key: "daysOverdue",
-      header: "Days Overdue",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Days Overdue
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Days Overdue</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              How many days of interest remain unpaid on this loan.
+            </p>
+            <p className="text-xs font-semibold mb-1">Formula</p>
+            <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+              Days Overdue = (Total Interest Accrued − Total Interest Paid) ÷ Daily Interest Amount
+            </p>
+            <p className="text-xs text-muted-foreground mb-1">Where:</p>
+            <ul className="text-xs text-muted-foreground mb-2 list-disc pl-4 space-y-0.5">
+              <li>Total Interest Accrued = Principal × (Monthly Rate ÷ 30) × Days Since Loan Start</li>
+              <li>Daily Interest Amount = Principal × (Monthly Rate ÷ 30)</li>
+            </ul>
+            <p className="text-xs font-semibold mb-1">Example</p>
+            <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
+              <p>Loan: UGX 1,000,000 at 10% per month</p>
+              <p>Daily interest = 1,000,000 × (0.10 ÷ 30) = UGX 3,333</p>
+              <p>After 45 days, interest accrued = UGX 150,000</p>
+              <p>If UGX 100,000 interest paid → Unpaid = UGX 50,000</p>
+              <p>Days overdue = 50,000 ÷ 3,333 ≈ <strong>15 days</strong></p>
+            </div>
+          </InfoPopover>
+        </span>
+      ),
       cardLabel: "Overdue",
       render: (e) =>
         e.daysOverdue > 0 ? (
-          <OverdueBadge daysOverdue={Math.round(e.daysOverdue)} />
+          <OverdueBadge daysOverdue={e.daysOverdue} />
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
-    },
-    {
-      key: "dailyRate",
-      header: "Daily Rate (UGX)",
-      cardLabel: "Daily Rate",
-      align: "right",
-      render: (e) =>
-        parseFloat(e.dailyRate) > 0 ? formatCurrency(e.dailyRate) : "—",
     },
     {
       key: "lastPayment",
@@ -168,32 +266,14 @@ export default function LoansPage() {
         </span>
       ),
     },
-    {
-      key: "startDate",
-      header: "Start Date",
-      cardLabel: "Started",
-      hideInCard: true,
-      render: (e) => (
-        <span className="font-mono tabular-nums">{formatDate(e.startDate)}</span>
-      ),
-    },
   ]
 
-  const filterTabs: { key: FilterCategory; label: string; count: number }[] = [
-    { key: "all", label: "All", count: sortedEntries.length },
-    { key: "critical", label: "Critical (30+)", count: stats.critical.count },
-    { key: "at-risk", label: "At Risk (15-29)", count: stats.atRisk.count },
-    { key: "early", label: "Early (1-14)", count: stats.early.count },
-  ]
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
-          All loans sorted by risk level
-        </p>
+        <PageHeader title="Loans" subtitle="All loans sorted by risk level" />
         <p className="text-xs text-muted-foreground mt-1 font-mono">
           Last calculated: {formatDateTime(calculatedAt)}
         </p>
@@ -213,24 +293,38 @@ export default function LoansPage() {
       ) : entries.length === 0 ? (
         <div className="py-12 text-center">
           <h2 className="text-lg font-semibold">No loans yet.</h2>
-          <p className="text-sm text-muted-foreground mt-2">Issue a loan to get started.</p>
-          <Button className="mt-4" onClick={() => router.push("/loans/new")}>
-            New Loan
+          <p className="text-sm text-muted-foreground mt-2">
+            To issue a loan, go to a customer&apos;s profile and click &ldquo;Issue New Loan&rdquo;.
+          </p>
+          <Button className="mt-4" onClick={() => router.push("/customers")}>
+            View Customers
           </Button>
         </div>
       ) : (
         <>
           {/* Stat Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 print:hidden">
             <button
               type="button"
-              onClick={() => setActiveFilter("critical")}
+              onClick={() => setActiveFilter(activeFilter === "critical" ? "all" : "critical")}
               className={`rounded-lg border p-4 text-left transition-colors ${
                 activeFilter === "critical" ? "ring-2 ring-red-500" : ""
               } bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900`}
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-red-800 dark:text-red-300">
+              <p className="text-xs font-semibold uppercase tracking-wider text-red-800 dark:text-red-300 inline-flex items-center gap-1">
                 Critical (30+ days)
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Critical (30+ days)</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Loans where unpaid interest has accumulated for 30 or more days. These borrowers have missed at least one full interest cycle.
+                  </p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Immediate follow-up is recommended to prevent further losses.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    The &ldquo;principal balance&rdquo; amount shown is the remaining principal for loans in this category.
+                  </p>
+                </InfoPopover>
               </p>
               <p className="text-2xl font-bold text-red-800 dark:text-red-300 mt-1">
                 {stats.critical.count}
@@ -242,13 +336,22 @@ export default function LoansPage() {
 
             <button
               type="button"
-              onClick={() => setActiveFilter("at-risk")}
+              onClick={() => setActiveFilter(activeFilter === "at-risk" ? "all" : "at-risk")}
               className={`rounded-lg border p-4 text-left transition-colors ${
                 activeFilter === "at-risk" ? "ring-2 ring-yellow-500" : ""
               } bg-yellow-100 dark:bg-yellow-950 hover:bg-yellow-200 dark:hover:bg-yellow-900`}
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-yellow-800 dark:text-yellow-300">
-                At Risk (15-29 days)
+              <p className="text-xs font-semibold uppercase tracking-wider text-yellow-800 dark:text-yellow-300 inline-flex items-center gap-1">
+                At Risk (25-29 days)
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">At Risk (25-29 days)</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Loans approaching the 30-day overdue threshold. These borrowers are close to becoming critical &mdash; a payment now would prevent escalation.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Proactive contact is recommended.
+                  </p>
+                </InfoPopover>
               </p>
               <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-300 mt-1">
                 {stats.atRisk.count}
@@ -260,13 +363,19 @@ export default function LoansPage() {
 
             <button
               type="button"
-              onClick={() => setActiveFilter("early")}
+              onClick={() => setActiveFilter(activeFilter === "early" ? "all" : "early")}
               className={`rounded-lg border p-4 text-left transition-colors ${
                 activeFilter === "early" ? "ring-2 ring-green-500" : ""
               } bg-green-100 dark:bg-green-950 hover:bg-green-200 dark:hover:bg-green-900`}
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-green-800 dark:text-green-300">
-                Early (1-14 days)
+              <p className="text-xs font-semibold uppercase tracking-wider text-green-800 dark:text-green-300 inline-flex items-center gap-1">
+                Early (0-24 days)
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Early (0-24 days)</p>
+                  <p className="text-xs text-muted-foreground">
+                    Loans with some overdue interest but still within the first interest cycle. These are normal operational loans that need routine collection.
+                  </p>
+                </InfoPopover>
               </p>
               <p className="text-2xl font-bold text-green-800 dark:text-green-300 mt-1">
                 {stats.early.count}
@@ -283,35 +392,35 @@ export default function LoansPage() {
                 activeFilter === "all" ? "ring-2 ring-primary" : ""
               } bg-muted/50 hover:bg-muted`}
             >
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Total Overdue
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+                All Loans
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">All Loans</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Total count of all active loans regardless of overdue status.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    The &ldquo;overdue&rdquo; count shown is loans with any days overdue (&gt; 0). Click to remove filters and see the full portfolio.
+                  </p>
+                </InfoPopover>
               </p>
-              <p className="text-2xl font-bold mt-1">{stats.total}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">all categories</p>
+              <p className="text-2xl font-bold mt-1">{sortedEntries.length}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {stats.total} overdue
+              </p>
             </button>
-          </div>
-
-          {/* Filter Tabs */}
-          <div className="flex flex-wrap gap-2 print:hidden">
-            {filterTabs.map((tab) => (
-              <Button
-                key={tab.key}
-                variant={activeFilter === tab.key ? "default" : "outline"}
-                size="sm"
-                onClick={() => setActiveFilter(tab.key)}
-              >
-                {tab.label} ({tab.count})
-              </Button>
-            ))}
           </div>
 
           {/* Actions Row */}
           <div className="flex items-center justify-end gap-2 print:hidden">
-            <Button size="sm" onClick={() => router.push("/loans/new")}>
-              New Loan
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => window.print()}>
-              Print
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExportExcel}
+              disabled={isExporting}
+            >
+              <Download className="h-4 w-4 mr-1.5" />
+              {isExporting ? "Exporting..." : "Export Excel"}
             </Button>
           </div>
 

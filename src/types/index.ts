@@ -16,6 +16,7 @@ export type LoanListEntry = LoanWithCustomer & {
   outstandingBalance: string   // last payment's principalBalanceAfter, or principalAmount if no payments
   dailyRate: string            // daily interest amount in UGX as string, "0" for non-active
   lastPaymentDate: Date | null // date of most recent payment, null if none
+  unpaidInterest: string       // total interest accrued minus total interest paid, "0" for non-active
 }
 export type NewLoan = InferInsertModel<typeof loans>
 export type Collateral = InferSelectModel<typeof collateral>
