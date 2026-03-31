@@ -52,7 +52,7 @@ Full details: [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Foundation | v1.0 | 7/7 | Complete | 2026-03-20 |
+| 1. Foundation | 1/2 | In Progress|  | 2026-03-20 |
 | 2. Loan Operations | v1.0 | 4/4 | Complete | 2026-03-20 |
 | 3. Operational Management | v1.0 | 4/4 | Complete | 2026-03-21 |
 | 4. Financial Reporting | v1.0 | 8/8 | Complete | 2026-03-21 |
@@ -74,7 +74,7 @@ Full details: [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
 **Goal:** Merge /loans and /watchlist into a single /loans page with stat cards, filter tabs, criticality sort, print support, and all watchlist risk columns — then delete the /watchlist route entirely.
 **Requirements**: UNIFY-DATA, UNIFY-NAV, UNIFY-UI, UNIFY-E2E
 **Depends on:** None (standalone)
-**Plans:** 2 plans
+**Plans:** 1/2 plans executed
 
 Plans:
 - [ ] 01-01-PLAN.md — Data layer extension, useLoans hook, navigation cleanup, watchlist file deletion
