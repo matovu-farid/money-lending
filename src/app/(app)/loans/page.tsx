@@ -1,32 +1,30 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import Link from "next/link"
+import { useState, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
-import { MoreHorizontal, Loader2 } from "lucide-react"
-import { listLoansAction, getCurrentUserRoleAction, deleteLoanAction } from "@/actions/loan.actions"
-import type { LoanWithCustomer, UserRole } from "@/types"
-import { ROLE_LEVELS } from "@/types"
+import Link from "next/link"
+import { useLoans } from "@/hooks/use-loans"
+import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
-import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
-import {
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { cn, formatDate, formatCurrency } from "@/lib/utils"
+import type { LoanListEntry } from "@/types"
+import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
+
+type FilterCategory = "all" | "critical" | "at-risk" | "early"
+
+function categorize(daysOverdue: number): Exclude<FilterCategory, "all"> {
+  if (daysOverdue >= 30) return "critical"
+  if (daysOverdue >= 15) return "at-risk"
+  return "early"
+}
+
+function criticalityRank(entry: LoanListEntry): number {
+  if (entry.daysOverdue >= 30) return 0
+  if (entry.daysOverdue >= 15) return 1
+  if (entry.daysOverdue >= 1) return 2
+  return 3
+}
 
 function loanStatusVariant(status: string): "default" | "outline" {
   if (status === "active") return "default"
@@ -40,214 +38,314 @@ function loanStatusLabel(status: string): string {
 
 export default function LoansPage() {
   const router = useRouter()
-  const queryClient = useQueryClient()
+  const { data, isLoading, error: queryError, dataUpdatedAt } = useLoans()
+  const entries = data ?? []
+  const error = queryError?.message ?? null
+  const calculatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : new Date()
 
-  const { data: loans = [], isLoading, isError } = useQuery<LoanWithCustomer[]>({
-    queryKey: ["loans"],
-    queryFn: async () => {
-      const result = await listLoansAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-  })
+  const [activeFilter, setActiveFilter] = useState<FilterCategory>("all")
 
-  const { data: userRole = "unassigned" as UserRole } = useQuery<UserRole>({
-    queryKey: ["currentUserRole"],
-    queryFn: () => getCurrentUserRoleAction(),
-  })
+  const sortedEntries = useMemo(() => {
+    return [...entries].sort((a, b) => {
+      const rankDiff = criticalityRank(a) - criticalityRank(b)
+      if (rankDiff !== 0) return rankDiff
+      return b.daysOverdue - a.daysOverdue
+    })
+  }, [entries])
 
-  // Delete dialog state
-  const [deletingLoanId, setDeletingLoanId] = useState<string | null>(null)
-  const [deleteReason, setDeleteReason] = useState("")
-  const [isDeletePending, startDeleteTransition] = useTransition()
+  const { critical, atRisk, early } = useMemo(() => {
+    const groups = {
+      critical: [] as LoanListEntry[],
+      atRisk: [] as LoanListEntry[],
+      early: [] as LoanListEntry[],
+    }
+    for (const entry of sortedEntries) {
+      if (entry.daysOverdue <= 0) continue
+      const cat = categorize(entry.daysOverdue)
+      if (cat === "critical") groups.critical.push(entry)
+      else if (cat === "at-risk") groups.atRisk.push(entry)
+      else groups.early.push(entry)
+    }
+    return groups
+  }, [sortedEntries])
 
-  const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
+  const stats = useMemo(() => {
+    function totalBalance(list: LoanListEntry[]) {
+      return list.reduce((sum, e) => sum + parseFloat(e.outstandingBalance), 0)
+    }
+    return {
+      critical: { count: critical.length, balance: totalBalance(critical) },
+      atRisk: { count: atRisk.length, balance: totalBalance(atRisk) },
+      early: { count: early.length, balance: totalBalance(early) },
+      total: critical.length + atRisk.length + early.length,
+    }
+  }, [critical, atRisk, early])
 
-  const loanColumns: Column<LoanWithCustomer>[] = [
-    {
-      key: "slug",
-      header: "Slug",
-      hideInCard: true,
-      render: (loan) => <span className="font-mono text-xs tabular-nums">{loan.id.slice(-5)}</span>,
-    },
+  const filteredEntries = useMemo(() => {
+    switch (activeFilter) {
+      case "critical":
+        return critical
+      case "at-risk":
+        return atRisk
+      case "early":
+        return early
+      default:
+        return sortedEntries
+    }
+  }, [activeFilter, critical, atRisk, early, sortedEntries])
+
+  const columns: Column<LoanListEntry>[] = [
     {
       key: "customerName",
-      header: "Customer",
+      header: "Customer Name",
+      cardLabel: "Customer",
       primary: true,
-      render: (loan) => loan.customerName,
+      render: (e) => (
+        <Link
+          href={`/customers/${e.customerId}`}
+          className="font-medium underline-offset-4 hover:underline"
+          onClick={(ev) => ev.stopPropagation()}
+        >
+          {e.customerName}
+        </Link>
+      ),
     },
     {
       key: "principalAmount",
       header: "Principal Amount",
       cardLabel: "Principal",
       align: "right",
-      render: (loan) => <>{formatCurrency(loan.principalAmount)}</>,
+      render: (e) => formatCurrency(e.principalAmount),
+    },
+    {
+      key: "outstandingBalance",
+      header: "Outstanding Balance",
+      cardLabel: "Outstanding",
+      align: "right",
+      render: (e) => formatCurrency(e.outstandingBalance),
     },
     {
       key: "interestRate",
       header: "Interest Rate",
       cardLabel: "Rate",
       align: "right",
-      render: (loan) => <>{(parseFloat(loan.interestRate) * 100).toFixed(0)}% / month</>,
+      render: (e) => <>{(parseFloat(e.interestRate) * 100).toFixed(0)}% / month</>,
     },
     {
       key: "status",
       header: "Status",
-      render: (loan) => (
-        <Badge variant={loanStatusVariant(loan.status)}>
-          {loanStatusLabel(loan.status)}
-        </Badge>
+      cardLabel: "Status",
+      render: (e) => (
+        <Badge variant={loanStatusVariant(e.status)}>{loanStatusLabel(e.status)}</Badge>
+      ),
+    },
+    {
+      key: "daysOverdue",
+      header: "Days Overdue",
+      cardLabel: "Overdue",
+      render: (e) =>
+        e.daysOverdue > 0 ? (
+          <OverdueBadge daysOverdue={Math.round(e.daysOverdue)} />
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      key: "dailyRate",
+      header: "Daily Rate (UGX)",
+      cardLabel: "Daily Rate",
+      align: "right",
+      render: (e) =>
+        parseFloat(e.dailyRate) > 0 ? formatCurrency(e.dailyRate) : "—",
+    },
+    {
+      key: "lastPayment",
+      header: "Last Payment",
+      cardLabel: "Last Paid",
+      render: (e) => (
+        <span className="font-mono tabular-nums">
+          {e.lastPaymentDate ? formatDate(e.lastPaymentDate) : "No payments"}
+        </span>
       ),
     },
     {
       key: "startDate",
       header: "Start Date",
       cardLabel: "Started",
-      render: (loan) => <span className="font-mono tabular-nums">{formatDate(loan.startDate)}</span>,
-    },
-    ...(isAdmin ? [{
-      key: "actions",
-      header: "Actions",
-      hideInCard: false,
-      render: (loan: LoanWithCustomer) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Loan actions"
-            className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => router.push(`/loans/${loan.id}`)}>View</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => router.push(`/loans/${loan.id}?edit=1`)}>Edit</DropdownMenuItem>
-            <DropdownMenuItem onClick={() => openDeleteDialog(loan.id)} variant="destructive">Delete</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      hideInCard: true,
+      render: (e) => (
+        <span className="font-mono tabular-nums">{formatDate(e.startDate)}</span>
       ),
-    } satisfies Column<LoanWithCustomer>] : []),
+    },
   ]
 
-  function openDeleteDialog(loanId: string) {
-    setDeletingLoanId(loanId)
-    setDeleteReason("")
-  }
-
-  function closeDeleteDialog() {
-    setDeletingLoanId(null)
-    setDeleteReason("")
-  }
-
-  function handleDeleteSubmit() {
-    if (!deletingLoanId) return
-    startDeleteTransition(async () => {
-      const result = await deleteLoanAction({
-        loanId: deletingLoanId,
-        reason: deleteReason.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      toast("Loan deleted")
-      queryClient.invalidateQueries({ queryKey: ["loans"] })
-      closeDeleteDialog()
-    })
-  }
-
-  if (isLoading) {
-    return (
-      <div className="p-4 md:p-6 space-y-3">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
-        ))}
-      </div>
-    )
-  }
-
-  if (isError) {
-    return (
-      <div className="p-4 md:p-6">
-        <p className="text-destructive">Error loading loans</p>
-      </div>
-    )
-  }
+  const filterTabs: { key: FilterCategory; label: string; count: number }[] = [
+    { key: "all", label: "All", count: sortedEntries.length },
+    { key: "critical", label: "Critical (30+)", count: stats.critical.count },
+    { key: "at-risk", label: "At Risk (15-29)", count: stats.atRisk.count },
+    { key: "early", label: "Early (1-14)", count: stats.early.count },
+  ]
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Active and historical loans</p>
-        </div>
-        <Link href="/loans/new" className={cn(buttonVariants())}>
-          New Loan
-        </Link>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Loans</h1>
+        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
+          All loans sorted by risk level
+        </p>
+        <p className="text-xs text-muted-foreground mt-1 font-mono">
+          Last calculated: {formatDateTime(calculatedAt)}
+        </p>
       </div>
 
-      <ResponsiveTable
-        columns={loanColumns}
-        rows={loans}
-        getRowKey={(loan) => loan.id}
-        getRowProps={() => ({ "data-testid": "data-row" })}
-        emptyState={
-          <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-            <p className="text-muted-foreground">No loans issued yet.</p>
-            <Link href="/loans/new" className={cn(buttonVariants())}>
-              Issue First Loan
-            </Link>
-          </div>
-        }
-      />
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
-      {/* Delete Loan Dialog */}
-      <DrawerDialog open={deletingLoanId !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete loan?</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This will permanently delete the loan and all associated payments. This action cannot be undone.
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="listDeleteReason">Reason for deletion</Label>
-              <Textarea
-                id="listDeleteReason"
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="Explain why this loan is being deleted"
-                disabled={isDeletePending}
-                maxLength={500}
-              />
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="border rounded-md p-4 space-y-2">
+              <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse" />
             </div>
+          ))}
+        </div>
+      ) : entries.length === 0 ? (
+        <div className="py-12 text-center">
+          <h2 className="text-lg font-semibold">No loans yet.</h2>
+          <p className="text-sm text-muted-foreground mt-2">Issue a loan to get started.</p>
+          <Button className="mt-4" onClick={() => router.push("/loans/new")}>
+            New Loan
+          </Button>
+        </div>
+      ) : (
+        <>
+          {/* Stat Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
+            <button
+              type="button"
+              onClick={() => setActiveFilter("critical")}
+              className={`rounded-lg border p-4 text-left transition-colors ${
+                activeFilter === "critical" ? "ring-2 ring-red-500" : ""
+              } bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900`}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider text-red-800 dark:text-red-300">
+                Critical (30+ days)
+              </p>
+              <p className="text-2xl font-bold text-red-800 dark:text-red-300 mt-1">
+                {stats.critical.count}
+              </p>
+              <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+                {formatCurrency(stats.critical.balance)} outstanding
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveFilter("at-risk")}
+              className={`rounded-lg border p-4 text-left transition-colors ${
+                activeFilter === "at-risk" ? "ring-2 ring-yellow-500" : ""
+              } bg-yellow-100 dark:bg-yellow-950 hover:bg-yellow-200 dark:hover:bg-yellow-900`}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider text-yellow-800 dark:text-yellow-300">
+                At Risk (15-29 days)
+              </p>
+              <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-300 mt-1">
+                {stats.atRisk.count}
+              </p>
+              <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
+                {formatCurrency(stats.atRisk.balance)} outstanding
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveFilter("early")}
+              className={`rounded-lg border p-4 text-left transition-colors ${
+                activeFilter === "early" ? "ring-2 ring-green-500" : ""
+              } bg-green-100 dark:bg-green-950 hover:bg-green-200 dark:hover:bg-green-900`}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider text-green-800 dark:text-green-300">
+                Early (1-14 days)
+              </p>
+              <p className="text-2xl font-bold text-green-800 dark:text-green-300 mt-1">
+                {stats.early.count}
+              </p>
+              <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+                {formatCurrency(stats.early.balance)} outstanding
+              </p>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveFilter("all")}
+              className={`rounded-lg border p-4 text-left transition-colors ${
+                activeFilter === "all" ? "ring-2 ring-primary" : ""
+              } bg-muted/50 hover:bg-muted`}
+            >
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Total Overdue
+              </p>
+              <p className="text-2xl font-bold mt-1">{stats.total}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">all categories</p>
+            </button>
           </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closeDeleteDialog}
-              disabled={isDeletePending}
-            >
-              Keep Loan
+
+          {/* Filter Tabs */}
+          <div className="flex flex-wrap gap-2 print:hidden">
+            {filterTabs.map((tab) => (
+              <Button
+                key={tab.key}
+                variant={activeFilter === tab.key ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveFilter(tab.key)}
+              >
+                {tab.label} ({tab.count})
+              </Button>
+            ))}
+          </div>
+
+          {/* Actions Row */}
+          <div className="flex items-center justify-end gap-2 print:hidden">
+            <Button size="sm" onClick={() => router.push("/loans/new")}>
+              New Loan
             </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteSubmit}
-              disabled={isDeletePending || !deleteReason.trim()}
-            >
-              {isDeletePending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete Loan"
-              )}
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              Print
             </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
+          </div>
+
+          {/* Filter empty state */}
+          {filteredEntries.length === 0 && activeFilter !== "all" ? (
+            <div className="py-12 text-center">
+              <h2 className="text-lg font-semibold">No loans in this category.</h2>
+              <p className="text-sm text-muted-foreground mt-2">
+                No loans match the selected filter. Try a different category.
+              </p>
+              <Button
+                variant="outline"
+                className="mt-4"
+                onClick={() => setActiveFilter("all")}
+              >
+                Show all loans
+              </Button>
+            </div>
+          ) : (
+            <ResponsiveTable
+              columns={columns}
+              rows={filteredEntries}
+              getRowKey={(e) => e.id}
+              getRowProps={(e) => ({
+                "data-testid": "data-row",
+                className: "cursor-pointer hover:bg-muted/50",
+                onClick: () => router.push(`/loans/${e.id}`),
+                role: "button",
+                "aria-label": `View loan for ${e.customerName}`,
+              })}
+            />
+          )}
+        </>
+      )}
     </div>
   )
 }
