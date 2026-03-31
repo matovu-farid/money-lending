@@ -11,8 +11,14 @@ import {
   IncompleteLoanRequirements,
   LoanNotFound,
 } from "@/lib/errors"
-import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput } from "@/types"
+import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
+import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
+import { loans } from "@/lib/db/schema/loans"
+import { payments } from "@/lib/db/schema/payments"
+import { eq, and, isNull, asc } from "drizzle-orm"
+import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
+import BigNumber from "bignumber.js"
 
 export async function getCollateralNaturesAction(): Promise<string[]> {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -57,7 +63,6 @@ export async function updateLoanAction(input: UpdateLoanInput) {
     return { error: "Forbidden" }
   }
 
-  // Runtime validation
   if (!input.loanId?.trim()) {
     return { error: "Loan ID is required" }
   }
@@ -73,6 +78,8 @@ export async function updateLoanAction(input: UpdateLoanInput) {
 
   try {
     const data = await Effect.runPromise(updateLoan(input, session.user.id))
+    revalidatePath("/loans")
+    revalidatePath(`/loans/${input.loanId}`)
     return { data }
   } catch (error) {
     if (error instanceof LoanNotFound) {
@@ -93,7 +100,6 @@ export async function deleteLoanAction(input: DeleteLoanInput) {
     return { error: "Forbidden" }
   }
 
-  // Runtime validation
   if (!input.loanId?.trim()) {
     return { error: "Loan ID is required" }
   }
@@ -103,6 +109,7 @@ export async function deleteLoanAction(input: DeleteLoanInput) {
 
   try {
     const data = await Effect.runPromise(deleteLoan(input, session.user.id))
+    revalidatePath("/loans")
     return { data }
   } catch (error) {
     if (error instanceof LoanNotFound) {
@@ -118,7 +125,11 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Unauthorized" }
   }
 
-  // Runtime validation -- TypeScript types are erased at runtime
+  const role = (session.user.role ?? "unassigned") as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) {
+    return { error: "Forbidden" }
+  }
+
   if (!input.customerId?.trim()) {
     return { error: "Customer ID is required" }
   }
@@ -135,18 +146,13 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Collateral nature is required" }
   }
 
-  // Apply defaults
   const loanInput: CreateLoanInput = {
     ...input,
     interestRate: input.interestRate || "0.10",
     minInterestDays: input.minInterestDays || 30,
   }
 
-  // LOAN-11 + AUTH-03: Only admin+ can submit override fields
-  const role = (session.user.role ?? "unassigned") as UserRole
-
   if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    // Strip override fields from non-admin users
     loanInput.interestRateOverride = null
     loanInput.minPeriodOverride = null
   }
@@ -155,6 +161,8 @@ export async function createLoanAction(input: CreateLoanInput) {
     const data = await Effect.runPromise(
       createLoan(loanInput, session.user.id)
     )
+    revalidatePath("/loans")
+    revalidatePath(`/customers/${input.customerId}`)
     void sendAdminNotification("loan.disbursed", {
       actorName: session.user.name ?? "Unknown",
       actorEmail: session.user.email,
@@ -173,6 +181,80 @@ export async function createLoanAction(input: CreateLoanInput) {
         details: { missing: (error as any).missing },
       }
     }
+    return { error: "Internal server error" }
+  }
+}
+
+async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
+  const now = new Date()
+  return Promise.all(
+    loanList.map(async (loan) => {
+      let daysOverdue = 0
+      let outstandingBalance = loan.principalAmount
+      let dailyRate = "0"
+      let lastPaymentDate: Date | null = null
+
+      // Fetch payments for ALL loans (needed for outstandingBalance, lastPaymentDate)
+      const loanPayments = await db
+        .select()
+        .from(payments)
+        .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+        .orderBy(asc(payments.paymentDate))
+
+      const lastPayment = loanPayments.at(-1)
+      if (lastPayment) {
+        outstandingBalance = lastPayment.principalBalanceAfter
+        lastPaymentDate = lastPayment.paymentDate
+      }
+
+      if (loan.status === "active") {
+        const totalDaysElapsed = Math.floor(
+          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
+        )
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
+        const dailyRateBN = calculateDailyRate(effectiveRate)
+        const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRateBN)
+        dailyRate = dailyInterestAmount.toFixed(2)
+
+        const totalInterestPaid = loanPayments.reduce(
+          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
+        )
+
+        const daysOverdueBN = calculateDaysOverdue(
+          totalInterestAccrued.toFixed(2),
+          totalInterestPaid.toFixed(2),
+          dailyInterestAmount.toFixed(2)
+        )
+        daysOverdue = daysOverdueBN.toNumber()
+      }
+
+      return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate }
+    })
+  )
+}
+
+export async function getCustomerLoansWithOverdueAction(customerId: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const allLoans = await Effect.runPromise(listLoans())
+    const customerLoans = allLoans.filter((l) => l.customerId === customerId)
+    return { data: await computeOverdue(customerLoans) }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function listLoansWithOverdueAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const allLoans = await Effect.runPromise(listLoans())
+    return { data: await computeOverdue(allLoans) }
+  } catch {
     return { error: "Internal server error" }
   }
 }

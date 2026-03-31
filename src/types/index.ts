@@ -11,6 +11,12 @@ export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
 export type Loan = InferSelectModel<typeof loans>
 export type LoanWithCustomer = Loan & { customerName: string }
+export type LoanListEntry = LoanWithCustomer & {
+  daysOverdue: number          // 0 for non-overdue or non-active loans
+  outstandingBalance: string   // last payment's principalBalanceAfter, or principalAmount if no payments
+  dailyRate: string            // daily interest amount in UGX as string, "0" for non-active
+  lastPaymentDate: Date | null // date of most recent payment, null if none
+}
 export type NewLoan = InferInsertModel<typeof loans>
 export type Collateral = InferSelectModel<typeof collateral>
 export type NewCollateral = InferInsertModel<typeof collateral>
