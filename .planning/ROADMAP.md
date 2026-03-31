@@ -68,3 +68,14 @@ Full details: [milestones/v1.2-ROADMAP.md](milestones/v1.2-ROADMAP.md)
 | 14. Forms, Filters & Polish | v1.2 | 2/2 | Complete | 2026-03-25 |
 | 15. Touch Optimization | v1.2 | 2/2 | Complete | 2026-03-25 |
 | 16. Cypress Mobile Coverage | v1.2 | 2/2 | Complete | 2026-03-26 |
+
+### Phase 1: Unify Loans and Watchlist Pages
+
+**Goal:** Merge /loans and /watchlist into a single /loans page with stat cards, filter tabs, criticality sort, print support, and all watchlist risk columns — then delete the /watchlist route entirely.
+**Requirements**: UNIFY-DATA, UNIFY-NAV, UNIFY-UI, UNIFY-E2E
+**Depends on:** None (standalone)
+**Plans:** 2 plans
+
+Plans:
+- [ ] 01-01-PLAN.md — Data layer extension, useLoans hook, navigation cleanup, watchlist file deletion
+- [ ] 01-02-PLAN.md — Unified /loans page UI with stat cards, filters, table, print, and Cypress E2E tests
