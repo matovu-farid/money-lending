@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A web-based platform for a lending business to manage the full loan lifecycle — from customer onboarding and loan issuance through daily interest calculation, repayment collection, and financial reporting. Tracks investor (creditor) capital, operational expenses, and generates monthly financial statements (P&L, Balance Sheet). Includes PDF/Excel export, borrower watchlist, repayment simulator, and in-app alerts. Fully responsive across mobile, tablet, and desktop with bottom tab bar navigation and touch-optimized interactions.
+A web-based platform for a lending business to manage the full loan lifecycle — from customer onboarding and loan issuance through daily interest calculation, repayment collection, and financial reporting. Tracks investor (creditor) capital, operational expenses, and generates monthly financial statements (P&L, Balance Sheet). Includes PDF/Excel export, unified loans page with criticality filters, repayment simulator, and in-app alerts. Fully responsive across mobile, tablet, and desktop with bottom tab bar navigation and touch-optimized interactions.
 
 ## Core Value
 
@@ -35,6 +35,8 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 - ✓ TOUCH-01–03: 44px touch targets, responsive DrawerDialog (desktop modal / mobile drawer), swipe-to-close — v1.2 Phase 15
 - ✓ TEST-02–04: All Cypress specs pass at desktop, mobile viewport blocks in all specs, dedicated tab-bar spec — v1.2 Phase 16
 
+- ✓ UNIFY-DATA, UNIFY-NAV, UNIFY-UI, UNIFY-E2E: Unified loans page merging Watchlist + Loans list — criticality filters, stat cards, print support, /watchlist removed — Phase 1
+
 ### Active
 
 (None — planning next milestone)
@@ -52,7 +54,7 @@ A loan officer can register a customer, issue a loan, collect payments, and prin
 
 ## Context
 
-- **Shipped:** v1.2 Responsive on 2026-03-26 (122 files changed, +13,150 lines); v1.1 Payments on 2026-03-24; v1.0 MVP on 2026-03-22
+- **Shipped:** Phase 1 Unified Loans on 2026-03-31; v1.2 Responsive on 2026-03-26; v1.1 Payments on 2026-03-24; v1.0 MVP on 2026-03-22
 - **Tech stack:** Next.js 16, React 19, Better Auth, Drizzle ORM, PostgreSQL, Effect.js, BigNumber.js, TanStack Query, Tailwind CSS v4, shadcn/ui (base-ui primitives)
 - **Requirements doc:** `private_docs/Money_Lending_App_Requirements.docx` (v1.0, Feb 16 2026)
 - **Known tech debt:**
