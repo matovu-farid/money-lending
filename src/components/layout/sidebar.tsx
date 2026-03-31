@@ -15,7 +15,6 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  AlertTriangle,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "@/lib/auth-client"
@@ -49,9 +48,8 @@ const navGroups: NavGroup[] = [
     label: "Operations",
     items: [
       { label: "Customers", href: "/customers", icon: Users },
-      { label: "Loans", href: "/loans", icon: Banknote },
       { label: "Payments", href: "/payments", icon: CreditCard },
-      { label: "Watchlist", href: "/watchlist", icon: AlertTriangle },
+      { label: "Loans", href: "/loans", icon: Banknote },
     ],
   },
   {

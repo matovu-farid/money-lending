@@ -8,7 +8,6 @@ import {
   Receipt,
   TrendingUp,
   BarChart3,
-  AlertTriangle,
   Shield,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -18,7 +17,6 @@ const MORE_ITEMS = [
   { label: "Expenses", href: "/expenses", icon: Receipt },
   { label: "Income", href: "/income", icon: TrendingUp },
   { label: "Reports", href: "/reports", icon: BarChart3 },
-  { label: "Watchlist", href: "/watchlist", icon: AlertTriangle },
   { label: "Admin", href: "/admin", icon: Shield },
 ]
 
