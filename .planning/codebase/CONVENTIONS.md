@@ -1,161 +1,235 @@
 # Coding Conventions
 
-**Analysis Date:** 2026-03-19
+**Analysis Date:** 2026-03-31
 
 ## Naming Patterns
 
 **Files:**
-- Component files: `camelCase` with `.tsx` extension for React components (e.g., `page.tsx`, `layout.tsx`)
-- TypeScript files: `camelCase.ts` for utilities and logic
-- Styling: `globals.css` for global styles co-located with components
-- Configuration files: `camelCase.mjs` or `camelCase.ts` for build/framework config (e.g., `postcss.config.mjs`, `next.config.ts`)
+- Services: `<domain>.service.ts` (e.g., `customer.service.ts`, `loan.service.ts`) in `src/services/`
+- Actions: `<domain>.actions.ts` (e.g., `customer.actions.ts`) in `src/actions/`
+- Hooks: `use-<feature>.ts` (e.g., `use-customers.ts`) in `src/hooks/`
+- Components: PascalCase with file extensions (e.g., `Button.tsx`, `CustomerSearchBar.tsx`)
+- Tests: `__tests__/` subdirectory or `__integration__/` subdirectory with `.test.ts` or `.test.tsx` suffix
+- Pages: kebab-case directories with `page.tsx` entry point (Next.js convention)
+- Types: Single index file `src/types/index.ts` containing all type definitions
 
 **Functions:**
-- Event handlers and callbacks: `camelCase` prefixed with action verb (e.g., `handleChange`, `onClick`)
-- React components: `PascalCase` (e.g., `RootLayout`, `Home`)
-- Utility functions: `camelCase` (e.g., `geistSans`, `geistMono`)
+- camelCase for all function declarations
+- Arrow functions preferred in declarations: `export const functionName = () => {}`
+- Service functions return `Effect.Effect<T, E>` types from the Effect library
+- Action functions (server actions) are async and return `{ data } | { error }` objects
+- Custom Cypress helpers (e.g., `cy.registerAndLogin()`) defined in `cypress/support/e2e.ts`
 
 **Variables:**
-- Constants (config values, static data): `camelCase` (e.g., `geistSans`, `metadata`)
-- Component props: `camelCase` (e.g., `children`, `className`)
-- Type definitions: `PascalCase` (e.g., `Metadata`, `Readonly`)
+- camelCase for all variable names
+- Constants in camelCase (not SCREAMING_SNAKE_CASE)
+- State variables: `const [state, setState] = useState()`
+- Refs with descriptive names: `const emailRef = useRef(null)`
 
 **Types:**
-- Type definitions from external libraries: Imported as-is (e.g., `Metadata` from `next`)
-- Generic type wrappers: `PascalCase` (e.g., `Readonly<{ children: React.ReactNode }>`)
-- React type utilities: Use standard library types (e.g., `React.ReactNode`)
+- PascalCase for all type and interface names
+- Domain-specific types grouped in single `src/types/index.ts`:
+  - `Customer`, `CreateCustomerInput`, `UpdateCustomerInput`, `CustomerSearchParams`, `CustomerStatus`
+  - `Loan`, `CreateLoanInput`, `UpdateLoanInput`, `LoanWithCustomer`
+  - `Payment`, `CreatePaymentInput`
+- Suffixes:
+  - `Input` for function parameters/request types
+  - `SearchParams` for filter/search query objects
+  - `Status` for enum-like union types (e.g., `"active" | "blacklisted"`)
+  - `WithCustomer`, `WithPayments` for relation types
 
 ## Code Style
 
 **Formatting:**
-- Prettier is NOT explicitly configured in the project
-- TypeScript handles formatting through strict compiler options
-- Indentation: 2 spaces (observed in all configuration files)
-- Line length: No explicit limit enforced
-- Template literals preferred over string concatenation for complex strings
-- Template literals used for className assembly (e.g., `` `${geistSans.variable} ${geistMono.variable} h-full antialiased` ``)
+- No explicit Prettier config found; project uses Next.js ESLint defaults
+- Default formatter settings: semicolons, double quotes, single-line spacing
+- 120-char line length (inferred from code samples)
+- Indentation: 2 spaces
 
 **Linting:**
-- ESLint 9 is the linter with Next.js configuration
-- Configuration: `eslint.config.mjs` with flat config format (ESLint 9 style)
-- Rules applied: `eslint-config-next/core-web-vitals` and `eslint-config-next/typescript`
-- Run command: `pnpm lint` (from `package.json` script: `eslint`)
+- ESLint 9 with flat config: `eslint.config.mjs`
+- Rules: `eslint-config-next/core-web-vitals` and `eslint-config-next/typescript`
+- Enforces Next.js best practices and TypeScript strict mode
+- Run: `pnpm lint` or `npm run lint`
+
+**TypeScript Strictness:**
+- `strict: true` in `tsconfig.json`
+- All functions have explicit return types
+- All parameters have explicit types
+- Discriminated unions used for error handling
+- `noEmit: true` prevents execution with type errors
 
 ## Import Organization
 
 **Order:**
-1. External packages (Next.js, React, third-party libraries)
-2. Internal utilities and components (using path aliases)
-3. Styles and CSS imports
+1. External libraries (`react`, `next`, etc.)
+2. Effect library (`import { Effect } from "effect"`)
+3. Internal paths (`@/lib/`, `@/services/`, `@/components/`, `@/hooks/`)
+4. Type imports (`import type { ... }`)
 
-**Examples:**
-- `import type { Metadata } from "next";` - Next.js types first
-- `import { Geist, Geist_Mono } from "next/font/google";` - Next.js utilities
-- `import "./globals.css";` - Stylesheet imports last
-- `import Image from "next/image";` - Next.js built-in components
+**Example (from customer.service.ts):**
+```typescript
+import { Effect } from "effect"
+import { db } from "@/lib/db"
+import { customers } from "@/lib/db/schema/customers"
+import { eq, ilike, inArray, and } from "drizzle-orm"
+import { DatabaseError, CustomerNotFound } from "@/lib/errors"
+import { writeAuditLog } from "./audit.service"
+import type { CreateCustomerInput, Customer } from "@/types"
+```
 
 **Path Aliases:**
-- `@/*` maps to `./src/*` (defined in `tsconfig.json`)
-- Use `@/` prefix for imports from the `src/` directory
+- `@/*` → `./src/*` (configured in `tsconfig.json`)
+- All imports use absolute paths with `@/` prefix, no relative imports
 
 ## Error Handling
 
-**Patterns:**
-- TypeScript `strict` mode is enabled, enforcing explicit type declarations
-- No observed error handling patterns in current codebase (early stage)
-- `noEmit: true` in TypeScript config ensures compilation errors prevent execution
-- React's built-in error boundaries should be used for component errors (not yet implemented)
+**Pattern:**
+- Tagged discriminated union errors using Effect library's `Data.TaggedError`
+- Error types defined in `src/lib/errors.ts`
+- Service functions return `Effect.Effect<SuccessType, ErrorType>`
+
+**Error Types:**
+```typescript
+export class DatabaseError extends Data.TaggedError("DatabaseError")<{ cause: unknown }> {}
+export class CustomerNotFound extends Data.TaggedError("CustomerNotFound")<{ id: string }> {}
+export class ValidationError extends Data.TaggedError("ValidationError")<{ message: string; field?: string }> {}
+export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{ reason: string }> {}
+export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{ action: string; role: string }> {}
+```
+
+**Effect.Effect Pattern:**
+```typescript
+export const getCustomer = (id: string): Effect.Effect<Customer, CustomerNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: () => db.select().from(customers).where(eq(customers.id, id)),
+    catch: (e) => new DatabaseError({ cause: e }),
+  }).pipe(
+    Effect.flatMap((rows) =>
+      rows[0]
+        ? Effect.succeed(rows[0])
+        : Effect.fail(new CustomerNotFound({ id }))
+    )
+  )
+```
+
+**Server Action Pattern:**
+```typescript
+export async function createCustomerAction(input: CreateCustomerInput) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  // Validation
+  if (!input.fullName?.trim()) {
+    return { error: "Full name is required" }
+  }
+
+  try {
+    const data = await Effect.runPromise(createCustomer(input))
+    revalidatePath("/customers")
+    return { data }
+  } catch (error) {
+    if (error instanceof DatabaseError) {
+      return { error: "Database error" }
+    }
+    return { error: "Internal server error" }
+  }
+}
+```
 
 ## Logging
 
-**Framework:** Console object only (no external logging framework detected)
+**Framework:** Pino logger available but not heavily used in observed code
 
 **Patterns:**
-- No logging patterns observed in current codebase
-- Future logging should use `console.log()`, `console.error()`, etc. for development
-- Consider structured logging library for production (e.g., Pino, Winston)
+- Console logging used minimally in codebase
+- Pino configuration available in `package.json` (`pino`, `pino-pretty`)
+- No centralized logging middleware observed in services
+- Focus on Effect-based error handling over logging
 
 ## Comments
 
 **When to Comment:**
-- JSDoc comments for exported functions and components (not yet observed in codebase)
-- Inline comments for non-obvious logic and business rules
-- NO observed comments in current codebase — keep code self-documenting where possible
+- Complex formulas get detailed comments (e.g., interest calculation functions)
+- Business logic that differs from conventional patterns (e.g., perpetual loans)
+- Domain-specific terminology explained at function level
+
+**Example (from interest engine):**
+```typescript
+/**
+ * Calculates days overdue from unpaid interest and the current daily rate.
+ * Formula: (totalInterestAccrued - totalInterestPaid) / currentDailyRate
+ * Returns BigNumber(0) if unpaid interest is <= 0.
+ * Used for the watchlist (RISK-01, RISK-02).
+ */
+export function calculateDaysOverdue(
+  totalInterestAccrued: string,
+  totalInterestPaid: string,
+  currentDailyRate: string
+): BigNumber
+```
 
 **JSDoc/TSDoc:**
-- Use for public APIs and React components
-- Type annotations should be explicit (TypeScript `strict: true`)
-- Example pattern (not yet observed, but follows Next.js convention):
-  ```typescript
-  /**
-   * RootLayout component that wraps the entire application
-   * @param children - The page content to render
-   * @returns The HTML structure with global styles applied
-   */
-  export default function RootLayout({ children }: Props) { ... }
-  ```
+- Function-level JSDoc comments for:
+  - Complex business logic
+  - Public API functions
+  - Mathematical formulas
+- No @param/@returns used; types are explicit in function signature
+- Comments explain "why" not "what"
 
 ## Function Design
 
-**Size:**
-- Keep functions focused and single-purpose
-- React components should remain under 50-100 lines for readability
-- Split large components into smaller, reusable sub-components
+**Size:** Functions stay focused (30-60 lines typical for services)
 
 **Parameters:**
-- Use object destructuring for component props
-- Example: `function RootLayout({ children }: Readonly<{ children: React.ReactNode }>)`
-- Type parameters explicitly as `Readonly<>` for immutability when appropriate
+- Single object parameter for functions with 2+ arguments
+- Explicit destructuring in Effect definitions
+- Server actions take domain input types (e.g., `CreateCustomerInput`)
 
 **Return Values:**
-- React components return JSX
-- Utilities should have explicit return types
-- Use `type` keyword for type definitions (observed in imports: `import type { Metadata }`)
+- Service functions always return `Effect.Effect<T, E>`
+- Action functions return `{ data: T } | { error: string }`
+- Hooks return React Query hook result: `{ data, isLoading, error }`
+- No implicit `undefined` returns; functions are explicit
+
+**Example (service with multiple params):**
+```typescript
+export const searchCustomers = (params: CustomerSearchParams): Effect.Effect<...> =>
+  // params is single object containing: name?, status?, page?, pageSize?, ...
+```
 
 ## Module Design
 
 **Exports:**
-- Default exports for React components: `export default function RootLayout(...)`
-- Named exports for utilities and configurations
-- Use `export const` for constants and configurations
+- Services export multiple named constants (functions): `export const functionName = (...) => {}`
+- Actions export async functions: `export async function actionName(...) {}`
+- Components export as default: `export default function ComponentName() {}`
+- Hooks export named functions: `export function useHookName() {}`
 
 **Barrel Files:**
-- Not observed in current structure
-- If implementing multiple modules, create `index.ts` files to aggregate exports
+- No barrel files observed
+- Each directory has explicit imports from individual files
+- Index files (`src/types/index.ts`) consolidate type definitions only
 
-## Component Structure Patterns
+**Cross-Cutting Patterns:**
 
-**Layout Components:**
-- Co-locate metadata definitions with layout components
-- Example (`src/app/layout.tsx`):
-  ```typescript
-  export const metadata: Metadata = { ... };
-  export default function RootLayout({ children }) { ... }
-  ```
+**Authorization:**
+- Server actions check `auth.api.getSession({ headers: await headers() })`
+- No unauthorized requests proceed further
+- Role-based checks happen at handler level
 
-**Page Components:**
-- Default export of a functional component
-- Example (`src/app/page.tsx`):
-  ```typescript
-  export default function Home() { ... }
-  ```
+**Data Revalidation:**
+- Server actions call `revalidatePath(path)` after mutations
+- Ensures Next.js cache invalidation for affected pages
+- Single path per action
 
-## CSS & Styling
-
-**Framework:** Tailwind CSS v4 with PostCSS
-
-**Patterns:**
-- Utility-first CSS classes via Tailwind (observed in components)
-- Global CSS variables defined in `globals.css` (e.g., `--background`, `--foreground`)
-- CSS custom properties used in Tailwind theme definition via `@theme inline`
-- Dark mode support via `@media (prefers-color-scheme: dark)`
-- Responsive design via Tailwind's responsive prefixes (e.g., `sm:`, `md:`, `dark:`)
-
-**Example:**
-```tsx
-<div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-```
+**Transaction Safety:**
+- Integration tests use `db.execute(sql\`TRUNCATE...\`)` for reset
+- Services use Drizzle ORM's built-in transaction support (observed in loan creation with collateral)
+- No explicit transaction wrappers in single-operation functions
 
 ---
 
-*Convention analysis: 2026-03-19*
+*Convention analysis: 2026-03-31*
