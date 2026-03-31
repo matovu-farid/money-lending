@@ -88,10 +88,7 @@ export const searchCustomers = (
       const pageSize = params.pageSize ?? 20
       const page = params.page ?? 0
 
-      // If daysRemainingFilter is active and not "any", we need post-filter via Interest Engine
-      // (RESEARCH.md Pitfall 7: days remaining is not a DB column, requires in-process calculation)
       if (params.daysRemainingFilter && params.daysRemainingFilter !== "any") {
-        // Fetch ALL matching customers (no pagination yet — apply after filter)
         const allRows = await db
           .select()
           .from(customers)
@@ -102,18 +99,13 @@ export const searchCustomers = (
         const filteredRows: Customer[] = []
 
         for (const customer of allRows) {
-          // Fetch active loans for this customer
           const activeLoans = await db
             .select()
             .from(loans)
             .where(and(eq(loans.customerId, customer.id), eq(loans.status, "active")))
 
-          if (activeLoans.length === 0) {
-            // No active loans — skip for both filter values
-            continue
-          }
+          if (activeLoans.length === 0) continue
 
-          // Calculate max daysOverdue across all active loans for this customer
           let maxDaysOverdue = new BigNumber(0)
 
           for (const loan of activeLoans) {
@@ -126,23 +118,23 @@ export const searchCustomers = (
               (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
             )
             const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-            const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
             const dailyRate = calculateDailyRate(effectiveRate)
+            // Use actual days for accrual — min period only applies to payment allocation
             const totalInterestAccrued = calculateInterest(
-              loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
+              loan.principalAmount, effectiveRate, totalDaysElapsed, 0
             )
             const totalInterestPaid = loanPayments.reduce(
               (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
             )
+            const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
             const daysOverdue = calculateDaysOverdue(
-              totalInterestAccrued.toFixed(2), totalInterestPaid.toFixed(2), dailyRate.toFixed(10)
+              totalInterestAccrued, totalInterestPaid, dailyInterestAmount
             )
             if (daysOverdue.isGreaterThan(maxDaysOverdue)) {
               maxDaysOverdue = daysOverdue
             }
           }
 
-          // Apply filter: "due_within_30" = daysOverdue > 0 AND < 30, "overdue_30_plus" = daysOverdue >= 30
           const days = maxDaysOverdue.toNumber()
           if (params.daysRemainingFilter === "due_within_30" && days > 0 && days < 30) {
             filteredRows.push(customer)
@@ -151,17 +143,12 @@ export const searchCustomers = (
           }
         }
 
-        // NOTE: Known scaling concern — this is O(customers * loans * payments).
-        // Acceptable for current loan volumes (dozens to low hundreds). For Phase 4+
-        // consider materializing days_overdue if customer count grows significantly.
-
         const total = filteredRows.length
         const paginatedRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize)
 
         return { rows: paginatedRows, total }
       }
 
-      // Standard path: no daysRemainingFilter — pure SQL pagination
       const [{ total }] = await db
         .select({ total: count() })
         .from(customers)

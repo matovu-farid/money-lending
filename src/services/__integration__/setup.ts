@@ -1,12 +1,8 @@
 import "dotenv/config"
 import { sql } from "drizzle-orm"
 
-// Force test DB by setting CYPRESS=true BEFORE db/index.ts is imported
-process.env.CYPRESS = "true"
-
 // Re-export the service's db — this ensures setup and services share
 // the SAME connection pool, preventing data visibility issues.
-// CYPRESS=true was set above, so this import gets the test DB connection.
 import { db } from "@/lib/db"
 import * as schema from "@/lib/db/schema"
 

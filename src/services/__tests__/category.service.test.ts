@@ -170,11 +170,14 @@ describe("Category Service", () => {
     const { deleteCategory } = await import("@/services/category.service")
     const mockedDb = vi.mocked(db)
 
-    mockedDb.select.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
+    const mockTx = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
       }),
-    } as any)
+    }
+    mockedDb.transaction.mockImplementation(async (fn: any) => fn(mockTx))
 
     const exit = await Effect.runPromiseExit(deleteCategory("nonexistent", "actor-1"))
 
@@ -195,26 +198,24 @@ describe("Category Service", () => {
 
     const mockCategory = { id: "cat-del", name: "Old Category", type: "expense", isDefault: false }
 
-    // First select: find category
-    // Second select: count transactions (zero usage)
+    // All queries now happen inside the transaction
     let selectCallCount = 0
-    mockedDb.select.mockImplementation((...args: any[]) => {
-      selectCallCount++
-      if (selectCallCount === 1) {
+    const mockTx = {
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([mockCategory]),
+            }),
+          }
+        }
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([mockCategory]),
+            where: vi.fn().mockResolvedValue([{ count: 0 }]),
           }),
-        } as any
-      }
-      return {
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 0 }]),
-        }),
-      } as any
-    })
-
-    const mockTx = {
+        }
+      }),
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
@@ -241,24 +242,25 @@ describe("Category Service", () => {
     const { deleteCategory } = await import("@/services/category.service")
     const mockedDb = vi.mocked(db)
 
-    // First select: find category
-    // Second select: count transactions
     let selectCallCount = 0
-    mockedDb.select.mockImplementation((...args: any[]) => {
-      selectCallCount++
-      if (selectCallCount === 1) {
+    const mockTx = {
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ id: "cat-1", name: "Rent", type: "expense" }]),
+            }),
+          }
+        }
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([{ id: "cat-1", name: "Rent", type: "expense" }]),
+            where: vi.fn().mockResolvedValue([{ count: 3 }]),
           }),
-        } as any
-      }
-      return {
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([{ count: 3 }]),
-        }),
-      } as any
-    })
+        }
+      }),
+    }
+    mockedDb.transaction.mockImplementation(async (fn: any) => fn(mockTx))
 
     const exit = await Effect.runPromiseExit(deleteCategory("cat-1", "actor-1"))
 

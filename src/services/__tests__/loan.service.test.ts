@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { Effect } from "effect"
+import { Effect, Exit, Cause } from "effect"
 
 vi.mock("@/lib/db", () => {
-  const mockDb = { select: vi.fn(), insert: vi.fn(), transaction: vi.fn() }
+  const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
   return { db: mockDb }
 })
 
@@ -10,7 +10,6 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
-// Re-export drizzle-orm's `eq` so the service import doesn't break
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual("drizzle-orm")
   return actual
@@ -200,5 +199,130 @@ describe("Loan Service", () => {
       expect(error._tag).toBe("IncompleteLoanRequirements")
       expect(error.missing).toEqual(["address"])
     }
+  })
+
+  // ── getLoan: soft-deleted loan guard ────────────────────────────────
+
+  it("getLoan: returns LoanNotFound for a soft-deleted loan", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    // The where clause includes isNull(loans.deletedAt), so when a loan is
+    // soft-deleted the DB returns no rows. We simulate that by returning [].
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    const { getLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(getLoan("loan-1"))
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.failureOption(exit.cause)
+      expect(error._tag).toBe("Some")
+      if (error._tag === "Some") {
+        expect((error.value as any)._tag).toBe("LoanNotFound")
+      }
+    }
+  })
+
+  // ── deleteLoan: soft-delete instead of hard-delete ─────────────────
+
+  it("deleteLoan: uses tx.update (not tx.delete) for payments and loans", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const { writeAuditLog } = await import("@/services/audit.service")
+
+    // Mock loan lookup — loan exists and is not soft-deleted
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([mockLoan]),
+      }),
+    } as any)
+
+    let capturedTx: any
+    const mockTx = {
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        capturedTx = mockTx
+        return callback(mockTx)
+      }
+    )
+
+    const { deleteLoan } = await import("@/services/loan.service")
+    const result = await Effect.runPromise(
+      deleteLoan({ loanId: "loan-1", reason: "Test deletion" }, "actor-1")
+    )
+
+    // Must NOT use tx.delete (hard delete) at all
+    expect(mockTx.delete).not.toHaveBeenCalled()
+
+    // Must use tx.update for both payments and loans (2 calls)
+    expect(mockTx.update).toHaveBeenCalledTimes(2)
+
+    // Verify audit log was written
+    expect(writeAuditLog).toHaveBeenCalledOnce()
+    expect(writeAuditLog).toHaveBeenCalledWith(
+      capturedTx,
+      expect.objectContaining({
+        actorId: "actor-1",
+        action: "loan.delete",
+        entityType: "loan",
+        entityId: "loan-1",
+      })
+    )
+
+    // Returns the original loan
+    expect(result.id).toBe("loan-1")
+  })
+
+  it("deleteLoan: soft-delete sets deletedAt, deletedBy, deleteReason on payments", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([mockLoan]),
+      }),
+    } as any)
+
+    const mockTx = {
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+      }),
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => callback(mockTx)
+    )
+
+    const { deleteLoan } = await import("@/services/loan.service")
+    await Effect.runPromise(
+      deleteLoan({ loanId: "loan-1", reason: "Fraud detected" }, "actor-1")
+    )
+
+    // First tx.update call is for payments soft-delete
+    const firstUpdateSetFn = mockTx.update.mock.results[0].value.set
+    const paymentSetArgs = firstUpdateSetFn.mock.calls[0][0]
+    expect(paymentSetArgs.deletedAt).toBeInstanceOf(Date)
+    expect(paymentSetArgs.deletedBy).toBe("actor-1")
+    expect(paymentSetArgs.deleteReason).toBe("Fraud detected")
+
+    // Second tx.update call is for loan soft-delete
+    const secondUpdateSetFn = mockTx.update.mock.results[1].value.set
+    const loanSetArgs = secondUpdateSetFn.mock.calls[0][0]
+    expect(loanSetArgs.deletedAt).toBeInstanceOf(Date)
   })
 })

@@ -8,12 +8,6 @@ import { DatabaseError } from "@/lib/errors"
 import BigNumber from "bignumber.js"
 import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 
-/**
- * Returns an aggregated summary of all payments collected on a given date
- * (in Africa/Kampala timezone), including per-payment breakdown rows.
- *
- * COLL-01, COLL-02: Daily collections aggregation with timezone-aware date filter.
- */
 export const getDailyCollections = (
   date: string
 ): Effect.Effect<DailyCollectionsSummary, DatabaseError> =>
@@ -54,12 +48,6 @@ export const getDailyCollections = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Returns all active loans where the last payment (or loan start date if no
- * payments) was 30 or more days ago, sorted by daysSinceLastPayment descending.
- *
- * COLL-03, COLL-04: Due-today list based on 30-day payment cycle threshold.
- */
 export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -78,7 +66,6 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
           .orderBy(asc(payments.paymentDate))
 
-        // Anchor: use last payment date, or loan start date if no payments
         const lastPayment = loanPayments.at(-1)
         const anchorDate = lastPayment
           ? new Date(lastPayment.paymentDate)
@@ -110,7 +97,6 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
         }
       }
 
-      // Sort by daysSinceLastPayment descending (most overdue first)
       results.sort((a, b) => b.daysSinceLastPayment - a.daysSinceLastPayment)
 
       return results

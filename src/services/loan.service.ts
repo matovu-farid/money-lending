@@ -3,8 +3,9 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
+import { notifications } from "@/lib/db/schema/notifications"
 import { customers } from "@/lib/db/schema/customers"
-import { eq, desc } from "drizzle-orm"
+import { eq, desc, and, isNull } from "drizzle-orm"
 import {
   DatabaseError,
   CustomerNotFound,
@@ -15,10 +16,6 @@ import {
 import { writeAuditLog } from "./audit.service"
 import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
 
-/**
- * Validates that a customer has all required fields for loan issuance (CUST-04).
- * Returns an array of missing field names. Empty array = all good.
- */
 const checkCustomerCompleteness = (customer: {
   fullName: string | null
   contact: string | null
@@ -31,13 +28,6 @@ const checkCustomerCompleteness = (customer: {
   return missing
 }
 
-/**
- * Creates a loan with collateral and audit log in a single atomic transaction.
- * CUST-04: Blocks if customer details are incomplete.
- * INFR-01: Audit log written in same transaction.
- * LOAN-02: Loan is perpetual -- NO dueDate computation, NO termDays.
- * Collateral is inserted into separate `collateral` table (not inline columns on loans).
- */
 export const createLoan = (
   input: CreateLoanInput,
   actorId: string
@@ -47,7 +37,6 @@ export const createLoan = (
 > =>
   Effect.tryPromise({
     try: async () => {
-      // 1. Fetch and validate customer
       const [customer] = await db
         .select()
         .from(customers)
@@ -55,7 +44,6 @@ export const createLoan = (
 
       if (!customer) throw { _tag: "CustomerNotFound", id: input.customerId }
 
-      // Blacklist safeguard (CUST-06): Blacklisted customers cannot receive new loans
       if (customer.status === "blacklisted") {
         throw new ValidationError({ message: "This customer is blacklisted and cannot receive new loans.", field: "customerId" })
       }
@@ -67,10 +55,6 @@ export const createLoan = (
 
       const startDate = new Date(input.startDate)
 
-      // NOTE: No dueDate computation. Loans are perpetual (LOAN-02).
-      // The loan rolls forward indefinitely until fully repaid.
-
-      // 2. Atomic transaction: loan + collateral (separate table) + audit log
       return await db.transaction(async (tx) => {
         const [loan] = await tx
           .insert(loans)
@@ -87,7 +71,6 @@ export const createLoan = (
           })
           .returning()
 
-        // Collateral goes into separate `collateral` table (not inline columns on loans)
         const [coll] = await tx
           .insert(collateral)
           .values({
@@ -97,8 +80,6 @@ export const createLoan = (
           })
           .returning()
 
-        // INFR-01: Audit log in same transaction
-        // CRITICAL: Use direct await -- NOT Effect.runPromise (see Pitfall 7)
         await writeAuditLog(tx, {
           actorId,
           action: "loan.create",
@@ -123,7 +104,7 @@ export const getLoan = (
   id: string
 ): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
-    try: () => db.select().from(loans).where(eq(loans.id, id)),
+    try: () => db.select().from(loans).where(and(eq(loans.id, id), isNull(loans.deletedAt))),
     catch: (e) => new DatabaseError({ cause: e }),
   }).pipe(
     Effect.flatMap((rows) =>
@@ -153,31 +134,26 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
         })
         .from(loans)
         .innerJoin(customers, eq(loans.customerId, customers.id))
+        .where(isNull(loans.deletedAt))
         .orderBy(desc(loans.createdAt))
       return rows
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Updates a loan's principal amount, interest rate, and/or start date with audit log.
- * INFR-01: Audit log written in same transaction.
- */
 export const updateLoan = (
   input: UpdateLoanInput,
   actorId: string
 ): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      // Fetch existing loan
       const [existingLoan] = await db
         .select()
         .from(loans)
-        .where(eq(loans.id, input.loanId))
+        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
       if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
 
-      // Build the set object from only provided fields
       const setObj: Partial<typeof loans.$inferInsert> & { updatedAt: Date } = {
         updatedAt: new Date(),
       }
@@ -216,27 +192,22 @@ export const updateLoan = (
     },
   })
 
-/**
- * Hard-deletes a loan and its related payments and collateral with audit log.
- * Deletes in order: payments -> collateral -> loan (FK dependency order).
- * INFR-01: Audit log written in same transaction.
- */
 export const deleteLoan = (
   input: DeleteLoanInput,
   actorId: string
 ): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      // Fetch existing loan
       const [existingLoan] = await db
         .select()
         .from(loans)
-        .where(eq(loans.id, input.loanId))
+        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
       if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
 
+      const now = new Date()
+
       return await db.transaction(async (tx) => {
-        // Write audit log BEFORE deletion so we have the entity data
         await writeAuditLog(tx, {
           actorId,
           action: "loan.delete",
@@ -246,10 +217,15 @@ export const deleteLoan = (
           afterValue: { reason: input.reason },
         })
 
-        // Delete in FK dependency order: payments -> collateral -> loan
-        await tx.delete(payments).where(eq(payments.loanId, input.loanId))
-        await tx.delete(collateral).where(eq(collateral.loanId, input.loanId))
-        await tx.delete(loans).where(eq(loans.id, input.loanId))
+        await tx
+          .update(payments)
+          .set({ deletedAt: now, deletedBy: actorId, deleteReason: input.reason, updatedAt: now })
+          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+
+        await tx
+          .update(loans)
+          .set({ deletedAt: now, updatedAt: now })
+          .where(eq(loans.id, input.loanId))
 
         return existingLoan
       })

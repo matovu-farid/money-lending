@@ -22,7 +22,7 @@ describe("Admin User Management", () => {
     cy.contains("th", "Email")
     cy.contains("th", "Role")
     cy.contains("th", "Status")
-    cy.contains("th", "Last Active")
+    cy.contains("th", "Joined")
   })
 
   it("shows the current superAdmin user in the table", () => {
@@ -69,15 +69,15 @@ describe("Admin User Management", () => {
     it("superAdmin can change a user role via dropdown", () => {
       cy.visit("/admin")
 
-      // Find the row for the regular user and change role
+      // Find the row for the regular user and open role dropdown
       cy.contains("tr", "Regular User").within(() => {
-        // Should have a role dropdown for unassigned users
         cy.get("[data-slot=select-trigger]").click()
       })
 
-      // Select loanOfficer from dropdown (portal renders outside the table row)
-      cy.get("[data-slot=select-content]", { timeout: 5000 }).should("exist")
-      cy.contains("[data-slot=select-item]", "Loan Officer").realClick()
+      // Wait for dropdown to be open, then use keyboard to select Loan Officer
+      cy.get("[data-slot=select-content]").should("exist")
+      // Type the first letter to jump to matching item, then enter
+      cy.focused().type("l{enter}")
 
       // Verify toast success
       cy.contains("Role updated", { timeout: 10000 })

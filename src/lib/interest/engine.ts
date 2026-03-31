@@ -63,9 +63,9 @@ export function calculateLoanSummary(
  * Used for the watchlist (RISK-01, RISK-02).
  */
 export function calculateDaysOverdue(
-  totalInterestAccrued: string,
-  totalInterestPaid: string,
-  currentDailyRate: string
+  totalInterestAccrued: string | BigNumber,
+  totalInterestPaid: string | BigNumber,
+  currentDailyRate: string | BigNumber
 ): BigNumber {
   const unpaidInterest = new BigNumber(totalInterestAccrued).minus(
     new BigNumber(totalInterestPaid)

@@ -3,10 +3,6 @@ import type { NextRequest } from "next/server"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
 
-/**
- * Test-only API route for Cypress database tasks.
- * Only available in development mode.
- */
 export async function POST(request: NextRequest) {
   if (process.env.NODE_ENV === "production" || process.env.CYPRESS !== "true") {
     return NextResponse.json({ error: "Not available" }, { status: 404 })
@@ -17,23 +13,27 @@ export async function POST(request: NextRequest) {
 
   switch (task) {
     case "db:reset": {
-      await db.execute(sql`DELETE FROM financial_snapshots`)
-      await db.execute(sql`DELETE FROM transactions`)
-      await db.execute(sql`DELETE FROM transaction_categories`)
-      await db.execute(sql`DELETE FROM creditor_repayments`)
-      await db.execute(sql`DELETE FROM creditor_investments`)
-      await db.execute(sql`DELETE FROM creditors`)
-      await db.execute(sql`DELETE FROM session`)
-      await db.execute(sql`DELETE FROM account`)
-      await db.execute(sql`DELETE FROM verification`)
-      await db.execute(sql`DELETE FROM audit_log`)
-      await db.execute(sql`DELETE FROM notifications`)
-      await db.execute(sql`DELETE FROM payments`)
-      await db.execute(sql`DELETE FROM collateral`)
-      await db.execute(sql`DELETE FROM loans`)
-      await db.execute(sql`DELETE FROM customers`)
-      await db.execute(sql`DELETE FROM system_settings`)
-      await db.execute(sql`DELETE FROM "user"`)
+      await db.execute(sql`
+        TRUNCATE
+          financial_snapshots,
+          transactions,
+          transaction_categories,
+          creditor_repayments,
+          creditor_investments,
+          creditors,
+          session,
+          account,
+          verification,
+          audit_log,
+          notifications,
+          payments,
+          collateral,
+          loans,
+          customers,
+          system_settings,
+          "user"
+        CASCADE
+      `)
       return NextResponse.json({ ok: true })
     }
 

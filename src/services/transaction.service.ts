@@ -24,10 +24,6 @@ import type {
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
-/**
- * Records an expense (debit) in the transaction log.
- * Writes audit log.
- */
 export const recordExpense = (
   input: CreateExpenseInput,
   actorId: string
@@ -62,10 +58,6 @@ export const recordExpense = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Records income (credit) in the transaction log.
- * Writes audit log.
- */
 export const recordIncome = (
   input: CreateIncomeInput,
   actorId: string
@@ -100,10 +92,6 @@ export const recordIncome = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Lists transactions with optional filters, paginated.
- * Returns transactions joined with category name, ordered by transactionDate DESC.
- */
 export const listTransactions = (
   filters: TransactionLogFilters,
   page: number,
@@ -178,10 +166,6 @@ export const listTransactions = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Fetches a single transaction by ID.
- * Returns TransactionNotFound if it doesn't exist.
- */
 export const getTransactionById = (
   id: string
 ): Effect.Effect<typeof transactions.$inferSelect, DatabaseError | TransactionNotFound> =>
@@ -203,13 +187,10 @@ export const getTransactionById = (
     },
   })
 
-/**
- * Deletes a transaction by ID.
- * Writes audit log with before value.
- */
 export const deleteTransaction = (
   id: string,
-  actorId: string
+  actorId: string,
+  actorRole?: string
 ): Effect.Effect<void, DatabaseError | TransactionNotFound> =>
   Effect.tryPromise({
     try: async () => {
@@ -219,6 +200,15 @@ export const deleteTransaction = (
         .where(eq(transactions.id, id))
 
       if (!transaction) throw { _tag: "TransactionNotFound", id }
+
+      if (transaction.referenceType === "payment" || transaction.referenceType === "creditor_repayment") {
+        throw { _tag: "TransactionNotFound", id }
+      }
+
+      const isAdminOrAbove = actorRole === "admin" || actorRole === "superAdmin"
+      if (transaction.recordedBy !== actorId && !isAdminOrAbove) {
+        throw { _tag: "TransactionNotFound", id }
+      }
 
       await db.transaction(async (tx) => {
         await tx.delete(transactions).where(eq(transactions.id, id))
@@ -240,21 +230,16 @@ export const deleteTransaction = (
     },
   })
 
-/**
- * Auto-posts an "Interest Earned" income entry to the transaction log.
- * MUST be called inside a db.transaction() callback with the tx handle.
- * Plain async (not Effect) — same pattern as writeAuditLog (Pitfall 7).
- */
 export async function autoPostInterestEarned(
   tx: DrizzleTransaction,
   params: {
     amount: string
     loanId: string
+    paymentId: string
     paymentDate: string
     actorId: string
   }
 ): Promise<void> {
-  // Look up "Interest Earned" income category
   const [category] = await tx
     .select()
     .from(transactionCategories)
@@ -266,7 +251,6 @@ export async function autoPostInterestEarned(
     )
 
   if (!category) {
-    // Category not seeded yet — skip auto-posting rather than failing the payment
     console.warn(
       '[autoPostInterestEarned] "Interest Earned" category not found — skipping auto-post'
     )
@@ -278,18 +262,13 @@ export async function autoPostInterestEarned(
     amount: params.amount,
     categoryId: category.id,
     referenceType: "payment",
-    referenceId: params.loanId,
-    description: `Interest earned - loan ${params.loanId}`,
+    referenceId: params.paymentId,
+    description: `Interest earned - loan ${params.loanId} payment ${params.paymentId}`,
     transactionDate: new Date(params.paymentDate),
     recordedBy: params.actorId,
   })
 }
 
-/**
- * Auto-posts an "Interest Payments" expense entry to the transaction log.
- * MUST be called inside a db.transaction() callback with the tx handle.
- * Plain async (not Effect) — same pattern as writeAuditLog (Pitfall 7).
- */
 export async function autoPostInterestExpense(
   tx: DrizzleTransaction,
   params: {
@@ -299,7 +278,6 @@ export async function autoPostInterestExpense(
     actorId: string
   }
 ): Promise<void> {
-  // Look up "Interest Payments" expense category
   const [category] = await tx
     .select()
     .from(transactionCategories)

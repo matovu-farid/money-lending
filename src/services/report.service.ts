@@ -26,25 +26,15 @@ import { getSystemCapital } from "@/services/creditor.service"
 import BigNumber from "bignumber.js"
 import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
 
-/**
- * Generates a Profit & Loss statement for a given month.
- * P&L is derived from the transaction log (single source of truth).
- *
- * period: "YYYY-MM" format
- *
- * RPTS-02: P&L statement sums income categories minus expense categories.
- */
 export const getPnlData = (
   period: string
 ): Effect.Effect<PnlData, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      // Parse period to get start/end dates for the month
       const [year, month] = period.split("-").map(Number)
       const periodStart = new Date(year, month - 1, 1)
       const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
 
-      // Query transactions joined with categories for the period
       const rows = await db
         .select({
           type: transactions.type,
@@ -63,7 +53,6 @@ export const getPnlData = (
           )
         )
 
-      // Group by category and type, sum amounts using BigNumber
       const incomeMap = new Map<string, BigNumber>()
       const expenseMap = new Map<string, BigNumber>()
 
@@ -78,7 +67,6 @@ export const getPnlData = (
         }
       }
 
-      // Build income and expense arrays
       const income = Array.from(incomeMap.entries()).map(([category, amount]) => ({
         category,
         amount: formatAmount(amount),
@@ -88,7 +76,6 @@ export const getPnlData = (
         amount: formatAmount(amount),
       }))
 
-      // Calculate totals using BigNumber
       const totalIncome = Array.from(incomeMap.values()).reduce(
         (sum, amt) => sum.plus(amt),
         new BigNumber(0)
@@ -111,21 +98,14 @@ export const getPnlData = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Generates a Balance Sheet as of a given date.
- * Combines loan data (assets), creditor data (liabilities), and cumulative P&L (equity).
- *
- * asOf: "YYYY-MM-DD" or "YYYY-MM" (last day of month)
- *
- * RPTS-03: Balance Sheet shows Assets (loans outstanding), Liabilities (creditor balances),
- *           Equity (share capital + retained earnings). Identity: A = L + E.
- */
 export const getBalanceSheetData = (
   asOf: string
 ): Effect.Effect<BalanceSheetData, DatabaseError> =>
+  Effect.flatMap(
+    getSystemCapital(),
+    (systemCapital) =>
   Effect.tryPromise({
     try: async () => {
-      // Parse asOf — support "YYYY-MM" (last day of month) or "YYYY-MM-DD"
       let asOfDate: Date
       if (/^\d{4}-\d{2}$/.test(asOf)) {
         const [year, month] = asOf.split("-").map(Number)
@@ -134,13 +114,14 @@ export const getBalanceSheetData = (
         asOfDate = new Date(asOf + "T23:59:59.999Z")
       }
 
-      // -----------------------------------------------
-      // ASSETS: Total loans outstanding (active loans)
-      // -----------------------------------------------
       const activeLoans = await db
         .select()
         .from(loans)
-        .where(eq(loans.status, "active"))
+        .where(and(
+          eq(loans.status, "active"),
+          isNull(loans.deletedAt),
+          lte(loans.createdAt, asOfDate)
+        ))
 
       let totalLoansOutstanding = new BigNumber(0)
 
@@ -148,8 +129,12 @@ export const getBalanceSheetData = (
         const loanPayments = await db
           .select()
           .from(payments)
-          .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-          .orderBy(desc(payments.paymentDate))
+          .where(and(
+            eq(payments.loanId, loan.id),
+            isNull(payments.deletedAt),
+            lte(payments.paymentDate, asOfDate)
+          ))
+          .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
 
         const lastPayment = loanPayments[0]
         const outstanding = lastPayment
@@ -158,17 +143,8 @@ export const getBalanceSheetData = (
         totalLoansOutstanding = totalLoansOutstanding.plus(outstanding)
       }
 
-      // -----------------------------------------------
-      // LIABILITIES: Total creditor balances
-      // Use getSystemCapital().totalOutstanding
-      // -----------------------------------------------
-      const systemCapital = await Effect.runPromise(getSystemCapital())
       const totalCreditorBalances = new BigNumber(systemCapital.totalOutstanding)
 
-      // -----------------------------------------------
-      // EQUITY: Share Capital + Retained Earnings
-      // -----------------------------------------------
-      // Share Capital = SUM of all "Share Capital" credit transactions up to asOf
       const shareCapitalRows = await db
         .select({ amount: transactions.amount })
         .from(transactions)
@@ -189,7 +165,6 @@ export const getBalanceSheetData = (
         new BigNumber(0)
       )
 
-      // Retained Earnings = total credits - total debits up to asOf date (cumulative P&L)
       const allTransactions = await db
         .select({ type: transactions.type, amount: transactions.amount })
         .from(transactions)
@@ -204,12 +179,9 @@ export const getBalanceSheetData = (
           totalDebits = totalDebits.plus(new BigNumber(row.amount))
         }
       }
-      const retainedEarnings = totalCredits.minus(totalDebits)
+      const retainedEarnings = totalCredits.minus(totalDebits).minus(shareCapital)
       const totalEquity = shareCapital.plus(retainedEarnings)
 
-      // -----------------------------------------------
-      // Balance sheet identity check: A = L + E
-      // -----------------------------------------------
       const liabilitiesPlusEquity = totalCreditorBalances.plus(totalEquity)
       if (!totalLoansOutstanding.isEqualTo(liabilitiesPlusEquity)) {
         console.warn(
@@ -236,14 +208,8 @@ export const getBalanceSheetData = (
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
+  )
 
-/**
- * Generates the loan portfolio report.
- * For each active loan: outstanding balance, interest accrued, days overdue, risk flag.
- * Ordered by days overdue descending (most at-risk first).
- *
- * RPTS-04: Loan portfolio report with risk flags.
- */
 export const getPortfolioData = (): Effect.Effect<
   PortfolioEntry[],
   DatabaseError
@@ -253,60 +219,53 @@ export const getPortfolioData = (): Effect.Effect<
       const activeLoans = await db
         .select()
         .from(loans)
-        .where(eq(loans.status, "active"))
+        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
       const now = new Date()
       const results: PortfolioEntry[] = []
 
       for (const loan of activeLoans) {
-        // Fetch customer name
         const [customer] = await db
           .select({ fullName: customers.fullName })
           .from(customers)
           .where(eq(customers.id, loan.customerId))
 
-        // Fetch non-deleted payments for this loan
         const loanPayments = await db
           .select()
           .from(payments)
           .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-          .orderBy(desc(payments.paymentDate))
+          .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
 
-        // Outstanding balance: last payment's principalBalanceAfter or original principal
         const lastPayment = loanPayments[0]
         const outstandingBalance = lastPayment
           ? new BigNumber(lastPayment.principalBalanceAfter)
           : new BigNumber(loan.principalAmount)
 
-        // Days elapsed since loan start (for interest accrual)
         const totalDaysElapsed = Math.floor(
           (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
         )
 
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
-
-        // Interest accrued using engine.ts (based on principalAmount for consistency with dashboard/watchlist)
+        // Use actual days for accrual — min period only applies to payment allocation
         const interestAccrued = calculateInterest(
           loan.principalAmount,
           effectiveRate,
           totalDaysElapsed,
-          effectiveMinDays
+          0
         )
 
-        // Days overdue using engine.ts
         const totalInterestPaid = loanPayments.reduce(
           (sum, p) => sum.plus(new BigNumber(p.interestPortion)),
           new BigNumber(0)
         )
         const dailyRate = calculateDailyRate(effectiveRate)
+        const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
         const daysOverdue = calculateDaysOverdue(
-          interestAccrued.toFixed(2),
-          totalInterestPaid.toFixed(2),
-          dailyRate.toFixed(10)
+          interestAccrued,
+          totalInterestPaid,
+          dailyInterestAmount
         )
 
-        // Risk flag: daysOverdue >= 30 (matches watchlist threshold)
         const riskFlag = daysOverdue.isGreaterThanOrEqualTo(30)
 
         results.push({
@@ -321,7 +280,6 @@ export const getPortfolioData = (): Effect.Effect<
         })
       }
 
-      // Sort by daysOverdue descending (most at-risk first)
       results.sort(
         (a, b) => parseInt(b.daysOverdue) - parseInt(a.daysOverdue)
       )
@@ -331,14 +289,6 @@ export const getPortfolioData = (): Effect.Effect<
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Generates and stores monthly P&L and Balance Sheet snapshots.
- * Idempotent: if a snapshot for the same period+type already exists, skip insert.
- * Called by the month-end cron endpoint (Plan 08).
- *
- * period: "YYYY-MM" format
- * generatedBy: userId of the actor triggering the snapshot
- */
 export const generateMonthlySnapshot = (
   period: string,
   generatedBy: string
@@ -349,7 +299,6 @@ export const generateMonthlySnapshot = (
       const periodStart = new Date(year, month - 1, 1)
       const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
 
-      // Idempotency: check for existing snapshots for this period
       const existingSnapshots = await db
         .select({ type: financialSnapshots.type })
         .from(financialSnapshots)
@@ -366,12 +315,8 @@ export const generateMonthlySnapshot = (
       if (!existingTypes.has("pnl")) toInsert.push("pnl")
       if (!existingTypes.has("balance_sheet")) toInsert.push("balance_sheet")
 
-      if (toInsert.length === 0) {
-        // Both snapshots already exist — skip
-        return
-      }
+      if (toInsert.length === 0) return
 
-      // Generate data for missing snapshot types
       const [pnlData, balanceSheetData] = await Promise.all([
         toInsert.includes("pnl")
           ? Effect.runPromise(getPnlData(period))
@@ -381,7 +326,6 @@ export const generateMonthlySnapshot = (
           : Promise.resolve(null),
       ])
 
-      // Insert missing snapshots
       const insertRows = []
       if (pnlData && toInsert.includes("pnl")) {
         insertRows.push({

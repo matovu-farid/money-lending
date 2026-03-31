@@ -54,8 +54,14 @@ describe("Income CRUD", () => {
     cy.contains("Loan Interest").should("be.visible")
   })
 
-  it.skip("disables add button while mutation is pending", () => {
-    // Fill in income form
+  it("disables add button while mutation is pending", () => {
+    // Intercept server action POST and delay the response so we can observe pending state
+    cy.intercept("POST", "/income", (req) => {
+      if (req.headers["next-action"]) {
+        req.on("response", (res) => { res.setDelay(1500) })
+      }
+    }).as("saveIncome")
+
     cy.visit("/income")
     cy.contains("button", "Add Income", { timeout: 15000 })
       .scrollIntoView()
@@ -65,12 +71,15 @@ describe("Income CRUD", () => {
     cy.get("#new-income-category-name").type("Test Category")
     cy.contains("button", "Add").click()
     cy.get("#income-amount").type("10000")
+
     // Click submit
     cy.contains("button", "Record Income").click()
-    // Assert button has disabled attribute
-    cy.contains("button", "Record Income").should("be.disabled")
-    // Assert Loader2 spinner is visible
-    cy.get("[data-testid='spinner']").should("be.visible")
+
+    // While the server action is in flight, button should show "Saving..." and be disabled
+    cy.contains("button", "Saving...").should("be.disabled")
+
+    // Wait for the request to complete
+    cy.wait("@saveIncome")
   })
 
   it("can delete an income entry", () => {

@@ -2,76 +2,27 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { calculateInterest, allocatePayment } from "@/lib/interest/engine"
 import { Effect, Exit } from "effect"
 
-/**
- * Creditor Service Tests — TDD Red Phase
- *
- * Tests cover:
- * - CRUD: createCreditor, updateCreditor, listCreditors, getCreditor
- * - Investment management: addInvestment
- * - Interest accrual: getCreditorDashboard with minInterestDays=0
- * - Repayment allocation: recordCreditorRepayment (interest-first)
- * - System capital: getSystemCapital
- *
- * NOTE: All DB-interactive tests are marked .todo (no test DB).
- * Unit tests cover pure logic: interest accrual math and allocation.
- */
-
 describe("Creditor Service — exports", () => {
-  it("creditor service exports createCreditor function", async () => {
+  it("exports all expected functions", async () => {
     const mod = await import("@/services/creditor.service")
-    expect(mod.createCreditor).toBeDefined()
-    expect(typeof mod.createCreditor).toBe("function")
-  })
-
-  it("creditor service exports updateCreditor function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.updateCreditor).toBeDefined()
-    expect(typeof mod.updateCreditor).toBe("function")
-  })
-
-  it("creditor service exports getCreditor function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.getCreditor).toBeDefined()
-    expect(typeof mod.getCreditor).toBe("function")
-  })
-
-  it("creditor service exports listCreditors function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.listCreditors).toBeDefined()
-    expect(typeof mod.listCreditors).toBe("function")
-  })
-
-  it("creditor service exports addInvestment function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.addInvestment).toBeDefined()
-    expect(typeof mod.addInvestment).toBe("function")
-  })
-
-  it("creditor service exports recordCreditorRepayment function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.recordCreditorRepayment).toBeDefined()
-    expect(typeof mod.recordCreditorRepayment).toBe("function")
-  })
-
-  it("creditor service exports getCreditorDashboard function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.getCreditorDashboard).toBeDefined()
-    expect(typeof mod.getCreditorDashboard).toBe("function")
-  })
-
-  it("creditor service exports getSystemCapital function", async () => {
-    const mod = await import("@/services/creditor.service")
-    expect(mod.getSystemCapital).toBeDefined()
-    expect(typeof mod.getSystemCapital).toBe("function")
+    const expectedExports = [
+      "createCreditor",
+      "updateCreditor",
+      "getCreditor",
+      "listCreditors",
+      "addInvestment",
+      "recordCreditorRepayment",
+      "getCreditorDashboard",
+      "getSystemCapital",
+    ]
+    for (const name of expectedExports) {
+      expect(mod).toHaveProperty(name)
+      expect(typeof (mod as Record<string, unknown>)[name]).toBe("function")
+    }
   })
 })
 
 describe("Creditor Service — interest accrual math (minInterestDays=0)", () => {
-  /**
-   * These tests verify the engine.ts integration for creditor interest.
-   * Creditors use minInterestDays=0, so daysElapsed is used directly (no min enforcement).
-   */
-
   it("10M UGX at 10%/month for 30 days accrues ~1,000,000 interest (CRED-03)", () => {
     // 10,000,000 * (0.10/30) * 30 ≈ 1,000,000
     // Note: BigNumber at DECIMAL_PLACES=10 gives 999999.99 due to 0.10/30 precision
@@ -98,11 +49,6 @@ describe("Creditor Service — interest accrual math (minInterestDays=0)", () =>
 })
 
 describe("Creditor Service — repayment allocation (interest-first)", () => {
-  /**
-   * Tests for allocatePayment() behavior when used for creditor repayments.
-   * Creditor repayments use minInterestDays=0.
-   */
-
   it("payment <= interest: all goes to interest, principal unchanged (CRED-04)", () => {
     // 10M at 10%/month, 30 days elapsed: interest = 1,000,000
     // Payment of 500,000 (less than interest): all to interest
@@ -239,8 +185,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedDb = dbMod.db as any
     const auditMod = await import("@/services/audit.service")
     mockedWriteAuditLog = auditMod.writeAuditLog as any
-    const txMod = await import("@/services/transaction.service")
-    void txMod.autoPostInterestExpense // mocked via vi.mock above
     const svc = await import("@/services/creditor.service")
     createCreditor = svc.createCreditor
     updateCreditor = svc.updateCreditor
@@ -251,8 +195,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     getCreditorDashboard = svc.getCreditorDashboard
     getSystemCapital = svc.getSystemCapital
   })
-
-  // ── helpers ──────────────────────────────────────────────────────────
 
   const mockCreditor = {
     id: "cred-1",
@@ -311,11 +253,15 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       }),
       select: vi.fn().mockImplementation(() => ({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockImplementation(() => {
-              const idx = selectCallIndex++
-              return Promise.resolve(selectResults[idx] ?? [])
-            }),
+          where: vi.fn().mockImplementation(() => {
+            const idx = selectCallIndex++
+            const result = selectResults[idx] ?? []
+            // Support both `.where()` (returns thenable) and `.where().orderBy()` chains
+            const thenable = Promise.resolve(result) as any
+            thenable.orderBy = vi.fn().mockImplementation(() => {
+              return Promise.resolve(result)
+            })
+            return thenable
           }),
         }),
       })),
@@ -327,7 +273,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
   }
 
-  /** Set up db.select().from(...).where(...) to resolve to rows */
   function setupDbSelect(rows: any[]) {
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -498,11 +443,10 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     // Investment: 10M at 10%/month, date 2026-01-01
     // Repayment: 1,500,000 on 2026-01-31 (30 days)
     // Interest ≈ 999,999.99 → all covered, remainder to principal
-    setupDbSelect([mockInvestment]) // investment fetch
-
+    // Investment is now fetched inside the transaction (TOCTOU fix)
     const txMock = makeTxMock({
       insertResult: mockRepayment,
-      selectResults: [[]], // no existing repayments
+      selectResults: [[mockInvestment], []], // first: investment fetch, second: no existing repayments
     })
     setupTransaction(txMock)
 
@@ -518,11 +462,9 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   })
 
   it("recordCreditorRepayment: updates principalBalance after repayment (CRED-04)", async () => {
-    setupDbSelect([mockInvestment])
-
     const txMock = makeTxMock({
       insertResult: mockRepayment,
-      selectResults: [[]],
+      selectResults: [[mockInvestment], []], // investment fetch + no existing repayments
     })
     setupTransaction(txMock)
 
@@ -538,11 +480,9 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   })
 
   it("recordCreditorRepayment: writes audit log inside transaction (CRED-04)", async () => {
-    setupDbSelect([mockInvestment])
-
     const txMock = makeTxMock({
       insertResult: mockRepayment,
-      selectResults: [[]],
+      selectResults: [[mockInvestment], []], // investment fetch + no existing repayments
     })
     setupTransaction(txMock)
 

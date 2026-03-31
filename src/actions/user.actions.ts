@@ -7,39 +7,32 @@ import { ROLE_LEVELS, type UserRole } from "@/types"
 const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "admin", "superAdmin"]
 
 export async function assignRole(input: { userId: string; role: UserRole }) {
-  // Get current user session
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  })
+  const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) {
     return { error: "Unauthorized" }
   }
 
   const { userId, role: targetRole } = input
 
-  // Prevent self-role-assignment
-  if (userId === session.user.id) {
-    return { error: "Cannot change your own role" }
-  }
-
-  // Validate input at runtime (TypeScript types are erased at runtime)
-  if (!userId || typeof userId !== "string") {
+  if (!userId) {
     return { error: "User ID is required" }
   }
   if (!VALID_ROLES.includes(targetRole)) {
     return { error: "Invalid role" }
   }
 
+  if (userId === session.user.id) {
+    return { error: "Cannot change your own role" }
+  }
+
   const actorRole = (session.user.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
   const targetLevel = ROLE_LEVELS[targetRole] ?? 0
 
-  // AUTH-05: Cannot assign role at or above own level
   if (targetLevel >= actorLevel) {
     return { error: "Cannot assign role at or above your own level" }
   }
 
-  // Only admin+ can assign roles at all
   if (actorLevel < ROLE_LEVELS.admin) {
     return { error: "Insufficient permissions to assign roles" }
   }

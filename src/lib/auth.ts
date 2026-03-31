@@ -1,16 +1,53 @@
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { admin } from "better-auth/plugins"
+import { Resend } from "resend"
 import { db } from "./db"
 import { ac, superAdminRole, adminRole, loanOfficerRole, unassignedRole } from "./permissions"
+import { VerifyEmailTemplate, ResetPasswordTemplate } from "@/lib/emails"
 
 // In-memory store for Cypress E2E tests: maps email -> verification URL
-// Only populated when CYPRESS=true (sendVerificationEmail is skipped, URL stored here)
+// Only populated when NODE_ENV=test (sendVerificationEmail stores URL here instead of emailing)
 export const pendingVerifications = new Map<string, string>()
+
+const isTest = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
+const isCypress = process.env.CYPRESS === "true"
+
+const resend = new Resend(process.env.RESEND_API_KEY)
+const emailFrom = process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>"
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg" }),
-  emailAndPassword: { enabled: true },
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: !isTest,
+    sendResetPassword: async ({ user, url }) => {
+      if (isTest) return // skip in test
+      await resend.emails.send({
+        from: emailFrom,
+        to: user.email,
+        subject: "Reset your password",
+        react: ResetPasswordTemplate({ url }),
+      })
+    },
+  },
+  emailVerification: {
+    sendOnSignUp: !isTest,
+    autoSignInAfterVerification: true,
+    sendVerificationEmail: async ({ user, url }) => {
+      if (isTest || isCypress) {
+        // Store URL for Cypress test retrieval via /api/test/verification-url
+        pendingVerifications.set(user.email, url)
+        return
+      }
+      await resend.emails.send({
+        from: emailFrom,
+        to: user.email,
+        subject: "Verify your email address",
+        react: VerifyEmailTemplate({ url }),
+      })
+    },
+  },
   session: {
     cookieCache: {
       enabled: false,

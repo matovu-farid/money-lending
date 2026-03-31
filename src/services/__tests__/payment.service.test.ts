@@ -508,6 +508,113 @@ describe("Payment Service", () => {
       expect(mockTx.update.mock.calls.length).toBeGreaterThanOrEqual(2)
     })
 
+    it("deletePayment: skips recalculation when deleted payment is the last chronologically", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      // The deleted payment is the latest — no subsequent payments exist
+      const lastPayment = {
+        ...mockPayment,
+        id: "pay-last",
+        paymentDate: new Date("2026-04-22T00:00:00.000Z"),
+        deletedAt: null,
+      }
+
+      // Earlier payment that should NOT be recalculated
+      const earlierPayment = {
+        ...mockPayment,
+        id: "pay-earlier",
+        paymentDate: new Date("2026-03-22T00:00:00.000Z"),
+        deletedAt: null,
+      }
+
+      let dbSelectCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        dbSelectCount++
+        const call = dbSelectCount
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              if (call === 1) return Promise.resolve([lastPayment]) // payment lookup
+              return Promise.resolve([mockLoan]) // loan lookup
+            }),
+          }),
+        }
+      })
+
+      const softDeletedResult = {
+        ...lastPayment,
+        deletedAt: new Date(),
+        deletedBy: "actor-1",
+        deleteReason: "Wrong entry",
+      }
+
+      let txSelectCount = 0
+      const mockTx = {
+        select: vi.fn().mockImplementation(() => {
+          txSelectCount++
+          const call = txSelectCount
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockImplementation(() => {
+                if (call === 1) {
+                  // remaining active payments (only the earlier one remains)
+                  // The deleted payment was the last, so findIndex for dates >= deletedDate returns -1
+                  // because no remaining payment has date >= 2026-04-22
+                  return { orderBy: vi.fn().mockResolvedValue([earlierPayment]) }
+                }
+                if (call === 2) {
+                  // refreshed payments for status check
+                  return { orderBy: vi.fn().mockResolvedValue([earlierPayment]) }
+                }
+                // Final select for deleted row
+                return Promise.resolve([softDeletedResult])
+              }),
+            }),
+          }
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+        delete: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(undefined),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }
+      ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+        async (cb: any) => cb(mockTx)
+      )
+
+      const { deletePayment } = await import("@/services/payment.service")
+      const result = await Effect.runPromise(
+        deletePayment({ paymentId: "pay-last", reason: "Wrong entry" }, "actor-1")
+      )
+
+      expect(result).toBeDefined()
+
+      // tx.update should be called for:
+      //   1. soft-delete of the payment
+      //   2. loan status update (refreshed check)
+      // But NOT for recalculation of earlier payments.
+      // If recalculation ran, there would be an additional update call for earlierPayment.
+      // With the fix (fromIndex === -1 skips recalc), we expect exactly 2 update calls.
+      const updateSetCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
+      // First call: soft-delete fields
+      const softDeleteArgs = updateSetCalls[0].mock.calls[0][0]
+      expect(softDeleteArgs.deletedAt).toBeDefined()
+      expect(softDeleteArgs.deletedBy).toBe("actor-1")
+
+      // No recalculation update should have happened for the earlier payment.
+      // txSelectCount should be 3: remaining active + refreshed + final deleted row fetch.
+      // If recalculation had run, there would be a 4th select (loan refetch inside recalculateFromPayment).
+      expect(txSelectCount).toBe(3)
+    })
+
     it("getPaymentsForLoan: returns all payments including soft-deleted for display (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 

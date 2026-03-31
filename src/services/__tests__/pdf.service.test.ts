@@ -32,7 +32,6 @@ function createMockDoc() {
   return doc
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 let mockDocInstance: ReturnType<typeof createMockDoc> & Record<string, any>
 
 const MockJsPDF = vi.fn(function (this: any) {
@@ -58,8 +57,6 @@ vi.mock("@/lib/utils", () => ({
     return date.toISOString().slice(0, 10)
   },
 }))
-
-// --- Test data factories ---
 
 function makePortfolioEntry(overrides: Partial<PortfolioEntry> = {}): PortfolioEntry {
   return {
@@ -106,8 +103,6 @@ function makeBalanceSheetData(overrides: Partial<BalanceSheetData> = {}): Balanc
     ...overrides,
   }
 }
-
-// --- Tests ---
 
 describe("PDF Export Service", () => {
   beforeEach(() => {

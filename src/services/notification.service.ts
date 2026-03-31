@@ -62,11 +62,6 @@ export const markAllAsRead = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Used by cron to create per-user notifications for a loan.
- * Plain async (not Effect) — called from Route Handler context (same pattern as writeAuditLog).
- * Dedup: checks for existing notification with same userId + loanId + dueDate before inserting.
- */
 export async function createNotificationsForLoan(
   loanId: string,
   message: string,
@@ -76,7 +71,6 @@ export async function createNotificationsForLoan(
   if (targetUserIds.length === 0) return
 
   for (const userId of targetUserIds) {
-    // Check if notification already exists for this user + loan + due date (dedup)
     const existing = await db
       .select({ id: notifications.id })
       .from(notifications)
@@ -84,7 +78,7 @@ export async function createNotificationsForLoan(
         and(
           eq(notifications.userId, userId),
           eq(notifications.loanId, loanId),
-          eq(notifications.dueDate, dueDate)
+          sql`date_trunc('day', ${notifications.dueDate}) = date_trunc('day', ${dueDate})`
         )
       )
       .limit(1)

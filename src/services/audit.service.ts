@@ -9,12 +9,6 @@ type AuditEntry = {
   afterValue: unknown | null
 }
 
-/**
- * Writes an audit log entry inside an existing transaction.
- * MUST be called with the transaction handle (tx), not the root db.
- * This is a plain async function, NOT an Effect -- because it runs
- * inside a Drizzle transaction callback where Effect.runPromise is unsafe.
- */
 export async function writeAuditLog(tx: any, entry: AuditEntry): Promise<void> {
   await tx.insert(auditLog).values({
     actorId: entry.actorId,

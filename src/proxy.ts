@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { auth } from "@/lib/auth"
+import { db } from "@/lib/db"
+import { sql } from "drizzle-orm"
 
-const AUTH_PAGES = ["/login", "/register", "/forgot-password"]
+const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password"]
 
 export async function proxy(request: NextRequest) {
   const session = await auth.api.getSession({
@@ -18,8 +20,27 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  // Unassigned users can ONLY access /pending-approval -- redirect everywhere else
-  if (session.user.role === "unassigned") {
+  // Email not verified -- redirect to /verify-email (skip in test/Cypress env)
+  const isTestEnv = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
+  if (!session.user.emailVerified && !isTestEnv) {
+    if (pathname === "/verify-email") return NextResponse.next()
+    return NextResponse.redirect(new URL("/verify-email", request.url))
+  }
+
+  // Unassigned users can ONLY access /pending-approval -- redirect everywhere else.
+  // Re-check the DB directly because the session may hold a stale role (e.g. the
+  // first-user databaseHook promoted to superAdmin after the session was created).
+  let role = session.user.role
+  if (role === "unassigned") {
+    const rows = await db.execute(
+      sql`SELECT "role" FROM "user" WHERE "id" = ${session.user.id}`
+    )
+    const dbRole = (rows as unknown as Array<{ role: string }>)[0]?.role
+    if (dbRole && dbRole !== "unassigned") {
+      role = dbRole
+    }
+  }
+  if (role === "unassigned") {
     if (pathname === "/pending-approval") return NextResponse.next()
     return NextResponse.redirect(new URL("/pending-approval", request.url))
   }

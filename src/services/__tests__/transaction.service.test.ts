@@ -148,7 +148,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
     })
     setupTransaction(txMock)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       recordExpense(
         {
@@ -182,7 +181,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const txMock = makeTxMock({ insertResult: mockIncomeTransaction })
     setupTransaction(txMock)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       recordIncome(
         {
@@ -232,7 +230,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("getTransactionById: returns a transaction by ID", async () => {
     setupDbSelect([mockTransaction])
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(getTransactionById("txn-1")) as any
 
     expect(result).toEqual(mockTransaction)
@@ -304,6 +301,74 @@ describe("Transaction Service — DB operations (mocked)", () => {
     }
   })
 
+  // ── deleteTransaction: auto-posted guard ────────────────────────────
+
+  it("deleteTransaction: blocks deletion of auto-posted payment transactions", async () => {
+    const autoPostedPaymentTxn = {
+      ...mockTransaction,
+      id: "txn-auto-pay",
+      referenceType: "payment",
+      referenceId: "pay-1",
+    }
+    setupDbSelect([autoPostedPaymentTxn])
+
+    const exit = await Effect.runPromiseExit(
+      deleteTransaction("txn-auto-pay", "actor-1")
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.failureOption(exit.cause)
+      expect(error._tag).toBe("Some")
+      if (error._tag === "Some") {
+        expect((error.value as any)._tag).toBe("TransactionNotFound")
+      }
+    }
+    // Verify no actual deletion happened (transaction was never called)
+    expect(mockedDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("deleteTransaction: blocks deletion of auto-posted creditor_repayment transactions", async () => {
+    const autoPostedCreditorTxn = {
+      ...mockTransaction,
+      id: "txn-auto-cred",
+      referenceType: "creditor_repayment",
+      referenceId: "inv-1",
+    }
+    setupDbSelect([autoPostedCreditorTxn])
+
+    const exit = await Effect.runPromiseExit(
+      deleteTransaction("txn-auto-cred", "actor-1")
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.failureOption(exit.cause)
+      expect(error._tag).toBe("Some")
+      if (error._tag === "Some") {
+        expect((error.value as any)._tag).toBe("TransactionNotFound")
+      }
+    }
+    expect(mockedDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("deleteTransaction: allows deletion of manually recorded transactions (no referenceType)", async () => {
+    // mockTransaction has referenceType: null — should be deletable
+    setupDbSelect([mockTransaction])
+
+    const txMock: any = {
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+
+    await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
+
+    expect(mockedDb.transaction).toHaveBeenCalledOnce()
+    expect(txMock.delete).toHaveBeenCalledOnce()
+  })
+
   // ── listTransactions ────────────────────────────────────────────────
 
   const mockTransactionWithCategory = {
@@ -316,11 +381,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
     categoryName: "Application Fees",
   }
 
-  /**
-   * Sets up the two parallel db.select() calls that listTransactions makes:
-   *   1) data query: select(...).from().innerJoin().where().orderBy().limit().offset()
-   *   2) count query: select({ count }).from().where()
-   */
   function setupListTransactions(rows: any[], total: number) {
     const dataSelect = {
       from: vi.fn().mockReturnValue({
@@ -350,7 +410,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("listTransactions: returns data and total with empty filters", async () => {
     setupListTransactions([mockTransactionWithCategory, mockTransactionWithCategory2], 2)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       listTransactions({}, 1, 20)
     ) as any
@@ -364,7 +423,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("listTransactions: filters by type", async () => {
     setupListTransactions([mockTransactionWithCategory], 1)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       listTransactions({ type: "debit" }, 1, 20)
     ) as any
@@ -377,7 +435,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("listTransactions: filters by date range", async () => {
     setupListTransactions([mockTransactionWithCategory], 1)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       listTransactions({ dateFrom: "2026-01-01", dateTo: "2026-03-31" }, 1, 20)
     ) as any
@@ -389,7 +446,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("listTransactions: paginates correctly for page > 1", async () => {
     setupListTransactions([mockTransactionWithCategory2], 25)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       listTransactions({}, 2, 20)
     ) as any
@@ -402,7 +458,6 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("listTransactions: returns empty data when no transactions match", async () => {
     setupListTransactions([], 0)
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Effect.runPromise(
       listTransactions({ type: "credit" }, 1, 20)
     ) as any
@@ -451,6 +506,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     await autoPostInterestEarned(txMock, {
       amount: "100000",
       loanId: "loan-1",
+      paymentId: "payment-1",
       paymentDate: "2026-03-01",
       actorId: "actor-1",
     })
@@ -464,7 +520,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
         type: "credit",
         amount: "100000",
         referenceType: "payment",
-        referenceId: "loan-1",
+        referenceId: "payment-1",
         recordedBy: "actor-1",
       })
     )

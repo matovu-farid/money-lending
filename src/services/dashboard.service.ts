@@ -12,75 +12,76 @@ import BigNumber from "bignumber.js"
 import type { DashboardKPIs, ActivityFeedItem } from "@/types"
 
 export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> =>
-  Effect.tryPromise({
-    try: async () => {
-      // Total outstanding principal (active loans only)
-      const activeLoans = await db
-        .select()
-        .from(loans)
-        .where(eq(loans.status, "active"))
+  Effect.flatMap(
+    getSystemCapital(),
+    (systemCapital) =>
+      Effect.tryPromise({
+        try: async () => {
+          const activeLoans = await db
+            .select()
+            .from(loans)
+            .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
-      let totalOutstanding = new BigNumber(0)
-      let overdueCount = 0
-      const now = new Date()
+          let totalOutstanding = new BigNumber(0)
+          let overdueCount = 0
+          const now = new Date()
 
-      for (const loan of activeLoans) {
-        const loanPayments = await db
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-          .orderBy(desc(payments.paymentDate))
+          for (const loan of activeLoans) {
+            const loanPayments = await db
+              .select()
+              .from(payments)
+              .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+              .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
 
-        const lastPayment = loanPayments[0]
-        const outstanding = lastPayment
-          ? new BigNumber(lastPayment.principalBalanceAfter)
-          : new BigNumber(loan.principalAmount)
-        totalOutstanding = totalOutstanding.plus(outstanding)
+            const lastPayment = loanPayments[0]
+            const outstanding = lastPayment
+              ? new BigNumber(lastPayment.principalBalanceAfter)
+              : new BigNumber(loan.principalAmount)
+            totalOutstanding = totalOutstanding.plus(outstanding)
 
-        // Calculate days overdue for this loan
-        const totalDaysElapsed = Math.floor(
-          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-        )
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
-        const dailyRate = calculateDailyRate(effectiveRate)
-        const totalInterestAccrued = calculateInterest(
-          loan.principalAmount, effectiveRate, totalDaysElapsed, effectiveMinDays
-        )
-        const totalInterestPaid = loanPayments.reduce(
-          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-        )
-        const daysOverdue = calculateDaysOverdue(
-          totalInterestAccrued.toFixed(2), totalInterestPaid.toFixed(2), dailyRate.toFixed(10)
-        )
-        if (daysOverdue.isGreaterThanOrEqualTo(30)) {
-          overdueCount++
-        }
-      }
+            const totalDaysElapsed = Math.floor(
+              (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
+            )
+            const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+            const dailyRate = calculateDailyRate(effectiveRate)
+            // Use actual days for accrual — min period only applies to payment allocation
+            const totalInterestAccrued = calculateInterest(
+              loan.principalAmount, effectiveRate, totalDaysElapsed, 0
+            )
+            const totalInterestPaid = loanPayments.reduce(
+              (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
+            )
+            const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
+            const daysOverdue = calculateDaysOverdue(
+              totalInterestAccrued, totalInterestPaid, dailyInterestAmount
+            )
+            if (daysOverdue.isGreaterThanOrEqualTo(30)) {
+              overdueCount++
+            }
+          }
 
-      // Total repayments collected and interest earned (non-deleted payments)
-      const [paymentStats] = await db
-        .select({
-          totalCollected: sum(payments.amount),
-          totalInterestEarned: sum(payments.interestPortion),
-        })
-        .from(payments)
-        .where(isNull(payments.deletedAt))
+          const [paymentStats] = await db
+            .select({
+              totalCollected: sum(payments.amount),
+              totalInterestEarned: sum(payments.interestPortion),
+            })
+            .from(payments)
+            .where(isNull(payments.deletedAt))
 
-      // Active borrower count (distinct customers with active loans)
-      const activeBorrowers = new Set(activeLoans.map(l => l.customerId)).size
+          const activeBorrowers = new Set(activeLoans.map(l => l.customerId)).size
 
-      return {
-        loansOutstanding: totalOutstanding.toFixed(2),
-        repaymentsCollected: new BigNumber(paymentStats?.totalCollected ?? "0").toFixed(2),
-        interestEarned: new BigNumber(paymentStats?.totalInterestEarned ?? "0").toFixed(2),
-        activeBorrowers,
-        overdueCount,
-        capitalInSystem: (await Effect.runPromise(getSystemCapital())).totalOutstanding,
-      }
-    },
-    catch: (e) => new DatabaseError({ cause: e }),
-  })
+          return {
+            loansOutstanding: totalOutstanding.toFixed(2),
+            repaymentsCollected: new BigNumber(paymentStats?.totalCollected ?? "0").toFixed(2),
+            interestEarned: new BigNumber(paymentStats?.totalInterestEarned ?? "0").toFixed(2),
+            activeBorrowers,
+            overdueCount,
+            capitalInSystem: systemCapital.totalOutstanding,
+          }
+        },
+        catch: (e) => new DatabaseError({ cause: e }),
+      })
+  )
 
 const formatAmount = (amount: string | number | undefined): string => {
   if (amount === undefined || amount === null) return "?"
@@ -91,7 +92,6 @@ const formatAmount = (amount: string | number | undefined): string => {
 export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      // Fetch recent audit log entries for loan/payment actions
       const recentEntries = await db
         .select()
         .from(auditLog)
@@ -115,7 +115,6 @@ export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseE
           customerId = afterVal.customerId as string | undefined
           loanId = entry.entityId
 
-          // Look up customer name if customerId is available
           let customerName: string | undefined
           if (customerId) {
             const [customer] = await db

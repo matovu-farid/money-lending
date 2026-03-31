@@ -57,8 +57,14 @@ describe("Expense CRUD", () => {
     cy.contains("Office Supplies").should("be.visible");
   });
 
-  it.skip("disables add button while mutation is pending", () => {
-    // Fill in expense form
+  it("disables add button while mutation is pending", () => {
+    // Intercept server action POST and delay the response so we can observe pending state
+    cy.intercept("POST", "/expenses", (req) => {
+      if (req.headers["next-action"]) {
+        req.on("response", (res) => { res.setDelay(1500) })
+      }
+    }).as("saveExpense")
+
     cy.visit("/expenses")
     cy.contains("button", "Add Expense", { timeout: 15000 })
       .scrollIntoView()
@@ -68,12 +74,15 @@ describe("Expense CRUD", () => {
     cy.get("#new-category-name").type("Test Category")
     cy.contains("button", "Add").click()
     cy.get("#expense-amount").type("10000")
+
     // Click submit
     cy.contains("button", "Record Expense").click()
-    // Assert button has disabled attribute
-    cy.contains("button", "Record Expense").should("be.disabled")
-    // Assert Loader2 spinner is visible
-    cy.get("[data-testid='spinner']").should("be.visible")
+
+    // While the server action is in flight, button should show "Saving..." and be disabled
+    cy.contains("button", "Saving...").should("be.disabled")
+
+    // Wait for the request to complete
+    cy.wait("@saveExpense")
   })
 
   it("can delete an expense", () => {

@@ -9,25 +9,26 @@ import { createNotificationsForLoan } from "@/services/notification.service"
 import BigNumber from "bignumber.js"
 
 export async function POST(request: NextRequest) {
-  // Auth: verify cron secret via Authorization Bearer header
+  // Fail-closed: reject if CRON_SECRET is not configured
+  if (!process.env.CRON_SECRET) {
+    return Response.json({ error: "CRON_SECRET not configured" }, { status: 500 })
+  }
+
   const authHeader = request.headers.get("authorization")
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 })
   }
 
   try {
-    // 1. Fetch all active loans
     const activeLoans = await db
       .select()
       .from(loans)
-      .where(eq(loans.status, "active"))
+      .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
     const now = new Date()
     const results: { loanId: string; daysOverdue: string }[] = []
     const alertResults: { loanId: string; daysUntilDue: number }[] = []
 
-    // ALRT-01: Get all users with staff roles for notification targeting
-    // Better Auth stores role in the "user" table's "role" column
     const targetUsersResult = await db.execute(
       sql`SELECT id FROM "user" WHERE role IN ('admin', 'loanOfficer', 'superAdmin')`
     )
@@ -35,47 +36,41 @@ export async function POST(request: NextRequest) {
       (r) => r.id
     )
 
-    // 2. For each active loan, calculate days overdue and check upcoming due dates
     for (const loan of activeLoans) {
-      // Fetch active (non-deleted) payments for this loan, ordered by date
+      try {
       const loanPayments = await db
         .select()
         .from(payments)
         .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
         .orderBy(asc(payments.paymentDate))
 
-      // Calculate total interest paid from payment records
       const totalInterestPaid = loanPayments.reduce(
         (sum, p) => sum.plus(new BigNumber(p.interestPortion)),
         new BigNumber(0)
       )
 
-      // Calculate total days elapsed since loan start
       const totalDaysElapsed = Math.floor(
         (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
       )
 
-      // Determine effective rate and min period (supports per-loan overrides, LOAN-11)
       const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-      const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
       const dailyRate = calculateDailyRate(effectiveRate)
 
-      // Calculate total interest accrued using the same engine as the rest of the system
-      // (RISK-04 pattern: single implementation, not a separate cron-only formula)
+      // Use actual days for accrual — min period only applies to payment allocation
       const totalInterestAccrued = calculateInterest(
         loan.principalAmount,
         effectiveRate,
         totalDaysElapsed,
-        effectiveMinDays
+        0
       )
 
+      const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
       const daysOverdue = calculateDaysOverdue(
-        totalInterestAccrued.toFixed(2),
-        totalInterestPaid.toFixed(2),
-        dailyRate.toFixed(10)
+        totalInterestAccrued,
+        totalInterestPaid,
+        dailyInterestAmount
       )
 
-      // Flag loans with days_overdue >= 30
       if (daysOverdue.isGreaterThanOrEqualTo(30)) {
         results.push({
           loanId: loan.id,
@@ -83,8 +78,6 @@ export async function POST(request: NextRequest) {
         })
       }
 
-      // ALRT-01: Generate in-app alerts for loans due within 5 days
-      // "Due date" = last payment date + 30 days, or loan start + 30 if no payments
       const lastPayment = loanPayments.at(-1)
       const referenceDate = lastPayment
         ? new Date(lastPayment.paymentDate)
@@ -98,7 +91,6 @@ export async function POST(request: NextRequest) {
       )
 
       if (daysUntilDue >= 0 && daysUntilDue <= 5) {
-        // Fetch customer name for message
         const [customer] = await db
           .select()
           .from(customers)
@@ -114,6 +106,9 @@ export async function POST(request: NextRequest) {
         )
 
         alertResults.push({ loanId: loan.id, daysUntilDue })
+      }
+      } catch (err) {
+        console.error(`[Cron] Failed to process loan ${loan.id}:`, err)
       }
     }
 

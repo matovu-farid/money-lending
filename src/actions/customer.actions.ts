@@ -3,6 +3,7 @@
 import { Effect } from "effect"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
+import { revalidatePath } from "next/cache"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
 import { CustomerNotFound, DatabaseError } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -31,7 +32,6 @@ export async function createCustomerAction(input: CreateCustomerInput) {
     return { error: "Unauthorized" }
   }
 
-  // Runtime validation -- TypeScript types are erased at runtime
   if (!input.fullName?.trim()) {
     return { error: "Full name is required" }
   }
@@ -44,6 +44,7 @@ export async function createCustomerAction(input: CreateCustomerInput) {
 
   try {
     const data = await Effect.runPromise(createCustomer(input))
+    revalidatePath("/customers")
     return { data }
   } catch (error) {
     if (error instanceof DatabaseError) {
@@ -81,6 +82,8 @@ export async function updateCustomerAction(
 
   try {
     const data = await Effect.runPromise(updateCustomer(id, input))
+    revalidatePath("/customers")
+    revalidatePath(`/customers/${id}`)
     return { data }
   } catch (error) {
     if (error instanceof CustomerNotFound) {
@@ -113,13 +116,11 @@ export async function changeCustomerStatusAction(input: ChangeStatusInput) {
     return { error: "Unauthorized" }
   }
 
-  // Only admin+ can change customer status
   const role = (session.user.role ?? "unassigned") as UserRole
   if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
     return { error: "Forbidden" }
   }
 
-  // Runtime validation
   if (!input.customerId?.trim()) {
     return { error: "Customer ID is required" }
   }
@@ -135,6 +136,8 @@ export async function changeCustomerStatusAction(input: ChangeStatusInput) {
     const data = await Effect.runPromise(
       changeCustomerStatus(input.customerId, input.newStatus, input.reason, session.user.id)
     )
+    revalidatePath("/customers")
+    revalidatePath(`/customers/${input.customerId}`)
     return { data }
   } catch (error) {
     if (error instanceof CustomerNotFound) {

@@ -1,10 +1,11 @@
+import "dotenv/config"
 import { defineConfig } from "cypress"
 import postgres, { type Sql } from "postgres"
 
-const PGLITE_URL = "postgres://localhost:5488/postgres"
+const DB_URL = process.env.DATABASE_URL_TEST ?? "postgres://localhost:5432/money_lending"
 
 function freshSql(): Sql {
-  return postgres(PGLITE_URL, { max: 1 })
+  return postgres(DB_URL, { max: 1 })
 }
 
 /** Run a callback with a disposable connection that is always closed afterwards. */
@@ -19,7 +20,7 @@ async function withSql<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
 
 export default defineConfig({
   e2e: {
-    baseUrl: "http://localhost:3001",
+    baseUrl: "http://localhost:3000",
     supportFile: "cypress/support/e2e.ts",
     specPattern: "cypress/e2e/**/*.cy.ts",
     setupNodeEvents(on) {
@@ -27,23 +28,23 @@ export default defineConfig({
         async "db:reset"() {
           return withSql(async (sql) => {
             await sql.unsafe(`
-              DELETE FROM test.financial_snapshots;
-              DELETE FROM test.transactions;
-              DELETE FROM test.transaction_categories;
-              DELETE FROM test.creditor_repayments;
-              DELETE FROM test.creditor_investments;
-              DELETE FROM test.creditors;
-              DELETE FROM test.session;
-              DELETE FROM test.account;
-              DELETE FROM test.verification;
-              DELETE FROM test.audit_log;
-              DELETE FROM test.notifications;
-              DELETE FROM test.payments;
-              DELETE FROM test.collateral;
-              DELETE FROM test.loans;
-              DELETE FROM test.customers;
-              DELETE FROM test.system_settings;
-              DELETE FROM test."user";
+              DELETE FROM financial_snapshots;
+              DELETE FROM transactions;
+              DELETE FROM transaction_categories;
+              DELETE FROM creditor_repayments;
+              DELETE FROM creditor_investments;
+              DELETE FROM creditors;
+              DELETE FROM session;
+              DELETE FROM account;
+              DELETE FROM verification;
+              DELETE FROM audit_log;
+              DELETE FROM notifications;
+              DELETE FROM payments;
+              DELETE FROM collateral;
+              DELETE FROM loans;
+              DELETE FROM customers;
+              DELETE FROM system_settings;
+              DELETE FROM "user";
             `)
             return null
           })
@@ -52,7 +53,7 @@ export default defineConfig({
         async "db:getUserRole"({ email }: { email: string }) {
           return withSql(async (sql) => {
             const rows = await sql`
-              SELECT role, email_verified FROM test."user"
+              SELECT role, email_verified FROM "user"
               WHERE email = ${email}
             `
             if (rows.length === 0) return null
@@ -62,11 +63,11 @@ export default defineConfig({
 
         async "db:promoteUser"({ email, role }: { email: string; role: string }) {
           return withSql(async (sql) => {
-            await sql`UPDATE test."user" SET role = ${role}, email_verified = true WHERE email = ${email}`
+            await sql`UPDATE "user" SET role = ${role}, email_verified = true WHERE email = ${email}`
             // Invalidate sessions so the user picks up the new role
-            const users = await sql`SELECT id FROM test."user" WHERE email = ${email}`
+            const users = await sql`SELECT id FROM "user" WHERE email = ${email}`
             for (const u of users) {
-              await sql`DELETE FROM test.session WHERE user_id = ${u.id}`
+              await sql`DELETE FROM session WHERE user_id = ${u.id}`
             }
             return null
           })
@@ -74,7 +75,7 @@ export default defineConfig({
 
         async "db:promoteUserKeepSession"({ email, role }: { email: string; role: string }) {
           return withSql(async (sql) => {
-            await sql`UPDATE test."user" SET role = ${role}, email_verified = true WHERE email = ${email}`
+            await sql`UPDATE "user" SET role = ${role}, email_verified = true WHERE email = ${email}`
             return null
           })
         },
@@ -82,7 +83,7 @@ export default defineConfig({
         async "db:getCustomers"() {
           return withSql(async (sql) => {
             const rows = await sql`
-              SELECT id, full_name, contact, address, status FROM test.customers
+              SELECT id, full_name, contact, address, status FROM customers
               ORDER BY created_at DESC
             `
             return rows
@@ -93,7 +94,7 @@ export default defineConfig({
           return withSql(async (sql) => {
             const rows = await sql`
               SELECT id, customer_id, principal_amount, interest_rate, status
-              FROM test.loans ORDER BY created_at DESC
+              FROM loans ORDER BY created_at DESC
             `
             return rows
           })

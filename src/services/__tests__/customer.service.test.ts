@@ -23,13 +23,6 @@ describe("Customer Service", () => {
     expect(mod.listCustomers).toBeDefined()
   })
 
-  it("CreateCustomerInput interface is exported from types (CUST-01)", async () => {
-    const types = await import("@/types")
-    // TypeScript interfaces are erased at runtime, but we can verify
-    // the type exports exist by checking dependent usage compiles
-    expect(types).toBeDefined()
-  })
-
   it("creates a customer in the database", async () => {
     const { db } = await import("@/lib/db")
     const { createCustomer } = await import("@/services/customer.service")

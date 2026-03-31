@@ -69,12 +69,6 @@ const makePayment = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-/**
- * Creates a thenable chain mock for drizzle query patterns.
- * Supports: select().from().innerJoin().innerJoin().where().orderBy()
- *           select().from().where().orderBy()
- *           select().from().where()
- */
 function chainedSelect(rows: unknown[]) {
   const terminal = {
     then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => {

@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -12,10 +12,11 @@ import {
 } from "@/components/ui/popover"
 import {
   getNotificationsAction,
-  getUnreadCountAction,
   markAsReadAction,
   markAllAsReadAction,
 } from "@/actions/notification.actions"
+import { useNotificationUnreadCount } from "@/hooks/use-notifications"
+import { queryKeys } from "@/hooks/query-keys"
 import type { Notification } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
 
@@ -27,15 +28,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false)
 
   // Fetch unread count with polling every 60s
-  const { data: unreadCount = 0 } = useQuery({
-    queryKey: ["notifications", "unread-count"],
-    queryFn: async () => {
-      const result = await getUnreadCountAction()
-      if ("data" in result) return result.data ?? 0
-      return 0
-    },
-    refetchInterval: 60000,
-  })
+  const { data: unreadCount = 0 } = useNotificationUnreadCount()
 
   // Fetch full notification list when popover opens (lazy load)
   function handleOpenChange(isOpen: boolean) {
@@ -60,7 +53,7 @@ export function NotificationBell() {
         prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
       )
       queryClient.setQueryData(
-        ["notifications", "unread-count"],
+        queryKeys.notifications.unreadCount(),
         (prev: number) => Math.max(0, (prev ?? 0) - 1)
       )
     }
@@ -74,7 +67,7 @@ export function NotificationBell() {
     const result = await markAllAsReadAction()
     if ("data" in result) {
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
-      queryClient.setQueryData(["notifications", "unread-count"], 0)
+      queryClient.setQueryData(queryKeys.notifications.unreadCount(), 0)
     }
   }
 

@@ -25,10 +25,6 @@ const DEFAULT_INCOME_CATEGORIES = [
   "Interest Earned",
 ]
 
-/**
- * Seeds default expense and income categories if they don't already exist.
- * Safe to run multiple times (check-before-insert pattern).
- */
 export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -60,10 +56,6 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Lists all categories, optionally filtered by type.
- * Ordered by name ASC.
- */
 export const listCategories = (
   type?: "expense" | "income"
 ): Effect.Effect<(typeof transactionCategories.$inferSelect)[], DatabaseError> =>
@@ -84,10 +76,6 @@ export const listCategories = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Creates a new category. Categories created by admin are not default.
- * Writes audit log entry.
- */
 export const createCategory = (
   input: CreateCategoryInput,
   actorId: string
@@ -122,35 +110,28 @@ export const createCategory = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-/**
- * Deletes a category by ID.
- * Fails with CategoryInUseError if any transaction references this category.
- * Writes audit log.
- */
 export const deleteCategory = (
   id: string,
   actorId: string
 ): Effect.Effect<void, DatabaseError | CategoryInUseError | CategoryNotFound> =>
   Effect.tryPromise({
     try: async () => {
-      // Fetch category first
-      const [category] = await db
-        .select()
-        .from(transactionCategories)
-        .where(eq(transactionCategories.id, id))
-
-      if (!category) throw { _tag: "CategoryNotFound", id }
-
-      // Check if any transactions reference this category
-      const [result] = await db
-        .select({ count: count() })
-        .from(transactions)
-        .where(eq(transactions.categoryId, id))
-
-      const usageCount = Number(result?.count ?? 0)
-      if (usageCount > 0) throw { _tag: "CategoryInUseError", categoryId: id }
-
       await db.transaction(async (tx) => {
+        const [category] = await tx
+          .select()
+          .from(transactionCategories)
+          .where(eq(transactionCategories.id, id))
+
+        if (!category) throw { _tag: "CategoryNotFound", id }
+
+        const [result] = await tx
+          .select({ count: count() })
+          .from(transactions)
+          .where(eq(transactions.categoryId, id))
+
+        const usageCount = Number(result?.count ?? 0)
+        if (usageCount > 0) throw { _tag: "CategoryInUseError", categoryId: id }
+
         await tx
           .delete(transactionCategories)
           .where(eq(transactionCategories.id, id))
@@ -173,10 +154,6 @@ export const deleteCategory = (
     },
   })
 
-/**
- * Gets a category by name and type.
- * Used by auto-posting to look up "Interest Earned" and "Interest Payments" categories.
- */
 export const getCategoryByName = (
   name: string,
   type: "expense" | "income"

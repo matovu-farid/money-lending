@@ -135,7 +135,6 @@ export function generatePnlPdf(data: PnlData): Buffer {
 
   let currentY = 52
 
-  // Income table
   autoTable(doc, {
     startY: currentY,
     head: [["Income Category", "Amount (UGX)"]],
@@ -154,7 +153,6 @@ export function generatePnlPdf(data: PnlData): Buffer {
       textColor: [0, 0, 0],
       fontStyle: "bold",
     },
-    // Bold the last row (Total Income)
     didParseCell: (data) => {
       if (data.row.index === data.table.body.length - 1) {
         data.cell.styles.fontStyle = "bold"
@@ -166,7 +164,6 @@ export function generatePnlPdf(data: PnlData): Buffer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentY = (doc as any).lastAutoTable.finalY + 10
 
-  // Expense table
   autoTable(doc, {
     startY: currentY,
     head: [["Expense Category", "Amount (UGX)"]],
@@ -196,7 +193,6 @@ export function generatePnlPdf(data: PnlData): Buffer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentY = (doc as any).lastAutoTable.finalY + 10
 
-  // Net Profit row
   doc.setFont("helvetica", "bold")
   doc.setFontSize(12)
   doc.text("Net Profit:", 14, currentY)
@@ -216,7 +212,6 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
 
   let currentY = 52
 
-  // Assets
   autoTable(doc, {
     startY: currentY,
     head: [["Assets", "Amount (UGX)"]],
@@ -230,7 +225,6 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentY = (doc as any).lastAutoTable.finalY + 8
 
-  // Liabilities
   autoTable(doc, {
     startY: currentY,
     head: [["Liabilities", "Amount (UGX)"]],
@@ -244,7 +238,6 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentY = (doc as any).lastAutoTable.finalY + 8
 
-  // Equity
   const liabPlusEquity =
     parseFloat(data.liabilities.totalCreditorBalances) +
     parseFloat(data.equity.totalEquity)
@@ -270,7 +263,6 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   currentY = (doc as any).lastAutoTable.finalY + 8
 
-  // Total row
   doc.setFont("helvetica", "bold")
   doc.setFontSize(11)
   doc.text("Total Liabilities + Equity:", 14, currentY)

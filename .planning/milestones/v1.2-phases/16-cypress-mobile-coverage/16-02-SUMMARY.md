@@ -113,14 +113,14 @@ None - all 12 files updated as specified. Mobile context block templates followe
 
 The test server infrastructure degraded during execution:
 1. PGLite database server (port 5488) stopped responding — the process that was running when this session started has crashed
-2. The Next.js test server (port 3001 with CYPRESS=true) was replaced by a different process without CYPRESS=true
+2. The Next.js test server (port 3000 with CYPRESS=true) was replaced by a different process without CYPRESS=true
 3. Without these two components, `cy.registerAndLogin()` cannot complete — the registration form submission fails because the auth backend has no database to write to
 
 **Root cause:** The test infrastructure runs as background processes started externally (via `pnpm test:e2e`). These processes are not managed by this executor and can crash independently. This agent does not have permission to start background processes.
 
 **Impact:** Task 3 (full suite regression) was not executed. The code changes in Tasks 1 and 2 are correct and committed. The mobile viewport context blocks follow the established patterns from Phase 16-01.
 
-**Resolution required:** User must restart test infrastructure (`pnpm test:e2e` or manually start PGLite + Next.js on port 3001 with CYPRESS=true) before running `npx cypress run` to confirm Task 3.
+**Resolution required:** User must restart test infrastructure (`pnpm test:e2e` or manually start PGLite + Next.js on port 3000 with CYPRESS=true) before running `npx cypress run` to confirm Task 3.
 
 ## Deferred Items
 

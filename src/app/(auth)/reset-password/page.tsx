@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { Suspense, useState, useTransition } from "react"
 import { useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useForm } from "react-hook-form"
@@ -24,6 +24,14 @@ interface ResetPasswordFormValues {
 }
 
 export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<Card><CardHeader><CardTitle className="text-xl">Loading...</CardTitle></CardHeader></Card>}>
+      <ResetPasswordContent />
+    </Suspense>
+  )
+}
+
+function ResetPasswordContent() {
   const searchParams = useSearchParams()
   const token = searchParams.get("token")
   const [showPassword, setShowPassword] = useState(false)

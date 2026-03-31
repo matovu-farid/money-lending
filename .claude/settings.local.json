@@ -14,14 +14,14 @@
       "WebSearch",
       "Bash(grep -r \"vitest\\\\|test\\(\" /Users/faridmatovu/projects/money-lending/src --include=*.ts --include=*.tsx)",
       "Bash(ls:*)",
-      "Bash(CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST npx next dev -p 3001 2>&1)",
+      "Bash(CYPRESS=true DATABASE_URL=$DATABASE_URL_TEST npx next dev -p 3000 2>&1)",
       "Bash(npx cypress:*)",
       "mcp__plugin_context7_context7__resolve-library-id",
       "mcp__plugin_context7_context7__query-docs",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
       "Bash(lsof -ti:3000)",
       "Bash(xargs kill:*)",
-      "Bash(lsof -ti:3001)",
+      "Bash(lsof -ti:3000)",
       "Bash(CYPRESS=true npx next dev -p 3000 2>&1)",
       "Bash(npx vitest:*)",
       "Bash(find /Users/faridmatovu/projects/money-lending -path */node_modules -prune -o -name *.test.* -o -name *.spec.* -type f)",
@@ -38,7 +38,18 @@
       "Skill(gsd:verify-work)",
       "Skill(gsd:add-phase)",
       "Bash(git rm:*)",
-      "Bash(git reset:*)"
+      "Bash(git reset:*)",
+      "Bash(git push:*)",
+      "Skill(gsd:quick)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(npx tsc:*)",
+      "Bash(git status:*)",
+      "Bash(git stash:*)",
+      "Bash(psql:*)",
+      "Bash(cat:*)",
+      "Bash(npx drizzle-kit:*)",
+      "Bash(pnpm build:*)"
     ]
   }
 }

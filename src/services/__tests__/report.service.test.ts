@@ -3,18 +3,6 @@ import BigNumber from "bignumber.js"
 import { calculateInterest, calculateDaysOverdue, calculateDailyRate } from "@/lib/interest/engine"
 import { Effect } from "effect"
 
-/**
- * Report Service Tests — TDD
- *
- * Tests cover:
- * - P&L: aggregation math (income - expenses = net profit)
- * - P&L: empty period returns zeros
- * - Balance Sheet: identity A = L + E
- * - Portfolio: riskFlag threshold (daysOverdue >= 30)
- * - Snapshot: idempotency check (conceptual — no test DB)
- * - DB-mocked tests for service functions
- */
-
 vi.mock("@/lib/db", () => ({
   db: { select: vi.fn(), insert: vi.fn() },
 }))
@@ -23,9 +11,6 @@ vi.mock("@/services/creditor.service", () => ({
   getSystemCapital: vi.fn(),
 }))
 
-// ----------------------------------------------------------------
-// Test 1: P&L aggregation math
-// ----------------------------------------------------------------
 describe("Report Service — P&L aggregation math", () => {
   it("sums income categories and expense categories correctly (RPTS-02)", () => {
     // Given transactions for Feb 2026:
@@ -80,9 +65,6 @@ describe("Report Service — P&L aggregation math", () => {
   })
 })
 
-// ----------------------------------------------------------------
-// Test 3: Balance Sheet identity A = L + E
-// ----------------------------------------------------------------
 describe("Report Service — Balance Sheet identity (RPTS-03)", () => {
   it("Assets = Liabilities + Equity (basic identity check)", () => {
     // Given:
@@ -119,9 +101,6 @@ describe("Report Service — Balance Sheet identity (RPTS-03)", () => {
   })
 })
 
-// ----------------------------------------------------------------
-// Test 4: Portfolio risk flag (daysOverdue >= 30 = riskFlag)
-// ----------------------------------------------------------------
 describe("Report Service — Portfolio risk flag (RPTS-04)", () => {
   it("riskFlag=true when daysOverdue >= 30 (45 days unpaid)", () => {
     // Active loan with 45 days of unpaid interest should be risk-flagged
@@ -139,11 +118,12 @@ describe("Report Service — Portfolio risk flag (RPTS-04)", () => {
     )
     const totalInterestPaid = new BigNumber(0)
     const dailyRate = calculateDailyRate(monthlyRate)
+    const dailyInterestAmount = new BigNumber(outstandingBalance).multipliedBy(dailyRate)
 
     const daysOverdue = calculateDaysOverdue(
       totalInterestAccrued.toFixed(2),
       totalInterestPaid.toFixed(2),
-      dailyRate.toFixed(10)
+      dailyInterestAmount.toFixed(2)
     )
 
     const riskFlag = daysOverdue.isGreaterThanOrEqualTo(30)
@@ -167,11 +147,12 @@ describe("Report Service — Portfolio risk flag (RPTS-04)", () => {
     // Fully paid — no unpaid interest
     const totalInterestPaid = totalInterestAccrued
     const dailyRate = calculateDailyRate(monthlyRate)
+    const dailyInterestAmount = new BigNumber(outstandingBalance).multipliedBy(dailyRate)
 
     const daysOverdue = calculateDaysOverdue(
       totalInterestAccrued.toFixed(2),
       totalInterestPaid.toFixed(2),
-      dailyRate.toFixed(10)
+      dailyInterestAmount.toFixed(2)
     )
 
     // calculateDaysOverdue returns 0 when unpaid <= 0
@@ -195,11 +176,12 @@ describe("Report Service — Portfolio risk flag (RPTS-04)", () => {
     // Fully paid — interest paid = accrued
     const totalInterestPaid = totalInterestAccrued
     const dailyRate = calculateDailyRate(monthlyRate)
+    const dailyInterestAmount = new BigNumber(outstandingBalance).multipliedBy(dailyRate)
 
     const daysOverdue = calculateDaysOverdue(
       totalInterestAccrued.toFixed(2),
       totalInterestPaid.toFixed(2),
-      dailyRate.toFixed(10)
+      dailyInterestAmount.toFixed(2)
     )
 
     const riskFlag = daysOverdue.isGreaterThanOrEqualTo(30)
@@ -208,46 +190,22 @@ describe("Report Service — Portfolio risk flag (RPTS-04)", () => {
   })
 })
 
-// ----------------------------------------------------------------
-// Report Service exports
-// ----------------------------------------------------------------
 describe("Report Service — exports", () => {
-  it("report service exports getPnlData function", async () => {
+  it("exports all expected functions", async () => {
     const mod = await import("@/services/report.service")
-    expect(mod.getPnlData).toBeDefined()
-    expect(typeof mod.getPnlData).toBe("function")
-  })
-
-  it("report service exports getBalanceSheetData function", async () => {
-    const mod = await import("@/services/report.service")
-    expect(mod.getBalanceSheetData).toBeDefined()
-    expect(typeof mod.getBalanceSheetData).toBe("function")
-  })
-
-  it("report service exports getPortfolioData function", async () => {
-    const mod = await import("@/services/report.service")
-    expect(mod.getPortfolioData).toBeDefined()
-    expect(typeof mod.getPortfolioData).toBe("function")
-  })
-
-  it("report service exports generateMonthlySnapshot function", async () => {
-    const mod = await import("@/services/report.service")
-    expect(mod.generateMonthlySnapshot).toBeDefined()
-    expect(typeof mod.generateMonthlySnapshot).toBe("function")
-  })
-
-  it("report service uses BigNumber for monetary arithmetic", async () => {
-    // Validates BigNumber is available in arithmetic context
-    const amount1 = new BigNumber("500000")
-    const amount2 = new BigNumber("1000000")
-    const total = amount1.plus(amount2)
-    expect(total.toFixed(2)).toBe("1500000.00")
+    const expectedExports = [
+      "getPnlData",
+      "getBalanceSheetData",
+      "getPortfolioData",
+      "generateMonthlySnapshot",
+    ]
+    for (const name of expectedExports) {
+      expect(mod).toHaveProperty(name)
+      expect(typeof (mod as Record<string, unknown>)[name]).toBe("function")
+    }
   })
 })
 
-// ----------------------------------------------------------------
-// Test 5: Snapshot idempotency (conceptual)
-// ----------------------------------------------------------------
 describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
   it("snapshot idempotency: same period+type combination should not insert duplicate", () => {
     // This tests the conceptual idempotency logic:
@@ -506,8 +464,9 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     expect(result.assets.totalLoansOutstanding).toBe("5000000.00")
     expect(result.liabilities.totalCreditorBalances).toBe("3000000.00")
     expect(result.equity.shareCapital).toBe("1000000.00")
-    expect(result.equity.retainedEarnings).toBe("2000000.00")
-    expect(result.equity.totalEquity).toBe("3000000.00")
+    // retainedEarnings = totalCredits(2500000) - totalDebits(500000) - shareCapital(1000000) = 1000000
+    expect(result.equity.retainedEarnings).toBe("1000000.00")
+    expect(result.equity.totalEquity).toBe("2000000.00")
   })
 
   it("getPortfolioData: returns active loans sorted by daysOverdue descending", async () => {

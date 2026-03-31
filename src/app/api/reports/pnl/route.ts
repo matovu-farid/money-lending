@@ -22,24 +22,34 @@ export async function GET(request: Request) {
   const format = searchParams.get("format") ?? "pdf"
   const period = searchParams.get("period") ?? getLastCompletedMonth()
 
-  const data = await Effect.runPromise(getPnlData(period))
-
-  if (format === "excel") {
-    const buffer = await generatePnlExcel(data)
-    return new Response(new Uint8Array(buffer), {
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        "Content-Disposition": `attachment; filename="pnl-${period}.xlsx"`,
-      },
-    })
+  // Validate period to prevent CRLF injection in Content-Disposition header
+  if (!/^\d{4}-\d{2}$/.test(period)) {
+    return NextResponse.json({ error: "Invalid period format. Expected YYYY-MM." }, { status: 400 })
   }
 
-  const buffer = generatePnlPdf(data)
-  return new Response(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="pnl-${period}.pdf"`,
-    },
-  })
+  try {
+    const data = await Effect.runPromise(getPnlData(period))
+
+    if (format === "excel") {
+      const buffer = await generatePnlExcel(data)
+      return new Response(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="pnl-${period}.xlsx"`,
+        },
+      })
+    }
+
+    const buffer = generatePnlPdf(data)
+    return new Response(new Uint8Array(buffer), {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="pnl-${period}.pdf"`,
+      },
+    })
+  } catch (error) {
+    console.error("P&L report generation failed:", error)
+    return NextResponse.json({ error: "Report generation failed" }, { status: 500 })
+  }
 }

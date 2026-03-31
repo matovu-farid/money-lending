@@ -1,0 +1,39 @@
+<svg width="240" height="240" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="240" height="240" fill="white"/>
+
+  <!-- Outer soft ring -->
+  <circle cx="120" cy="120" r="88"
+          fill="none"
+          stroke="#e5e7eb"
+          stroke-width="3"/>
+
+  <!-- Accent arc -->
+  <path d="M120 32 A88 88 0 0 1 208 120"
+        fill="none"
+        stroke="#22c55e"
+        stroke-width="4"
+        stroke-linecap="round"/>
+
+  <!-- Coin -->
+  <circle cx="120" cy="95" r="18" fill="#22c55e"/>
+
+  <!-- Subtle inner highlight -->
+  <circle cx="114" cy="90" r="5" fill="white" opacity="0.4"/>
+
+  <!-- Minimal hand -->
+  <path d="M72 138 
+           Q95 155 120 148 
+           Q145 140 168 152 
+           L168 158 
+           Q145 147 120 153 
+           Q95 160 72 146 Z"
+        fill="#1f2937"/>
+
+  <!-- Base curve for stability -->
+  <path d="M85 170 Q120 182 155 170"
+        fill="none"
+        stroke="#e5e7eb"
+        stroke-width="3"
+        stroke-linecap="round"/>
+</svg>
