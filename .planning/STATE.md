@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: unknown
-stopped_at: Completed 01-unify-loans-and-watchlist-pages plan 01
-last_updated: "2026-03-31T13:12:01.770Z"
+stopped_at: Completed 01-unify-loans-and-watchlist-pages plan 02
+last_updated: "2026-03-31T13:41:04.330Z"
 last_activity: 2026-03-31
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -50,6 +50,7 @@ Plan: 1 of 2
 | Phase 16-cypress-mobile-coverage P01 | 38min | 3 tasks | 14 files |
 | Phase 16-cypress-mobile-coverage P02 | 45 | 2 tasks | 12 files |
 | Phase 01-unify-loans-and-watchlist-pages P01 | 12 | 2 tasks | 7 files |
+| Phase 01-unify-loans-and-watchlist-pages P02 | 27 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -59,6 +60,8 @@ Full decision log in PROJECT.md Key Decisions table.
 
 - [Phase 01-unify-loans-and-watchlist-pages]: computeOverdue now fetches payments for ALL loan statuses to return LoanListEntry[] with outstandingBalance, dailyRate, lastPaymentDate for every loan
 - [Phase 01-unify-loans-and-watchlist-pages]: watchlist/page.tsx adapted to use useLoans hook until Plan 02 replaces it — eliminates dead code path
+- [Phase 01-unify-loans-and-watchlist-pages]: createCustomerAndLoan Cypress helper types directly into collateralNature input — no autocomplete click since fresh DB has no seeded collateral natures
+- [Phase 01-unify-loans-and-watchlist-pages]: registerAndLogin Cypress command updated to handle /verify-email redirect — uses db:promoteUser (sets email_verified=true) then re-login
 
 ### Roadmap Evolution
 
@@ -79,6 +82,6 @@ Full decision log in PROJECT.md Key Decisions table.
 ## Session Continuity
 
 Last activity: 2026-03-31
-Last session: 2026-03-31T13:12:01.769Z
-Stopped at: Completed 01-unify-loans-and-watchlist-pages plan 01
+Last session: 2026-03-31T13:41:04.328Z
+Stopped at: Completed 01-unify-loans-and-watchlist-pages plan 02
 Resume file: None
