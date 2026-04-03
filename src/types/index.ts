@@ -6,6 +6,7 @@ import type { payments } from "@/lib/db/schema/payments"
 import type { auditLog } from "@/lib/db/schema/audit"
 import type { notifications } from "@/lib/db/schema/notifications"
 import type { creditors, creditorInvestments, creditorRepayments, transactionCategories, transactions, financialSnapshots } from "@/lib/db/schema"
+import type { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
@@ -337,4 +338,19 @@ export interface LoanDueToday {
   outstandingBalance: string
   daysSinceLastPayment: number
   lastPaymentDate: Date | null
+}
+
+// --- Rate Change Request types ---
+export type RateChangeRequest = InferSelectModel<typeof rateChangeRequests>
+export type NewRateChangeRequest = InferInsertModel<typeof rateChangeRequests>
+
+export interface CreateRateChangeRequestInput {
+  loanId: string
+  requestedRate: string  // decimal string e.g. "0.08" for 8%/month
+}
+
+export interface ReviewRateChangeRequestInput {
+  requestId: string
+  action: "approved" | "rejected"
+  reviewNote?: string
 }

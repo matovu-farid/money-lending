@@ -50,6 +50,20 @@
       "when": 1774993613417,
       "tag": "0006_complete_bill_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775209374104,
+      "tag": "0007_rich_sasquatch",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1775260661684,
+      "tag": "0008_bored_ultimatum",
+      "breakpoints": true
     }
   ]
 }
