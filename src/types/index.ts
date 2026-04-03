@@ -31,8 +31,9 @@ export type CustomerStatus = "active" | "blacklisted" | "inactive"
 export const ROLE_LEVELS = {
   unassigned: 0,
   loanOfficer: 1,
-  admin: 2,
-  superAdmin: 3,
+  supervisor: 2,
+  admin: 3,
+  superAdmin: 4,
 } as const
 export type UserRole = keyof typeof ROLE_LEVELS
 
@@ -41,12 +42,14 @@ export type ApiResponse<T> = { data: T } | { error: string; details?: unknown }
 // --- Customer input types ---
 export interface CreateCustomerInput {
   fullName: string
+  nin: string
   contact: string
   address: string
 }
 
 export interface UpdateCustomerInput {
   fullName?: string
+  nin?: string
   contact?: string
   address?: string
 }

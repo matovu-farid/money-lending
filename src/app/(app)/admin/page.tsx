@@ -113,7 +113,8 @@ export default function AdminPage() {
                     <p className="font-semibold text-sm mb-1">User Roles</p>
                     <div className="text-xs text-muted-foreground space-y-1.5">
                       <p><strong>Super Admin</strong> — Full system access. Can manage all users, change any role, and access all settings. Only the first registered user gets this role automatically.</p>
-                      <p><strong>Admin</strong> — Can manage loans, customers, payments, and assign roles to users below their level. Cannot modify Super Admin accounts.</p>
+                      <p><strong>Admin</strong> — Can manage loans, customers, payments, and assign roles up to supervisor. Can access admin settings.</p>
+                      <p><strong>Supervisor</strong> — Same as Loan Officer plus can assign loan officers and approve/reject rate change requests within their threshold.</p>
                       <p><strong>Loan Officer</strong> — Can create customers, issue loans, and record payments. Cannot access admin settings or change roles.</p>
                       <p><strong>Unassigned</strong> — New users start here. Cannot perform any actions until a role is assigned by an admin.</p>
                     </div>
@@ -148,7 +149,9 @@ export default function AdminPage() {
                             <SelectValue>
                               {userRole === "loanOfficer"
                                 ? "Loan Officer"
-                                : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+                                : userRole === "superAdmin"
+                                  ? "Super Admin"
+                                  : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
                             </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
@@ -156,7 +159,9 @@ export default function AdminPage() {
                               <SelectItem key={role} value={role}>
                                 {role === "loanOfficer"
                                   ? "Loan Officer"
-                                  : role.charAt(0).toUpperCase() + role.slice(1)}
+                                  : role === "superAdmin"
+                                    ? "Super Admin"
+                                    : role.charAt(0).toUpperCase() + role.slice(1)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -165,7 +170,9 @@ export default function AdminPage() {
                         <span className="text-sm">
                           {userRole === "loanOfficer"
                             ? "Loan Officer"
-                            : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
+                            : userRole === "superAdmin"
+                              ? "Super Admin"
+                              : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
                         </span>
                       )}
                     </div>

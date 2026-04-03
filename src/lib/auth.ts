@@ -3,7 +3,7 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { admin } from "better-auth/plugins"
 import { Resend } from "resend"
 import { db } from "./db"
-import { ac, superAdminRole, adminRole, loanOfficerRole, unassignedRole } from "./permissions"
+import { ac, superAdminRole, adminRole, supervisorRole, loanOfficerRole, unassignedRole } from "./permissions"
 import { VerifyEmailTemplate, ResetPasswordTemplate } from "@/lib/emails"
 
 // In-memory store for Cypress E2E tests: maps email -> verification URL
@@ -89,6 +89,7 @@ export const auth = betterAuth({
       roles: {
         superAdmin: superAdminRole,
         admin: adminRole,
+        supervisor: supervisorRole,
         loanOfficer: loanOfficerRole,
         unassigned: unassignedRole,
       },

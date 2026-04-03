@@ -6,8 +6,9 @@ const statement = {
   loan: ["create", "read", "update", "delete"],
   customer: ["create", "read", "update"],
   payment: ["create", "read", "update", "delete"],
-  role: ["assign-loan-officer", "assign-admin", "assign-super-admin"],
+  role: ["assign-loan-officer", "assign-supervisor", "assign-admin", "assign-super-admin"],
   settings: ["read", "update"],
+  rateChangeRequest: ["create", "review"],
 } as const
 
 export const ac = createAccessControl(statement)
@@ -19,16 +20,23 @@ export const loanOfficerRole = ac.newRole({
   loan: ["create", "read", "update", "delete"],
   customer: ["create", "read", "update"],
   payment: ["create", "read", "update", "delete"],
+  rateChangeRequest: ["create"],
+})
+
+export const supervisorRole = ac.newRole({
+  ...loanOfficerRole.statements,
+  role: ["assign-loan-officer"],
+  rateChangeRequest: ["create", "review"],
 })
 
 export const adminRole = ac.newRole({
-  ...loanOfficerRole.statements,
-  role: ["assign-loan-officer"],
+  ...supervisorRole.statements,
+  role: ["assign-loan-officer", "assign-supervisor"],
   settings: ["read", "update"],
   ...adminAc.statements,
 })
 
 export const superAdminRole = ac.newRole({
   ...adminRole.statements,
-  role: ["assign-loan-officer", "assign-admin", "assign-super-admin"],
+  role: ["assign-loan-officer", "assign-supervisor", "assign-admin", "assign-super-admin"],
 })
