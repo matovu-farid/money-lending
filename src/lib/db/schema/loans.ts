@@ -1,5 +1,6 @@
 import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index } from "drizzle-orm/pg-core"
 import { customers } from "./customers"
+import { depositLocationEnum } from "./fund-transfers"
 
 export const loanStatusEnum = pgEnum("loan_status", [
   "active",
@@ -19,6 +20,7 @@ export const loans = pgTable("loans", {
   interestRateOverride: numeric("interest_rate_override", { precision: 5, scale: 4 }),
   minPeriodOverride: integer("min_period_override"),
   issuedBy: text("issued_by").notNull(),
+  disbursementSource: depositLocationEnum("disbursement_source").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
