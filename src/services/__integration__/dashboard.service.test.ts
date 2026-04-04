@@ -31,6 +31,8 @@ async function makeLoan(customerId: string, principal = "1000000.00", rate = "0.
       {
         customerId,
         principalAmount: principal,
+        issuanceFee: "50000.00",
+        description: "Test loan",
         interestRate: rate,
         minInterestDays: 30,
         startDate: "2025-01-01",
