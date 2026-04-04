@@ -64,6 +64,13 @@
       "when": 1775260661684,
       "tag": "0008_bored_ultimatum",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1775261459786,
+      "tag": "0009_slippery_catseye",
+      "breakpoints": true
     }
   ]
 }
