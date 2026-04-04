@@ -26,6 +26,8 @@ function todayISODate(): string {
 interface LoanFormValues {
   customerId: string
   principalAmount: string
+  issuanceFee: string
+  description: string
   startDate: string
   interestRateDisplay: string
   collateralNature: string
@@ -52,6 +54,8 @@ function NewLoanPageInner() {
     defaultValues: {
       customerId: prefilledCustomerId,
       principalAmount: "",
+      issuanceFee: "",
+      description: "",
       startDate: todayISODate(),
       interestRateDisplay: "10",
       collateralNature: "",
@@ -67,6 +71,8 @@ function NewLoanPageInner() {
   const interestRateDisplay = watch("interestRateDisplay")
   const collateralNature = watch("collateralNature")
   const collateralDescription = watch("collateralDescription")
+  const issuanceFee = watch("issuanceFee")
+  const description = watch("description")
 
   // Collateral autocomplete state (UI-only, not form fields)
   const [showNatureSuggestions, setShowNatureSuggestions] = useState(false)
@@ -117,7 +123,7 @@ function NewLoanPageInner() {
       : null
 
   // Step-level validation fields
-  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "startDate", "interestRateDisplay"]
+  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "description", "startDate", "interestRateDisplay"]
   const step2Fields: (keyof LoanFormValues)[] = ["collateralNature"]
 
   async function handleStep1Next() {
@@ -139,6 +145,8 @@ function NewLoanPageInner() {
     createLoan.mutate({
       customerId: data.customerId,
       principalAmount: data.principalAmount,
+      issuanceFee: data.issuanceFee,
+      description: data.description.trim(),
       interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
       minInterestDays: 30,
       startDate: new Date(data.startDate).toISOString(),
@@ -225,6 +233,30 @@ function NewLoanPageInner() {
                 required="Amount is required"
                 id="principalAmount"
               />
+
+              <MoneyInput
+                name="issuanceFee"
+                control={control}
+                label="Issuance Fee (UGX)"
+                required="Issuance fee is required"
+                id="issuanceFee"
+                min={50000}
+              />
+
+              <div className="space-y-1">
+                <Label htmlFor="description">Loan Description / Purpose</Label>
+                <textarea
+                  id="description"
+                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring min-h-[80px] resize-y"
+                  placeholder="Describe the purpose of this loan..."
+                  {...register("description", {
+                    required: "Loan description is required",
+                  })}
+                />
+                {errors.description && (
+                  <p className="text-sm text-destructive">{errors.description.message}</p>
+                )}
+              </div>
 
               <div className="space-y-1">
                 <Label htmlFor="startDate">Start Date</Label>
@@ -390,6 +422,14 @@ function NewLoanPageInner() {
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Principal Amount</dt>
                     <dd className="font-medium font-mono tabular-nums">{formatCurrency(principalAmount)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Issuance Fee</dt>
+                    <dd className="font-medium font-mono tabular-nums">{formatCurrency(issuanceFee)}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Description</dt>
+                    <dd className="font-medium">{description}</dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Start Date</dt>
