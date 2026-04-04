@@ -65,6 +65,8 @@ export interface CollateralInput {
 export interface CreateLoanInput {
   customerId: string
   principalAmount: string   // string for NUMERIC precision -- no float
+  issuanceFee: string        // string NUMERIC, minimum "50000"
+  description: string        // required loan description/purpose
   interestRate: string      // string decimal e.g. "0.10" for 10%/month, defaults to "0.10"
   minInterestDays: number   // defaults to 30
   startDate: string         // ISO 8601 datetime string
@@ -78,6 +80,8 @@ export interface UpdateLoanInput {
   principalAmount?: string    // NUMERIC string
   interestRate?: string       // decimal string e.g. "0.10"
   startDate?: string          // ISO 8601
+  issuanceFee?: string        // NUMERIC string
+  description?: string        // loan description/purpose
   reason: string              // required for audit
 }
 
