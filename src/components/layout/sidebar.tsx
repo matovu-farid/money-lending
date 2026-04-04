@@ -16,6 +16,7 @@ import {
   ChevronRight,
   LogOut,
   ClipboardCheck,
+  ArrowRightLeft,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "@/lib/auth-client"
@@ -59,6 +60,7 @@ const navGroups: NavGroup[] = [
     items: [
       { label: "Creditors", href: "/creditors", icon: Landmark },
       { label: "Expenses & Income", href: "/expenses", icon: Receipt },
+      { label: "Fund Transfers", href: "/fund-transfers", icon: ArrowRightLeft },
     ],
   },
   {
