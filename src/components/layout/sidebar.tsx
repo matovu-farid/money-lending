@@ -19,6 +19,7 @@ import {
   ArrowRightLeft,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { ROLE_LEVELS, type UserRole } from "@/types"
 import { signOut, useSession } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
 import {
@@ -40,42 +41,50 @@ interface NavGroup {
   items: NavItem[]
 }
 
-const navGroups: NavGroup[] = [
-  {
-    items: [
-      { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      { label: "Customers", href: "/customers", icon: Users },
-      { label: "Payments", href: "/payments", icon: CreditCard },
-      { label: "Loans", href: "/loans", icon: Banknote },
-      { label: "Approvals", href: "/approvals", icon: ClipboardCheck },
-    ],
-  },
-  {
-    label: "Capital",
-    items: [
-      { label: "Creditors", href: "/creditors", icon: Landmark },
-      { label: "Expenses & Income", href: "/expenses", icon: Receipt },
-      { label: "Fund Transfers", href: "/fund-transfers", icon: ArrowRightLeft },
-    ],
-  },
-  {
-    label: "Insights",
-    items: [
-      { label: "Reports", href: "/reports", icon: BarChart3 },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { label: "Admin", href: "/admin", icon: Shield },
-    ],
-  },
-]
+function getNavGroups(userRole: UserRole): NavGroup[] {
+  const isSupervisorOrAbove = ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
+
+  const operationsItems: NavItem[] = [
+    { label: "Customers", href: "/customers", icon: Users },
+    { label: "Payments", href: "/payments", icon: CreditCard },
+    { label: "Loans", href: "/loans", icon: Banknote },
+  ]
+  if (isSupervisorOrAbove) {
+    operationsItems.push({ label: "Approvals", href: "/approvals", icon: ClipboardCheck })
+  }
+
+  return [
+    {
+      items: [
+        { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: "Operations",
+      items: operationsItems,
+    },
+    {
+      label: "Capital",
+      items: [
+        { label: "Creditors", href: "/creditors", icon: Landmark },
+        { label: "Expenses & Income", href: "/expenses", icon: Receipt },
+        { label: "Fund Transfers", href: "/fund-transfers", icon: ArrowRightLeft },
+      ],
+    },
+    {
+      label: "Insights",
+      items: [
+        { label: "Reports", href: "/reports", icon: BarChart3 },
+      ],
+    },
+    {
+      label: "System",
+      items: [
+        { label: "Admin", href: "/admin", icon: Shield },
+      ],
+    },
+  ]
+}
 
 interface SidebarProps {
   open?: boolean
@@ -88,6 +97,20 @@ export function Sidebar({ onClose }: SidebarProps) {
   const { data: session } = useSession()
 
   const user = session?.user
+  const userRole = (user?.role ?? "unassigned") as UserRole
+  const userLevel = ROLE_LEVELS[userRole] ?? 0
+
+  const filteredNavGroups = getNavGroups(userRole).map((group) => {
+    if (group.label !== "Capital") return group
+    return {
+      ...group,
+      items: group.items.filter((item) => {
+        if (item.href === "/fund-transfers") return userLevel >= ROLE_LEVELS.admin
+        return true
+      }),
+    }
+  }).filter((group) => group.items.length > 0)
+
   const initials = user?.name
     ? user.name
         .split(" ")
@@ -129,7 +152,7 @@ export function Sidebar({ onClose }: SidebarProps) {
 
         {/* Navigation */}
         <nav aria-label="Main navigation" data-testid="sidebar-nav" className="flex-1 overflow-y-auto py-3 space-y-4">
-          {navGroups.map((group, groupIndex) => (
+          {filteredNavGroups.map((group, groupIndex) => (
             <div key={groupIndex}>
               {group.label && !collapsed && (
                 <p className="px-3 mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">

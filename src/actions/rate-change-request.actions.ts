@@ -8,7 +8,7 @@ import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type Rev
 import {
   createRateChangeRequest,
   applyRateChangeImmediately,
-  listPendingRequests,
+  listAllRequests,
   listRequestsForLoan,
   reviewRequest,
   countPendingRequests,
@@ -17,18 +17,18 @@ import { LoanNotFound, RateChangeRequestNotFound } from "@/lib/errors"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
-import { eq } from "drizzle-orm"
+import { eq, and } from "drizzle-orm"
 
 /**
  * Determine the required approver role based on the requested rate.
+ * - Rate >= 10% (0.10) -> no approval needed (null)
  * - Rate >= 8% (0.08) and < 10% (0.10) -> supervisor can approve
  * - Rate < 8% (0.08) -> admin must approve
  */
-function getRequiredApproverRole(requestedRateDecimal: string): UserRole {
+function getRequiredApproverRole(requestedRateDecimal: string): UserRole | null {
   const rate = parseFloat(requestedRateDecimal)
-  if (rate >= 0.08 && rate < 0.10) {
-    return "supervisor"
-  }
+  if (rate >= 0.10) return null  // no approval needed
+  if (rate >= 0.08) return "supervisor"
   return "admin"
 }
 
@@ -71,8 +71,8 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
 
   const requiredApproverRole = getRequiredApproverRole(input.requestedRate)
 
-  // If the user's role meets or exceeds the required approver role, apply immediately
-  if (ROLE_LEVELS[role] >= ROLE_LEVELS[requiredApproverRole]) {
+  // If no approval needed (rate >= 10%) or user's role meets/exceeds the required approver role, apply immediately
+  if (requiredApproverRole === null || ROLE_LEVELS[role] >= ROLE_LEVELS[requiredApproverRole]) {
     try {
       await Effect.runPromise(
         applyRateChangeImmediately(input.loanId, input.requestedRate, session.user.id)
@@ -86,6 +86,21 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
       }
       return { error: "Internal server error" }
     }
+  }
+
+  // Check for existing pending request on this loan (I-4)
+  const [existingPending] = await db
+    .select({ id: rateChangeRequests.id })
+    .from(rateChangeRequests)
+    .where(
+      and(
+        eq(rateChangeRequests.loanId, input.loanId),
+        eq(rateChangeRequests.status, "pending")
+      )
+    )
+
+  if (existingPending) {
+    return { error: "A pending rate change request already exists for this loan" }
   }
 
   // Otherwise, create a request for approval
@@ -104,7 +119,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
   }
 }
 
-export async function listPendingRequestsAction() {
+export async function listAllRequestsAction() {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) {
     return { error: "Unauthorized" }
@@ -116,7 +131,7 @@ export async function listPendingRequestsAction() {
   }
 
   try {
-    const data = await Effect.runPromise(listPendingRequests())
+    const data = await Effect.runPromise(listAllRequests())
     return { data }
   } catch {
     return { error: "Internal server error" }
@@ -162,12 +177,21 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
   // Fetch the request to check requiredApproverRole
   try {
     const [request] = await db
-      .select({ requiredApproverRole: rateChangeRequests.requiredApproverRole, loanId: rateChangeRequests.loanId })
+      .select({
+        requiredApproverRole: rateChangeRequests.requiredApproverRole,
+        loanId: rateChangeRequests.loanId,
+        requestedBy: rateChangeRequests.requestedBy,
+      })
       .from(rateChangeRequests)
       .where(eq(rateChangeRequests.id, input.requestId))
 
     if (!request) {
       return { error: "Rate change request not found" }
+    }
+
+    // Prevent self-approval (I-6)
+    if (session.user.id === request.requestedBy) {
+      return { error: "You cannot review your own rate change request" }
     }
 
     const requiredRole = request.requiredApproverRole as UserRole

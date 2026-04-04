@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
-import { listPendingRequestsAction, reviewRateChangeRequestAction } from "@/actions/rate-change-request.actions"
+import { listAllRequestsAction, reviewRateChangeRequestAction } from "@/actions/rate-change-request.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
@@ -50,7 +50,7 @@ export default function ApprovalsPage() {
   const { data: requests = [], isLoading } = useQuery({
     queryKey: queryKeys.rateChangeRequests.pending(),
     queryFn: async () => {
-      const result = await listPendingRequestsAction()
+      const result = await listAllRequestsAction()
       if ("error" in result) return []
       return result.data
     },

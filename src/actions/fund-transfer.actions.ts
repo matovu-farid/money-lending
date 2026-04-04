@@ -52,6 +52,11 @@ export async function listFundTransfersAction() {
     return { error: "Unauthorized" }
   }
 
+  const role = (session.user.role ?? "unassigned") as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+    return { error: "Forbidden: admin access required" }
+  }
+
   try {
     const data = await Effect.runPromise(listFundTransfers())
     return { data }

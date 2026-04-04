@@ -3,7 +3,7 @@ import { db } from "@/lib/db"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
-import { eq, desc } from "drizzle-orm"
+import { eq, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import type { CreateRateChangeRequestInput, ReviewRateChangeRequestInput, RateChangeRequest } from "@/types"
@@ -87,7 +87,7 @@ export const applyRateChangeImmediately = (
     },
   })
 
-export const listPendingRequests = (): Effect.Effect<RateChangeRequestWithLoan[], DatabaseError> =>
+export const listAllRequests = (): Effect.Effect<RateChangeRequestWithLoan[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const rows = await db
@@ -204,11 +204,11 @@ export const reviewRequest = (
 export const countPendingRequests = (): Effect.Effect<number, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const rows = await db
-        .select({ id: rateChangeRequests.id })
+      const [result] = await db
+        .select({ count: count() })
         .from(rateChangeRequests)
         .where(eq(rateChangeRequests.status, "pending"))
-      return rows.length
+      return result?.count ?? 0
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })

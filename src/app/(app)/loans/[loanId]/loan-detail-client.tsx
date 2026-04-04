@@ -947,11 +947,11 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 placeholder="e.g. 8.0"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                {newRate && parseFloat(newRate) >= 8 && parseFloat(newRate) < 10
-                  ? "Requires supervisor approval (or higher)."
-                  : newRate && parseFloat(newRate) > 0 && parseFloat(newRate) < 8
-                    ? "Requires admin approval (or higher)."
-                    : newRate && parseFloat(newRate) >= 10
+                {newRate && parseFloat(newRate) >= 10
+                  ? "No approval required."
+                  : newRate && parseFloat(newRate) >= 8 && parseFloat(newRate) < 10
+                    ? "Requires supervisor approval (or higher)."
+                    : newRate && parseFloat(newRate) > 0 && parseFloat(newRate) < 8
                       ? "Requires admin approval (or higher)."
                       : "Enter the new monthly interest rate."}
               </p>

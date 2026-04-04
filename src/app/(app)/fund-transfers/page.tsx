@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
 import { Loader2, ArrowRightLeft } from "lucide-react"
 import { toast } from "sonner"
+import { useSession } from "@/lib/auth-client"
+import { ROLE_LEVELS, type UserRole } from "@/types"
 import { createFundTransferAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -51,6 +53,11 @@ interface TransferFormValues {
 }
 
 export default function FundTransfersPage() {
+  const { data: session } = useSession()
+  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
+  const actorLevel = ROLE_LEVELS[actorRole] ?? 0
+  const isAdmin = actorLevel >= ROLE_LEVELS.admin
+
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
@@ -62,6 +69,7 @@ export default function FundTransfersPage() {
       if ("error" in result) throw new Error(result.error)
       return result.data
     },
+    enabled: !!session && isAdmin,
   })
 
   const {
@@ -105,6 +113,25 @@ export default function FundTransfersPage() {
       setDialogOpen(false)
       await queryClient.invalidateQueries({ queryKey: ["fund-transfers"] })
     })
+  }
+
+  if (!session) {
+    return (
+      <div className="p-4 md:p-6">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="p-4 md:p-6">
+        <p className="text-destructive font-medium">Access denied.</p>
+        <p className="text-muted-foreground text-sm mt-1">
+          You need Admin or higher permissions to view fund transfers.
+        </p>
+      </div>
+    )
   }
 
   return (

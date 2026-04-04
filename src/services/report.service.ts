@@ -121,7 +121,7 @@ export const getBalanceSheetData = (
         .where(and(
           eq(loans.status, "active"),
           isNull(loans.deletedAt),
-          lte(loans.createdAt, asOfDate)
+          lte(loans.startDate, asOfDate)
         ))
 
       let totalLoansOutstanding = new BigNumber(0)
@@ -160,7 +160,7 @@ export const getBalanceSheetData = (
         .from(payments)
         .where(and(
           isNull(payments.deletedAt),
-          lte(payments.createdAt, asOfDate)
+          lte(payments.paymentDate, asOfDate)
         ))
 
       for (const p of allPayments) {
@@ -179,7 +179,7 @@ export const getBalanceSheetData = (
         .from(loans)
         .where(and(
           isNull(loans.deletedAt),
-          lte(loans.createdAt, asOfDate)
+          lte(loans.startDate, asOfDate)
         ))
 
       for (const l of allLoans) {

@@ -77,8 +77,8 @@ export default async function LoanDetailPage({
   if (ROLE_LEVELS[role] >= ROLE_LEVELS.admin) {
     // Admin+ can always edit/delete any loan
     canModify = true
-  } else if (role === "loanOfficer") {
-    // Loan officers can only edit/delete a loan they just created (freshly created = ?new=1 param)
+  } else if (role === "loanOfficer" || role === "supervisor") {
+    // Loan officers and supervisors can only edit/delete a loan they just created (freshly created = ?new=1 param)
     // and only their own loan — once they navigate away or reload, the privilege is gone
     const freshlyCreated = sp.new === "1"
     if (freshlyCreated && loan.issuedBy === userId) {
