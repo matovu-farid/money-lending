@@ -7,6 +7,7 @@ import type { auditLog } from "@/lib/db/schema/audit"
 import type { notifications } from "@/lib/db/schema/notifications"
 import type { creditors, creditorInvestments, creditorRepayments, transactionCategories, transactions, financialSnapshots } from "@/lib/db/schema"
 import type { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
+import type { fundTransfers } from "@/lib/db/schema/fund-transfers"
 
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
@@ -28,6 +29,7 @@ export type AuditLogEntry = InferSelectModel<typeof auditLog>
 
 export type LoanStatus = "active" | "fully_paid"
 export type CustomerStatus = "active" | "blacklisted" | "inactive"
+export type DepositLocation = "cash" | "bank" | "strong_room"
 
 export const ROLE_LEVELS = {
   unassigned: 0,
@@ -71,6 +73,7 @@ export interface CreateLoanInput {
   minInterestDays: number   // defaults to 30
   startDate: string         // ISO 8601 datetime string
   collateral: CollateralInput
+  disbursementSource: DepositLocation
   interestRateOverride?: string | null  // admin-only override
   minPeriodOverride?: number | null     // admin-only override
 }
@@ -95,6 +98,7 @@ export interface RecordPaymentInput {
   loanId: string
   paymentDate: string  // ISO 8601
   amount: string       // NUMERIC string
+  depositLocation: DepositLocation
   note?: string
 }
 
@@ -132,6 +136,7 @@ export interface PaymentWithCustomer {
   principalPortion: string
   principalBalanceAfter: string
   recordedBy: string
+  depositLocation: DepositLocation
   createdAt: Date
 }
 
@@ -279,7 +284,13 @@ export interface PnlData {
 
 export interface BalanceSheetData {
   asOf: string
-  assets: { totalLoansOutstanding: string }
+  assets: {
+    cashBalance: string
+    bankBalance: string
+    strongRoomBalance: string
+    totalLoansOutstanding: string
+    totalAssets: string
+  }
   liabilities: { totalCreditorBalances: string }
   equity: { shareCapital: string; retainedEarnings: string; totalEquity: string }
 }
@@ -325,6 +336,7 @@ export interface DailyCollectionRow {
   interestPortion: string
   principalPortion: string
   paymentDate: Date
+  depositLocation: DepositLocation
 }
 
 export interface DailyCollectionsSummary {
@@ -357,4 +369,15 @@ export interface ReviewRateChangeRequestInput {
   requestId: string
   action: "approved" | "rejected"
   reviewNote?: string
+}
+
+// --- Cash Management: Fund Transfer types ---
+export type FundTransfer = InferSelectModel<typeof fundTransfers>
+export type NewFundTransfer = InferInsertModel<typeof fundTransfers>
+
+export interface CreateFundTransferInput {
+  fromLocation: DepositLocation
+  toLocation: DepositLocation
+  amount: string       // NUMERIC string
+  note?: string
 }
