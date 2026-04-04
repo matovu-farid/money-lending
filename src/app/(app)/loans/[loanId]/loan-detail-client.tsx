@@ -384,7 +384,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </div>
 
       {/* Loan Details Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2 text-muted-foreground mb-2">
             <Banknote className="h-4 w-4" />
@@ -443,7 +443,24 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
             {formatDate(loan.startDate)}
           </p>
         </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
+            <Banknote className="h-4 w-4" />
+            <span className="text-xs font-medium uppercase tracking-wider">Issuance Fee</span>
+          </div>
+          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
+            {formatCurrency(loan.issuanceFee)}
+          </p>
+        </div>
       </div>
+
+      {/* Loan Description */}
+      {loan.description && (
+        <div className="rounded-xl border border-border bg-card p-5">
+          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">Description</p>
+          <p className="text-sm">{loan.description}</p>
+        </div>
+      )}
 
       {/* Principal Balance Card */}
       <div className="rounded-xl border border-border bg-card p-6">
