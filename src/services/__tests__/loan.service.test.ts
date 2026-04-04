@@ -18,6 +18,7 @@ vi.mock("drizzle-orm", async () => {
 const baseCustomer = {
   id: "cust-1",
   fullName: "John Doe",
+  nin: "CM00000000TEST",
   contact: "+256700000000",
   address: "Plot 12, Kampala",
   status: "active",
@@ -26,6 +27,8 @@ const baseCustomer = {
 const baseLoanInput = {
   customerId: "cust-1",
   principalAmount: "500000.00",
+  issuanceFee: "50000.00",
+  description: "Business expansion loan",
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: "2026-03-19T00:00:00.000Z",
@@ -36,6 +39,8 @@ const mockLoan = {
   id: "loan-1",
   customerId: "cust-1",
   principalAmount: "500000.00",
+  issuanceFee: "50000.00",
+  description: "Business expansion loan",
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-03-19T00:00:00.000Z"),
@@ -107,14 +112,30 @@ describe("Loan Service", () => {
     } as any)
 
     // Mock transaction — execute callback with mock tx
+    const mockFeeCategory = { id: "cat-1", name: "Issuance Fees", type: "income", isDefault: true }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
+        let insertCallCount = 0
         const mockTx = {
-          insert: vi.fn().mockReturnValue({
-            values: vi.fn().mockReturnValue({
-              returning: vi.fn()
-                .mockResolvedValueOnce([mockLoan])
-                .mockResolvedValueOnce([mockCollateral]),
+          insert: vi.fn().mockImplementation(() => {
+            insertCallCount++
+            if (insertCallCount === 1) {
+              // loan insert
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockLoan]) }) }
+            } else if (insertCallCount === 2) {
+              // collateral insert
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
+            } else if (insertCallCount === 3) {
+              // transactionCategories insert (if category not found)
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockFeeCategory]) }) }
+            } else {
+              // transactions insert (no returning)
+              return { values: vi.fn().mockResolvedValue(undefined) }
+            }
+          }),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([]),  // no existing category
             }),
           }),
         }
@@ -143,14 +164,26 @@ describe("Loan Service", () => {
     } as any)
 
     let capturedTx: any
+    const mockFeeCategory = { id: "cat-1", name: "Issuance Fees", type: "income", isDefault: true }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
+        let insertCallCount = 0
         const mockTx = {
-          insert: vi.fn().mockReturnValue({
-            values: vi.fn().mockReturnValue({
-              returning: vi.fn()
-                .mockResolvedValueOnce([mockLoan])
-                .mockResolvedValueOnce([mockCollateral]),
+          insert: vi.fn().mockImplementation(() => {
+            insertCallCount++
+            if (insertCallCount === 1) {
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockLoan]) }) }
+            } else if (insertCallCount === 2) {
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
+            } else if (insertCallCount === 3) {
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockFeeCategory]) }) }
+            } else {
+              return { values: vi.fn().mockResolvedValue(undefined) }
+            }
+          }),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([]),
             }),
           }),
         }

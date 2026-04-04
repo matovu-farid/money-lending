@@ -24,6 +24,7 @@ async function makeCustomer() {
   return Effect.runPromise(
     createCustomer({
       fullName: "Test Customer",
+      nin: "CM00000000TEST",
       contact: "+256700000000",
       address: "Kampala, Uganda",
     })
@@ -36,6 +37,8 @@ async function makeLoan(customerId: string) {
       {
         customerId,
         principalAmount: "1000000.00",
+        issuanceFee: "50000.00",
+        description: "Test loan",
         interestRate: "0.10",
         minInterestDays: 30,
         startDate: "2025-01-01",

@@ -17,6 +17,7 @@ async function makeCustomer(overrides = {}) {
   return Effect.runPromise(
     createCustomer({
       fullName: "Test Customer",
+      nin: "CM00000000TEST",
       contact: "+256700000000",
       address: "Kampala, Uganda",
       ...overrides,
@@ -150,6 +151,8 @@ describe(
             {
               customerId: customer.id,
               principalAmount: "1000000.00",
+              issuanceFee: "50000.00",
+              description: "Test loan",
               interestRate: "0.10",
               minInterestDays: 30,
               startDate: sixtyDaysAgo.toISOString(),
