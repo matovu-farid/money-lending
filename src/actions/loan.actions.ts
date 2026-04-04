@@ -146,6 +146,15 @@ export async function createLoanAction(input: CreateLoanInput) {
   if (!input.collateral?.nature?.trim()) {
     return { error: "Collateral nature is required" }
   }
+  if (!input.issuanceFee?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
+    return { error: "Issuance fee must be a valid decimal number" }
+  }
+  if (parseFloat(input.issuanceFee) < 50000) {
+    return { error: "Issuance fee must be at least 50,000 UGX" }
+  }
+  if (!input.description?.trim()) {
+    return { error: "Loan description is required" }
+  }
 
   const loanInput: CreateLoanInput = {
     ...input,

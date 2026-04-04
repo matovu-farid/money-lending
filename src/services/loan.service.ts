@@ -5,6 +5,8 @@ import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
 import { notifications } from "@/lib/db/schema/notifications"
 import { customers } from "@/lib/db/schema/customers"
+import { transactions } from "@/lib/db/schema/transactions"
+import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq, desc, and, isNull } from "drizzle-orm"
 import {
   DatabaseError,
@@ -61,6 +63,8 @@ export const createLoan = (
           .values({
             customerId: input.customerId,
             principalAmount: input.principalAmount,
+            issuanceFee: input.issuanceFee,
+            description: input.description,
             interestRate: input.interestRate,
             minInterestDays: input.minInterestDays,
             startDate,
@@ -87,6 +91,35 @@ export const createLoan = (
           entityId: loan.id,
           beforeValue: null,
           afterValue: { ...loan, collateral: coll },
+        })
+
+        // Auto-post issuance fee as income transaction
+        let [feeCategory] = await tx
+          .select()
+          .from(transactionCategories)
+          .where(
+            and(
+              eq(transactionCategories.name, "Issuance Fees"),
+              eq(transactionCategories.type, "income")
+            )
+          )
+
+        if (!feeCategory) {
+          ;[feeCategory] = await tx
+            .insert(transactionCategories)
+            .values({ name: "Issuance Fees", type: "income", isDefault: true })
+            .returning()
+        }
+
+        await tx.insert(transactions).values({
+          type: "credit",
+          amount: input.issuanceFee,
+          categoryId: feeCategory.id,
+          referenceType: "loan",
+          referenceId: loan.id,
+          description: `Issuance fee for loan ${loan.id.slice(0, 8).toUpperCase()}`,
+          transactionDate: startDate,
+          recordedBy: actorId,
         })
 
         return { ...loan, collateral: coll }
@@ -120,6 +153,8 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           id: loans.id,
           customerId: loans.customerId,
           principalAmount: loans.principalAmount,
+          issuanceFee: loans.issuanceFee,
+          description: loans.description,
           interestRate: loans.interestRate,
           minInterestDays: loans.minInterestDays,
           startDate: loans.startDate,
@@ -165,6 +200,12 @@ export const updateLoan = (
       }
       if (input.startDate !== undefined) {
         setObj.startDate = new Date(input.startDate)
+      }
+      if (input.issuanceFee !== undefined) {
+        setObj.issuanceFee = input.issuanceFee
+      }
+      if (input.description !== undefined) {
+        setObj.description = input.description
       }
 
       return await db.transaction(async (tx) => {
