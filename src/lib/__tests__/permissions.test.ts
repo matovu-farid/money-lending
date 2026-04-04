@@ -53,6 +53,7 @@ describe("ac (access control)", () => {
   it("defines role assignment actions", () => {
     expect(ac.statements.role).toEqual([
       "assign-loan-officer",
+      "assign-supervisor",
       "assign-admin",
       "assign-super-admin",
     ])

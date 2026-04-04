@@ -33,6 +33,7 @@ const baseLoanInput = {
   minInterestDays: 30,
   startDate: "2026-03-19T00:00:00.000Z",
   collateral: { nature: "Land Title", description: "Plot 42, Kampala" },
+  disbursementSource: "cash" as const,
 }
 
 const mockLoan = {
@@ -48,6 +49,7 @@ const mockLoan = {
   interestRateOverride: null,
   minPeriodOverride: null,
   issuedBy: "actor-1",
+  disbursementSource: "cash",
 }
 
 const mockCollateral = {

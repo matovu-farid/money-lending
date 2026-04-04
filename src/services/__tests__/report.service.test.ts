@@ -293,6 +293,27 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
+    // 5th select: allPayments (location balances)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // 6th select: allLoans (disbursement location balances)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // 7th select: allFundTransfers
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
     // Mock getSystemCapital
     vi.mocked(mockedGetSystemCapital).mockReturnValue(
       Effect.succeed({
@@ -303,7 +324,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       })
     )
 
-    // 5th select: share capital transactions (innerJoin)
+    // 8th select: share capital transactions (innerJoin)
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -312,7 +333,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 6th select: all transactions for retained earnings
+    // 9th select: all transactions for retained earnings
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([
@@ -427,6 +448,27 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
+    // 3rd select: allPayments (for per-location balances)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // 4th select: allLoans (for disbursement location balances)
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // 5th select: allFundTransfers
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
     // Mock getSystemCapital
     vi.mocked(mockedGetSystemCapital).mockReturnValue(
       Effect.succeed({
@@ -437,7 +479,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       })
     )
 
-    // 3rd select: share capital transactions (innerJoin)
+    // 6th select: share capital transactions (innerJoin)
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -448,7 +490,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 4th select: all transactions for retained earnings
+    // 7th select: all transactions for retained earnings
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([
@@ -462,6 +504,10 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
 
     expect(result.asOf).toBe("2026-02")
     expect(result.assets.totalLoansOutstanding).toBe("5000000.00")
+    expect(result.assets.cashBalance).toBe("0.00")
+    expect(result.assets.bankBalance).toBe("0.00")
+    expect(result.assets.strongRoomBalance).toBe("0.00")
+    expect(result.assets.totalAssets).toBe("5000000.00")
     expect(result.liabilities.totalCreditorBalances).toBe("3000000.00")
     expect(result.equity.shareCapital).toBe("1000000.00")
     // retainedEarnings = totalCredits(2500000) - totalDebits(500000) - shareCapital(1000000) = 1000000
