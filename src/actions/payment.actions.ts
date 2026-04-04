@@ -32,6 +32,11 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
     return { error: "Payment date is required" }
   }
 
+  const validLocations = ["cash", "bank", "strong_room"]
+  if (!input.depositLocation || !validLocations.includes(input.depositLocation)) {
+    return { error: "Deposit location is required (cash, bank, or strong_room)" }
+  }
+
   try {
     const data = await Effect.runPromise(recordPayment(input, session.user.id))
     revalidatePath(`/loans/${input.loanId}`)

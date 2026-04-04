@@ -3,7 +3,7 @@
 import { useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -14,6 +14,13 @@ import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { cn } from "@/lib/utils"
@@ -29,6 +36,7 @@ function todayISODate(): string {
 interface PaymentFormValues {
   paymentDate: string
   amount: string
+  depositLocation: "cash" | "bank" | "strong_room"
   note: string
 }
 
@@ -46,6 +54,7 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
     defaultValues: {
       paymentDate: todayISODate(),
       amount: "",
+      depositLocation: "cash",
       note: "",
     },
   })
@@ -56,6 +65,7 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
         loanId,
         paymentDate: data.paymentDate + "T12:00:00",
         amount: data.amount.trim(),
+        depositLocation: data.depositLocation,
         note: data.note.trim() || undefined,
       })
 
@@ -134,6 +144,34 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
               disabled={isPending}
               id="amount"
             />
+
+            <div className="space-y-1">
+              <Label htmlFor="depositLocation">Deposit Location</Label>
+              <Controller
+                name="depositLocation"
+                control={control}
+                rules={{ required: "Deposit location is required" }}
+                render={({ field }) => (
+                  <Select
+                    value={field.value}
+                    onValueChange={field.onChange}
+                    disabled={isPending}
+                  >
+                    <SelectTrigger id="depositLocation">
+                      <SelectValue placeholder="Select location" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="bank">Bank</SelectItem>
+                      <SelectItem value="strong_room">Strong Room</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.depositLocation && (
+                <p className="text-sm text-destructive">{errors.depositLocation.message}</p>
+              )}
+            </div>
 
             <div className="space-y-1">
               <Label htmlFor="note">Note</Label>

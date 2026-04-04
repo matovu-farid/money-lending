@@ -133,6 +133,7 @@ export const recordPayment = (
             principalBalanceBefore: allocation.principalBalanceBefore,
             principalBalanceAfter: allocation.principalBalanceAfter,
             recordedBy: actorId,
+            depositLocation: input.depositLocation,
           })
           .returning()
 
@@ -421,6 +422,7 @@ export const listPayments = (
             principalPortion: payments.principalPortion,
             principalBalanceAfter: payments.principalBalanceAfter,
             recordedBy: payments.recordedBy,
+            depositLocation: payments.depositLocation,
             createdAt: payments.createdAt,
           })
           .from(payments)
