@@ -28,6 +28,8 @@ export function useCreateLoan() {
         customerId: input.customerId,
         customerName: "Loading...",
         principalAmount: input.principalAmount,
+        issuanceFee: input.issuanceFee,
+        description: input.description,
         interestRate: input.interestRate || "0.10",
         minInterestDays: input.minInterestDays || 30,
         interestRateOverride: input.interestRateOverride ?? null,
