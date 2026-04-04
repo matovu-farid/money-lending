@@ -1,6 +1,6 @@
 "use client"
 
-import { useTransition } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
@@ -8,6 +8,8 @@ import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { recordPaymentAction } from "@/actions/payment.actions"
+import { useSession } from "@/lib/auth-client"
+import { generateReceiptNumber } from "@/lib/receipt-number"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -24,9 +26,14 @@ import {
 import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { cn } from "@/lib/utils"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
+import type { Payment } from "@/types"
 
 interface RecordPaymentFormProps {
   loanId: string
+  customerName: string
+  loanReference: string
 }
 
 function todayISODate(): string {
@@ -40,10 +47,16 @@ interface PaymentFormValues {
   note: string
 }
 
-export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
+interface ReceiptPaymentData extends Payment {
+  depositLocationValue: string
+}
+
+export function RecordPaymentForm({ loanId, customerName, loanReference }: RecordPaymentFormProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { data: session } = useSession()
   const [isPending, startTransition] = useTransition()
+  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
 
   const {
     register,
@@ -80,7 +93,11 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
         queryClient.invalidateQueries({ queryKey: queryKeys.loans.all }),
         queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all }),
       ])
-      router.push(`/loans/${loanId}`)
+
+      setReceiptData({
+        payment: { ...result.data, depositLocationValue: data.depositLocation },
+        receiptNumber: generateReceiptNumber(),
+      })
     })
   }
 
@@ -198,6 +215,33 @@ export function RecordPaymentForm({ loanId }: RecordPaymentFormProps) {
           </form>
         </CardContent>
       </Card>
+
+      {/* POS Receipt Modal */}
+      <PosReceiptModal
+        open={receiptData !== null}
+        onClose={() => {
+          setReceiptData(null)
+          router.push(`/loans/${loanId}`)
+        }}
+        title="Payment Receipt"
+      >
+        {receiptData && (
+          <PosReceiptRepayment
+            receiptNumber={receiptData.receiptNumber}
+            date={receiptData.payment.paymentDate instanceof Date
+              ? receiptData.payment.paymentDate.toISOString()
+              : String(receiptData.payment.paymentDate)}
+            customerName={customerName}
+            loanReference={loanReference}
+            amountPaid={receiptData.payment.amount}
+            interestPortion={receiptData.payment.interestPortion}
+            principalPortion={receiptData.payment.principalPortion}
+            balanceAfter={receiptData.payment.principalBalanceAfter}
+            depositLocation={receiptData.payment.depositLocationValue}
+            officerName={session?.user?.name ?? "Officer"}
+          />
+        )}
+      </PosReceiptModal>
     </div>
   )
 }
