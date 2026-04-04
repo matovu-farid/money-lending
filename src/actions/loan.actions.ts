@@ -76,6 +76,22 @@ export async function updateLoanAction(input: UpdateLoanInput) {
   if (input.principalAmount !== undefined && parseFloat(input.principalAmount) <= 0) {
     return { error: "Principal must be greater than zero" }
   }
+  if (input.issuanceFee !== undefined) {
+    if (!/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
+      return { error: "Issuance fee must be a valid decimal number" }
+    }
+    if (parseFloat(input.issuanceFee) < 50000) {
+      return { error: "Issuance fee must be at least 50,000 UGX" }
+    }
+  }
+  if (input.description !== undefined && !input.description.trim()) {
+    return { error: "Loan description cannot be empty" }
+  }
+
+  // Trim description before passing to service
+  if (input.description !== undefined) {
+    input.description = input.description.trim()
+  }
 
   try {
     const data = await Effect.runPromise(updateLoan(input, session.user.id))
