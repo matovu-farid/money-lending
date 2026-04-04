@@ -3,7 +3,7 @@
 import { Suspense, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { Loader2 } from "lucide-react"
 import { getCustomerAction } from "@/actions/customer.actions"
 import { getCollateralNaturesAction } from "@/actions/loan.actions"
@@ -18,6 +18,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 function todayISODate(): string {
   return new Date().toISOString().split("T")[0]
@@ -30,6 +37,7 @@ interface LoanFormValues {
   description: string
   startDate: string
   interestRateDisplay: string
+  disbursementSource: "cash" | "bank" | "strong_room"
   collateralNature: string
   collateralDescription: string
 }
@@ -58,6 +66,7 @@ function NewLoanPageInner() {
       description: "",
       startDate: todayISODate(),
       interestRateDisplay: "10",
+      disbursementSource: "cash",
       collateralNature: "",
       collateralDescription: "",
     },
@@ -73,6 +82,7 @@ function NewLoanPageInner() {
   const collateralDescription = watch("collateralDescription")
   const issuanceFee = watch("issuanceFee")
   const description = watch("description")
+  const disbursementSource = watch("disbursementSource")
 
   // Collateral autocomplete state (UI-only, not form fields)
   const [showNatureSuggestions, setShowNatureSuggestions] = useState(false)
@@ -123,7 +133,7 @@ function NewLoanPageInner() {
       : null
 
   // Step-level validation fields
-  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "description", "startDate", "interestRateDisplay"]
+  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "description", "startDate", "interestRateDisplay", "disbursementSource"]
   const step2Fields: (keyof LoanFormValues)[] = ["collateralNature"]
 
   async function handleStep1Next() {
@@ -151,6 +161,7 @@ function NewLoanPageInner() {
       minInterestDays: 30,
       startDate: new Date(data.startDate).toISOString(),
       collateral,
+      disbursementSource: data.disbursementSource,
     })
   }
 
@@ -291,6 +302,33 @@ function NewLoanPageInner() {
                 />
                 {errors.interestRateDisplay && (
                   <p className="text-sm text-destructive">{errors.interestRateDisplay.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <Label htmlFor="disbursementSource">Disbursement Source</Label>
+                <Controller
+                  name="disbursementSource"
+                  control={control}
+                  rules={{ required: "Disbursement source is required" }}
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <SelectTrigger id="disbursementSource">
+                        <SelectValue placeholder="Select source" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cash">Cash</SelectItem>
+                        <SelectItem value="bank">Bank</SelectItem>
+                        <SelectItem value="strong_room">Strong Room</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {errors.disbursementSource && (
+                  <p className="text-sm text-destructive">{errors.disbursementSource.message}</p>
                 )}
               </div>
 
@@ -438,6 +476,12 @@ function NewLoanPageInner() {
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Interest Rate</dt>
                     <dd className="font-medium font-mono tabular-nums">{interestRateDisplay}% per month</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Disbursement Source</dt>
+                    <dd className="font-medium capitalize">
+                      {disbursementSource === "strong_room" ? "Strong Room" : disbursementSource.charAt(0).toUpperCase() + disbursementSource.slice(1)}
+                    </dd>
                   </div>
                   <div className="flex justify-between">
                     <dt className="text-muted-foreground">Collateral</dt>

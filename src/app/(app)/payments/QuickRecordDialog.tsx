@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { format } from "date-fns"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import Link from "next/link"
@@ -21,6 +21,13 @@ import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { getRecentlyCollectedLoansAction, recordPaymentAction } from "@/actions/payment.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { formatNumberWithCommas } from "@/lib/utils"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import type { ActiveLoanSearchResult } from "@/types"
 
 interface QuickRecordDialogProps {
@@ -31,6 +38,7 @@ interface QuickRecordDialogProps {
 interface QuickRecordFormValues {
   amount: string
   paymentDate: string
+  depositLocation: "cash" | "bank" | "strong_room"
 }
 
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
@@ -50,6 +58,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     defaultValues: {
       amount: "",
       paymentDate: format(new Date(), "yyyy-MM-dd"),
+      depositLocation: "cash",
     },
   })
 
@@ -70,6 +79,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     reset({
       amount: "",
       paymentDate: format(new Date(), "yyyy-MM-dd"),
+      depositLocation: "cash",
     })
     setSuccessPaymentId(null)
   }
@@ -99,6 +109,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
         loanId: selectedLoan.loanId,
         amount: data.amount,
         paymentDate: new Date(data.paymentDate + "T12:00:00").toISOString(),
+        depositLocation: data.depositLocation,
       })
 
       if ("error" in result) {
@@ -195,6 +206,32 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   disabled={!selectedLoan}
                   id="quick-record-amount"
                 />
+
+                {/* Deposit location */}
+                <div className="space-y-1.5">
+                  <Label htmlFor="quick-record-deposit-location">Deposit Location</Label>
+                  <Controller
+                    name="depositLocation"
+                    control={control}
+                    rules={{ required: "Deposit location is required" }}
+                    render={({ field }) => (
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                        disabled={!selectedLoan || isPending}
+                      >
+                        <SelectTrigger id="quick-record-deposit-location">
+                          <SelectValue placeholder="Select location" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="cash">Cash</SelectItem>
+                          <SelectItem value="bank">Bank</SelectItem>
+                          <SelectItem value="strong_room">Strong Room</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
 
                 {/* Payment date */}
                 <div className="space-y-1.5">

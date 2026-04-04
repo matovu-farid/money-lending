@@ -72,6 +72,7 @@ export const createLoan = (
             interestRateOverride: input.interestRateOverride ?? null,
             minPeriodOverride: input.minPeriodOverride ?? null,
             issuedBy: actorId,
+            disbursementSource: input.disbursementSource,
           })
           .returning()
 
@@ -162,6 +163,7 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           interestRateOverride: loans.interestRateOverride,
           minPeriodOverride: loans.minPeriodOverride,
           issuedBy: loans.issuedBy,
+          disbursementSource: loans.disbursementSource,
           createdAt: loans.createdAt,
           updatedAt: loans.updatedAt,
           deletedAt: loans.deletedAt,

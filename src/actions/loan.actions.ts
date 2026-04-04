@@ -156,6 +156,11 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Loan description is required" }
   }
 
+  const validLocations = ["cash", "bank", "strong_room"]
+  if (!input.disbursementSource || !validLocations.includes(input.disbursementSource)) {
+    return { error: "Disbursement source is required (cash, bank, or strong_room)" }
+  }
+
   const loanInput: CreateLoanInput = {
     ...input,
     interestRate: input.interestRate || "0.10",

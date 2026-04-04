@@ -37,6 +37,7 @@ export function useCreateLoan() {
         startDate: new Date(input.startDate),
         status: "active",
         issuedBy: "",
+        disbursementSource: input.disbursementSource,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
