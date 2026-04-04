@@ -142,6 +142,18 @@ export default async function DisbursementReceiptPage({
                   <td className="py-1 text-gray-500 align-top">Min. Interest Period</td>
                   <td className="py-1 text-right">{minPeriodDisplay}</td>
                 </tr>
+                <tr>
+                  <td className="py-1 text-gray-500 align-top">Issuance Fee</td>
+                  <td className="py-1 text-right font-mono tabular-nums">
+                    {formatCurrency(loan.issuanceFee)}
+                  </td>
+                </tr>
+                {loan.description && (
+                  <tr>
+                    <td className="py-1 text-gray-500 align-top">Description</td>
+                    <td className="py-1 text-right">{loan.description}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
