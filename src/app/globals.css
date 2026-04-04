@@ -255,11 +255,11 @@
 /* POS Receipt Print Styles — 80mm thermal printer */
 @media print {
   body.pos-receipt-print-active * {
-    display: none !important;
+    visibility: hidden !important;
   }
   body.pos-receipt-print-active .pos-receipt,
   body.pos-receipt-print-active .pos-receipt * {
-    display: block !important;
+    visibility: visible !important;
   }
   body.pos-receipt-print-active .pos-receipt {
     position: fixed;
@@ -271,5 +271,10 @@
     padding: 4mm;
     background: white;
     color: black;
+  }
+
+  @page {
+    size: 80mm auto;
+    margin: 0;
   }
 }

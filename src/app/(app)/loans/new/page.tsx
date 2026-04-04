@@ -586,10 +586,11 @@ function NewLoanPageInner() {
       <PosReceiptModal
         open={receiptData !== null}
         onClose={() => {
-          if (receiptData) {
-            router.push(`/customers/${receiptData.customerId}`)
-          }
+          const customerId = receiptData?.customerId
           setReceiptData(null)
+          if (customerId) {
+            router.push(`/customers/${customerId}`)
+          }
         }}
         title="Loan Disbursement Receipt"
       >
