@@ -29,6 +29,8 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("Step 1 of 3")
     cy.contains("Loan Details")
     cy.get("#principalAmount").type("1000000")
+    cy.get("#issuanceFee").type("50000")
+    cy.get("#description").type("Working capital for retail business")
     // Start date should default to today
     cy.get("#startDate").should("not.have.value", "")
     // Interest rate defaults to 10
@@ -55,6 +57,8 @@ describe("Loan Issuance Wizard", () => {
 
     // Step 1
     cy.get("#principalAmount").type("1000000")
+    cy.get("#issuanceFee").type("50000")
+    cy.get("#description").type("Working capital loan")
     cy.contains("button", "Next").click()
 
     // Step 2
@@ -86,6 +90,8 @@ describe("Loan Issuance Wizard", () => {
 
     // Step 1
     cy.get("#principalAmount").type("500000")
+    cy.get("#issuanceFee").type("75000")
+    cy.get("#description").type("Agriculture inputs loan")
     cy.contains("button", "Next").click()
 
     // Step 2
@@ -109,6 +115,8 @@ describe("Loan Issuance Wizard", () => {
 
     cy.contains("Customer is required")
     cy.contains("Amount must be greater than 0")
+    cy.contains("Issuance fee is required")
+    cy.contains("Loan description is required")
   })
 
   it("validates Step 2 collateral nature is required", () => {
@@ -116,6 +124,8 @@ describe("Loan Issuance Wizard", () => {
 
     // Step 1
     cy.get("#principalAmount").type("500000")
+    cy.get("#issuanceFee").type("50000")
+    cy.get("#description").type("Test loan")
     cy.contains("button", "Next").click()
 
     // Step 2 — try Next without selecting nature
@@ -128,6 +138,8 @@ describe("Loan Issuance Wizard", () => {
 
     // Step 1 → Step 2
     cy.get("#principalAmount").type("500000")
+    cy.get("#issuanceFee").type("50000")
+    cy.get("#description").type("Test loan")
     cy.contains("button", "Next").click()
     cy.contains("Step 2 of 3")
 
@@ -136,6 +148,8 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("Step 1 of 3")
     // Amount should be preserved
     cy.get("#principalAmount").should("have.value", "500000")
+    cy.get("#issuanceFee").should("have.value", "50000")
+    cy.get("#description").should("have.value", "Test loan")
 
     // Go forward to Step 3
     cy.contains("button", "Next").click()
@@ -148,6 +162,39 @@ describe("Loan Issuance Wizard", () => {
     // Step 3 → Step 2
     cy.contains("button", "Back").click()
     cy.contains("Step 2 of 3")
+  })
+
+  it("rejects issuance fee below 50,000 UGX", () => {
+    cy.visit(`/loans/new?customerId=${customerId}`)
+
+    cy.get("#principalAmount").type("500000")
+    cy.get("#issuanceFee").type("30000")
+    cy.get("#description").type("Some loan purpose")
+    cy.contains("button", "Next").click()
+
+    cy.contains("Must be at least 50,000")
+  })
+
+  it("shows issuance fee and description in Step 3 review", () => {
+    cy.visit(`/loans/new?customerId=${customerId}`)
+
+    // Step 1
+    cy.get("#principalAmount").type("1000000")
+    cy.get("#issuanceFee").type("60000")
+    cy.get("#description").type("Purchase of farming equipment")
+    cy.contains("button", "Next").click()
+
+    // Step 2
+    cy.get("#collateralNature").click()
+    cy.get("[role=option]").contains("Land Title").click()
+    cy.get("[data-base-ui-inert]").should("not.exist")
+    cy.contains("button", "Next").click()
+
+    // Step 3 — verify new fields appear in review
+    cy.contains("Issuance Fee")
+    cy.contains("60,000")
+    cy.contains("Description")
+    cy.contains("Purchase of farming equipment")
   })
 
   it("pre-fills customer name when customerId is in URL", () => {
