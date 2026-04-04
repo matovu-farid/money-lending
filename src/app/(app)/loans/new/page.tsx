@@ -1,15 +1,17 @@
 "use client"
 
 import { Suspense, useRef, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
 import { Loader2 } from "lucide-react"
 import { getCustomerAction } from "@/actions/customer.actions"
 import { getCollateralNaturesAction } from "@/actions/loan.actions"
 import { useCreateLoan } from "@/hooks/use-create-loan"
+import { useSession } from "@/lib/auth-client"
 import { queryKeys } from "@/hooks/query-keys"
 import { calculateLoanSummary } from "@/lib/interest"
+import { generateReceiptNumber } from "@/lib/receipt-number"
 import type { CollateralInput } from "@/types"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -18,6 +20,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptDisbursement } from "@/components/receipts/pos-receipt-disbursement"
 import {
   Select,
   SelectContent,
@@ -42,13 +46,30 @@ interface LoanFormValues {
   collateralDescription: string
 }
 
+interface ReceiptData {
+  receiptNumber: string
+  customerId: string
+  customerName: string
+  loanAmount: string
+  issuanceFee: string
+  description: string
+  interestRate: string
+  collateralNature: string
+  collateralDescription?: string
+  disbursementSource: string
+  date: string
+}
+
 function NewLoanPageInner() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
+  const router = useRouter()
   const createLoan = useCreateLoan()
+  const { data: session } = useSession()
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
   const [step, setStep] = useState(1)
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null)
 
   const {
     register,
@@ -152,17 +173,38 @@ function NewLoanPageInner() {
       description: data.collateralDescription.trim() || undefined,
     }
 
-    createLoan.mutate({
-      customerId: data.customerId,
-      principalAmount: data.principalAmount,
-      issuanceFee: data.issuanceFee,
-      description: data.description.trim(),
-      interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
-      minInterestDays: 30,
-      startDate: new Date(data.startDate).toISOString(),
-      collateral,
-      disbursementSource: data.disbursementSource,
-    })
+    createLoan.mutate(
+      {
+        customerId: data.customerId,
+        principalAmount: data.principalAmount,
+        issuanceFee: data.issuanceFee,
+        description: data.description.trim(),
+        interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
+        minInterestDays: 30,
+        startDate: new Date(data.startDate).toISOString(),
+        collateral,
+        disbursementSource: data.disbursementSource,
+      },
+      {
+        onSuccess: (result) => {
+          if (!("error" in result)) {
+            setReceiptData({
+              receiptNumber: generateReceiptNumber(),
+              customerId: data.customerId,
+              customerName: customerName ?? "Customer",
+              loanAmount: data.principalAmount,
+              issuanceFee: data.issuanceFee,
+              description: data.description.trim(),
+              interestRate: `${data.interestRateDisplay}%`,
+              collateralNature: data.collateralNature,
+              collateralDescription: data.collateralDescription.trim() || undefined,
+              disbursementSource: data.disbursementSource,
+              date: new Date(data.startDate).toISOString(),
+            })
+          }
+        },
+      }
+    )
   }
 
   // Merge the react-hook-form register ref with our local ref for the collateral nature input
@@ -539,6 +581,34 @@ function NewLoanPageInner() {
           </Card>
         )}
       </form>
+
+      {/* POS Receipt Modal */}
+      <PosReceiptModal
+        open={receiptData !== null}
+        onClose={() => {
+          if (receiptData) {
+            router.push(`/customers/${receiptData.customerId}`)
+          }
+          setReceiptData(null)
+        }}
+        title="Loan Disbursement Receipt"
+      >
+        {receiptData && (
+          <PosReceiptDisbursement
+            receiptNumber={receiptData.receiptNumber}
+            date={receiptData.date}
+            customerName={receiptData.customerName}
+            loanAmount={receiptData.loanAmount}
+            issuanceFee={receiptData.issuanceFee}
+            description={receiptData.description}
+            interestRate={receiptData.interestRate}
+            collateralNature={receiptData.collateralNature}
+            collateralDescription={receiptData.collateralDescription}
+            disbursementSource={receiptData.disbursementSource}
+            officerName={session?.user?.name ?? "Officer"}
+          />
+        )}
+      </PosReceiptModal>
     </div>
   )
 }

@@ -1,7 +1,6 @@
 "use client"
 
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import { createLoanAction } from "@/actions/loan.actions"
 import { queryKeys } from "./query-keys"
@@ -9,7 +8,6 @@ import type { CreateLoanInput, LoanWithCustomer } from "@/types"
 
 export function useCreateLoan() {
   const queryClient = useQueryClient()
-  const router = useRouter()
 
   return useMutation({
     mutationFn: (input: CreateLoanInput) => createLoanAction(input),
@@ -59,7 +57,7 @@ export function useCreateLoan() {
       }
       toast.error("Failed to issue loan")
     },
-    onSuccess: (result, input, context) => {
+    onSuccess: (result, _input, context) => {
       if ("error" in result) {
         // Rollback on server validation error
         if (context?.previousLoans) {
@@ -80,7 +78,8 @@ export function useCreateLoan() {
       }
 
       toast.success("Loan issued successfully")
-      router.push(`/customers/${input.customerId}`)
+      // Navigation is now handled by the caller via per-call onSuccess
+      // to allow showing the POS receipt modal first
     },
     onSettled: (_data, _err, input) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
