@@ -43,6 +43,7 @@ async function makeLoan(customerId: string) {
         minInterestDays: 30,
         startDate: "2025-01-01",
         collateral: { nature: "Land title" },
+        disbursementSource: "cash",
       },
       "test-actor"
     )

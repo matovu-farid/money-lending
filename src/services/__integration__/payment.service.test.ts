@@ -50,6 +50,7 @@ async function makeLoan(
         minInterestDays: 30,
         startDate: "2025-01-01",
         collateral: { nature: "Land title" },
+        disbursementSource: "cash",
       },
       "test-actor"
     )
@@ -80,7 +81,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -99,7 +100,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // 30 days after start: interest = 1,000,000 × (0.10/30) × 30 = 100,000
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -117,7 +118,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Pay 200,000 after 30 days: interest=100,000, principal portion=100,000
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -135,7 +136,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Need to pay 110,000 to cover interest + principal
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "110000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "110000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -153,7 +154,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -176,7 +177,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -198,7 +199,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       const fakeId = randomUUID()
       const exit = await Effect.runPromiseExit(
         recordPayment(
-          { loanId: fakeId, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: fakeId, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -223,7 +224,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Payment 1: 200,000 on day 30 → interest=100k, principal=100k, balance=900k
       const p1 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -233,7 +234,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // principal = 60,000, balance = 840,000
       const p2 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-03-02", amount: "150000" },
+          { loanId: loan.id, paymentDate: "2025-03-02", amount: "150000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -265,7 +266,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Fully pay: interest = 10,000, need 110,000
       const p1 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "110000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "110000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -314,7 +315,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Payment on day 30: interest = 1,000,000 × 0.10/30 × 30 = 100,000
       const p1 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -360,7 +361,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -384,7 +385,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Payment 1: day 30
       const p1 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -393,7 +394,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Payment 2: day 60 (30 days after p1)
       const p2 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-03-02", amount: "150000" },
+          { loanId: loan.id, paymentDate: "2025-03-02", amount: "150000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -428,7 +429,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -467,13 +468,13 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       const p1 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-03-02", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-03-02", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -515,21 +516,21 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Payment at day 60 recorded first
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-03-02", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-03-02", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
       // Payment at day 30 recorded second
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
       // Payment at day 90 recorded third
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-04-01", amount: "100000" },
+          { loanId: loan.id, paymentDate: "2025-04-01", amount: "100000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -558,7 +559,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Record a payment only 5 days after loan start (2025-01-01 + 5 = 2025-01-06)
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-06", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-06", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -585,7 +586,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // principal = 100,000, balance after = 900,000
       const p1 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -595,7 +596,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // principal = 110,000, balance after = 790,000
       const p2 = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-03-02", amount: "200000" },
+          { loanId: loan.id, paymentDate: "2025-03-02", amount: "200000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -620,6 +621,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
           loanId: loan.id,
           paymentDate: `2025-02-0${i}`,
           amount: "50000.00",
+          depositLocation: "cash",
         }, "test-actor"))
       }
       const result = await Effect.runPromise(listPayments({ page: 1, pageSize: 2 }))
@@ -638,6 +640,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         loanId: loan.id,
         paymentDate: "2025-02-01",
         amount: "50000.00",
+        depositLocation: "cash",
       }, "test-actor"))
       const result = await Effect.runPromise(listPayments({ page: 1 }))
       const row = result.rows[0]
@@ -652,9 +655,9 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     it("filters by dateFrom and dateTo including boundaries (PAY-03)", async () => {
       const customer = await makeCustomer()
       const loan = await makeLoan(customer.id)
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-10", amount: "50000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-20", amount: "50000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-30", amount: "50000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-10", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-20", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-30", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
 
       // dateTo should include Jan 20
       const result = await Effect.runPromise(listPayments({ dateTo: "2025-01-20" }))
@@ -668,9 +671,9 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     it("filters by amountMin and amountMax (PAY-04)", async () => {
       const customer = await makeCustomer()
       const loan = await makeLoan(customer.id, "5000000.00")
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "30000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-02", amount: "80000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-03", amount: "150000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "30000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-02", amount: "80000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-03", amount: "150000.00", depositLocation: "cash" }, "test-actor"))
 
       const result = await Effect.runPromise(listPayments({ amountMin: "50000" }))
       expect(result.total).toBe(2)
@@ -684,8 +687,8 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       const c2 = await Effect.runPromise(createCustomer({ fullName: "Jane Nakato", nin: "CM00000000TEST", contact: "+256700000002", address: "Entebbe" }))
       const l1 = await makeLoan(c1.id)
       const l2 = await makeLoan(c2.id)
-      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
 
       const result = await Effect.runPromise(listPayments({ customerName: "mukasa" }))
       expect(result.total).toBe(1)
@@ -695,8 +698,8 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     it("excludes soft-deleted payments", async () => {
       const customer = await makeCustomer()
       const loan = await makeLoan(customer.id)
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
-      const p2 = await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-02", amount: "60000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      const p2 = await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-02", amount: "60000.00", depositLocation: "cash" }, "test-actor"))
       // Soft-delete the second payment
       await Effect.runPromise(deletePayment({ paymentId: p2.id, reason: "test" }, "test-actor"))
 
@@ -718,6 +721,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         loanId: loan.id,
         paymentDate: "2025-02-01",
         amount: "50000.00",
+        depositLocation: "cash",
       }, "test-actor"))
 
       const result = await Effect.runPromise(listPayments({}))
@@ -728,9 +732,9 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     it("orders by paymentDate descending (most recent first)", async () => {
       const customer = await makeCustomer()
       const loan = await makeLoan(customer.id)
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-01", amount: "50000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-03-01", amount: "50000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-01-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-03-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: loan.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
 
       const result = await Effect.runPromise(listPayments({ page: 1 }))
       const dates = result.rows.map((r) => new Date(r.paymentDate).toISOString().slice(0, 10))
@@ -744,11 +748,11 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       const l2 = await makeLoan(c2.id, "5000000.00")
 
       // Alice: large payment on Jan 15
-      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-01-15", amount: "200000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-01-15", amount: "200000.00", depositLocation: "cash" }, "test-actor"))
       // Alice: small payment on Feb 15
-      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-15", amount: "30000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-15", amount: "30000.00", depositLocation: "cash" }, "test-actor"))
       // Bob: large payment on Jan 15
-      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-01-15", amount: "200000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-01-15", amount: "200000.00", depositLocation: "cash" }, "test-actor"))
 
       // Filter: Alice + Jan only + large amounts
       const result = await Effect.runPromise(listPayments({
@@ -766,8 +770,8 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       const c2 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan B", nin: "CM00000000TEST", contact: "+256700000006", address: "B" }))
       const l1 = await makeLoan(c1.id)
       const l2 = await makeLoan(c2.id)
-      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00" }, "test-actor"))
-      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-02-01", amount: "70000.00" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
+      await Effect.runPromise(recordPayment({ loanId: l2.id, paymentDate: "2025-02-01", amount: "70000.00", depositLocation: "cash" }, "test-actor"))
 
       const result = await Effect.runPromise(listPayments({ page: 1 }))
       expect(result.total).toBe(2)
@@ -782,6 +786,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         loanId: loan.id,
         paymentDate: "2025-02-01",
         amount: "50000.00",
+        depositLocation: "cash",
       }, "test-actor"))
 
       const result = await Effect.runPromise(listPayments({ page: 1 }))
@@ -802,7 +807,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Need to pay 110,000 to cover interest + principal
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31", amount: "110000" },
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "110000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -866,7 +871,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Pay off the loan completely: interest=10,000 + principal=100,000 = 110,000
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2025-01-31T09:00:00Z", amount: "110000" },
+          { loanId: loan.id, paymentDate: "2025-01-31T09:00:00Z", amount: "110000", depositLocation: "cash" },
           "test-actor"
         )
       )
@@ -921,13 +926,13 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Record 2 payments on the same loan
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2026-01-01T09:00:00Z", amount: "50000" },
+          { loanId: loan.id, paymentDate: "2026-01-01T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-a"
         )
       )
       await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2026-02-01T09:00:00Z", amount: "50000" },
+          { loanId: loan.id, paymentDate: "2026-02-01T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-a"
         )
       )
@@ -954,13 +959,13 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // Older payment on l1, newer on l2
       await Effect.runPromise(
         recordPayment(
-          { loanId: l1.id, paymentDate: "2026-01-01T09:00:00Z", amount: "50000" },
+          { loanId: l1.id, paymentDate: "2026-01-01T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-b"
         )
       )
       await Effect.runPromise(
         recordPayment(
-          { loanId: l2.id, paymentDate: "2026-02-01T09:00:00Z", amount: "50000" },
+          { loanId: l2.id, paymentDate: "2026-02-01T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-b"
         )
       )
@@ -977,7 +982,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       const payment = await Effect.runPromise(
         recordPayment(
-          { loanId: loan.id, paymentDate: "2026-03-01T09:00:00Z", amount: "50000" },
+          { loanId: loan.id, paymentDate: "2026-03-01T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-c"
         )
       )
@@ -1004,13 +1009,13 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       // collector-x records on l1, collector-y records on l2
       await Effect.runPromise(
         recordPayment(
-          { loanId: l1.id, paymentDate: "2026-03-01T09:00:00Z", amount: "50000" },
+          { loanId: l1.id, paymentDate: "2026-03-01T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-x"
         )
       )
       await Effect.runPromise(
         recordPayment(
-          { loanId: l2.id, paymentDate: "2026-03-02T09:00:00Z", amount: "50000" },
+          { loanId: l2.id, paymentDate: "2026-03-02T09:00:00Z", amount: "50000", depositLocation: "cash" },
           "collector-y"
         )
       )
@@ -1045,6 +1050,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
               loanId: loan.id,
               paymentDate: `2026-0${(i % 9) + 1}-01T09:00:00Z`,
               amount: "50000",
+              depositLocation: "cash",
             },
             userId
           )

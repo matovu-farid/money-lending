@@ -39,6 +39,7 @@ function baseLoanInput(customerId: string, overrides: Record<string, unknown> = 
     minInterestDays: 30,
     startDate: new Date("2025-01-01T00:00:00.000Z").toISOString(),
     collateral: { nature: "Land Title", description: "Plot 42, Kampala" },
+    disbursementSource: "cash" as const,
     ...overrides,
   }
 }
@@ -161,6 +162,7 @@ describe("Report Service — Integration", () => {
             loanId: loan.id,
             paymentDate: new Date("2025-01-31T00:00:00.000Z").toISOString(),
             amount: "100000.00",
+            depositLocation: "cash",
           },
           ACTOR
         )
@@ -202,6 +204,7 @@ describe("Report Service — Integration", () => {
             loanId: loan.id,
             paymentDate: paymentDate.toISOString(),
             amount: "1.00", // minimal payment — just to activate
+            depositLocation: "cash",
           },
           ACTOR
         )
@@ -234,6 +237,7 @@ describe("Report Service — Integration", () => {
             loanId: loan.id,
             paymentDate: new Date("2025-02-15T00:00:00.000Z").toISOString(),
             amount: "200000.00", // well above principal + interest
+            depositLocation: "cash",
           },
           ACTOR
         )
@@ -267,6 +271,7 @@ describe("Report Service — Integration", () => {
             loanId: loan.id,
             paymentDate: new Date("2025-01-31T00:00:00.000Z").toISOString(),
             amount: "100000.00",
+            depositLocation: "cash",
           },
           ACTOR
         )

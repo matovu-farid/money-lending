@@ -102,7 +102,7 @@ describe("Payment Service", () => {
       const { recordPayment } = await import("@/services/payment.service")
       const result = await Effect.runPromise(
         recordPayment(
-          { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "150000" },
+          { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "150000", depositLocation: "cash" },
           "actor-1"
         )
       )
@@ -165,7 +165,7 @@ describe("Payment Service", () => {
       const { recordPayment } = await import("@/services/payment.service")
       const result = await Effect.runPromise(
         recordPayment(
-          { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "150000" },
+          { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "150000", depositLocation: "cash" },
           "actor-1"
         )
       )
@@ -229,7 +229,7 @@ describe("Payment Service", () => {
       const { recordPayment } = await import("@/services/payment.service")
       const result = await Effect.runPromise(
         recordPayment(
-          { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "200000" },
+          { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "200000", depositLocation: "cash" },
           "actor-1"
         )
       )

@@ -34,6 +34,7 @@ function baseLoanInput(customerId: string, overrides: Record<string, unknown> = 
     minInterestDays: 30,
     startDate: "2025-12-01T00:00:00.000Z",
     collateral: { nature: "Land Title", description: "Plot 42, Kampala" },
+    disbursementSource: "cash" as const,
     ...overrides,
   }
 }
@@ -69,6 +70,7 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
             loanId: loan.id,
             paymentDate: "2026-03-23T09:00:00.000Z",
             amount: "150000.00",
+            depositLocation: "cash",
           },
           ACTOR_ID
         )
@@ -79,6 +81,7 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
             loanId: loan.id,
             paymentDate: "2026-03-23T10:00:00.000Z",
             amount: "150000.00",
+            depositLocation: "cash",
           },
           ACTOR_ID
         )
@@ -129,6 +132,7 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
             loanId: loan.id,
             paymentDate: "2026-03-22T09:00:00.000Z",
             amount: "200000.00",
+            depositLocation: "cash",
           },
           ACTOR_ID
         )
@@ -216,6 +220,7 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
             loanId: loan.id,
             paymentDate: yesterday.toISOString(),
             amount: "100000.00",
+            depositLocation: "cash",
           },
           ACTOR_ID
         )

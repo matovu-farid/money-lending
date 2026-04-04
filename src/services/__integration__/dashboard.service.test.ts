@@ -37,6 +37,7 @@ async function makeLoan(customerId: string, principal = "1000000.00", rate = "0.
         minInterestDays: 30,
         startDate: "2025-01-01",
         collateral: { nature: "Land title" },
+        disbursementSource: "cash",
       },
       ACTOR_ID
     )
@@ -50,6 +51,7 @@ async function makePayment(loanId: string, amount: string, date = "2025-02-15") 
         loanId,
         paymentDate: date,
         amount,
+        depositLocation: "cash",
       },
       ACTOR_ID
     )
@@ -159,6 +161,7 @@ describe(
               minInterestDays: 30,
               startDate: sixtyDaysAgo.toISOString(),
               collateral: { nature: "Land title" },
+              disbursementSource: "cash",
             },
             ACTOR_ID
           )

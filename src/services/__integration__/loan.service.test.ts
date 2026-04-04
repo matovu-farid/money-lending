@@ -32,6 +32,7 @@ function baseLoanInput(customerId: string) {
     minInterestDays: 30,
     startDate: "2026-04-01T00:00:00.000Z",
     collateral: { nature: "Land Title", description: "Plot 42, Kampala" },
+    disbursementSource: "cash" as const,
   }
 }
 
