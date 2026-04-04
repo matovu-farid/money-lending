@@ -17,3 +17,4 @@ export class CategoryInUseError extends Data.TaggedError("CategoryInUseError")<{
 export class SnapshotNotFound extends Data.TaggedError("SnapshotNotFound")<{ period: string }> {}
 export class CategoryNotFound extends Data.TaggedError("CategoryNotFound")<{ id: string }> {}
 export class TransactionNotFound extends Data.TaggedError("TransactionNotFound")<{ id: string }> {}
+export class RateChangeRequestNotFound extends Data.TaggedError("RateChangeRequestNotFound")<{ id: string }> {}
