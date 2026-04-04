@@ -96,6 +96,7 @@ export default async function LoanDetailPage({
       canModify={canModify}
       openEditOnMount={openEdit}
       userNameMap={userNameMap}
+      userRole={role}
     />
   )
 }

@@ -70,4 +70,12 @@ export const queryKeys = {
     all: ["creditors"] as const,
     detail: (id: string) => [...queryKeys.creditors.all, id] as const,
   },
+
+  rateChangeRequests: {
+    all: ["rate-change-requests"] as const,
+    pending: () => [...queryKeys.rateChangeRequests.all, "pending"] as const,
+    byLoan: (loanId: string) =>
+      [...queryKeys.rateChangeRequests.all, "byLoan", loanId] as const,
+    pendingCount: () => [...queryKeys.rateChangeRequests.all, "pending-count"] as const,
+  },
 } as const

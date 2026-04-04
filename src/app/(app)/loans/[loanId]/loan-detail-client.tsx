@@ -11,6 +11,7 @@ import {
   Pencil,
   Trash2,
   ArrowLeft,
+  ArrowUpDown,
   Calendar,
   Percent,
   Banknote,
@@ -19,8 +20,11 @@ import {
 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
 import { updateLoanAction, deleteLoanAction } from "@/actions/loan.actions"
+import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
+import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
+import { ROLE_LEVELS, type UserRole, type RateChangeRequest } from "@/types"
 import type { Loan, Payment } from "@/types"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
@@ -58,6 +62,7 @@ interface LoanDetailClientProps {
   canModify: boolean
   openEditOnMount?: boolean
   userNameMap: Record<string, string>
+  userRole: UserRole
 }
 
 function formatDateForInput(date: Date | string | null | undefined): string {
@@ -76,7 +81,7 @@ function loanStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, userRole }: LoanDetailClientProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -105,6 +110,22 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   const [deletingLoan, setDeletingLoan] = useState(false)
   const [loanDeleteReason, setLoanDeleteReason] = useState("")
   const [isLoanDeletePending, startLoanDeleteTransition] = useTransition()
+
+  const [requestingRateChange, setRequestingRateChange] = useState(false)
+  const [newRate, setNewRate] = useState("")
+  const [isRateChangePending, startRateChangeTransition] = useTransition()
+
+  // Fetch pending rate change requests for this loan
+  const { data: rateChangeRequests = [] } = useQuery({
+    queryKey: queryKeys.rateChangeRequests.byLoan(loan.id),
+    queryFn: async () => {
+      const result = await listRequestsForLoanAction(loan.id)
+      if ("error" in result) return []
+      return result.data
+    },
+  })
+
+  const pendingRateRequest = rateChangeRequests.find((r: RateChangeRequest) => r.status === "pending")
 
   useEffect(() => {
     if (openEditOnMount && canModify) {
@@ -277,6 +298,44 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     })
   }
 
+  function openRateChangeDialog() {
+    setNewRate((parseFloat(loan.interestRate) * 100).toFixed(1))
+    setRequestingRateChange(true)
+  }
+
+  function closeRateChangeDialog() {
+    setRequestingRateChange(false)
+    setNewRate("")
+  }
+
+  function handleRateChangeSubmit() {
+    startRateChangeTransition(async () => {
+      const rateDecimal = (parseFloat(newRate) / 100).toFixed(4)
+
+      const result = await requestRateChangeAction({
+        loanId: loan.id,
+        requestedRate: rateDecimal,
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      if (result.data.applied) {
+        toast.success("Interest rate updated immediately")
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      } else {
+        toast.success(result.data.message)
+        queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.byLoan(loan.id) })
+        queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.pending() })
+      }
+
+      closeRateChangeDialog()
+    })
+  }
+
   const loanRef = `LOAN-${loan.id.slice(0, 8).toUpperCase()}`
 
   return (
@@ -351,11 +410,11 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 The rate charged per 30-day period. Interest accrues daily using this formula:
               </p>
               <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                Daily Interest = Balance × (Rate ÷ 30)
+                Daily Interest = Balance x (Rate / 30)
               </p>
               <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
                 <p className="font-medium">Example (10% / month):</p>
-                <p>UGX 1,000,000 × (0.10 ÷ 30) = UGX 3,333/day</p>
+                <p>UGX 1,000,000 x (0.10 / 30) = UGX 3,333/day</p>
               </div>
             </InfoPopover>
           </div>
@@ -363,6 +422,17 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
             {(parseFloat(loan.interestRate) * 100).toFixed(1)}%
             <span className="text-sm font-normal text-muted-foreground ml-1">/ month</span>
           </p>
+          {pendingRateRequest && (
+            <Badge variant="outline" className="mt-2 text-xs">
+              Pending: {(parseFloat(pendingRateRequest.requestedRate) * 100).toFixed(1)}%
+            </Badge>
+          )}
+          {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
+            <Button variant="outline" size="sm" className="mt-2" onClick={openRateChangeDialog}>
+              <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
+              Request Rate Change
+            </Button>
+          )}
         </div>
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2 text-muted-foreground mb-2">
@@ -827,6 +897,68 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 </>
               ) : (
                 "Delete Loan"
+              )}
+            </Button>
+          </DialogFooter>
+        </DrawerDialogContent>
+      </DrawerDialog>
+
+      {/* Rate Change Request Dialog */}
+      <DrawerDialog open={requestingRateChange} onOpenChange={(open) => { if (!open) closeRateChangeDialog() }}>
+        <DrawerDialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Interest Rate Change</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Current rate: {(parseFloat(loan.interestRate) * 100).toFixed(1)}% per month.
+              {ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
+                ? " As a supervisor or above, rates between 8-10% will be applied immediately."
+                : " Your request will be sent for supervisor or admin approval."}
+            </p>
+            <div className="space-y-1">
+              <Label htmlFor="newRate">New Rate (% per month)</Label>
+              <Input
+                id="newRate"
+                type="number"
+                min="0.1"
+                max="99.9"
+                step="0.1"
+                value={newRate}
+                onChange={(e) => setNewRate(e.target.value)}
+                disabled={isRateChangePending}
+                placeholder="e.g. 8.0"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                {newRate && parseFloat(newRate) >= 8 && parseFloat(newRate) < 10
+                  ? "Requires supervisor approval (or higher)."
+                  : newRate && parseFloat(newRate) > 0 && parseFloat(newRate) < 8
+                    ? "Requires admin approval (or higher)."
+                    : newRate && parseFloat(newRate) >= 10
+                      ? "Requires admin approval (or higher)."
+                      : "Enter the new monthly interest rate."}
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={closeRateChangeDialog}
+              disabled={isRateChangePending}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleRateChangeSubmit}
+              disabled={isRateChangePending || !newRate.trim() || parseFloat(newRate) <= 0}
+            >
+              {isRateChangePending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Submitting...
+                </>
+              ) : (
+                "Submit Request"
               )}
             </Button>
           </DialogFooter>
