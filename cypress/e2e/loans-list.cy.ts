@@ -10,10 +10,13 @@ function createCustomerAndLoan(customerName: string, contact: string, amount: st
     const cid = url.split("/customers/")[1]
     cy.visit(`/loans/new?customerId=${cid}`)
     cy.get("#principalAmount").type(amount)
+    cy.get("#issuanceFee").type("50000")
+    cy.get("#description").type("Test loan")
     cy.contains("button", "Next").click()
     cy.get("#collateralNature").type("Land Title")
     cy.contains("button", "Next").click()
     cy.contains("button", "Issue Loan").click()
+    cy.dismissReceiptModal()
     cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
     return cy.wrap(cid)
   })

@@ -66,12 +66,15 @@ describe("Executive Dashboard", () => {
       const cid = url.split("/customers/")[1]
       cy.visit(`/loans/new?customerId=${cid}`)
       cy.get("#principalAmount").type("500000")
+      cy.get("#issuanceFee").type("50000")
+      cy.get("#description").type("Dashboard test loan")
       cy.contains("button", "Next").click()
       cy.get("#collateralNature").click()
       cy.get("[role=option]").contains("Land Title").click()
       cy.get("[data-base-ui-inert]").should("not.exist")
       cy.contains("button", "Next").click()
       cy.contains("button", "Issue Loan").click()
+      cy.dismissReceiptModal()
       cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
     })
 

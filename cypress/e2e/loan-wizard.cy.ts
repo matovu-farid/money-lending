@@ -85,7 +85,7 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("Minimum interest period applies even if repaid early")
   })
 
-  it("issues a loan and redirects to customer profile", () => {
+  it("issues a loan, shows receipt modal, then redirects to customer profile", () => {
     cy.visit(`/loans/new?customerId=${customerId}`)
 
     // Step 1
@@ -103,7 +103,13 @@ describe("Loan Issuance Wizard", () => {
     // Step 3 — submit
     cy.contains("button", "Issue Loan").click()
 
-    // Should redirect to customer profile with success
+    // POS Receipt modal should appear
+    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("LOAN DISBURSEMENT").should("be.visible")
+    cy.contains("Print Receipt").should("be.visible")
+
+    // Close the modal — should redirect to customer profile
+    cy.contains("button", "Close").click()
     cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
   })
 

@@ -16,6 +16,9 @@ declare global {
 
       /** Promote a user to a specific role via db task */
       promoteUser(email: string, role: string): Chainable<null>
+
+      /** Dismiss the POS receipt modal that appears after loan creation */
+      dismissReceiptModal(): Chainable<void>
     }
   }
 }
@@ -80,6 +83,11 @@ Cypress.Commands.add("login", (email: string, password: string) => {
 
 Cypress.Commands.add("promoteUser", (email: string, role: string) => {
   return cy.task("db:promoteUser", { email, role })
+})
+
+Cypress.Commands.add("dismissReceiptModal", () => {
+  cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+  cy.contains("button", "Close").click()
 })
 
 export {}

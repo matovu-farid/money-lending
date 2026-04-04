@@ -20,12 +20,17 @@ describe("Payment Recording Flow", () => {
 
       cy.visit(`/loans/new?customerId=${customerId}`)
       cy.get("#principalAmount").type("1000000")
+      cy.get("#issuanceFee").type("50000")
+      cy.get("#description").type("Test loan for payment")
       cy.contains("button", "Next").click()
       cy.get("#collateralNature").click()
       cy.get("[role=option]").contains("Land Title").click()
       cy.get("[data-base-ui-inert]").should("not.exist")
       cy.contains("button", "Next").click()
       cy.contains("button", "Issue Loan").click()
+      // Close the POS receipt modal
+      cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+      cy.contains("button", "Close").click()
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 
       cy.task("db:getLoans").then((loans: any) => {
@@ -49,9 +54,13 @@ describe("Payment Recording Flow", () => {
       // Payment form should appear
       cy.get("#amount").should("be.visible")
       cy.get("#amount").type("200000")
-      cy.contains("button", "Record").click()
+      cy.contains("button", "Record Payment").click()
+
+      // Dismiss the POS receipt modal
+      cy.dismissReceiptModal()
 
       // Should see payment in the table
+      cy.url({ timeout: 10000 }).should("include", `/loans/${loanId}`)
       cy.contains("200,000", { timeout: 10000 }).should("be.visible")
     })
   })
@@ -68,7 +77,10 @@ describe("Payment Recording Flow", () => {
       cy.visit(`/loans/${loanId}`)
       cy.contains("Record Payment", { timeout: 15000 }).click()
       cy.get("#amount").type("100000")
-      cy.contains("button", "Record").click()
+      cy.contains("button", "Record Payment").click()
+
+      // Dismiss the POS receipt modal
+      cy.dismissReceiptModal()
 
       // Payment table should have correct headers
       cy.contains("th", "Date", { timeout: 10000 }).should("be.visible")
@@ -85,7 +97,10 @@ describe("Payment Recording Flow", () => {
 
       cy.contains("Record Payment").click()
       cy.get("#amount").type("500000")
-      cy.contains("button", "Record").click()
+      cy.contains("button", "Record Payment").click()
+
+      // Dismiss the POS receipt modal
+      cy.dismissReceiptModal()
 
       // After payment, balance should have changed
       cy.contains("500,000", { timeout: 10000 }).should("be.visible")
@@ -113,7 +128,11 @@ describe("Payment Recording Flow", () => {
         cy.visit(`/loans/${loanId}`)
         cy.contains("Record Payment", { timeout: 15000 }).click()
         cy.get("#amount").type("100000")
-        cy.contains("button", "Record").click()
+        cy.contains("button", "Record Payment").click()
+
+        // Dismiss the POS receipt modal
+        cy.dismissReceiptModal()
+
         cy.contains("100,000", { timeout: 10000 }).should("be.visible")
 
         // Payments section should show data-row cards at mobile
