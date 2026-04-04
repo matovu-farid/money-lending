@@ -24,7 +24,13 @@ export default async function BalanceSheetPage({
     ? exit.value
     : {
         asOf: period,
-        assets: { totalLoansOutstanding: "0" },
+        assets: {
+          cashBalance: "0",
+          bankBalance: "0",
+          strongRoomBalance: "0",
+          totalLoansOutstanding: "0",
+          totalAssets: "0",
+        },
         liabilities: { totalCreditorBalances: "0" },
         equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },
       }

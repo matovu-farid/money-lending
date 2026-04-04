@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
+import { fundTransfers } from "@/lib/db/schema/fund-transfers"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
@@ -143,6 +144,72 @@ export const getBalanceSheetData = (
         totalLoansOutstanding = totalLoansOutstanding.plus(outstanding)
       }
 
+      // Calculate per-location balances
+      const locationBalances: Record<string, BigNumber> = {
+        cash: new BigNumber(0),
+        bank: new BigNumber(0),
+        strong_room: new BigNumber(0),
+      }
+
+      // Payments received into each location (active payments only)
+      const allPayments = await db
+        .select({
+          depositLocation: payments.depositLocation,
+          amount: payments.amount,
+        })
+        .from(payments)
+        .where(and(
+          isNull(payments.deletedAt),
+          lte(payments.createdAt, asOfDate)
+        ))
+
+      for (const p of allPayments) {
+        const loc = p.depositLocation
+        if (loc && locationBalances[loc] !== undefined) {
+          locationBalances[loc] = locationBalances[loc].plus(new BigNumber(p.amount))
+        }
+      }
+
+      // Disbursements from each location (all non-deleted loans)
+      const allLoans = await db
+        .select({
+          disbursementSource: loans.disbursementSource,
+          principalAmount: loans.principalAmount,
+        })
+        .from(loans)
+        .where(and(
+          isNull(loans.deletedAt),
+          lte(loans.createdAt, asOfDate)
+        ))
+
+      for (const l of allLoans) {
+        const loc = l.disbursementSource
+        if (loc && locationBalances[loc] !== undefined) {
+          locationBalances[loc] = locationBalances[loc].minus(new BigNumber(l.principalAmount))
+        }
+      }
+
+      // Fund transfers between locations
+      const allFundTransfers = await db
+        .select()
+        .from(fundTransfers)
+        .where(lte(fundTransfers.createdAt, asOfDate))
+
+      for (const t of allFundTransfers) {
+        const amount = new BigNumber(t.amount)
+        if (locationBalances[t.fromLocation] !== undefined) {
+          locationBalances[t.fromLocation] = locationBalances[t.fromLocation].minus(amount)
+        }
+        if (locationBalances[t.toLocation] !== undefined) {
+          locationBalances[t.toLocation] = locationBalances[t.toLocation].plus(amount)
+        }
+      }
+
+      const cashBalance = locationBalances.cash
+      const bankBalance = locationBalances.bank
+      const strongRoomBalance = locationBalances.strong_room
+      const totalAssets = totalLoansOutstanding.plus(cashBalance).plus(bankBalance).plus(strongRoomBalance)
+
       const totalCreditorBalances = new BigNumber(systemCapital.totalOutstanding)
 
       const shareCapitalRows = await db
@@ -183,18 +250,22 @@ export const getBalanceSheetData = (
       const totalEquity = shareCapital.plus(retainedEarnings)
 
       const liabilitiesPlusEquity = totalCreditorBalances.plus(totalEquity)
-      if (!totalLoansOutstanding.isEqualTo(liabilitiesPlusEquity)) {
+      if (!totalAssets.isEqualTo(liabilitiesPlusEquity)) {
         console.warn(
-          `Balance sheet imbalance: Assets=${formatAmount(totalLoansOutstanding)}, ` +
+          `Balance sheet imbalance: Assets=${formatAmount(totalAssets)}, ` +
             `Liabilities+Equity=${formatAmount(liabilitiesPlusEquity)} ` +
-            `(diff=${formatAmount(totalLoansOutstanding.minus(liabilitiesPlusEquity))})`
+            `(diff=${formatAmount(totalAssets.minus(liabilitiesPlusEquity))})`
         )
       }
 
       return {
         asOf,
         assets: {
+          cashBalance: formatAmount(cashBalance),
+          bankBalance: formatAmount(bankBalance),
+          strongRoomBalance: formatAmount(strongRoomBalance),
           totalLoansOutstanding: formatAmount(totalLoansOutstanding),
+          totalAssets: formatAmount(totalAssets),
         },
         liabilities: {
           totalCreditorBalances: formatAmount(totalCreditorBalances),

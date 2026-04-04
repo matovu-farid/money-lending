@@ -22,6 +22,7 @@ export const getDailyCollections = (
           interestPortion: payments.interestPortion,
           principalPortion: payments.principalPortion,
           paymentDate: payments.paymentDate,
+          depositLocation: payments.depositLocation,
         })
         .from(payments)
         .innerJoin(loans, eq(payments.loanId, loans.id))

@@ -120,7 +120,25 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
             <table className="w-full text-sm">
               <tbody>
                 <tr className="border-b border-muted">
-                  <td className="py-2">Total Loans Outstanding</td>
+                  <td className="py-2 pl-4">Cash on Hand</td>
+                  <td className="py-2 text-right font-mono tabular-nums">
+                    {formatCurrency(data.assets.cashBalance)}
+                  </td>
+                </tr>
+                <tr className="border-b border-muted">
+                  <td className="py-2 pl-4">Bank</td>
+                  <td className="py-2 text-right font-mono tabular-nums">
+                    {formatCurrency(data.assets.bankBalance)}
+                  </td>
+                </tr>
+                <tr className="border-b border-muted">
+                  <td className="py-2 pl-4">Strong Room</td>
+                  <td className="py-2 text-right font-mono tabular-nums">
+                    {formatCurrency(data.assets.strongRoomBalance)}
+                  </td>
+                </tr>
+                <tr className="border-b border-muted">
+                  <td className="py-2 pl-4">Loans Outstanding</td>
                   <td className="py-2 text-right font-mono tabular-nums">
                     {formatCurrency(data.assets.totalLoansOutstanding)}
                   </td>
@@ -128,7 +146,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                 <tr className="font-semibold bg-muted/30">
                   <td className="py-2 px-1">Total Assets</td>
                   <td className="py-2 px-1 text-right font-mono tabular-nums">
-                    {formatCurrency(data.assets.totalLoansOutstanding)}
+                    {formatCurrency(data.assets.totalAssets)}
                   </td>
                 </tr>
               </tbody>
