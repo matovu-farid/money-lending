@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  ClipboardCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { signOut, useSession } from "@/lib/auth-client"
@@ -50,6 +51,7 @@ const navGroups: NavGroup[] = [
       { label: "Customers", href: "/customers", icon: Users },
       { label: "Payments", href: "/payments", icon: CreditCard },
       { label: "Loans", href: "/loans", icon: Banknote },
+      { label: "Approvals", href: "/approvals", icon: ClipboardCheck },
     ],
   },
   {
