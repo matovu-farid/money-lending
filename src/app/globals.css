@@ -249,4 +249,27 @@
     margin: 10mm;
     size: auto;
   }
+
+}
+
+/* POS Receipt Print Styles — 80mm thermal printer */
+@media print {
+  body.pos-receipt-print-active * {
+    display: none !important;
+  }
+  body.pos-receipt-print-active .pos-receipt,
+  body.pos-receipt-print-active .pos-receipt * {
+    display: block !important;
+  }
+  body.pos-receipt-print-active .pos-receipt {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 80mm;
+    font-family: "Courier New", Courier, monospace;
+    font-size: 11px;
+    padding: 4mm;
+    background: white;
+    color: black;
+  }
 }
