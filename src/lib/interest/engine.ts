@@ -67,7 +67,7 @@ export function calculateLoanSummary(
   if ((loanType === "fixed_rate" || loanType === "reducing_balance") && termMonths) {
     const schedule = calculateSchedule(principalAmount, monthlyRateDecimal, termMonths, loanType)
     const totalInterest = schedule.reduce(
-      (sum, e) => sum.plus(e.monthlyInterest),
+      (sum: BigNumber, e: ScheduleEntry) => sum.plus(e.monthlyInterest),
       new BigNumber(0)
     )
     const totalOwed = principal.plus(totalInterest)
