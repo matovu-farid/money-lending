@@ -9,6 +9,8 @@ import { writeAuditLog } from "./audit.service"
 import { createNotification } from "./notification.service"
 import type { ConversationListItem, MessageWithSender, ChatUser } from "@/types"
 
+const log = (msg: string, ...args: unknown[]) => console.log(`[chat.service] ${msg}`, ...args)
+
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024
 const MAX_ATTACHMENTS_PER_MESSAGE = 3
 const ATTACHMENT_TTL_DAYS = 7
@@ -103,72 +105,97 @@ export const getConversations = (
         )
         .orderBy(desc(conversations.updatedAt))
 
-      const results: ConversationListItem[] = []
+      if (userConversations.length === 0) return []
 
-      for (const conv of userConversations) {
-        // Get participants with names
-        const participants = await db
-          .select({
-            id: user.id,
-            name: user.name,
-          })
-          .from(conversationParticipants)
-          .innerJoin(user, eq(user.id, conversationParticipants.userId))
-          .where(eq(conversationParticipants.conversationId, conv.id))
+      const convIds = userConversations.map((c) => c.id)
 
-        // Get last message
-        const lastMessages = await db
-          .select({
-            content: messages.content,
-            createdAt: messages.createdAt,
-            senderName: user.name,
-          })
-          .from(messages)
-          .innerJoin(user, eq(user.id, messages.senderId))
-          .where(
-            and(
-              eq(messages.conversationId, conv.id),
-              isNull(messages.deletedAt)
-            )
-          )
-          .orderBy(desc(messages.createdAt))
-          .limit(1)
+      // Batch fetch all participants for all conversations in one query
+      const allParticipantRows = await db
+        .select({
+          conversationId: conversationParticipants.conversationId,
+          id: user.id,
+          name: user.name,
+        })
+        .from(conversationParticipants)
+        .innerJoin(user, eq(user.id, conversationParticipants.userId))
+        .where(inArray(conversationParticipants.conversationId, convIds))
 
-        const lastMessage = lastMessages[0]
-          ? {
-              content: lastMessages[0].content.slice(0, 100),
-              senderName: lastMessages[0].senderName,
-              createdAt: lastMessages[0].createdAt,
-            }
-          : null
+      // Group participants by conversationId
+      const participantsByConv = new Map<string, { id: string; name: string }[]>()
+      for (const row of allParticipantRows) {
+        const existing = participantsByConv.get(row.conversationId) ?? []
+        existing.push({ id: row.id, name: row.name })
+        participantsByConv.set(row.conversationId, existing)
+      }
 
-        // Count unread messages
-        const unreadConditions = [
-          eq(messages.conversationId, conv.id),
-          isNull(messages.deletedAt),
-        ]
-        if (conv.lastReadAt) {
-          const lastReadAtIso = conv.lastReadAt instanceof Date ? conv.lastReadAt.toISOString() : new Date(conv.lastReadAt).toISOString()
-          unreadConditions.push(sql`${messages.createdAt} > ${lastReadAtIso}::timestamptz`)
-        }
+      // Batch fetch last message per conversation using DISTINCT ON
+      const lastMessageRows = await db.execute<{
+        conversation_id: string
+        content: string
+        sender_name: string
+        created_at: Date
+      }>(sql`
+        SELECT DISTINCT ON (m.conversation_id)
+          m.conversation_id,
+          m.content,
+          u.name AS sender_name,
+          m.created_at
+        FROM messages m
+        JOIN "user" u ON m.sender_id = u.id
+        WHERE m.conversation_id = ANY(${convIds})
+          AND m.deleted_at IS NULL
+        ORDER BY m.conversation_id, m.created_at DESC
+      `)
 
-        const [unreadResult] = await db
-          .select({ count: sql<number>`count(*)::int` })
-          .from(messages)
-          .where(and(...unreadConditions))
-
-        results.push({
-          id: conv.id,
-          name: conv.name,
-          isGroup: conv.isGroup,
-          participants,
-          lastMessage,
-          unreadCount: conv.lastReadAt ? (unreadResult?.count ?? 0) : 0,
-          updatedAt: conv.updatedAt,
+      const lastMessageByConv = new Map<string, { content: string; senderName: string; createdAt: Date }>()
+      for (const row of Array.from(lastMessageRows)) {
+        lastMessageByConv.set(row.conversation_id, {
+          content: (row.content as string).slice(0, 100),
+          senderName: row.sender_name as string,
+          createdAt: row.created_at as Date,
         })
       }
 
-      return results
+      // Batch fetch unread counts per conversation
+      // We use a single query grouping by conversationId; unread = messages after lastReadAt per conv
+      // Build a values list of (convId, lastReadAt) pairs and join against messages
+      const unreadRows = await db.execute<{ conversation_id: string; unread_count: number }>(sql`
+        SELECT
+          m.conversation_id,
+          COUNT(*)::int AS unread_count
+        FROM messages m
+        JOIN (
+          VALUES ${sql.raw(
+            userConversations
+              .map((c) => {
+                const lastReadAtIso = c.lastReadAt
+                  ? (c.lastReadAt instanceof Date ? c.lastReadAt : new Date(c.lastReadAt)).toISOString()
+                  : null
+                return `('${c.id}'::uuid, ${lastReadAtIso ? `'${lastReadAtIso}'::timestamptz` : "NULL::timestamptz"})`
+              })
+              .join(", ")
+          )}
+        ) AS conv_reads(conv_id, last_read_at)
+          ON m.conversation_id = conv_reads.conv_id
+        WHERE m.deleted_at IS NULL
+          AND (conv_reads.last_read_at IS NULL OR m.created_at > conv_reads.last_read_at)
+        GROUP BY m.conversation_id
+      `)
+
+      const unreadByConv = new Map<string, number>()
+      for (const row of Array.from(unreadRows)) {
+        unreadByConv.set(row.conversation_id, row.unread_count)
+      }
+
+      return userConversations.map((conv) => ({
+        id: conv.id,
+        name: conv.name,
+        isGroup: conv.isGroup,
+        participants: participantsByConv.get(conv.id) ?? [],
+        lastMessage: lastMessageByConv.get(conv.id) ?? null,
+        unreadCount: conv.lastReadAt ? (unreadByConv.get(conv.id) ?? 0) : 0,
+        updatedAt: conv.updatedAt,
+      }))
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
@@ -224,35 +251,52 @@ export const getMessages = (
         .limit(limit)
 
       const now = new Date()
-      const result: MessageWithSender[] = []
+      const messageIds = rows.map((r) => r.id)
 
-      for (const msg of rows) {
-        const attachments = await db
-          .select()
-          .from(messageAttachments)
-          .where(eq(messageAttachments.messageId, msg.id))
+      // Batch fetch attachments for all messages — exclude base64 data for efficiency
+      const attachmentRows = messageIds.length > 0
+        ? await db
+            .select({
+              id: messageAttachments.id,
+              messageId: messageAttachments.messageId,
+              mimeType: messageAttachments.mimeType,
+              fileName: messageAttachments.fileName,
+              fileSize: messageAttachments.fileSize,
+              expiresAt: messageAttachments.expiresAt,
+            })
+            .from(messageAttachments)
+            .where(inArray(messageAttachments.messageId, messageIds))
+        : []
 
-        result.push({
-          id: msg.id,
-          conversationId: msg.conversationId,
-          senderId: msg.senderId,
-          senderName: msg.senderName,
-          content: msg.content,
-          mentions: msg.mentions,
-          attachments: attachments.map((a) => ({
-            id: a.id,
-            mimeType: a.mimeType,
-            fileName: a.fileName,
-            fileSize: a.fileSize,
-            data: a.data,
-            expired: a.expiresAt < now,
-          })),
-          deletedAt: msg.deletedAt,
-          createdAt: msg.createdAt,
-        })
+      // Group attachments by messageId
+      const attachmentMap = new Map<string, typeof attachmentRows>()
+      for (const att of attachmentRows) {
+        const existing = attachmentMap.get(att.messageId) ?? []
+        existing.push(att)
+        attachmentMap.set(att.messageId, existing)
       }
 
-      return result
+      return rows.map((msg) => ({
+        id: msg.id,
+        conversationId: msg.conversationId,
+        senderId: msg.senderId,
+        senderName: msg.senderName,
+        // Sanitize deleted messages — return placeholder content but keep metadata
+        content: msg.deletedAt ? "" : msg.content,
+        mentions: msg.deletedAt ? [] : msg.mentions,
+        attachments: msg.deletedAt
+          ? []
+          : (attachmentMap.get(msg.id) ?? []).map((a) => ({
+              id: a.id,
+              mimeType: a.mimeType,
+              fileName: a.fileName,
+              fileSize: a.fileSize,
+              data: "", // base64 data is fetched on demand via getAttachmentData
+              expired: a.expiresAt < now,
+            })),
+        deletedAt: msg.deletedAt,
+        createdAt: msg.createdAt,
+      }))
     },
     catch: (e) => {
       if (e instanceof ConversationNotFound) return e
@@ -289,8 +333,10 @@ export const sendMessage = (
         )
       if (!participant) throw new ForbiddenError({ action: "sendMessage", role: "non-participant" })
 
-      // Validate content
-      if (!content.trim()) throw new ValidationError({ message: "Message content cannot be empty", field: "content" })
+      // Validate content — allow empty string when attachments are provided
+      if (!content.trim() && attachments.length === 0) {
+        throw new ValidationError({ message: "Message content or attachment is required", field: "content" })
+      }
 
       // Validate attachments
       if (attachments.length > MAX_ATTACHMENTS_PER_MESSAGE) {
@@ -347,23 +393,25 @@ export const sendMessage = (
           .set({ updatedAt: now })
           .where(eq(conversations.id, conversationId))
 
-        // Create notifications for @mentioned users
-        for (const mentionedUserId of mentionIds) {
+        return { msg, insertedAttachments }
+      })
+
+      // Create notifications for @mentioned users AFTER the transaction commits.
+      // Notification failures must NOT fail the message send.
+      for (const mentionedUserId of mentionIds) {
+        try {
           await createNotification(
             mentionedUserId,
             "chat_mention",
             `${sender?.name ?? "Someone"} mentioned you in a message`,
             "conversation",
             conversationId,
-            { conversationId, senderId, messageId: msg.id }
+            { conversationId, senderId, messageId: result.msg.id }
           )
+        } catch (notifErr) {
+          log("Failed to create mention notification for user %s: %o", mentionedUserId, notifErr)
         }
-
-        return {
-          msg,
-          insertedAttachments,
-        }
-      })
+      }
 
       return {
         id: result.msg.id,
@@ -562,6 +610,36 @@ export const getConversationParticipants = (
     },
     catch: (e) => {
       if (e instanceof ConversationNotFound) return e
+      return new DatabaseError({ cause: e })
+    },
+  })
+
+/**
+ * Fetch the base64 data for a single attachment by ID.
+ * The attachment content is intentionally excluded from getMessages to avoid
+ * transferring large payloads; callers request it on demand.
+ */
+export const getAttachmentData = (
+  attachmentId: string
+): Effect.Effect<{ data: string; mimeType: string }, DatabaseError | ValidationError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const [att] = await db
+        .select({
+          data: messageAttachments.data,
+          mimeType: messageAttachments.mimeType,
+          expiresAt: messageAttachments.expiresAt,
+        })
+        .from(messageAttachments)
+        .where(eq(messageAttachments.id, attachmentId))
+
+      if (!att) throw new ValidationError({ message: "Attachment not found" })
+      if (att.expiresAt <= new Date()) throw new ValidationError({ message: "Attachment expired" })
+
+      return { data: att.data, mimeType: att.mimeType }
+    },
+    catch: (e) => {
+      if (e instanceof ValidationError) return e
       return new DatabaseError({ cause: e })
     },
   })

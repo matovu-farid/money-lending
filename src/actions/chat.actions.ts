@@ -13,6 +13,7 @@ import {
   searchUsers,
   addParticipants,
   getConversationParticipants,
+  getAttachmentData,
 } from "@/services/chat.service"
 import { ConversationNotFound, MessageNotFound, ForbiddenError, ValidationError } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -162,6 +163,19 @@ export async function getConversationParticipantsAction(conversationId: string) 
     return { data }
   } catch (error) {
     if (error instanceof ConversationNotFound) return { error: "Conversation not found" }
+    return { error: "Internal server error" }
+  }
+}
+
+export async function getAttachmentDataAction(attachmentId: string) {
+  const user = await getAuthedUser()
+  if (!user) return { error: "Unauthorized" }
+
+  try {
+    const data = await Effect.runPromise(getAttachmentData(attachmentId))
+    return { data }
+  } catch (error) {
+    if (error instanceof ValidationError) return { error: error.message }
     return { error: "Internal server error" }
   }
 }

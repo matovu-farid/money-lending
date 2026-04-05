@@ -62,6 +62,9 @@ export function NotificationBell() {
     if (notification.referenceType === "loan" && notification.referenceId) {
       router.push(`/loans/${notification.referenceId}`)
     }
+    if (notification.referenceType === "conversation") {
+      router.push("/chat")
+    }
     setOpen(false)
   }
 
