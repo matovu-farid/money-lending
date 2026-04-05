@@ -36,6 +36,8 @@ export function useCreateLoan() {
         status: "active",
         issuedBy: "",
         disbursementSource: input.disbursementSource,
+        loanType: (input as any).loanType ?? "perpetual",
+        termMonths: (input as any).termMonths ?? null,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),

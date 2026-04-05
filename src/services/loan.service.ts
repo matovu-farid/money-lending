@@ -3,11 +3,11 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
-import { notifications } from "@/lib/db/schema/notifications"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq, desc, and, isNull } from "drizzle-orm"
+import BigNumber from "bignumber.js"
 import {
   DatabaseError,
   CustomerNotFound,
@@ -164,6 +164,8 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           minPeriodOverride: loans.minPeriodOverride,
           issuedBy: loans.issuedBy,
           disbursementSource: loans.disbursementSource,
+          loanType: loans.loanType,
+          termMonths: loans.termMonths,
           createdAt: loans.createdAt,
           updatedAt: loans.updatedAt,
           deletedAt: loans.deletedAt,
@@ -226,6 +228,21 @@ export const updateLoan = (
           afterValue: { ...setObj, reason: input.reason },
         })
 
+        if (input.issuanceFee !== undefined) {
+          await tx
+            .update(transactions)
+            .set({
+              amount: input.issuanceFee,
+              description: `Issuance fee for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
+            })
+            .where(
+              and(
+                eq(transactions.referenceType, "loan"),
+                eq(transactions.referenceId, input.loanId)
+              )
+            )
+        }
+
         return updatedLoan
       })
     },
@@ -264,6 +281,63 @@ export const deleteLoan = (
           .update(payments)
           .set({ deletedAt: now, deletedBy: actorId, deleteReason: input.reason, updatedAt: now })
           .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+
+        // Reverse issuance fee transaction
+        const [feeTx] = await tx
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.referenceType, "loan"),
+              eq(transactions.referenceId, input.loanId)
+            )
+          )
+
+        if (feeTx) {
+          await tx.insert(transactions).values({
+            type: "debit",
+            amount: feeTx.amount,
+            categoryId: feeTx.categoryId,
+            referenceType: "loan_reversal",
+            referenceId: input.loanId,
+            description: `Reversal - loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
+            transactionDate: new Date(),
+            recordedBy: actorId,
+          })
+        }
+
+        // Reverse all payment interest transactions for this loan's payments
+        const loanPayments = await tx
+          .select()
+          .from(payments)
+          .where(eq(payments.loanId, input.loanId))
+
+        for (const p of loanPayments) {
+          if (new BigNumber(p.interestPortion).isGreaterThan(0)) {
+            // Look up category
+            let [category] = await tx.select().from(transactionCategories)
+              .where(and(
+                eq(transactionCategories.name, "Interest Earned"),
+                eq(transactionCategories.type, "income")
+              ))
+            if (!category) {
+              ;[category] = await tx.insert(transactionCategories)
+                .values({ name: "Interest Earned", type: "income", isDefault: true })
+                .returning()
+            }
+
+            await tx.insert(transactions).values({
+              type: "debit",
+              amount: p.interestPortion,
+              categoryId: category.id,
+              referenceType: "payment_reversal",
+              referenceId: p.id,
+              description: `Reversal - loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
+              transactionDate: new Date(),
+              recordedBy: actorId,
+            })
+          }
+        }
 
         await tx
           .update(loans)
