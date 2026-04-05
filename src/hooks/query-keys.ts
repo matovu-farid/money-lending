@@ -78,4 +78,12 @@ export const queryKeys = {
       [...queryKeys.rateChangeRequests.all, "byLoan", loanId] as const,
     pendingCount: () => [...queryKeys.rateChangeRequests.all, "pending-count"] as const,
   },
+
+  chat: {
+    all: ["chat"] as const,
+    conversations: () => [...queryKeys.chat.all, "conversations"] as const,
+    messages: (conversationId: string) => [...queryKeys.chat.all, "messages", conversationId] as const,
+    users: (query: string) => [...queryKeys.chat.all, "users", query] as const,
+    participants: (conversationId: string) => [...queryKeys.chat.all, "participants", conversationId] as const,
+  },
 } as const
