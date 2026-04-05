@@ -54,6 +54,7 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { cn, formatDate, formatCurrency } from "@/lib/utils"
+import { calculateSchedule } from "@/lib/interest/engine"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -452,7 +453,59 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
             {formatCurrency(loan.issuanceFee)}
           </p>
         </div>
+        <div className="rounded-xl border border-border bg-card p-5">
+          <div className="flex items-center gap-2 text-muted-foreground mb-2">
+            <span className="text-xs font-medium uppercase tracking-wider">Loan Type</span>
+          </div>
+          <p className="text-lg font-semibold">
+            {loan.loanType === "fixed_rate" ? "Fixed Rate" : loan.loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}
+          </p>
+        </div>
+        {loan.termMonths && (
+          <div className="rounded-xl border border-border bg-card p-5">
+            <div className="flex items-center gap-2 text-muted-foreground mb-2">
+              <span className="text-xs font-medium uppercase tracking-wider">Term</span>
+            </div>
+            <p className="text-lg font-semibold">{loan.termMonths} months</p>
+          </div>
+        )}
       </div>
+
+      {/* Amortization Schedule */}
+      {loan.loanType && loan.loanType !== "perpetual" && loan.termMonths && (
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground">Amortization Schedule</h3>
+          <div className="rounded-md border overflow-auto max-h-64">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left">Month</th>
+                  <th className="px-3 py-2 text-right">Principal</th>
+                  <th className="px-3 py-2 text-right">Interest</th>
+                  <th className="px-3 py-2 text-right">Installment</th>
+                  <th className="px-3 py-2 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {calculateSchedule(
+                  loan.principalAmount,
+                  loan.interestRateOverride ?? loan.interestRate,
+                  loan.termMonths,
+                  loan.loanType as "fixed_rate" | "reducing_balance"
+                ).map((entry) => (
+                  <tr key={entry.month} className="border-t">
+                    <td className="px-3 py-2">{entry.month}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInterest).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInstallment).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.balanceAfter).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Loan Description */}
       {loan.description && (

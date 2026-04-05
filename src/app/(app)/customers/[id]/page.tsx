@@ -100,6 +100,15 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
               <Badge variant={loanStatusVariant(item.loan.status)}>
                 {loanStatusLabel(item.loan.status)}
               </Badge>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                item.loan.loanType === "fixed_rate"
+                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+                  : item.loan.loanType === "reducing_balance"
+                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                  : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+              }`}>
+                {item.loan.loanType === "fixed_rate" ? "Fixed Rate" : item.loan.loanType === "reducing_balance" ? "Reducing Bal." : "Perpetual"}
+              </span>
               {item.loan.status === "active" &&
                 item.daysOverdue > 0 && (
                   <OverdueBadge daysOverdue={item.daysOverdue} />
@@ -254,6 +263,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
 
 interface EditFormValues {
   fullName: string;
+  nin: string;
   contact: string;
   address: string;
 }
@@ -306,6 +316,7 @@ export default function CustomerProfilePage() {
     if (!customer) return;
     reset({
       fullName: customer.fullName,
+      nin: customer.nin,
       contact: customer.contact,
       address: customer.address,
     });
@@ -327,6 +338,7 @@ export default function CustomerProfilePage() {
           ? {
               ...old,
               fullName: data.fullName.trim(),
+              nin: data.nin.trim(),
               contact: data.contact.trim(),
               address: data.address.trim(),
             }
@@ -335,6 +347,7 @@ export default function CustomerProfilePage() {
 
       const result = await updateCustomerAction(customerId, {
         fullName: data.fullName.trim(),
+        nin: data.nin.trim(),
         contact: data.contact.trim(),
         address: data.address.trim(),
       });
@@ -470,6 +483,23 @@ export default function CustomerProfilePage() {
                 )}
               </div>
               <div className="space-y-1">
+                <Label htmlFor="edit-nin">NIN (National ID Number)</Label>
+                <Input
+                  id="edit-nin"
+                  {...register("nin", {
+                    required: "NIN is required",
+                    validate: (v) =>
+                      v.trim() !== "" || "NIN is required",
+                  })}
+                  disabled={isEditPending}
+                />
+                {errors.nin && (
+                  <p className="text-sm text-destructive">
+                    {errors.nin.message}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
                 <Label htmlFor="edit-contact">Contact</Label>
                 <Input
                   id="edit-contact"
@@ -525,6 +555,10 @@ export default function CustomerProfilePage() {
               <div>
                 <dt className="text-muted-foreground">Full Name</dt>
                 <dd className="font-medium">{customer.fullName}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">NIN (National ID Number)</dt>
+                <dd className="font-medium">{customer.nin}</dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Contact</dt>

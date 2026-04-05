@@ -17,13 +17,14 @@ function autoCapitalize(value: string): string {
 
 interface CustomerFormValues {
   fullName: string
+  nin: string
   contact: string
   address: string
 }
 
 export default function NewCustomerPage() {
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CustomerFormValues>({
-    defaultValues: { fullName: "", contact: "", address: "" },
+    defaultValues: { fullName: "", nin: "", contact: "", address: "" },
   })
 
   const mutation = useCreateCustomer()
@@ -31,6 +32,7 @@ export default function NewCustomerPage() {
   function onSubmit(data: CustomerFormValues) {
     mutation.mutate({
       fullName: data.fullName.trim(),
+      nin: data.nin.trim(),
       contact: data.contact.trim(),
       address: data.address.trim(),
     })
@@ -65,6 +67,23 @@ export default function NewCustomerPage() {
               />
               {errors.fullName && (
                 <p className="text-sm text-destructive">{errors.fullName.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="nin">NIN (National ID Number)</Label>
+              <Input
+                id="nin"
+                type="text"
+                placeholder="e.g. CM12345678ABCDE"
+                disabled={mutation.isPending}
+                {...register("nin", {
+                  required: "NIN is required",
+                  validate: v => v.trim() !== "" || "NIN is required",
+                })}
+              />
+              {errors.nin && (
+                <p className="text-sm text-destructive">{errors.nin.message}</p>
               )}
             </div>
 
