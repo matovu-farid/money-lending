@@ -4,12 +4,14 @@ import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
+import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql } from "drizzle-orm"
-import { DatabaseError, LoanNotFound, PaymentNotFound } from "@/lib/errors"
+import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { allocatePayment } from "@/lib/interest/engine"
+import { allocatePayment, formatAmount } from "@/lib/interest/engine"
 import { autoPostInterestEarned } from "./transaction.service"
 import BigNumber from "bignumber.js"
+import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import type {
   RecordPaymentInput,
   EditPaymentInput,
@@ -21,12 +23,74 @@ import type {
   RecentlyCollectedLoan,
 } from "@/types"
 
-function escapeLikePattern(input: string): string {
-  return input.replace(/%/g, '\\%').replace(/_/g, '\\_')
-}
+/**
+ * After recalculateFromPayment updates downstream payments, reverse and repost
+ * journal entries for any whose interestPortion changed.
+ */
+async function reconcileDownstreamJournals(
+  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  downstreamPayments: { id: string; interestPortion: string; paymentDate: Date; loanId: string }[],
+  oldInterestMap: Map<string, string>,
+  triggerPaymentId: string,
+  actorId: string
+): Promise<void> {
+  for (const dp of downstreamPayments) {
+    const oldInterest = oldInterestMap.get(dp.id)
+    if (oldInterest === undefined) continue
 
-function daysBetween(from: Date, to: Date): number {
-  return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+    const [refreshed] = await tx
+      .select()
+      .from(payments)
+      .where(eq(payments.id, dp.id))
+    if (!refreshed) continue
+
+    const oldAmount = new BigNumber(oldInterest)
+    const newAmount = new BigNumber(refreshed.interestPortion)
+
+    if (oldAmount.isEqualTo(newAmount)) continue
+
+    // Look up the Interest Earned category
+    let [category] = await tx
+      .select()
+      .from(transactionCategories)
+      .where(
+        and(
+          eq(transactionCategories.name, "Interest Earned"),
+          eq(transactionCategories.type, "income")
+        )
+      )
+    if (!category) {
+      ;[category] = await tx
+        .insert(transactionCategories)
+        .values({ name: "Interest Earned", type: "income", isDefault: true })
+        .returning()
+    }
+
+    // Reverse old interest if > 0
+    if (oldAmount.isGreaterThan(0)) {
+      await tx.insert(transactions).values({
+        type: "debit",
+        amount: oldInterest,
+        categoryId: category.id,
+        referenceType: "payment_reversal",
+        referenceId: dp.id,
+        description: `Reversal - downstream recalculation from payment ${triggerPaymentId} edit`,
+        transactionDate: new Date(),
+        recordedBy: actorId,
+      })
+    }
+
+    // Post new interest if > 0
+    if (newAmount.isGreaterThan(0)) {
+      await autoPostInterestEarned(tx, {
+        amount: refreshed.interestPortion,
+        loanId: refreshed.loanId,
+        paymentId: dp.id,
+        paymentDate: refreshed.paymentDate.toISOString(),
+        actorId,
+      })
+    }
+  }
 }
 
 async function recalculateFromPayment(
@@ -40,6 +104,7 @@ async function recalculateFromPayment(
   const [loan] = await tx.select().from(loans).where(eq(loans.id, loanId))
   if (!loan) return
 
+  const loanType = loan.loanType ?? "perpetual"
   const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
   const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
 
@@ -61,6 +126,10 @@ async function recalculateFromPayment(
       monthlyRateDecimal,
       daysElapsed,
       minInterestDays,
+      loanType,
+      originalPrincipal: loan.principalAmount,
+      termMonths: loan.termMonths ?? undefined,
+      paymentNumber: i + 1,
     })
 
     await tx
@@ -87,21 +156,32 @@ async function recalculateFromPayment(
 export const recordPayment = (
   input: RecordPaymentInput,
   actorId: string
-): Effect.Effect<Payment, LoanNotFound | DatabaseError> =>
+): Effect.Effect<Payment, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [loan] = await db.select().from(loans).where(eq(loans.id, input.loanId))
-      if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
-
-      const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
-      const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
-
       return await db.transaction(async (tx) => {
+        const [loan] = await tx.select().from(loans).where(eq(loans.id, input.loanId)).for('update')
+        if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
+
+        // L2: Reject zero or negative payment amounts
+        if (new BigNumber(input.amount).isLessThanOrEqualTo(0)) {
+          throw { _tag: "ValidationError", message: "Payment amount must be greater than zero", field: "amount" }
+        }
+
+        // L1: Reject payments dated before the loan start date
+        if (new Date(input.paymentDate) < new Date(loan.startDate)) {
+          throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
+        }
+
+        const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+        const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
+
         const activePayments = await tx
           .select()
           .from(payments)
           .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+          .for('update')
 
         const principalBalanceBefore =
           activePayments.length === 0
@@ -114,13 +194,43 @@ export const recordPayment = (
             : new Date(activePayments[activePayments.length - 1].paymentDate)
         const daysElapsed = daysBetween(prevDate, new Date(input.paymentDate))
 
+        const loanType = loan.loanType ?? "perpetual"
+        const paymentNumber = activePayments.length + 1
+
         const allocation = allocatePayment({
           paymentAmount: input.amount,
           principalBalanceBefore,
           monthlyRateDecimal,
           daysElapsed,
           minInterestDays,
+          loanType,
+          originalPrincipal: loan.principalAmount,
+          termMonths: loan.termMonths ?? undefined,
+          paymentNumber,
         })
+
+        // M2: Reject overpayments that exceed total owed
+        let totalOwed: BigNumber
+        if (loanType === "fixed_rate") {
+          // Fixed rate: remaining principal + all remaining term interest
+          const monthlyInterest = new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(monthlyRateDecimal))
+          const remainingMonths = Math.max((loan.termMonths ?? 0) - paymentNumber + 1, 1)
+          totalOwed = new BigNumber(principalBalanceBefore).plus(monthlyInterest.multipliedBy(remainingMonths))
+        } else if (loanType === "reducing_balance") {
+          // Reducing balance: remaining principal + current period interest
+          const currentInterest = new BigNumber(principalBalanceBefore).multipliedBy(new BigNumber(monthlyRateDecimal))
+          totalOwed = new BigNumber(principalBalanceBefore).plus(currentInterest)
+        } else {
+          // Perpetual: interest + principal (existing logic)
+          totalOwed = new BigNumber(allocation.interestPortion).plus(new BigNumber(principalBalanceBefore))
+        }
+        if (new BigNumber(input.amount).isGreaterThan(totalOwed)) {
+          throw {
+            _tag: "ValidationError",
+            message: `Payment amount ${input.amount} exceeds total owed ${formatAmount(totalOwed)}`,
+            field: "amount",
+          }
+        }
 
         const [newPayment] = await tx
           .insert(payments)
@@ -168,6 +278,7 @@ export const recordPayment = (
     },
     catch: (e: any) => {
       if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
       return new DatabaseError({ cause: e })
     },
   })
@@ -178,19 +289,19 @@ export const editPayment = (
 ): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [payment] = await db
-        .select()
-        .from(payments)
-        .where(eq(payments.id, input.paymentId))
-      if (!payment || payment.deletedAt !== null)
-        throw { _tag: "PaymentNotFound", id: input.paymentId }
-
-      const [loan] = await db.select().from(loans).where(eq(loans.id, payment.loanId))
-      if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
-
-      const beforeValue = { ...payment }
-
       return await db.transaction(async (tx) => {
+        const [payment] = await tx
+          .select()
+          .from(payments)
+          .where(eq(payments.id, input.paymentId))
+        if (!payment || payment.deletedAt !== null)
+          throw { _tag: "PaymentNotFound", id: input.paymentId }
+
+        const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+        if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
+
+        const beforeValue = { ...payment }
+
         const updates: {
           updatedAt: Date
           editReason: string
@@ -214,8 +325,25 @@ export const editPayment = (
 
         const paymentIndex = allActive.findIndex((p) => p.id === input.paymentId)
 
+        // Capture old interest values for downstream payments before recalculation
+        const oldInterestMap = new Map<string, string>()
         if (paymentIndex !== -1) {
+          for (let i = paymentIndex + 1; i < allActive.length; i++) {
+            oldInterestMap.set(allActive[i].id, allActive[i].interestPortion)
+          }
           await recalculateFromPayment(tx, payment.loanId, paymentIndex, allActive)
+
+          // Reconcile journal entries for downstream payments whose interest changed
+          const downstreamPayments = allActive.slice(paymentIndex + 1)
+          if (downstreamPayments.length > 0) {
+            await reconcileDownstreamJournals(
+              tx,
+              downstreamPayments,
+              oldInterestMap,
+              input.paymentId,
+              actorId
+            )
+          }
         }
 
         const refreshed = await tx
@@ -253,14 +381,35 @@ export const editPayment = (
           afterValue: { ...updatedPayment, reason: input.reason },
         })
 
-        await tx
-          .delete(transactions)
-          .where(
-            and(
-              eq(transactions.referenceType, "payment"),
-              eq(transactions.referenceId, input.paymentId)
+        // Post reversing entry using the payment's own interestPortion (immune to repeated edits)
+        if (new BigNumber(beforeValue.interestPortion).isGreaterThan(0)) {
+          let [category] = await tx
+            .select()
+            .from(transactionCategories)
+            .where(
+              and(
+                eq(transactionCategories.name, "Interest Earned"),
+                eq(transactionCategories.type, "income")
+              )
             )
-          )
+          if (!category) {
+            ;[category] = await tx
+              .insert(transactionCategories)
+              .values({ name: "Interest Earned", type: "income", isDefault: true })
+              .returning()
+          }
+
+          await tx.insert(transactions).values({
+            type: "debit",
+            amount: beforeValue.interestPortion,
+            categoryId: category.id,
+            referenceType: "payment_reversal",
+            referenceId: input.paymentId,
+            description: `Reversal - payment ${input.paymentId} edited: ${input.reason}`,
+            transactionDate: new Date(),
+            recordedBy: actorId,
+          })
+        }
 
         const newInterestPortion = updatedPayment.interestPortion
         if (new BigNumber(newInterestPortion).isGreaterThan(0)) {
@@ -289,25 +438,24 @@ export const deletePayment = (
 ): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [payment] = await db
-        .select()
-        .from(payments)
-        .where(eq(payments.id, input.paymentId))
-      if (!payment || payment.deletedAt !== null)
-        throw { _tag: "PaymentNotFound", id: input.paymentId }
-
-      const [loan] = await db.select().from(loans).where(eq(loans.id, payment.loanId))
-      if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
-
-      const now = new Date()
-      const softDeletedPayment = {
-        ...payment,
-        deletedAt: now,
-        deletedBy: actorId,
-        deleteReason: input.reason,
-      }
-
       return await db.transaction(async (tx) => {
+        const [payment] = await tx
+          .select()
+          .from(payments)
+          .where(eq(payments.id, input.paymentId))
+        if (!payment || payment.deletedAt !== null)
+          throw { _tag: "PaymentNotFound", id: input.paymentId }
+
+        const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+        if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
+
+        const now = new Date()
+        const softDeletedPayment = {
+          ...payment,
+          deletedAt: now,
+          deletedBy: actorId,
+          deleteReason: input.reason,
+        }
         await tx
           .update(payments)
           .set({
@@ -329,8 +477,25 @@ export const deletePayment = (
           (p) => new Date(p.paymentDate).getTime() >= deletedDate
         )
 
+        // Capture old interest values for downstream payments before recalculation
+        const oldInterestMap = new Map<string, string>()
         if (fromIndex !== -1 && remainingActive.length > 0) {
+          for (let i = fromIndex; i < remainingActive.length; i++) {
+            oldInterestMap.set(remainingActive[i].id, remainingActive[i].interestPortion)
+          }
           await recalculateFromPayment(tx, payment.loanId, fromIndex, remainingActive)
+
+          // Reconcile journal entries for downstream payments whose interest changed
+          const downstreamPayments = remainingActive.slice(fromIndex)
+          if (downstreamPayments.length > 0) {
+            await reconcileDownstreamJournals(
+              tx,
+              downstreamPayments,
+              oldInterestMap,
+              input.paymentId,
+              actorId
+            )
+          }
         }
 
         const refreshed = await tx
@@ -368,14 +533,35 @@ export const deletePayment = (
           afterValue: softDeletedPayment,
         })
 
-        await tx
-          .delete(transactions)
-          .where(
-            and(
-              eq(transactions.referenceType, "payment"),
-              eq(transactions.referenceId, input.paymentId)
+        // Post reversing entry using the payment's own interestPortion (immune to repeated edits)
+        if (new BigNumber(payment.interestPortion).isGreaterThan(0)) {
+          let [category] = await tx
+            .select()
+            .from(transactionCategories)
+            .where(
+              and(
+                eq(transactionCategories.name, "Interest Earned"),
+                eq(transactionCategories.type, "income")
+              )
             )
-          )
+          if (!category) {
+            ;[category] = await tx
+              .insert(transactionCategories)
+              .values({ name: "Interest Earned", type: "income", isDefault: true })
+              .returning()
+          }
+
+          await tx.insert(transactions).values({
+            type: "debit",
+            amount: payment.interestPortion,
+            categoryId: category.id,
+            referenceType: "payment_reversal",
+            referenceId: input.paymentId,
+            description: `Reversal - payment ${input.paymentId} deleted: ${input.reason}`,
+            transactionDate: new Date(),
+            recordedBy: actorId,
+          })
+        }
 
         const [deletedRow] = await tx
           .select()
@@ -456,7 +642,7 @@ export const getPaymentsForLoan = (
       return await db
         .select()
         .from(payments)
-        .where(eq(payments.loanId, loanId))
+        .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
         .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
     },
     catch: (e: any) => {

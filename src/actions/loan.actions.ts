@@ -17,7 +17,7 @@ import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { eq, and, isNull, asc } from "drizzle-orm"
-import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
+import { calculateDaysOverdue, calculateDailyRate, calculateInterest, calculateSchedule } from "@/lib/interest"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
 
@@ -302,7 +302,6 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
           const totalInterestPaid = loanPayments.reduce(
             (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
           )
-          const { calculateSchedule } = await import("@/lib/interest/engine")
           const schedule = calculateSchedule(
             loan.principalAmount,
             effectiveRate,

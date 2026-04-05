@@ -452,6 +452,45 @@ describe("allocateFixedRatePayment", () => {
     expect(result.principalBalanceAfter).toBe("1000000.00")
     expect(result.loanFullyPaid).toBe(false)
   })
+
+  // Edge case: paymentNumber > termMonths (multiple partial payments)
+  it("paymentNumber exceeding termMonths clamps to 1 remaining month", () => {
+    // 5-month term, but borrower made 7 partial payments. paymentNumber = 7.
+    // remainingMonths = max(5 - 7 + 1, 1) = 1
+    // Normal payment should charge 1 month interest = 100k
+    const result = allocateFixedRatePayment({
+      paymentAmount: "300000",
+      principalBalanceBefore: "200000",
+      originalPrincipal: "1000000",
+      monthlyRateDecimal: "0.10",
+      termMonths: 5,
+      paymentNumber: 7,
+    })
+    // Interest = 100k (1 month), principal = 200k (remainder)
+    expect(result.interestPortion).toBe("100000.00")
+    expect(result.principalPortion).toBe("200000.00")
+    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.loanFullyPaid).toBe(true)
+  })
+
+  // Edge case: payment slightly above normal installment should NOT trigger early payoff
+  it("payment slightly above installment does NOT trigger early payoff", () => {
+    // Normal installment = 300k. Payment = 300001.
+    // This should NOT charge all remaining term interest.
+    // earlyPayoffThreshold = interest(100k) + balance(1M) = 1.1M
+    const result = allocateFixedRatePayment({
+      paymentAmount: "300001",
+      principalBalanceBefore: "1000000",
+      originalPrincipal: "1000000",
+      monthlyRateDecimal: "0.10",
+      termMonths: 5,
+      paymentNumber: 1,
+    })
+    // Should charge only 1 month interest, not 5 months
+    expect(result.interestPortion).toBe("100000.00")
+    expect(result.principalPortion).toBe("200001.00")
+    expect(result.loanFullyPaid).toBe(false)
+  })
 })
 
 describe("allocateReducingBalancePayment", () => {

@@ -38,7 +38,7 @@ export function calculateInterest(
 export function calculateLoanSummary(
   principalAmount: string,
   monthlyRateDecimal: string,
-  minInterestDays: number = 30,
+  minInterestDays?: number,
   loanType?: LoanType,
   termMonths?: number
 ): {
@@ -51,17 +51,18 @@ export function calculateLoanSummary(
   totalOwed?: string
   monthlyInstallment?: string
 } {
+  const effectiveMinDays = minInterestDays ?? 30
   const principal = new BigNumber(principalAmount)
   const dailyRate = calculateDailyRate(monthlyRateDecimal)
   const dailyInterest = principal.multipliedBy(dailyRate)
-  const totalInterestAtMinPeriod = dailyInterest.multipliedBy(minInterestDays)
+  const totalInterestAtMinPeriod = dailyInterest.multipliedBy(effectiveMinDays)
   const totalOwedAtMinPeriod = principal.plus(totalInterestAtMinPeriod)
 
   const base = {
     dailyInterest: formatAmount(dailyInterest),
     totalInterestAtMinPeriod: formatAmount(totalInterestAtMinPeriod),
     totalOwedAtMinPeriod: formatAmount(totalOwedAtMinPeriod),
-    minInterestDays,
+    minInterestDays: effectiveMinDays,
   }
 
   if ((loanType === "fixed_rate" || loanType === "reducing_balance") && termMonths) {
@@ -194,16 +195,19 @@ export function allocateFixedRatePayment(params: {
   const balance = new BigNumber(principalBalanceBefore)
   const monthlyInterest = new BigNumber(originalPrincipal).multipliedBy(new BigNumber(monthlyRateDecimal))
 
-  // Normal monthly installment = monthlyPrincipal + monthlyInterest
-  const monthlyPrincipal = new BigNumber(originalPrincipal).dividedBy(termMonths).decimalPlaces(2, BigNumber.ROUND_DOWN)
-  const normalInstallment = monthlyPrincipal.plus(monthlyInterest)
+  // Clamp remaining months to at least 1 (handles paymentNumber > termMonths from partial payments)
+  const remainingMonths = Math.max(termMonths - paymentNumber + 1, 1)
 
-  // Determine interest owed: if payment exceeds normal installment, charge ALL remaining term interest
+  // Early payoff threshold: payment exceeds current month interest + remaining principal
+  // This means the borrower intends to close the loan, so charge all remaining term interest
+  const earlyPayoffThreshold = monthlyInterest.plus(balance)
+
   let interestOwed: BigNumber
-  if (payment.isGreaterThan(normalInstallment)) {
-    const remainingMonths = termMonths - paymentNumber + 1
+  if (payment.isGreaterThanOrEqualTo(earlyPayoffThreshold)) {
+    // Early payoff: charge all remaining term interest
     interestOwed = monthlyInterest.multipliedBy(remainingMonths)
   } else {
+    // Normal payment: charge one month of interest
     interestOwed = monthlyInterest
   }
 
