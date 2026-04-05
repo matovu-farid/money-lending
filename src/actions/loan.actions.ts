@@ -11,7 +11,7 @@ import {
   IncompleteLoanRequirements,
   LoanNotFound,
 } from "@/lib/errors"
-import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
+import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type ScheduleEntry } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
@@ -177,10 +177,26 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Disbursement source is required (cash, bank, or strong_room)" }
   }
 
+  // Validate loanType
+  const validLoanTypes = ["perpetual", "fixed_rate", "reducing_balance"]
+  const loanType = input.loanType || "perpetual"
+  if (!validLoanTypes.includes(loanType)) {
+    return { error: "Loan type must be perpetual, fixed_rate, or reducing_balance" }
+  }
+
+  // Validate termMonths for term loans
+  if (loanType !== "perpetual") {
+    if (!input.termMonths || input.termMonths <= 0 || !Number.isInteger(input.termMonths)) {
+      return { error: "Term months must be a positive integer for fixed rate and reducing balance loans" }
+    }
+  }
+
   const loanInput: CreateLoanInput = {
     ...input,
     interestRate: input.interestRate || "0.10",
     minInterestDays: input.minInterestDays || 30,
+    loanType,
+    termMonths: loanType !== "perpetual" ? input.termMonths : undefined,
   }
 
   if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
@@ -240,28 +256,65 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       }
 
       if (loan.status === "active") {
-        const totalDaysElapsed = Math.floor(
-          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-        )
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
-        const dailyRateBN = calculateDailyRate(effectiveRate)
-        const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRateBN)
-        dailyRate = dailyInterestAmount.toFixed(2)
+        const loanType = loan.loanType ?? "perpetual"
 
-        const totalInterestPaid = loanPayments.reduce(
-          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-        )
+        if (loanType === "perpetual") {
+          // Existing perpetual logic — unchanged
+          const totalDaysElapsed = Math.floor(
+            (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
+          )
+          const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
+          const dailyRateBN = calculateDailyRate(effectiveRate)
+          const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRateBN)
+          dailyRate = dailyInterestAmount.toFixed(2)
 
-        const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaid)
-        unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
+          const totalInterestPaid = loanPayments.reduce(
+            (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
+          )
 
-        const daysOverdueBN = calculateDaysOverdue(
-          totalInterestAccrued,
-          totalInterestPaid,
-          dailyInterestAmount
-        )
-        daysOverdue = Math.floor(daysOverdueBN.toNumber())
+          const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaid)
+          unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
+
+          const daysOverdueBN = calculateDaysOverdue(
+            totalInterestAccrued,
+            totalInterestPaid,
+            dailyInterestAmount
+          )
+          daysOverdue = Math.floor(daysOverdueBN.toNumber())
+        } else {
+          // Term loans (fixed_rate, reducing_balance): overdue = missed installments
+          const monthsElapsed = Math.floor(
+            (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24 * 30)
+          )
+          const expectedPayments = Math.min(monthsElapsed, loan.termMonths ?? 0)
+          const actualPayments = loanPayments.length
+          const missedPayments = Math.max(expectedPayments - actualPayments, 0)
+          daysOverdue = missedPayments * 30
+
+          // Calculate daily rate for display
+          const monthlyInterest = loanType === "fixed_rate"
+            ? new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(effectiveRate))
+            : new BigNumber(outstandingBalance).multipliedBy(new BigNumber(effectiveRate))
+          dailyRate = monthlyInterest.dividedBy(30).toFixed(2)
+
+          // Unpaid interest = expected interest through elapsed months - paid interest
+          const totalInterestPaid = loanPayments.reduce(
+            (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
+          )
+          const { calculateSchedule } = await import("@/lib/interest/engine")
+          const schedule = calculateSchedule(
+            loan.principalAmount,
+            effectiveRate,
+            loan.termMonths!,
+            loanType as "fixed_rate" | "reducing_balance"
+          )
+          const expectedInterest = schedule
+            .slice(0, expectedPayments)
+            .reduce((s: BigNumber, e: ScheduleEntry) => s.plus(new BigNumber(e.monthlyInterest)), new BigNumber(0))
+          const unpaidInterestBN = expectedInterest.minus(totalInterestPaid)
+          unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
+        }
       }
 
       return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }
