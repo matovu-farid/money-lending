@@ -26,11 +26,12 @@ describe("Notification Service", () => {
       {
         id: "notif-1",
         userId: "user-1",
-        loanId: "loan-1",
         type: "loan_due_soon",
         message: "Loan due in 3 days",
         isRead: false,
-        dueDate: new Date("2026-04-01"),
+        referenceType: "loan",
+        referenceId: "loan-1",
+        metadata: { dueDate: "2026-04-01T00:00:00.000Z", loanId: "loan-1" },
         createdAt: new Date("2026-03-28"),
       },
     ]

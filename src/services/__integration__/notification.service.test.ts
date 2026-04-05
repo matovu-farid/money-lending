@@ -63,15 +63,18 @@ async function seedNotification(
   const createdAt =
     overrides.createdAt ?? new Date(Date.now() + seedSeq * 1000)
 
+  const dueDate = overrides.dueDate ?? new Date("2026-04-01")
+
   const [row] = await testDb
     .insert(notifications)
     .values({
       userId,
-      loanId,
       type: "loan_due_soon",
       message: overrides.message ?? "Loan payment due soon",
       isRead: overrides.isRead ?? false,
-      dueDate: overrides.dueDate ?? new Date("2026-04-01"),
+      referenceType: "loan",
+      referenceId: loanId,
+      metadata: { dueDate: dueDate.toISOString(), loanId },
       createdAt,
     })
     .returning()
@@ -247,7 +250,8 @@ describe("Notification Service (integration)", () => {
 
     expect(user1Notifs).toHaveLength(1)
     expect(user1Notifs[0].message).toBe("Payment due in 3 days")
-    expect(user1Notifs[0].loanId).toBe(loanId)
+    expect(user1Notifs[0].referenceType).toBe("loan")
+    expect(user1Notifs[0].referenceId).toBe(loanId)
     expect(user1Notifs[0].type).toBe("loan_due_soon")
     expect(user1Notifs[0].isRead).toBe(false)
 
