@@ -92,6 +92,27 @@
       "when": 1775395993142,
       "tag": "0012_add_chat_schema",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1775420172756,
+      "tag": "0013_add_creditor_location_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1775500000000,
+      "tag": "0014_add_transaction_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1775600000000,
+      "tag": "0015_add_loan_type",
+      "breakpoints": true
     }
   ]
 }

@@ -7,9 +7,15 @@ export const loanStatusEnum = pgEnum("loan_status", [
   "fully_paid",
 ])
 
+export const loanTypeEnum = pgEnum("loan_type", [
+  "perpetual",
+  "fixed_rate",
+  "reducing_balance",
+])
+
 export const loans = pgTable("loans", {
   id: uuid("id").primaryKey().defaultRandom(),
-  customerId: uuid("customer_id").notNull().references(() => customers.id),
+  customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "restrict" }),
   principalAmount: numeric("principal_amount", { precision: 15, scale: 2 }).notNull(),
   issuanceFee: numeric("issuance_fee", { precision: 15, scale: 2 }).notNull(),
   description: text("description").notNull(),
@@ -21,8 +27,10 @@ export const loans = pgTable("loans", {
   minPeriodOverride: integer("min_period_override"),
   issuedBy: text("issued_by").notNull(),
   disbursementSource: depositLocationEnum("disbursement_source").notNull(),
+  loanType: loanTypeEnum("loan_type").notNull().default("perpetual"),
+  termMonths: integer("term_months"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   index("idx_loans_customer_id").on(table.customerId),
