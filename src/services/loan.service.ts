@@ -73,6 +73,8 @@ export const createLoan = (
             minPeriodOverride: input.minPeriodOverride ?? null,
             issuedBy: actorId,
             disbursementSource: input.disbursementSource,
+            loanType: input.loanType ?? "perpetual",
+            termMonths: (input.loanType && input.loanType !== "perpetual") ? input.termMonths! : null,
           })
           .returning()
 
