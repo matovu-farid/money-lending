@@ -8,6 +8,8 @@ import type { notifications } from "@/lib/db/schema/notifications"
 import type { creditors, creditorInvestments, creditorRepayments, transactionCategories, transactions, financialSnapshots } from "@/lib/db/schema"
 import type { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import type { fundTransfers } from "@/lib/db/schema/fund-transfers"
+import type { conversations, conversationParticipants } from "@/lib/db/schema/conversations"
+import type { messages, messageAttachments } from "@/lib/db/schema/messages"
 
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
@@ -380,4 +382,50 @@ export interface CreateFundTransferInput {
   toLocation: DepositLocation
   amount: string       // NUMERIC string
   note?: string
+}
+
+// --- Chat types ---
+export type Conversation = InferSelectModel<typeof conversations>
+export type ConversationParticipant = InferSelectModel<typeof conversationParticipants>
+export type Message = InferSelectModel<typeof messages>
+export type MessageAttachment = InferSelectModel<typeof messageAttachments>
+
+export interface ConversationListItem {
+  id: string
+  name: string | null
+  isGroup: boolean
+  participants: { id: string; name: string }[]
+  lastMessage: { content: string; senderName: string; createdAt: Date } | null
+  unreadCount: number
+  updatedAt: Date
+}
+
+export interface MessageWithSender {
+  id: string
+  conversationId: string
+  senderId: string
+  senderName: string
+  content: string
+  mentions: string[]
+  attachments: { id: string; mimeType: string; fileName: string; fileSize: number; data: string; expired: boolean }[]
+  deletedAt: Date | null
+  createdAt: Date
+}
+
+export interface SendMessageInput {
+  conversationId: string
+  content: string
+  mentions?: string[]
+  attachments?: { data: string; mimeType: string; fileName: string; fileSize: number }[]
+}
+
+export interface CreateConversationInput {
+  participantIds: string[]
+  name?: string
+}
+
+export interface ChatUser {
+  id: string
+  name: string
+  role: string
 }

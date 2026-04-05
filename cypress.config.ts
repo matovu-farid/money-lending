@@ -28,6 +28,10 @@ export default defineConfig({
         async "db:reset"() {
           return withSql(async (sql) => {
             await sql.unsafe(`
+              DELETE FROM message_attachments;
+              DELETE FROM messages;
+              DELETE FROM conversation_participants;
+              DELETE FROM conversations;
               DELETE FROM financial_snapshots;
               DELETE FROM transactions;
               DELETE FROM transaction_categories;

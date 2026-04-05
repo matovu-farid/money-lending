@@ -85,6 +85,13 @@
       "when": 1775300000000,
       "tag": "0011_rearchitect_notifications",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1775395993142,
+      "tag": "0012_add_chat_schema",
+      "breakpoints": true
     }
   ]
 }
