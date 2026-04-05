@@ -62,6 +62,24 @@ export const markAllAsRead = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
+export async function createNotification(
+  userId: string,
+  type: "loan_due_soon" | "chat_mention",
+  message: string,
+  referenceType?: string,
+  referenceId?: string,
+  metadata?: Record<string, unknown>
+): Promise<void> {
+  await db.insert(notifications).values({
+    userId,
+    type,
+    message,
+    referenceType: referenceType ?? null,
+    referenceId: referenceId ?? null,
+    metadata: metadata ?? null,
+  })
+}
+
 export async function createNotificationsForLoan(
   loanId: string,
   message: string,
@@ -71,27 +89,29 @@ export async function createNotificationsForLoan(
   if (targetUserIds.length === 0) return
 
   for (const userId of targetUserIds) {
+    // Dedup: check for existing notification with same reference
     const existing = await db
       .select({ id: notifications.id })
       .from(notifications)
       .where(
         and(
           eq(notifications.userId, userId),
-          eq(notifications.loanId, loanId),
-          sql`date_trunc('day', ${notifications.dueDate}) = date_trunc('day', ${dueDate})`
+          eq(notifications.referenceType, "loan"),
+          eq(notifications.referenceId, loanId),
+          sql`(${notifications.metadata}->>'dueDate')::date = ${dueDate.toISOString().split("T")[0]}::date`
         )
       )
       .limit(1)
 
     if (existing.length === 0) {
-      await db.insert(notifications).values({
+      await createNotification(
         userId,
-        loanId,
-        type: "loan_due_soon",
+        "loan_due_soon",
         message,
-        dueDate,
-        isRead: false,
-      })
+        "loan",
+        loanId,
+        { dueDate: dueDate.toISOString(), loanId }
+      )
     }
   }
 }

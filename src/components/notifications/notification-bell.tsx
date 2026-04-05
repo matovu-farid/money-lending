@@ -58,8 +58,10 @@ export function NotificationBell() {
       )
     }
 
-    // Navigate to the loan detail page
-    router.push(`/loans/${notification.loanId}`)
+    // Navigate to the relevant detail page based on reference type
+    if (notification.referenceType === "loan" && notification.referenceId) {
+      router.push(`/loans/${notification.referenceId}`)
+    }
     setOpen(false)
   }
 
