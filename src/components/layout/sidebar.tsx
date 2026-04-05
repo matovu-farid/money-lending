@@ -17,6 +17,7 @@ import {
   LogOut,
   ClipboardCheck,
   ArrowRightLeft,
+  MessageSquare,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -48,6 +49,7 @@ function getNavGroups(userRole: UserRole): NavGroup[] {
     { label: "Customers", href: "/customers", icon: Users },
     { label: "Payments", href: "/payments", icon: CreditCard },
     { label: "Loans", href: "/loans", icon: Banknote },
+    { label: "Chat", href: "/chat", icon: MessageSquare },
   ]
   if (isSupervisorOrAbove) {
     operationsItems.push({ label: "Approvals", href: "/approvals", icon: ClipboardCheck })
