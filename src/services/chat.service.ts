@@ -3,13 +3,11 @@ import { db } from "@/lib/db"
 import { conversations, conversationParticipants } from "@/lib/db/schema/conversations"
 import { messages, messageAttachments } from "@/lib/db/schema/messages"
 import { user } from "@/lib/db/schema/auth"
-import { eq, and, desc, sql, isNull, inArray, ilike, lt } from "drizzle-orm"
+import { eq, and, desc, sql, inArray, ilike, lt } from "drizzle-orm"
 import { DatabaseError, ConversationNotFound, MessageNotFound, ValidationError, ForbiddenError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { createNotification } from "./notification.service"
 import type { ConversationListItem, MessageWithSender, ChatUser } from "@/types"
-
-const log = (msg: string, ...args: unknown[]) => console.log(`[chat.service] ${msg}`, ...args)
 
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024
 const MAX_ATTACHMENTS_PER_MESSAGE = 3
@@ -409,7 +407,7 @@ export const sendMessage = (
             { conversationId, senderId, messageId: result.msg.id }
           )
         } catch (notifErr) {
-          log("Failed to create mention notification for user %s: %o", mentionedUserId, notifErr)
+          console.warn(`[chat] Failed to create mention notification for user ${mentionedUserId}:`, notifErr)
         }
       }
 
