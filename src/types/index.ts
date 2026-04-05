@@ -30,6 +30,16 @@ export type NewPayment = InferInsertModel<typeof payments>
 export type AuditLogEntry = InferSelectModel<typeof auditLog>
 
 export type LoanStatus = "active" | "fully_paid"
+export type LoanType = "perpetual" | "fixed_rate" | "reducing_balance"
+
+export interface ScheduleEntry {
+  month: number
+  monthlyPrincipal: string
+  monthlyInterest: string
+  monthlyInstallment: string
+  balanceAfter: string
+}
+
 export type CustomerStatus = "active" | "blacklisted" | "inactive"
 export type DepositLocation = "cash" | "bank" | "strong_room"
 
@@ -76,6 +86,8 @@ export interface CreateLoanInput {
   startDate: string         // ISO 8601 datetime string
   collateral: CollateralInput
   disbursementSource: DepositLocation
+  loanType?: LoanType                    // defaults to "perpetual"
+  termMonths?: number                   // required for fixed_rate and reducing_balance
   interestRateOverride?: string | null  // admin-only override
   minPeriodOverride?: number | null     // admin-only override
 }
@@ -225,12 +237,14 @@ export interface AddInvestmentInput {
   amount: string
   interestRateMonthly: string
   investmentDate: string
+  depositLocation?: DepositLocation
 }
 
 export interface RecordCreditorRepaymentInput {
   investmentId: string
   amount: string
   repaymentDate: string
+  sourceLocation?: DepositLocation
 }
 
 export interface CreateExpenseInput {
@@ -238,6 +252,7 @@ export interface CreateExpenseInput {
   amount: string
   transactionDate: string
   notes?: string
+  location?: "cash" | "bank" | "strong_room"
 }
 
 export interface CreateIncomeInput {
@@ -245,6 +260,7 @@ export interface CreateIncomeInput {
   amount: string
   transactionDate: string
   notes?: string
+  location?: "cash" | "bank" | "strong_room"
 }
 
 export interface CreateCategoryInput {
