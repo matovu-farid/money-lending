@@ -148,7 +148,8 @@ export const getConversations = (
           isNull(messages.deletedAt),
         ]
         if (conv.lastReadAt) {
-          unreadConditions.push(sql`${messages.createdAt} > ${conv.lastReadAt}`)
+          const lastReadAtIso = conv.lastReadAt instanceof Date ? conv.lastReadAt.toISOString() : new Date(conv.lastReadAt).toISOString()
+          unreadConditions.push(sql`${messages.createdAt} > ${lastReadAtIso}::timestamptz`)
         }
 
         const [unreadResult] = await db
