@@ -1,4 +1,5 @@
 import BigNumber from "bignumber.js"
+import type { LoanType, ScheduleEntry } from "@/types"
 
 BigNumber.config({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
 
@@ -30,17 +31,25 @@ export function calculateInterest(
 /**
  * Calculates the loan summary for the Review step of the loan issuance wizard.
  * Returns daily interest, total interest at minimum period, and total owed.
- * NOTE: Loans are perpetual — this function does NOT reference termDays or dueDate.
+ *
+ * For perpetual loans (default): returns daily interest, total at min period.
+ * For fixed_rate/reducing_balance: returns schedule, totalInterest, totalOwed, monthlyInstallment.
  */
 export function calculateLoanSummary(
   principalAmount: string,
   monthlyRateDecimal: string,
-  minInterestDays: number = 30
+  minInterestDays: number = 30,
+  loanType?: LoanType,
+  termMonths?: number
 ): {
   dailyInterest: string
   totalInterestAtMinPeriod: string
   totalOwedAtMinPeriod: string
   minInterestDays: number
+  schedule?: ScheduleEntry[]
+  totalInterest?: string
+  totalOwed?: string
+  monthlyInstallment?: string
 } {
   const principal = new BigNumber(principalAmount)
   const dailyRate = calculateDailyRate(monthlyRateDecimal)
@@ -48,12 +57,31 @@ export function calculateLoanSummary(
   const totalInterestAtMinPeriod = dailyInterest.multipliedBy(minInterestDays)
   const totalOwedAtMinPeriod = principal.plus(totalInterestAtMinPeriod)
 
-  return {
+  const base = {
     dailyInterest: formatAmount(dailyInterest),
     totalInterestAtMinPeriod: formatAmount(totalInterestAtMinPeriod),
     totalOwedAtMinPeriod: formatAmount(totalOwedAtMinPeriod),
     minInterestDays,
   }
+
+  if ((loanType === "fixed_rate" || loanType === "reducing_balance") && termMonths) {
+    const schedule = calculateSchedule(principalAmount, monthlyRateDecimal, termMonths, loanType)
+    const totalInterest = schedule.reduce(
+      (sum, e) => sum.plus(e.monthlyInterest),
+      new BigNumber(0)
+    )
+    const totalOwed = principal.plus(totalInterest)
+
+    return {
+      ...base,
+      schedule,
+      totalInterest: formatAmount(totalInterest),
+      totalOwed: formatAmount(totalOwed),
+      monthlyInstallment: schedule[0].monthlyInstallment,
+    }
+  }
+
+  return base
 }
 
 /**
@@ -103,12 +131,155 @@ export type PaymentAllocation = {
 }
 
 /**
+ * Generates an amortization schedule for fixed_rate or reducing_balance loans.
+ *
+ * Fixed rate: interest = originalPrincipal x monthlyRate each month (constant).
+ * Reducing balance: interest = currentBalance x monthlyRate (decreasing).
+ * Monthly principal = principal / termMonths (last month absorbs rounding remainder).
+ */
+export function calculateSchedule(
+  principalAmount: string,
+  monthlyRateDecimal: string,
+  termMonths: number,
+  loanType: "fixed_rate" | "reducing_balance"
+): ScheduleEntry[] {
+  const principal = new BigNumber(principalAmount)
+  const rate = new BigNumber(monthlyRateDecimal)
+  const monthlyPrincipal = principal.dividedBy(termMonths).decimalPlaces(2, BigNumber.ROUND_DOWN)
+
+  const schedule: ScheduleEntry[] = []
+  let balance = principal
+
+  for (let month = 1; month <= termMonths; month++) {
+    // Last month absorbs rounding remainder
+    const thisPrincipal = month === termMonths ? balance : monthlyPrincipal
+
+    const interest =
+      loanType === "fixed_rate"
+        ? principal.multipliedBy(rate)
+        : balance.multipliedBy(rate)
+
+    const installment = thisPrincipal.plus(interest)
+    balance = balance.minus(thisPrincipal)
+
+    schedule.push({
+      month,
+      monthlyPrincipal: formatAmount(thisPrincipal),
+      monthlyInterest: formatAmount(interest),
+      monthlyInstallment: formatAmount(installment),
+      balanceAfter: formatAmount(balance),
+    })
+  }
+
+  return schedule
+}
+
+/**
+ * Allocates a payment for a fixed_rate loan.
+ *
+ * Interest is ALWAYS calculated on the original principal amount.
+ * Early payoff: borrower must pay ALL remaining term interest.
+ * Interest-first: payment covers interest first, remainder to principal.
+ */
+export function allocateFixedRatePayment(params: {
+  paymentAmount: string
+  principalBalanceBefore: string
+  originalPrincipal: string
+  monthlyRateDecimal: string
+  termMonths: number
+  paymentNumber: number
+}): PaymentAllocation {
+  const { paymentAmount, principalBalanceBefore, originalPrincipal, monthlyRateDecimal, termMonths, paymentNumber } = params
+  const payment = new BigNumber(paymentAmount)
+  const balance = new BigNumber(principalBalanceBefore)
+  const monthlyInterest = new BigNumber(originalPrincipal).multipliedBy(new BigNumber(monthlyRateDecimal))
+
+  // Normal monthly installment = monthlyPrincipal + monthlyInterest
+  const monthlyPrincipal = new BigNumber(originalPrincipal).dividedBy(termMonths).decimalPlaces(2, BigNumber.ROUND_DOWN)
+  const normalInstallment = monthlyPrincipal.plus(monthlyInterest)
+
+  // Determine interest owed: if payment exceeds normal installment, charge ALL remaining term interest
+  let interestOwed: BigNumber
+  if (payment.isGreaterThan(normalInstallment)) {
+    const remainingMonths = termMonths - paymentNumber + 1
+    interestOwed = monthlyInterest.multipliedBy(remainingMonths)
+  } else {
+    interestOwed = monthlyInterest
+  }
+
+  // Interest-first allocation
+  if (payment.isLessThanOrEqualTo(interestOwed)) {
+    return {
+      interestPortion: formatAmount(payment),
+      principalPortion: "0.00",
+      principalBalanceBefore,
+      principalBalanceAfter: formatAmount(balance),
+      loanFullyPaid: false,
+    }
+  }
+
+  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance)
+  const principalBalanceAfter = BigNumber.max(balance.minus(principalPortion), 0)
+
+  return {
+    interestPortion: formatAmount(interestOwed),
+    principalPortion: formatAmount(principalPortion),
+    principalBalanceBefore,
+    principalBalanceAfter: formatAmount(principalBalanceAfter),
+    loanFullyPaid: principalBalanceAfter.isZero(),
+  }
+}
+
+/**
+ * Allocates a payment for a reducing_balance loan.
+ *
+ * Interest is calculated on the CURRENT balance (not original principal).
+ * Early payoff: only owes interest on current balance (saves money vs fixed rate).
+ * Interest-first: payment covers interest first, remainder to principal.
+ */
+export function allocateReducingBalancePayment(params: {
+  paymentAmount: string
+  principalBalanceBefore: string
+  originalPrincipal: string
+  monthlyRateDecimal: string
+  termMonths: number
+}): PaymentAllocation {
+  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal } = params
+  const payment = new BigNumber(paymentAmount)
+  const balance = new BigNumber(principalBalanceBefore)
+  const interestOwed = balance.multipliedBy(new BigNumber(monthlyRateDecimal))
+
+  // Interest-first allocation
+  if (payment.isLessThanOrEqualTo(interestOwed)) {
+    return {
+      interestPortion: formatAmount(payment),
+      principalPortion: "0.00",
+      principalBalanceBefore,
+      principalBalanceAfter: formatAmount(balance),
+      loanFullyPaid: false,
+    }
+  }
+
+  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance)
+  const principalBalanceAfter = BigNumber.max(balance.minus(principalPortion), 0)
+
+  return {
+    interestPortion: formatAmount(interestOwed),
+    principalPortion: formatAmount(principalPortion),
+    principalBalanceBefore,
+    principalBalanceAfter: formatAmount(principalBalanceAfter),
+    loanFullyPaid: principalBalanceAfter.isZero(),
+  }
+}
+
+/**
  * Allocates a payment interest-first, then applies remainder to principal.
  * Pure function — no DB calls, no side effects.
  *
- * If payment <= interest owed: all goes to interest, principal unchanged.
- * If payment > interest owed: excess reduces principal.
- * If principal balance reaches zero: loanFullyPaid = true.
+ * Dispatches to the right strategy based on loanType:
+ * - "fixed_rate" → allocateFixedRatePayment
+ * - "reducing_balance" → allocateReducingBalancePayment
+ * - "perpetual" or undefined → existing perpetual logic
  *
  * LOAN-08: Interest-first allocation.
  * LOAN-09: Any amount accepted — no minimum.
@@ -120,8 +291,37 @@ export function allocatePayment(params: {
   monthlyRateDecimal: string
   daysElapsed: number
   minInterestDays: number
+  loanType?: LoanType
+  originalPrincipal?: string
+  termMonths?: number
+  paymentNumber?: number
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays } = params
+  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays, loanType, originalPrincipal, termMonths, paymentNumber } = params
+
+  // Dispatch to fixed_rate strategy
+  if (loanType === "fixed_rate" && originalPrincipal && termMonths && paymentNumber) {
+    return allocateFixedRatePayment({
+      paymentAmount,
+      principalBalanceBefore,
+      originalPrincipal,
+      monthlyRateDecimal,
+      termMonths,
+      paymentNumber,
+    })
+  }
+
+  // Dispatch to reducing_balance strategy
+  if (loanType === "reducing_balance" && originalPrincipal && termMonths) {
+    return allocateReducingBalancePayment({
+      paymentAmount,
+      principalBalanceBefore,
+      originalPrincipal,
+      monthlyRateDecimal,
+      termMonths,
+    })
+  }
+
+  // Default: perpetual logic (existing behavior)
   const payment = new BigNumber(paymentAmount)
   const interestOwed = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
 
