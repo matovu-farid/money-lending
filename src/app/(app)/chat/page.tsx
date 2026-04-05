@@ -5,7 +5,7 @@ import { useSession } from "@/lib/auth-client"
 import { ConversationList } from "@/components/chat/conversation-list"
 import { MessageThread } from "@/components/chat/message-thread"
 import { useConversations } from "@/hooks/use-conversations"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import type { UserRole } from "@/types"
 import type { ConversationListItem } from "@/types"
 
 export default function ChatPage() {

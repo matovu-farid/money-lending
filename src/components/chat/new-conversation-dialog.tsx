@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/dialog"
 import { useSearchUsers } from "@/hooks/use-search-users"
 import { useCreateConversation } from "@/hooks/use-create-conversation"
-import { cn } from "@/lib/utils"
 import type { ChatUser } from "@/types"
 
 interface NewConversationDialogProps {

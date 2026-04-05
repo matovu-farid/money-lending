@@ -2,7 +2,6 @@
 
 import { useState } from "react"
 import { Trash2, ImageOff } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { ImageLightbox } from "./image-lightbox"
 import { cn } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -15,7 +14,7 @@ interface MessageBubbleProps {
   onDelete?: (messageId: string) => void
 }
 
-function renderContent(content: string, mentions: string[]): React.ReactNode {
+function renderContent(content: string, _mentions: string[]): React.ReactNode {
   if (!content) return null
   // Simple @mention highlighting — highlight @Word patterns
   const parts = content.split(/(@\S+)/g)

@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState, useCallback, KeyboardEvent, ChangeEvent } from "react"
+import { useRef, useState, KeyboardEvent, ChangeEvent } from "react"
 import { Paperclip, Send, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { toast } from "sonner"
