@@ -57,12 +57,25 @@ Internal messaging system for app users (loanOfficer+) to communicate via 1:1 an
 | expiresAt | timestamp with timezone | createdAt + 7 days |
 | createdAt | timestamp with timezone | defaultNow() |
 
-### Notification table changes
+### Rearchitected `notifications` table
 
-1. Add `chat_mention` to the `notification_type` enum
-2. Make `loanId` nullable (currently required — not applicable for chat notifications)
-3. Make `dueDate` nullable (currently required — not applicable for chat notifications)
-4. Add `conversationId` column (uuid, nullable, FK → conversations.id) for linking chat notifications to conversations
+The existing `notifications` table is loan-specific (`loanId`, `dueDate` as required columns). Replace it with a generic, extensible design. Truncate all existing notifications — clean migration.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid PK | defaultRandom() |
+| userId | text | Who receives the notification |
+| type | notification_type enum | Extensible: `loan_due_soon`, `chat_mention`, future types |
+| message | text | Human-readable notification text |
+| isRead | boolean | default false |
+| referenceType | text (nullable) | `loan`, `conversation`, `message`, etc. |
+| referenceId | text (nullable) | ID of the referenced entity |
+| metadata | jsonb (nullable) | Type-specific data. Loan: `{ dueDate, loanId }`. Chat: `{ conversationId, senderId }` |
+| createdAt | timestamp with timezone | defaultNow() |
+
+This follows the same polymorphic `referenceType`/`referenceId` pattern used by the `transactions` table. Any future notification type adds its own metadata shape without schema changes.
+
+**Migration:** Drop and recreate the `notifications` table. Update all existing code that reads/writes notifications (`notification.service.ts`, cron jobs, UI) to use the new schema.
 
 ## Service Layer
 
