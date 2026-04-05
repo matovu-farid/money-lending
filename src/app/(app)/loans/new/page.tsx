@@ -12,7 +12,8 @@ import { useSession } from "@/lib/auth-client"
 import { queryKeys } from "@/hooks/query-keys"
 import { calculateLoanSummary } from "@/lib/interest"
 import { generateReceiptNumber } from "@/lib/receipt-number"
-import type { CollateralInput } from "@/types"
+import type { CollateralInput, LoanType } from "@/types"
+import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -70,6 +71,8 @@ function NewLoanPageInner() {
 
   const [step, setStep] = useState(1)
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null)
+  const [loanType, setLoanType] = useState<LoanType>("perpetual")
+  const [termMonths, setTermMonths] = useState<string>("")
 
   const {
     register,
@@ -149,7 +152,9 @@ function NewLoanPageInner() {
       ? calculateLoanSummary(
           principalAmount,
           (parseFloat(interestRateDisplay) / 100).toFixed(10),
-          30
+          loanType === "perpetual" ? 30 : undefined,
+          loanType !== "perpetual" ? loanType : undefined,
+          loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined
         )
       : null
 
@@ -159,7 +164,12 @@ function NewLoanPageInner() {
 
   async function handleStep1Next() {
     const valid = await trigger(step1Fields)
-    if (valid) setStep(2)
+    if (!valid) return
+    if (loanType !== "perpetual" && (!termMonths || parseInt(termMonths, 10) <= 0)) {
+      toast.error("Term months is required for fixed rate and reducing balance loans")
+      return
+    }
+    setStep(2)
   }
 
   async function handleStep2Next() {
@@ -184,6 +194,8 @@ function NewLoanPageInner() {
         startDate: new Date(data.startDate).toISOString(),
         collateral,
         disbursementSource: data.disbursementSource,
+        loanType,
+        termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined,
       },
       {
         onSuccess: (result) => {
@@ -278,6 +290,44 @@ function NewLoanPageInner() {
                   <p className="text-sm text-destructive">{errors.customerId.message}</p>
                 )}
               </div>
+
+              <div className="space-y-2">
+                <Label>Loan Type</Label>
+                <div className="flex gap-4">
+                  {[
+                    { value: "perpetual" as const, label: "Perpetual" },
+                    { value: "fixed_rate" as const, label: "Fixed Rate" },
+                    { value: "reducing_balance" as const, label: "Reducing Balance" },
+                  ].map((option) => (
+                    <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="loanType"
+                        value={option.value}
+                        checked={loanType === option.value}
+                        onChange={(e) => setLoanType(e.target.value as LoanType)}
+                        className="accent-primary"
+                      />
+                      <span className="text-sm">{option.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              {loanType !== "perpetual" && (
+                <div className="space-y-2">
+                  <Label htmlFor="termMonths">Term (months)</Label>
+                  <Input
+                    id="termMonths"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={termMonths}
+                    onChange={(e) => setTermMonths(e.target.value)}
+                    placeholder="e.g. 6"
+                  />
+                </div>
+              )}
 
               <MoneyInput
                 name="principalAmount"
@@ -516,6 +566,16 @@ function NewLoanPageInner() {
                     <dd className="font-medium font-mono tabular-nums">{formatDate(startDate)}</dd>
                   </div>
                   <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Loan Type</dt>
+                    <dd className="font-medium">{loanType === "fixed_rate" ? "Fixed Rate" : loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}</dd>
+                  </div>
+                  {loanType !== "perpetual" && (
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Term</dt>
+                      <dd className="font-medium">{termMonths} months</dd>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
                     <dt className="text-muted-foreground">Interest Rate</dt>
                     <dd className="font-medium font-mono tabular-nums">{interestRateDisplay}% per month</dd>
                   </div>
@@ -542,23 +602,59 @@ function NewLoanPageInner() {
               {loanSummary && (
                 <div className="rounded-lg border border-border bg-muted/40 p-4 space-y-3">
                   <h3 className="text-sm font-medium">Interest Calculation Preview</h3>
-                  <dl className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Daily interest amount</dt>
-                      <dd className="font-medium font-mono tabular-nums">{formatCurrency(loanSummary.dailyInterest)}</dd>
+                  {loanSummary.schedule ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div>Total Interest: <span className="font-semibold">UGX {Number(loanSummary.totalInterest).toLocaleString()}</span></div>
+                        <div>Total Owed: <span className="font-semibold">UGX {Number(loanSummary.totalOwed).toLocaleString()}</span></div>
+                        <div>Monthly Installment: <span className="font-semibold">UGX {Number(loanSummary.monthlyInstallment).toLocaleString()}</span></div>
+                      </div>
+                      <div className="rounded-md border overflow-auto max-h-64">
+                        <table className="w-full text-sm">
+                          <thead className="bg-muted/50 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2 text-left">Month</th>
+                              <th className="px-3 py-2 text-right">Principal</th>
+                              <th className="px-3 py-2 text-right">Interest</th>
+                              <th className="px-3 py-2 text-right">Installment</th>
+                              <th className="px-3 py-2 text-right">Balance</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {loanSummary.schedule.map((entry) => (
+                              <tr key={entry.month} className="border-t">
+                                <td className="px-3 py-2">{entry.month}</td>
+                                <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right">{Number(entry.monthlyInterest).toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right">{Number(entry.monthlyInstallment).toLocaleString()}</td>
+                                <td className="px-3 py-2 text-right">{Number(entry.balanceAfter).toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Total interest at minimum period</dt>
-                      <dd className="font-medium font-mono tabular-nums">{formatCurrency(loanSummary.totalInterestAtMinPeriod)}</dd>
-                    </div>
-                    <div className="flex justify-between border-t border-border pt-2 mt-2">
-                      <dt className="font-medium">Total owed at minimum period</dt>
-                      <dd className="font-semibold font-mono tabular-nums">{formatCurrency(loanSummary.totalOwedAtMinPeriod)}</dd>
-                    </div>
-                  </dl>
-                  <p className="text-xs text-muted-foreground">
-                    Minimum interest period applies even if repaid early ({loanSummary.minInterestDays} days minimum).
-                  </p>
+                  ) : (
+                    <>
+                      <dl className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <dt className="text-muted-foreground">Daily interest amount</dt>
+                          <dd className="font-medium font-mono tabular-nums">{formatCurrency(loanSummary.dailyInterest)}</dd>
+                        </div>
+                        <div className="flex justify-between">
+                          <dt className="text-muted-foreground">Total interest at minimum period</dt>
+                          <dd className="font-medium font-mono tabular-nums">{formatCurrency(loanSummary.totalInterestAtMinPeriod)}</dd>
+                        </div>
+                        <div className="flex justify-between border-t border-border pt-2 mt-2">
+                          <dt className="font-medium">Total owed at minimum period</dt>
+                          <dd className="font-semibold font-mono tabular-nums">{formatCurrency(loanSummary.totalOwedAtMinPeriod)}</dd>
+                        </div>
+                      </dl>
+                      <p className="text-xs text-muted-foreground">
+                        Minimum interest period applies even if repaid early ({loanSummary.minInterestDays} days minimum).
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
 
