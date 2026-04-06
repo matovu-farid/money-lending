@@ -15,6 +15,7 @@ import {
   isNull,
   desc,
   sql,
+  inArray,
 } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import {
@@ -50,7 +51,8 @@ export const getPnlData = (
         .where(
           and(
             gte(transactions.transactionDate, periodStart),
-            lte(transactions.transactionDate, periodEnd)
+            lte(transactions.transactionDate, periodEnd),
+            inArray(transactionCategories.type, ["income", "expense"])
           )
         )
 
@@ -236,7 +238,16 @@ export const getBalanceSheetData = (
       const allTransactions = await db
         .select({ type: transactions.type, amount: transactions.amount })
         .from(transactions)
-        .where(lte(transactions.transactionDate, asOfDate))
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id)
+        )
+        .where(
+          and(
+            lte(transactions.transactionDate, asOfDate),
+            inArray(transactionCategories.type, ["income", "expense"])
+          )
+        )
 
       let totalCredits = new BigNumber(0)
       let totalDebits = new BigNumber(0)
