@@ -122,15 +122,17 @@ export function CustomerSearchBar({ onSearch, loading }: CustomerSearchBarProps)
         </Select>
 
         <Select value={loanStatusFilter} onValueChange={handleLoanStatusChange}>
-          <SelectTrigger className="w-[160px]">
+          <SelectTrigger className="w-[200px]">
             <SelectValue>
-              {{ all: "All Loan Status", active: "Active", fully_paid: "Fully Paid" }[loanStatusFilter] ?? loanStatusFilter}
+              {{ all: "All Loan Status", active: "Active", fully_paid: "Fully Paid", settled_with_collateral: "Settled (Collateral)", rolled_over: "Rolled Over" }[loanStatusFilter] ?? loanStatusFilter}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Loan Status</SelectItem>
             <SelectItem value="active">Active</SelectItem>
             <SelectItem value="fully_paid">Fully Paid</SelectItem>
+            <SelectItem value="settled_with_collateral">Settled (Collateral)</SelectItem>
+            <SelectItem value="rolled_over">Rolled Over</SelectItem>
           </SelectContent>
         </Select>
 

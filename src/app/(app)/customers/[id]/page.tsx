@@ -73,6 +73,8 @@ function loanStatusVariant(status: string): "default" | "outline" {
 
 function loanStatusLabel(status: string): string {
   if (status === "fully_paid") return "Fully Paid";
+  if (status === "settled_with_collateral") return "Settled (Collateral)";
+  if (status === "rolled_over") return "Rolled Over";
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
