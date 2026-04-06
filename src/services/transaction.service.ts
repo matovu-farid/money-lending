@@ -813,32 +813,11 @@ export const accrueInterestForLoans = (
 
         const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
 
-        const loanPayments = await db
-          .select({ interestPortion: payments.interestPortion })
-          .from(payments)
-          .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+        // Net Interest Earned from ledger = cash interest + accruals - reversals
+        const interestEarnedMap = await getInterestEarnedFromLedger([loan.id])
+        const totalInterestEarned = interestEarnedMap.get(loan.id) ?? new BigNumber(0)
 
-        const cashInterestRecognized = loanPayments.reduce(
-          (sum: BigNumber, p: { interestPortion: string }) => sum.plus(new BigNumber(p.interestPortion)),
-          new BigNumber(0)
-        )
-
-        const existingAccrualRows = await db
-          .select({ amount: transactions.amount, type: transactions.type })
-          .from(transactions)
-          .where(and(
-            eq(transactions.referenceType, "interest_accrual"),
-            eq(transactions.referenceId, loan.id),
-            eq(transactions.categoryId, receivableCat.id)
-          ))
-
-        let netExistingAccrual = new BigNumber(0)
-        for (const row of existingAccrualRows) {
-          if (row.type === "debit") netExistingAccrual = netExistingAccrual.plus(row.amount)
-          else netExistingAccrual = netExistingAccrual.minus(row.amount)
-        }
-
-        const target = totalInterestAccrued.minus(cashInterestRecognized).minus(netExistingAccrual)
+        const target = totalInterestAccrued.minus(totalInterestEarned)
 
         if (target.isGreaterThan(0)) {
           const amount = formatAmount(target)
