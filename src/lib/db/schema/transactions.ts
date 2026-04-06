@@ -15,8 +15,10 @@ export const transactions = pgTable("transactions", {
   transactionDate: timestamp("transaction_date", { withTimezone: true }).notNull(),
   recordedBy: text("recorded_by").notNull(),
   depositLocation: depositLocationEnum("deposit_location"),
+  journalGroupId: uuid("journal_group_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_transactions_date").on(table.transactionDate),
   index("idx_transactions_category_id").on(table.categoryId),
+  index("idx_transactions_journal_group_id").on(table.journalGroupId),
 ])
