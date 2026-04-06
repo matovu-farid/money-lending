@@ -19,6 +19,8 @@ vi.mock("@/services/audit.service", () => ({
 
 vi.mock("@/services/transaction.service", () => ({
   autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
 }))
 
 vi.mock("drizzle-orm", async () => {
@@ -57,6 +59,7 @@ const mockPayment = {
   editReason: null,
   deletedAt: null,
   deletedBy: null,
+  depositLocation: "cash" as const,
   deleteReason: null,
   createdAt: new Date("2026-03-22T00:00:00.000Z"),
   updatedAt: new Date("2026-03-22T00:00:00.000Z"),
@@ -457,7 +460,6 @@ describe("Payment Service", () => {
       const { db: mockedDb } = await import("@/lib/db")
 
       const editedPayment = { ...mockPayment, amount: "200000", editReason: "Fix amount" }
-      const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "income", isDefault: true }
 
       let txSelectCount = 0
       const mockTx = {
@@ -495,10 +497,6 @@ describe("Payment Service", () => {
                   // updatedPayment fetch
                   return Promise.resolve([editedPayment])
                 }
-                if (call === 8) {
-                  // category lookup for reversal
-                  return Promise.resolve([mockCategory])
-                }
                 return Promise.resolve([editedPayment])
               }),
             }),
@@ -520,6 +518,7 @@ describe("Payment Service", () => {
       )
 
       const { editPayment } = await import("@/services/payment.service")
+      const { postJournalEntry } = await import("@/services/transaction.service")
       const result = await Effect.runPromise(
         editPayment({ paymentId: "pay-1", amount: "200000", reason: "Fix amount" }, "actor-1")
       )
@@ -528,15 +527,14 @@ describe("Payment Service", () => {
       expect(result).toBeDefined()
       expect(mockTx.update).toHaveBeenCalled()
 
-      // Verify reversing entry was inserted instead of hard-delete
-      expect(mockTx.insert).toHaveBeenCalled()
-      // First insert call should be the reversing entry
-      const firstInsertValues = mockTx.insert.mock.results[0].value.values
-      const firstInsertArgs = firstInsertValues.mock.calls[0][0]
-      expect(firstInsertArgs.type).toBe("debit")
-      expect(firstInsertArgs.referenceType).toBe("payment_reversal")
-      expect(firstInsertArgs.amount).toBe("50000.00")
-      expect(firstInsertArgs.description).toContain("Reversal")
+      // Verify reversing entry was posted via postJournalEntry
+      expect(postJournalEntry).toHaveBeenCalled()
+      // First call should be the interest reversal
+      const firstCallArgs = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls[0][1]
+      expect(firstCallArgs.referenceType).toBe("payment_reversal")
+      expect(firstCallArgs.amount).toBe("50000.00")
+      expect(firstCallArgs.description).toContain("Reversal")
+      expect(firstCallArgs.loanId).toBe("loan-1")
     })
 
     it("editPayment: reconciles downstream journal entries when interest changes (JOURNAL-STALE)", async () => {
@@ -557,8 +555,6 @@ describe("Payment Service", () => {
       const pay2Refreshed = { ...pay2, interestPortion: "35000.00" }
 
       const editedPay1 = { ...pay1, amount: "200000", editReason: "Fix amount" }
-      const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "income", isDefault: true }
-
       let txSelectCount = 0
       const mockTx = {
         select: vi.fn().mockImplementation(() => {
@@ -583,15 +579,10 @@ describe("Payment Service", () => {
                   return Promise.resolve([pay2Refreshed])
                 }
                 if (call === 7) {
-                  // reconcileDownstreamJournals: category lookup
-                  return Promise.resolve([mockCategory])
-                }
-                if (call === 8) {
                   // refreshed payments for loan status check
                   return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2Refreshed]) }
                 }
-                if (call === 9) return Promise.resolve([editedPay1]) // updatedPayment fetch
-                if (call === 10) return Promise.resolve([mockCategory]) // category lookup for edited payment reversal
+                if (call === 8) return Promise.resolve([editedPay1]) // updatedPayment fetch
                 return Promise.resolve([editedPay1])
               }),
             }),
@@ -619,18 +610,16 @@ describe("Payment Service", () => {
 
       expect(result).toBeDefined()
 
-      // Verify downstream reversal was posted for pay-2 (old interest 40000.00)
-      const insertCalls = mockTx.insert.mock.results.map((r: any) => r.value.values)
-      const allInsertArgs = insertCalls.map((v: any) => v.mock.calls[0]?.[0]).filter(Boolean)
-
-      // Find the downstream reversal entry (for pay-2, amount 40000.00)
-      const downstreamReversal = allInsertArgs.find(
-        (arg: any) => arg.referenceType === "payment_reversal" && arg.referenceId === "pay-2"
+      // Verify downstream reversal was posted via postJournalEntry for pay-2 (old interest 40000.00)
+      const { postJournalEntry } = await import("@/services/transaction.service")
+      const journalCalls = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls
+      const downstreamReversal = journalCalls.find(
+        (call: any) => call[1].referenceType === "payment_reversal" && call[1].referenceId === "pay-2"
       )
       expect(downstreamReversal).toBeDefined()
-      expect(downstreamReversal.type).toBe("debit")
-      expect(downstreamReversal.amount).toBe("40000.00")
-      expect(downstreamReversal.description).toContain("downstream recalculation")
+      expect(downstreamReversal![1].amount).toBe("40000.00")
+      expect(downstreamReversal![1].description).toContain("downstream recalculation")
+      expect(downstreamReversal![1].loanId).toBe("loan-1")
 
       // Verify autoPostInterestEarned was called for pay-2 with new interest
       expect(autoPostInterestEarned).toHaveBeenCalledWith(
@@ -652,8 +641,6 @@ describe("Payment Service", () => {
         deleteReason: "Duplicate entry",
       }
 
-      const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "income", isDefault: true }
-
       let txSelectCount = 0
       const mockTx = {
         select: vi.fn().mockImplementation(() => {
@@ -668,7 +655,6 @@ describe("Payment Service", () => {
                   // remaining active + refresh (both empty after delete)
                   return { orderBy: vi.fn().mockResolvedValue([]) }
                 }
-                if (call === 5) return Promise.resolve([mockCategory]) // category lookup for reversal
                 // Final select for deleted row
                 return Promise.resolve([softDeletedResult])
               }),
@@ -703,16 +689,16 @@ describe("Payment Service", () => {
       expect(setArgs.deletedBy).toBe("actor-1")
       expect(setArgs.deleteReason).toBe("Duplicate entry")
 
-      // Verify reversing entry was inserted (not a hard delete)
-      expect(mockTx.insert).toHaveBeenCalled()
-      const insertValuesCall = mockTx.insert.mock.results[0].value.values
-      const insertArgs = insertValuesCall.mock.calls[0][0]
-      expect(insertArgs.type).toBe("debit")
-      expect(insertArgs.amount).toBe("50000.00")
-      expect(insertArgs.referenceType).toBe("payment_reversal")
-      expect(insertArgs.referenceId).toBe("pay-1")
-      expect(insertArgs.description).toContain("Reversal")
-      expect(insertArgs.description).toContain("Duplicate entry")
+      // Verify reversing entry was posted via postJournalEntry
+      const { postJournalEntry } = await import("@/services/transaction.service")
+      expect(postJournalEntry).toHaveBeenCalled()
+      const firstCallArgs = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls[0][1]
+      expect(firstCallArgs.amount).toBe("50000.00")
+      expect(firstCallArgs.referenceType).toBe("payment_reversal")
+      expect(firstCallArgs.referenceId).toBe("pay-1")
+      expect(firstCallArgs.description).toContain("Reversal")
+      expect(firstCallArgs.description).toContain("Duplicate entry")
+      expect(firstCallArgs.loanId).toBe("loan-1")
 
       // Verify returned payment has deleteReason
       expect(result.deleteReason).toBe("Duplicate entry")
@@ -735,8 +721,6 @@ describe("Payment Service", () => {
         deletedBy: "actor-1",
         deleteReason: "Correction",
       }
-
-      const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "income", isDefault: true }
 
       let txSelectCount = 0
       const mockTx = {
@@ -764,7 +748,6 @@ describe("Payment Service", () => {
                   // refreshed payments for loan status check
                   return { orderBy: vi.fn().mockResolvedValue([remainingPayment]) }
                 }
-                if (call === 7) return Promise.resolve([mockCategory]) // category lookup for reversal
                 // Final select for deleted row
                 return Promise.resolve([softDeletedResult])
               }),
@@ -823,8 +806,6 @@ describe("Payment Service", () => {
         deleteReason: "Wrong entry",
       }
 
-      const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "income", isDefault: true }
-
       let txSelectCount = 0
       const mockTx = {
         select: vi.fn().mockImplementation(() => {
@@ -843,7 +824,6 @@ describe("Payment Service", () => {
                   // refreshed payments for status check
                   return { orderBy: vi.fn().mockResolvedValue([earlierPayment]) }
                 }
-                if (call === 5) return Promise.resolve([mockCategory]) // category lookup for reversal
                 // Final select for deleted row
                 return Promise.resolve([softDeletedResult])
               }),
@@ -882,17 +862,17 @@ describe("Payment Service", () => {
       expect(softDeleteArgs.deletedAt).toBeDefined()
       expect(softDeleteArgs.deletedBy).toBe("actor-1")
 
-      // Verify reversing entry was posted
-      expect(mockTx.insert).toHaveBeenCalled()
-      const insertValuesCall = mockTx.insert.mock.results[0].value.values
-      const insertArgs = insertValuesCall.mock.calls[0][0]
-      expect(insertArgs.type).toBe("debit")
-      expect(insertArgs.referenceType).toBe("payment_reversal")
+      // Verify reversing entry was posted via postJournalEntry
+      const { postJournalEntry } = await import("@/services/transaction.service")
+      expect(postJournalEntry).toHaveBeenCalled()
+      const firstCallArgs = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls[0][1]
+      expect(firstCallArgs.referenceType).toBe("payment_reversal")
+      expect(firstCallArgs.loanId).toBe("loan-1")
 
       // No recalculation update should have happened for the earlier payment.
-      // txSelectCount should be 6: payment lookup + loan lookup + remaining active + refreshed + original tx lookup + final deleted row fetch.
-      // If recalculation had run, there would be an additional select (loan refetch inside recalculateFromPayment).
-      expect(txSelectCount).toBe(6)
+      // txSelectCount should be 5: payment lookup + loan lookup + remaining active + refreshed + final deleted row fetch.
+      // If recalculation had run, there would be additional selects (loan refetch inside recalculateFromPayment).
+      expect(txSelectCount).toBe(5)
     })
 
     it("getPaymentsForLoan: returns only active payments (excludes soft-deleted)", async () => {
@@ -934,6 +914,141 @@ describe("Payment Service", () => {
       // Verify the function returns an Effect (has the _op symbol or similar)
       const effect = listPayments({})
       expect(effect).toBeDefined()
+    })
+  })
+
+  // =========================================================================
+  // getLoanBalanceSummary
+  // =========================================================================
+
+  describe("getLoanBalanceSummary", () => {
+    beforeEach(() => {
+      vi.clearAllMocks()
+    })
+
+    it("returns principal as outstanding when no payments exist (perpetual loan)", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      let dbSelectCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        dbSelectCount++
+        const call = dbSelectCount
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              if (call === 1) {
+                // loan lookup
+                return Promise.resolve([mockLoan])
+              }
+              // payments query — no active payments
+              return {
+                orderBy: vi.fn().mockResolvedValue([]),
+              }
+            }),
+          }),
+        }
+      })
+
+      const { getLoanBalanceSummary } = await import("@/services/payment.service")
+      const result = await getLoanBalanceSummary("loan-1")
+
+      expect(result.outstandingPrincipal).toBe("500000")
+      expect(result.loanType).toBe("perpetual")
+      expect(parseFloat(result.accruedInterest)).toBeGreaterThanOrEqual(0)
+      expect(parseFloat(result.totalBalance)).toBeGreaterThanOrEqual(parseFloat(result.outstandingPrincipal))
+    })
+
+    it("uses last payment balance when payments exist", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      let dbSelectCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        dbSelectCount++
+        const call = dbSelectCount
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              if (call === 1) {
+                return Promise.resolve([mockLoan])
+              }
+              return {
+                orderBy: vi.fn().mockResolvedValue([mockPayment]),
+              }
+            }),
+          }),
+        }
+      })
+
+      const { getLoanBalanceSummary } = await import("@/services/payment.service")
+      const result = await getLoanBalanceSummary("loan-1")
+
+      expect(result.outstandingPrincipal).toBe("400000.00")
+      expect(result.loanType).toBe("perpetual")
+    })
+
+    it("throws LoanNotFound when loan does not exist", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      })
+
+      const { getLoanBalanceSummary } = await import("@/services/payment.service")
+      await expect(getLoanBalanceSummary("nonexistent")).rejects.toThrow()
+    })
+
+    it("computes fixed_rate interest from original principal", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+      const fixedLoan = { ...mockLoan, loanType: "fixed_rate", termMonths: 12 }
+
+      let dbSelectCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        dbSelectCount++
+        const call = dbSelectCount
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              if (call === 1) return Promise.resolve([fixedLoan])
+              return { orderBy: vi.fn().mockResolvedValue([]) }
+            }),
+          }),
+        }
+      })
+
+      const { getLoanBalanceSummary } = await import("@/services/payment.service")
+      const result = await getLoanBalanceSummary("loan-1")
+
+      // fixed_rate: interest = principalAmount * rate = 500000 * 0.10 = 50000.00
+      expect(result.accruedInterest).toBe("50000.00")
+      expect(result.loanType).toBe("fixed_rate")
+    })
+
+    it("computes reducing_balance interest from outstanding principal", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+      const reducingLoan = { ...mockLoan, loanType: "reducing_balance", termMonths: 12 }
+
+      let dbSelectCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        dbSelectCount++
+        const call = dbSelectCount
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockImplementation(() => {
+              if (call === 1) return Promise.resolve([reducingLoan])
+              return { orderBy: vi.fn().mockResolvedValue([mockPayment]) }
+            }),
+          }),
+        }
+      })
+
+      const { getLoanBalanceSummary } = await import("@/services/payment.service")
+      const result = await getLoanBalanceSummary("loan-1")
+
+      // reducing_balance: interest = outstandingPrincipal * rate = 400000.00 * 0.10 = 40000.00
+      expect(result.accruedInterest).toBe("40000.00")
+      expect(result.loanType).toBe("reducing_balance")
     })
   })
 

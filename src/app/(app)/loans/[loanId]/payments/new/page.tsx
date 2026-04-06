@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { eq } from "drizzle-orm"
+import { getLoanBalanceSummary } from "@/services/payment.service"
 import { RecordPaymentForm } from "./record-payment-form"
 
 export default async function RecordPaymentPage({
@@ -12,30 +13,29 @@ export default async function RecordPaymentPage({
 }) {
   const { loanId } = await params
 
-  // Fetch loan + customer name for receipt display
-  const result = await db
+  const [row] = await db
     .select({
-      loanId: loans.id,
-      customerId: loans.customerId,
+      id: loans.id,
+      principalAmount: loans.principalAmount,
       customerName: customers.fullName,
+      loanType: loans.loanType,
+      termMonths: loans.termMonths,
     })
     .from(loans)
     .innerJoin(customers, eq(loans.customerId, customers.id))
     .where(eq(loans.id, loanId))
-    .limit(1)
 
-  if (result.length === 0) {
-    notFound()
-  }
+  if (!row) notFound()
 
-  const { customerName } = result[0]
-  const loanReference = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
+  const balanceData = await getLoanBalanceSummary(loanId)
+  const loanReference = row.id.slice(0, 8).toUpperCase()
 
   return (
     <RecordPaymentForm
       loanId={loanId}
-      customerName={customerName}
+      customerName={row.customerName}
       loanReference={loanReference}
+      balanceData={balanceData}
     />
   )
 }

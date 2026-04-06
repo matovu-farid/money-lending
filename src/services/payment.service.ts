@@ -6,7 +6,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { allocatePayment, formatAmount } from "@/lib/interest/engine"
+import { allocatePayment, calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
@@ -20,6 +20,56 @@ import type {
   ActiveLoanSearchResult,
   RecentlyCollectedLoan,
 } from "@/types"
+
+/**
+ * Compute the current balance summary for a loan: outstanding principal,
+ * accrued interest, and total balance. Single source of truth used by
+ * both the payment recording page and the quick-record dialog.
+ */
+export async function getLoanBalanceSummary(loanId: string): Promise<{
+  outstandingPrincipal: string
+  accruedInterest: string
+  totalBalance: string
+  loanType: string
+}> {
+  const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
+  if (!loan) throw new LoanNotFound({ id: loanId })
+
+  const activePayments = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
+    .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+
+  const outstandingPrincipal =
+    activePayments.length === 0
+      ? loan.principalAmount
+      : activePayments[activePayments.length - 1].principalBalanceAfter
+
+  const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
+  const loanType = loan.loanType ?? "perpetual"
+
+  const prevDate =
+    activePayments.length === 0
+      ? new Date(loan.startDate)
+      : new Date(activePayments[activePayments.length - 1].paymentDate)
+  const daysElapsed = daysBetween(prevDate, new Date())
+
+  let accruedInterest: string
+  if (loanType === "perpetual") {
+    accruedInterest = calculateInterest(outstandingPrincipal, effectiveRate, daysElapsed, minInterestDays).toFixed(2)
+  } else if (loanType === "fixed_rate") {
+    accruedInterest = new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(effectiveRate)).toFixed(2)
+  } else {
+    // reducing_balance
+    accruedInterest = new BigNumber(outstandingPrincipal).multipliedBy(new BigNumber(effectiveRate)).toFixed(2)
+  }
+
+  const totalBalance = new BigNumber(outstandingPrincipal).plus(new BigNumber(accruedInterest)).toFixed(2)
+
+  return { outstandingPrincipal, accruedInterest, totalBalance, loanType }
+}
 
 /**
  * After recalculateFromPayment updates downstream payments, reverse and repost
@@ -60,6 +110,7 @@ export async function reconcileDownstreamJournals(
         transactionDate: dp.paymentDate,
         recordedBy: actorId,
         creditDepositLocation: dp.depositLocation ?? undefined,
+        loanId: dp.loanId,
       })
     }
 
@@ -93,6 +144,7 @@ export async function reconcileDownstreamJournals(
             transactionDate: dp.paymentDate,
             recordedBy: actorId,
             creditDepositLocation: dp.depositLocation ?? undefined,
+            loanId: dp.loanId,
           })
         }
 
@@ -103,6 +155,7 @@ export async function reconcileDownstreamJournals(
             paymentId: dp.id,
             paymentDate: refreshed.paymentDate.toISOString(),
             actorId,
+            depositLocation: dp.depositLocation ?? undefined,
           })
         }
       }
@@ -491,6 +544,7 @@ export const editPayment = (
             transactionDate: new Date(beforeValue.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: beforeValue.depositLocation ?? undefined,
+            loanId: payment.loanId,
           })
         }
 
@@ -506,6 +560,7 @@ export const editPayment = (
             transactionDate: new Date(beforeValue.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: beforeValue.depositLocation ?? undefined,
+            loanId: payment.loanId,
           })
         }
 
@@ -530,6 +585,7 @@ export const editPayment = (
             paymentId: input.paymentId,
             paymentDate: updatedPayment.paymentDate.toISOString(),
             actorId,
+            depositLocation: updatedPayment.depositLocation ?? undefined,
           })
         }
 
@@ -660,6 +716,7 @@ export const deletePayment = (
             transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: payment.depositLocation ?? undefined,
+            loanId: payment.loanId,
           })
         }
 
@@ -675,6 +732,7 @@ export const deletePayment = (
             transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: payment.depositLocation ?? undefined,
+            loanId: payment.loanId,
           })
         }
 

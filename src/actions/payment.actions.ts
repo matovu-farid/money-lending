@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
-import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans } from "@/services/payment.service"
+import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { eq, and, asc, isNull } from "drizzle-orm"
@@ -223,6 +223,116 @@ export async function getRecentlyCollectedLoansAction() {
   try {
     const data = await Effect.runPromise(getRecentlyCollectedLoans(session.user.id, 5))
     return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function getLoanBalanceAction(loanId: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  if (!loanId?.trim()) {
+    return { error: "Loan ID is required" }
+  }
+
+  try {
+    const data = await getLoanBalanceSummary(loanId)
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function markPaymentWrongAction(paymentId: string, reason: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  // Permission check: supervisor+ only
+  const role = (session.user.role ?? "unassigned") as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+    return { error: "Only supervisors and above can mark payments as wrong" }
+  }
+
+  if (!paymentId?.trim()) {
+    return { error: "Payment ID is required" }
+  }
+  if (!reason?.trim()) {
+    return { error: "A reason is required to mark a payment as wrong" }
+  }
+
+  try {
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, paymentId))
+    if (!payment) {
+      return { error: "Payment not found" }
+    }
+
+    const [updated] = await db
+      .update(payments)
+      .set({
+        markedWrong: true,
+        markedWrongReason: reason.trim(),
+        markedWrongBy: session.user.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, paymentId))
+      .returning()
+
+    revalidatePath("/payments")
+    revalidatePath(`/loans/${payment.loanId}`)
+
+    return { data: updated }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function unmarkPaymentWrongAction(paymentId: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  const role = (session.user.role ?? "unassigned") as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+    return { error: "Only supervisors and above can unmark payments" }
+  }
+
+  if (!paymentId?.trim()) {
+    return { error: "Payment ID is required" }
+  }
+
+  try {
+    const [payment] = await db
+      .select()
+      .from(payments)
+      .where(eq(payments.id, paymentId))
+    if (!payment) {
+      return { error: "Payment not found" }
+    }
+
+    const [updated] = await db
+      .update(payments)
+      .set({
+        markedWrong: false,
+        markedWrongReason: null,
+        markedWrongBy: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, paymentId))
+      .returning()
+
+    revalidatePath("/payments")
+    revalidatePath(`/loans/${payment.loanId}`)
+
+    return { data: updated }
   } catch {
     return { error: "Internal server error" }
   }
