@@ -6,6 +6,8 @@ export const loanStatusEnum = pgEnum("loan_status", [
   "pending",
   "active",
   "fully_paid",
+  "settled_with_collateral",
+  "rolled_over",
 ])
 
 export const loanTypeEnum = pgEnum("loan_type", [
@@ -30,6 +32,8 @@ export const loans = pgTable("loans", {
   disbursementSource: depositLocationEnum("disbursement_source").notNull(),
   loanType: loanTypeEnum("loan_type").notNull().default("perpetual"),
   termMonths: integer("term_months"),
+  rolledOverFrom: uuid("rolled_over_from").references(() => loans.id),
+  rolloverAmount: numeric("rollover_amount", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().$onUpdate(() => new Date()).notNull(),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
