@@ -12,19 +12,17 @@ import {
   gte,
   lte,
   isNull,
+  asc,
   desc,
   sql,
   inArray,
 } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
-import {
-  calculateInterest,
-  calculateDaysOverdue,
-  calculateDailyRate,
-  formatAmount,
-} from "@/lib/interest/engine"
+import { formatAmount } from "@/lib/interest/engine"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
-import type { PnlData, BalanceSheetData, PortfolioEntry, RetainedEarningsData } from "@/types"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./transaction.service"
+import type { PnlData, BalanceSheetData, PortfolioEntry, RetainedEarningsData, LoanType } from "@/types"
 
 export const getPnlData = (
   period: string
@@ -266,7 +264,49 @@ export const getBalanceSheetData = (
       const cashBalance = locationBalances.cash
       const bankBalance = locationBalances.bank
       const strongRoomBalance = locationBalances.strong_room
+
+      // Interest Receivable from ledger (DR - CR for "Interest Receivable" category)
+      const [receivableCat] = await db
+        .select()
+        .from(transactionCategories)
+        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "income")))
+
+      let interestReceivable = new BigNumber(0)
+      if (receivableCat) {
+        const receivableRows = await db
+          .select({ type: transactions.type, amount: transactions.amount })
+          .from(transactions)
+          .where(and(eq(transactions.categoryId, receivableCat.id), lte(transactions.transactionDate, asOfDate)))
+
+        for (const row of receivableRows) {
+          if (row.type === "debit") interestReceivable = interestReceivable.plus(new BigNumber(row.amount))
+          else interestReceivable = interestReceivable.minus(new BigNumber(row.amount))
+        }
+        if (interestReceivable.isLessThan(0)) interestReceivable = new BigNumber(0)
+      }
+
+      // Interest Payable from ledger (CR - DR for "Interest Payable" category)
+      const [payableCat] = await db
+        .select()
+        .from(transactionCategories)
+        .where(and(eq(transactionCategories.name, "Interest Payable"), eq(transactionCategories.type, "expense")))
+
+      let interestPayable = new BigNumber(0)
+      if (payableCat) {
+        const payableRows = await db
+          .select({ type: transactions.type, amount: transactions.amount })
+          .from(transactions)
+          .where(and(eq(transactions.categoryId, payableCat.id), lte(transactions.transactionDate, asOfDate)))
+
+        for (const row of payableRows) {
+          if (row.type === "credit") interestPayable = interestPayable.plus(new BigNumber(row.amount))
+          else interestPayable = interestPayable.minus(new BigNumber(row.amount))
+        }
+        if (interestPayable.isLessThan(0)) interestPayable = new BigNumber(0)
+      }
+
       const totalAssets = totalLoansOutstanding
+        .plus(interestReceivable)
         .plus(cashBalance)
         .plus(bankBalance)
         .plus(strongRoomBalance)
@@ -275,7 +315,8 @@ export const getBalanceSheetData = (
       const retainedEarnings = totalRevenue.minus(totalExpenses)
       const totalEquity = shareCapital.plus(retainedEarnings)
 
-      const liabilitiesPlusEquity = totalCreditorBalances.plus(totalEquity)
+      const totalLiabilities = totalCreditorBalances.plus(interestPayable)
+      const liabilitiesPlusEquity = totalLiabilities.plus(totalEquity)
       if (!totalAssets.isEqualTo(liabilitiesPlusEquity)) {
         console.warn(
           `Balance sheet imbalance: Assets=${formatAmount(totalAssets)}, ` +
@@ -291,11 +332,13 @@ export const getBalanceSheetData = (
           bankBalance: formatAmount(bankBalance),
           strongRoomBalance: formatAmount(strongRoomBalance),
           totalLoansOutstanding: formatAmount(totalLoansOutstanding),
+          interestReceivable: formatAmount(interestReceivable),
           seizedCollateralValue: formatAmount(seizedCollateralValue),
           totalAssets: formatAmount(totalAssets),
         },
         liabilities: {
           totalCreditorBalances: formatAmount(totalCreditorBalances),
+          interestPayable: formatAmount(interestPayable),
         },
         equity: {
           shareCapital: formatAmount(shareCapital),
@@ -318,8 +361,14 @@ export const getPortfolioData = (): Effect.Effect<
         .from(loans)
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
-      const now = new Date()
       const results: PortfolioEntry[] = []
+
+      // Derive per-loan outstanding principal from ledger in one batch query
+      const loanIds = activeLoans.map((l) => l.id)
+      const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+
+      // Batch-fetch interest earned from ledger
+      const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
       for (const loan of activeLoans) {
         const [customer] = await db
@@ -331,49 +380,37 @@ export const getPortfolioData = (): Effect.Effect<
           .select()
           .from(payments)
           .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-          .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
+          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
-        const lastPayment = loanPayments[0]
-        const outstandingBalance = lastPayment
-          ? new BigNumber(lastPayment.principalBalanceAfter)
-          : new BigNumber(loan.principalAmount)
-
-        const totalDaysElapsed = Math.floor(
-          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-        )
+        // Use ledger-derived balance
+        const outstandingBalance = ledgerBalances.get(loan.id)
+          ?? (loanPayments.at(-1)
+            ? new BigNumber(loanPayments.at(-1)!.principalBalanceAfter)
+            : new BigNumber(loan.principalAmount))
 
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        // Use actual days for accrual — min period only applies to payment allocation
-        const interestAccrued = calculateInterest(
-          loan.principalAmount,
+        const loanType = (loan.loanType ?? "perpetual") as LoanType
+
+        // Use computeLoanOverdueInfo for consistent overdue calculation
+        const info = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
           effectiveRate,
-          totalDaysElapsed,
-          0
-        )
-
-        const totalInterestPaid = loanPayments.reduce(
-          (sum, p) => sum.plus(new BigNumber(p.interestPortion)),
-          new BigNumber(0)
-        )
-        const dailyRate = calculateDailyRate(effectiveRate)
-        const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
-        const daysOverdue = calculateDaysOverdue(
-          interestAccrued,
-          totalInterestPaid,
-          dailyInterestAmount
-        )
-
-        const riskFlag = daysOverdue.isGreaterThanOrEqualTo(30)
+          startDate: new Date(loan.startDate),
+          loanType,
+          termMonths: loan.termMonths,
+          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          outstandingBalance: formatAmount(outstandingBalance),
+        })
 
         results.push({
           loanId: loan.id,
           customerName: customer?.fullName ?? "Unknown",
           principalAmount: loan.principalAmount,
           outstandingBalance: formatAmount(outstandingBalance),
-          interestAccrued: formatAmount(interestAccrued),
-          daysOverdue: daysOverdue.toFixed(0),
+          interestAccrued: info.unpaidInterest,
+          daysOverdue: String(info.daysOverdue),
           status: loan.status,
-          riskFlag,
+          riskFlag: info.daysOverdue >= 30,
         })
       }
 
