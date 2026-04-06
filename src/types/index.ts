@@ -266,7 +266,7 @@ export interface CreateExpenseInput {
   amount: string
   transactionDate: string
   notes?: string
-  location?: "cash" | "bank" | "strong_room"
+  location: "cash" | "bank" | "strong_room"
 }
 
 export interface CreateIncomeInput {
@@ -274,15 +274,15 @@ export interface CreateIncomeInput {
   amount: string
   transactionDate: string
   notes?: string
-  location?: "cash" | "bank" | "strong_room"
+  location: "cash" | "bank" | "strong_room"
 }
 
 export interface CreateCategoryInput {
   name: string
-  type: "expense" | "income"
+  type: "asset" | "liability" | "equity" | "revenue" | "expense"
 }
 
-export type CategoryType = "expense" | "income" | "balance_sheet"
+export type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense"
 export type TransactionType = "credit" | "debit"
 
 // Phase 4: Dashboard types
@@ -321,10 +321,18 @@ export interface BalanceSheetData {
     bankBalance: string
     strongRoomBalance: string
     totalLoansOutstanding: string
+    seizedCollateralValue: string
     totalAssets: string
   }
   liabilities: { totalCreditorBalances: string }
   equity: { shareCapital: string; retainedEarnings: string; totalEquity: string }
+}
+
+export interface RetainedEarningsData {
+  period: string
+  beginningBalance: string
+  netIncome: string
+  endingBalance: string
 }
 
 export interface PortfolioEntry {

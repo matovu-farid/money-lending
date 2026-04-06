@@ -11,27 +11,32 @@ import {
 import { writeAuditLog } from "./audit.service"
 import type { CreateCategoryInput } from "@/types"
 
+const DEFAULT_ASSET_CATEGORIES = [
+  "Cash",
+  "Loans Receivable",
+  "Seized Collateral",
+]
+
+const DEFAULT_LIABILITY_CATEGORIES = [
+  "Creditor Investment",
+]
+
+const DEFAULT_EQUITY_CATEGORIES = [
+  "Share Capital",
+]
+
+const DEFAULT_REVENUE_CATEGORIES = [
+  "Bonuses",
+  "Interest Earned",
+  "Issuance Fees",
+]
+
 const DEFAULT_EXPENSE_CATEGORIES = [
   "Rent",
   "Salaries",
   "Office Expenses",
   "Interest Payments",
   "DStv",
-]
-
-const DEFAULT_INCOME_CATEGORIES = [
-  "Share Capital",
-  "Bonuses",
-  "Interest Earned",
-]
-
-const DEFAULT_BALANCE_SHEET_CATEGORIES = [
-  "Loan Disbursement",
-  "Principal Repayment",
-  "Principal Recovery",
-  "Creditor Investment",
-  "Creditor Principal Repaid",
-  "Fund Transfer",
 ]
 
 export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
@@ -42,25 +47,37 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
 
       const toInsert: {
         name: string
-        type: "expense" | "income" | "balance_sheet"
+        type: "asset" | "liability" | "equity" | "revenue" | "expense"
         isDefault: boolean
       }[] = []
+
+      for (const name of DEFAULT_ASSET_CATEGORIES) {
+        if (!existingNames.has(`asset:${name}`)) {
+          toInsert.push({ name, type: "asset", isDefault: true })
+        }
+      }
+
+      for (const name of DEFAULT_LIABILITY_CATEGORIES) {
+        if (!existingNames.has(`liability:${name}`)) {
+          toInsert.push({ name, type: "liability", isDefault: true })
+        }
+      }
+
+      for (const name of DEFAULT_EQUITY_CATEGORIES) {
+        if (!existingNames.has(`equity:${name}`)) {
+          toInsert.push({ name, type: "equity", isDefault: true })
+        }
+      }
+
+      for (const name of DEFAULT_REVENUE_CATEGORIES) {
+        if (!existingNames.has(`revenue:${name}`)) {
+          toInsert.push({ name, type: "revenue", isDefault: true })
+        }
+      }
 
       for (const name of DEFAULT_EXPENSE_CATEGORIES) {
         if (!existingNames.has(`expense:${name}`)) {
           toInsert.push({ name, type: "expense", isDefault: true })
-        }
-      }
-
-      for (const name of DEFAULT_INCOME_CATEGORIES) {
-        if (!existingNames.has(`income:${name}`)) {
-          toInsert.push({ name, type: "income", isDefault: true })
-        }
-      }
-
-      for (const name of DEFAULT_BALANCE_SHEET_CATEGORIES) {
-        if (!existingNames.has(`balance_sheet:${name}`)) {
-          toInsert.push({ name, type: "balance_sheet", isDefault: true })
         }
       }
 
@@ -72,7 +89,7 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
   })
 
 export const listCategories = (
-  type?: "expense" | "income" | "balance_sheet"
+  type?: "asset" | "liability" | "equity" | "revenue" | "expense"
 ): Effect.Effect<(typeof transactionCategories.$inferSelect)[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -171,7 +188,7 @@ export const deleteCategory = (
 
 export const getCategoryByName = (
   name: string,
-  type: "expense" | "income" | "balance_sheet"
+  type: "asset" | "liability" | "equity" | "revenue" | "expense"
 ): Effect.Effect<
   typeof transactionCategories.$inferSelect,
   DatabaseError | CategoryNotFound
