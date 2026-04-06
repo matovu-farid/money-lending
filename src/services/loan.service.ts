@@ -55,6 +55,39 @@ export const createLoan = (
         throw { _tag: "IncompleteLoanRequirements", missing: missingFields }
       }
 
+      // Single active loan constraint
+      const [existingActiveLoan] = await db
+        .select()
+        .from(loans)
+        .where(
+          and(
+            eq(loans.customerId, input.customerId),
+            eq(loans.status, "active"),
+            isNull(loans.deletedAt)
+          )
+        )
+
+      if (existingActiveLoan && !input.rollover) {
+        throw new ValidationError({
+          message: "Customer already has an active loan. Use rollover to create a new loan.",
+          field: "customerId",
+        })
+      }
+
+      if (input.rollover && !existingActiveLoan) {
+        throw new ValidationError({
+          message: "Rollover specified but customer has no active loan.",
+          field: "customerId",
+        })
+      }
+
+      if (input.rollover && existingActiveLoan && input.rollover.fromLoanId !== existingActiveLoan.id) {
+        throw new ValidationError({
+          message: "Rollover loan ID does not match customer's active loan.",
+          field: "customerId",
+        })
+      }
+
       const startDate = new Date(input.startDate)
 
       return await db.transaction(async (tx) => {
@@ -62,7 +95,12 @@ export const createLoan = (
           .insert(loans)
           .values({
             customerId: input.customerId,
-            principalAmount: input.principalAmount,
+            principalAmount: input.rollover
+              ? new BigNumber(input.principalAmount)
+                  .plus(new BigNumber(input.rollover.carriedPrincipal))
+                  .plus(new BigNumber(input.rollover.carriedInterest))
+                  .toFixed(2)
+              : input.principalAmount,
             issuanceFee: input.issuanceFee,
             description: input.description,
             interestRate: input.interestRate,
@@ -75,6 +113,12 @@ export const createLoan = (
             disbursementSource: input.disbursementSource,
             loanType: input.loanType ?? "perpetual",
             termMonths: (input.loanType && input.loanType !== "perpetual") ? input.termMonths! : null,
+            rolledOverFrom: input.rollover?.fromLoanId ?? null,
+            rolloverAmount: input.rollover
+              ? new BigNumber(input.rollover.carriedPrincipal)
+                  .plus(new BigNumber(input.rollover.carriedInterest))
+                  .toFixed(2)
+              : null,
           })
           .returning()
 
@@ -87,13 +131,77 @@ export const createLoan = (
           })
           .returning()
 
+        // Handle rollover: close old loan
+        if (input.rollover && existingActiveLoan) {
+          // Post old loan's accrued interest as earned
+          if (new BigNumber(input.rollover.carriedInterest).isGreaterThan(0)) {
+            let [interestCategory] = await tx
+              .select()
+              .from(transactionCategories)
+              .where(
+                and(
+                  eq(transactionCategories.name, "Interest Earned"),
+                  eq(transactionCategories.type, "income")
+                )
+              )
+            if (!interestCategory) {
+              ;[interestCategory] = await tx
+                .insert(transactionCategories)
+                .values({ name: "Interest Earned", type: "income", isDefault: true })
+                .returning()
+            }
+
+            await tx.insert(transactions).values({
+              type: "credit",
+              amount: input.rollover.carriedInterest,
+              categoryId: interestCategory.id,
+              referenceType: "rollover",
+              referenceId: existingActiveLoan.id,
+              description: `Interest earned - loan ${existingActiveLoan.id.slice(0, 8).toUpperCase()} rolled over into ${loan.id.slice(0, 8).toUpperCase()}`,
+              transactionDate: startDate,
+              recordedBy: actorId,
+            })
+          }
+
+          // Close old loan
+          await tx
+            .update(loans)
+            .set({ status: "rolled_over", updatedAt: new Date() })
+            .where(eq(loans.id, existingActiveLoan.id))
+
+          // Audit log for old loan
+          await writeAuditLog(tx, {
+            actorId,
+            action: "loan.rollover",
+            entityType: "loan",
+            entityId: existingActiveLoan.id,
+            beforeValue: existingActiveLoan,
+            afterValue: {
+              status: "rolled_over",
+              rolledIntoLoanId: loan.id,
+              carriedPrincipal: input.rollover.carriedPrincipal,
+              carriedInterest: input.rollover.carriedInterest,
+            },
+          })
+        }
+
         await writeAuditLog(tx, {
           actorId,
           action: "loan.create",
           entityType: "loan",
           entityId: loan.id,
           beforeValue: null,
-          afterValue: { ...loan, collateral: coll },
+          afterValue: {
+            ...loan,
+            collateral: coll,
+            ...(input.rollover && {
+              rolloverFrom: input.rollover.fromLoanId,
+              freshAmount: input.principalAmount,
+              rolloverAmount: new BigNumber(input.rollover.carriedPrincipal)
+                .plus(new BigNumber(input.rollover.carriedInterest))
+                .toFixed(2),
+            }),
+          },
         })
 
         // Auto-post issuance fee as income transaction
@@ -146,7 +254,7 @@ export const getLoan = (
     catch: (e) => new DatabaseError({ cause: e }),
   }).pipe(
     Effect.flatMap((rows) =>
-      rows[0] ? Effect.succeed(rows[0]) : Effect.fail(new LoanNotFound({ id }))
+      rows[0] ? Effect.succeed(rows[0] as Loan) : Effect.fail(new LoanNotFound({ id }))
     )
   )
 
