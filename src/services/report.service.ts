@@ -224,8 +224,8 @@ export const getBalanceSheetData = (
         const amount = new BigNumber(row.total)
         const isDebit = row.txType === "debit"
 
-        if (row.categoryName === "Cash" && row.depositLocation) {
-          const loc = row.depositLocation
+        if (row.categoryName === "Cash") {
+          const loc = row.depositLocation ?? "cash"
           if (locationBalances[loc] !== undefined) {
             // Asset: DR adds, CR subtracts
             locationBalances[loc] = isDebit

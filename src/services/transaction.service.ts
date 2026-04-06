@@ -296,7 +296,13 @@ export const deleteTransaction = (
       }
 
       await db.transaction(async (tx) => {
-        await tx.delete(transactions).where(eq(transactions.id, id))
+        // Delete both sides of the journal pair if it has a journalGroupId
+        if (transaction.journalGroupId) {
+          await tx.delete(transactions).where(eq(transactions.journalGroupId, transaction.journalGroupId))
+        } else {
+          // Legacy single-entry row
+          await tx.delete(transactions).where(eq(transactions.id, id))
+        }
 
         await writeAuditLog(tx, {
           actorId,
@@ -353,7 +359,6 @@ export async function autoPostPrincipalDisbursement(
     amount: params.amount, referenceType: "loan", referenceId: params.loanId,
     description: `Principal disbursed - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
-    debitDepositLocation: params.depositLocation,
     creditDepositLocation: params.depositLocation,
   })
 }
@@ -368,7 +373,7 @@ export async function autoPostPrincipalRepayment(
     amount: params.amount, referenceType: "payment", referenceId: params.paymentId,
     description: `Principal repaid - loan ${params.loanId.slice(0, 8).toUpperCase()} payment ${params.paymentId.slice(0, 8).toUpperCase()}`,
     transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
-    debitDepositLocation: params.depositLocation, creditDepositLocation: params.depositLocation,
+    debitDepositLocation: params.depositLocation,
   })
 }
 
