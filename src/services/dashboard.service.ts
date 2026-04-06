@@ -9,6 +9,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { eq, isNull, desc, and, inArray, asc, sql } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import { getLoanBalancesFromLedger } from "@/services/transaction.service"
 import BigNumber from "bignumber.js"
 import type { DashboardKPIs, ActivityFeedItem, LoanType } from "@/types"
 
@@ -105,11 +106,18 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
         paymentsByLoanId.set(p.loanId, existing)
       }
 
+      // Batch-fetch per-loan outstanding balances from ledger
+      const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+
       let overdueCount = 0
 
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const ledgerBalance = ledgerBalances.get(loan.id)
+        const outstandingBalance = ledgerBalance
+          ? ledgerBalance.toFixed(2)
+          : loan.principalAmount
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
           effectiveRate,
@@ -117,7 +125,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
           loanType: (loan.loanType ?? "perpetual") as LoanType,
           termMonths: loan.termMonths,
           payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
-          outstandingBalance: loan.principalAmount,
+          outstandingBalance,
         })
         if (info.daysOverdue >= 30) {
           overdueCount++
