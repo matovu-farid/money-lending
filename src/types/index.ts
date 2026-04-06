@@ -282,7 +282,7 @@ export interface CreateCategoryInput {
   type: "expense" | "income"
 }
 
-export type CategoryType = "expense" | "income"
+export type CategoryType = "expense" | "income" | "balance_sheet"
 export type TransactionType = "credit" | "debit"
 
 // Phase 4: Dashboard types
