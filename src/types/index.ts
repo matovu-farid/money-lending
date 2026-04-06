@@ -14,7 +14,7 @@ import type { messages, messageAttachments } from "@/lib/db/schema/messages"
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
 export type Loan = InferSelectModel<typeof loans>
-export type LoanWithCustomer = Loan & { customerName: string }
+export type LoanWithCustomer = Loan & { customerName: string; customerContact: string | null }
 export type LoanListEntry = LoanWithCustomer & {
   daysOverdue: number          // 0 for non-overdue or non-active loans
   outstandingBalance: string   // last payment's principalBalanceAfter, or principalAmount if no payments
@@ -29,7 +29,7 @@ export type Payment = InferSelectModel<typeof payments>
 export type NewPayment = InferInsertModel<typeof payments>
 export type AuditLogEntry = InferSelectModel<typeof auditLog>
 
-export type LoanStatus = "active" | "fully_paid"
+export type LoanStatus = "active" | "fully_paid" | "settled_with_collateral" | "rolled_over"
 export type LoanType = "perpetual" | "fixed_rate" | "reducing_balance"
 
 export interface ScheduleEntry {
@@ -90,6 +90,7 @@ export interface CreateLoanInput {
   termMonths?: number                   // required for fixed_rate and reducing_balance
   interestRateOverride?: string | null  // admin-only override
   minPeriodOverride?: number | null     // admin-only override
+  rollover?: RolloverData
 }
 
 export interface UpdateLoanInput {
@@ -105,6 +106,19 @@ export interface UpdateLoanInput {
 export interface DeleteLoanInput {
   loanId: string
   reason: string              // required for audit
+}
+
+// --- Collateral Settlement ---
+export interface SettleWithCollateralInput {
+  loanId: string
+  reason: string
+}
+
+// --- Loan Rollover ---
+export interface RolloverData {
+  fromLoanId: string
+  carriedPrincipal: string
+  carriedInterest: string
 }
 
 // --- Payment input types ---
