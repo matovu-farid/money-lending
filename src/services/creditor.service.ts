@@ -10,7 +10,7 @@ import {
   InvestmentNotFound,
 } from "@/lib/errors";
 import { writeAuditLog } from "./audit.service";
-import { autoPostInterestExpense } from "@/services/transaction.service";
+import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/transaction.service";
 import {
   calculateInterest,
   allocatePayment,
@@ -173,6 +173,15 @@ export const addInvestment = (
           afterValue: investment,
         });
 
+        // Post creditor investment as balance_sheet credit (liability increase)
+        await autoPostCreditorInvestment(tx, {
+          amount: input.amount,
+          investmentId: investment.id,
+          investmentDate: input.investmentDate,
+          actorId,
+          depositLocation: input.depositLocation,
+        })
+
         return investment;
       });
     },
@@ -265,6 +274,17 @@ export const recordCreditorRepayment = (
             repaymentDate: input.repaymentDate,
             actorId,
           });
+        }
+
+        // Post creditor principal repaid as balance_sheet debit (liability decrease)
+        if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
+          await autoPostCreditorPrincipalRepaid(tx, {
+            amount: allocation.principalPortion,
+            investmentId: input.investmentId,
+            repaymentDate: input.repaymentDate,
+            actorId,
+            sourceLocation: input.sourceLocation,
+          })
         }
 
         return repayment;
