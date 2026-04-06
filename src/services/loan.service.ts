@@ -15,7 +15,7 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostPrincipalDisbursement, postJournalEntry } from "./transaction.service"
+import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, postJournalEntry } from "./transaction.service"
 import { recalculateFromPayment, reconcileDownstreamJournals } from "./payment.service"
 import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
 
@@ -145,6 +145,18 @@ export const createLoan = (
               description: `Interest earned - loan ${existingActiveLoan.id.slice(0, 8).toUpperCase()} rolled over into ${loan.id.slice(0, 8).toUpperCase()}`,
               transactionDate: startDate,
               recordedBy: actorId,
+              loanId: loan.id,
+            })
+          }
+
+          // Transfer carried principal from old loan to new loan on the ledger
+          if (new BigNumber(input.rollover.carriedPrincipal).isGreaterThan(0)) {
+            await autoPostRolloverPrincipalTransfer(tx, {
+              amount: input.rollover.carriedPrincipal,
+              newLoanId: loan.id,
+              oldLoanId: existingActiveLoan.id,
+              transactionDate: startDate,
+              actorId,
             })
           }
 
@@ -201,6 +213,7 @@ export const createLoan = (
             transactionDate: startDate,
             recordedBy: actorId,
             debitDepositLocation: input.disbursementSource,
+            loanId: loan.id,
           })
         }
 
@@ -353,6 +366,7 @@ export const updateLoan = (
               transactionDate: oldFeeTx.transactionDate,
               recordedBy: actorId,
               creditDepositLocation: oldFeeTx.depositLocation ?? undefined,
+              loanId: input.loanId,
             })
           }
 
@@ -368,6 +382,7 @@ export const updateLoan = (
               transactionDate: oldFeeTx?.transactionDate ?? new Date(),
               recordedBy: actorId,
               debitDepositLocation: existingLoan.disbursementSource,
+              loanId: input.loanId,
             })
           }
         }
@@ -398,6 +413,7 @@ export const updateLoan = (
               transactionDate: oldDisbursement.transactionDate,
               recordedBy: actorId,
               debitDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+              loanId: input.loanId,
             })
 
             await postJournalEntry(tx, {
@@ -410,6 +426,7 @@ export const updateLoan = (
               transactionDate: oldDisbursement.transactionDate,
               recordedBy: actorId,
               creditDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+              loanId: input.loanId,
             })
           }
 
@@ -508,6 +525,7 @@ export const deleteLoan = (
             transactionDate: feeTx.transactionDate,
             recordedBy: actorId,
             creditDepositLocation: feeTx.depositLocation ?? undefined,
+            loanId: input.loanId,
           })
         }
 
@@ -536,6 +554,7 @@ export const deleteLoan = (
             transactionDate: disbursementTx.transactionDate,
             recordedBy: actorId,
             debitDepositLocation: disbursementTx.depositLocation ?? undefined,
+            loanId: input.loanId,
           })
         }
 
@@ -555,6 +574,7 @@ export const deleteLoan = (
               transactionDate: new Date(p.paymentDate),
               recordedBy: actorId,
               creditDepositLocation: p.depositLocation ?? undefined,
+              loanId: input.loanId,
             })
           }
 
@@ -569,6 +589,7 @@ export const deleteLoan = (
                 transactionDate: new Date(p.paymentDate),
                 recordedBy: actorId,
                 creditDepositLocation: p.depositLocation ?? undefined,
+                loanId: input.loanId,
               })
             }
         }

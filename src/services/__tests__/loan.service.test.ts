@@ -10,6 +10,17 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock("@/services/transaction.service", () => ({
+  postJournalEntry: vi.fn().mockResolvedValue("mock-journal-group-id"),
+  autoPostPrincipalDisbursement: vi.fn().mockResolvedValue(undefined),
+  autoPostRolloverPrincipalTransfer: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("@/services/payment.service", () => ({
+  recalculateFromPayment: vi.fn().mockResolvedValue(undefined),
+  reconcileDownstreamJournals: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual("drizzle-orm")
   return actual
@@ -108,15 +119,26 @@ describe("Loan Service", () => {
   it("creates loan with collateral in single transaction (requires test DB)", async () => {
     const { db: mockedDb } = await import("@/lib/db")
 
-    // Mock customer lookup
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([baseCustomer]),
-      }),
-    } as any)
+    // Mock customer lookup (1st call) and active loan check (2nd call — no active loan)
+    let dbSelectCallCount = 0
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      dbSelectCallCount++
+      if (dbSelectCallCount === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([baseCustomer]),
+          }),
+        }
+      }
+      // 2nd call: no existing active loan
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }
+    })
 
     // Mock transaction — execute callback with mock tx
-    const mockFeeCategory = { id: "cat-1", name: "Issuance Fees", type: "income", isDefault: true }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         let insertCallCount = 0
@@ -126,21 +148,10 @@ describe("Loan Service", () => {
             if (insertCallCount === 1) {
               // loan insert
               return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockLoan]) }) }
-            } else if (insertCallCount === 2) {
+            } else {
               // collateral insert
               return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
-            } else if (insertCallCount === 3) {
-              // transactionCategories insert (if category not found)
-              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockFeeCategory]) }) }
-            } else {
-              // transactions insert (no returning)
-              return { values: vi.fn().mockResolvedValue(undefined) }
             }
-          }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([]),  // no existing category
-            }),
           }),
         }
         return callback(mockTx)
@@ -160,15 +171,25 @@ describe("Loan Service", () => {
     const { db: mockedDb } = await import("@/lib/db")
     const { writeAuditLog } = await import("@/services/audit.service")
 
-    // Mock customer lookup
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([baseCustomer]),
-      }),
-    } as any)
+    // Mock customer lookup (1st call) and active loan check (2nd call — no active loan)
+    let dbSelectCallCount = 0
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      dbSelectCallCount++
+      if (dbSelectCallCount === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([baseCustomer]),
+          }),
+        }
+      }
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
+      }
+    })
 
     let capturedTx: any
-    const mockFeeCategory = { id: "cat-1", name: "Issuance Fees", type: "income", isDefault: true }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         let insertCallCount = 0
@@ -177,18 +198,9 @@ describe("Loan Service", () => {
             insertCallCount++
             if (insertCallCount === 1) {
               return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockLoan]) }) }
-            } else if (insertCallCount === 2) {
-              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
-            } else if (insertCallCount === 3) {
-              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockFeeCategory]) }) }
             } else {
-              return { values: vi.fn().mockResolvedValue(undefined) }
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
             }
-          }),
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([]),
-            }),
           }),
         }
         capturedTx = mockTx
@@ -269,6 +281,7 @@ describe("Loan Service", () => {
   it("deleteLoan: creates reversing entries and soft-deletes payments/loans", async () => {
     const { db: mockedDb } = await import("@/lib/db")
     const { writeAuditLog } = await import("@/services/audit.service")
+    const { postJournalEntry } = await import("@/services/transaction.service")
 
     const mockFeeTx = {
       id: "tx-fee-1",
@@ -277,6 +290,19 @@ describe("Loan Service", () => {
       categoryId: "cat-1",
       referenceType: "loan",
       referenceId: "loan-1",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: null,
+    }
+
+    const mockDisbursementTx = {
+      id: "tx-disb-1",
+      type: "debit",
+      amount: "500000.00",
+      categoryId: "cat-3",
+      referenceType: "loan",
+      referenceId: "loan-1",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: "cash",
     }
 
     const mockPayment = {
@@ -285,9 +311,9 @@ describe("Loan Service", () => {
       interestPortion: "25000.00",
       principalPortion: "50000.00",
       amount: "75000.00",
+      paymentDate: new Date("2026-04-01"),
+      depositLocation: "cash",
     }
-
-    const mockInterestCategory = { id: "cat-2", name: "Interest Earned", type: "income", isDefault: true }
 
     // Mock loan lookup — loan exists and is not soft-deleted
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -302,30 +328,31 @@ describe("Loan Service", () => {
       select: vi.fn().mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
+          // Active payments lookup
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([mockPayment]),
+            }),
+          }
+        } else if (selectCallCount === 2) {
           // Issuance fee transaction lookup
           return {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockResolvedValue([mockFeeTx]),
             }),
           }
-        } else if (selectCallCount === 2) {
-          // Loan payments lookup (full rows now)
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([mockPayment]),
-            }),
-          }
         } else {
-          // Interest Earned category lookup
+          // Disbursement transaction lookup (has orderBy + limit)
           return {
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([mockInterestCategory]),
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue([mockDisbursementTx]),
+                }),
+              }),
             }),
           }
         }
-      }),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockResolvedValue(undefined),
       }),
       update: vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({
@@ -345,8 +372,8 @@ describe("Loan Service", () => {
       deleteLoan({ loanId: "loan-1", reason: "Test deletion" }, "actor-1")
     )
 
-    // tx.insert called twice: once for fee reversal, once for interest reversal
-    expect(mockTx.insert).toHaveBeenCalledTimes(2)
+    // postJournalEntry called for: fee reversal, disbursement reversal, interest reversal, principal reversal
+    expect(postJournalEntry).toHaveBeenCalledTimes(4)
 
     // tx.update called twice: once for payments soft-delete, once for loan soft-delete
     expect(mockTx.update).toHaveBeenCalledTimes(2)
@@ -376,14 +403,28 @@ describe("Loan Service", () => {
       }),
     } as any)
 
+    let selectCallCount = 0
     const mockTx = {
-      select: vi.fn().mockImplementation(() => ({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      })),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockResolvedValue(undefined),
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount <= 2) {
+          // Active payments lookup + fee tx lookup — return empty
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([]),
+            }),
+          }
+        }
+        // Disbursement tx lookup (has orderBy + limit)
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        }
       }),
       update: vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({
@@ -415,6 +456,7 @@ describe("Loan Service", () => {
 
   it("deleteLoan: creates reversing entry for issuance fee (no hard delete)", async () => {
     const { db: mockedDb } = await import("@/lib/db")
+    const { postJournalEntry } = await import("@/services/transaction.service")
 
     const mockFeeTx = {
       id: "tx-fee-1",
@@ -423,6 +465,8 @@ describe("Loan Service", () => {
       categoryId: "cat-1",
       referenceType: "loan",
       referenceId: "loan-1",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: null,
     }
 
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
@@ -431,12 +475,18 @@ describe("Loan Service", () => {
       }),
     } as any)
 
-    const insertValuesCalls: any[] = []
     let selectCallCount = 0
     const mockTx = {
       select: vi.fn().mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
+          // Active payments lookup — no payments
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([]),
+            }),
+          }
+        } else if (selectCallCount === 2) {
           // Issuance fee transaction lookup
           return {
             from: vi.fn().mockReturnValue({
@@ -444,19 +494,17 @@ describe("Loan Service", () => {
             }),
           }
         } else {
-          // Loan payments lookup — no payments
+          // Disbursement transaction lookup (has orderBy + limit) — no disbursement
           return {
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([]),
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue([]),
+                }),
+              }),
             }),
           }
         }
-      }),
-      insert: vi.fn().mockReturnValue({
-        values: vi.fn().mockImplementation((vals: any) => {
-          insertValuesCalls.push(vals)
-          return Promise.resolve(undefined)
-        }),
       }),
       update: vi.fn().mockReturnValue({
         set: vi.fn().mockReturnValue({
@@ -473,23 +521,26 @@ describe("Loan Service", () => {
       deleteLoan({ loanId: "loan-1", reason: "Test deletion" }, "actor-1")
     )
 
-    // tx.insert called once for issuance fee reversal (no payments to reverse)
-    expect(mockTx.insert).toHaveBeenCalledTimes(1)
+    // postJournalEntry called once for issuance fee reversal (no payments to reverse, no disbursement)
+    expect(postJournalEntry).toHaveBeenCalledTimes(1)
 
-    // Verify the reversal values
-    const reversalValues = insertValuesCalls[0]
-    expect(reversalValues.type).toBe("debit")
-    expect(reversalValues.amount).toBe("50000.00")
-    expect(reversalValues.referenceType).toBe("loan_reversal")
-    expect(reversalValues.referenceId).toBe("loan-1")
-    expect(reversalValues.description).toContain("Reversal")
-    expect(reversalValues.description).toContain("Test deletion")
+    // Verify the reversal params
+    expect(postJournalEntry).toHaveBeenCalledWith(
+      mockTx,
+      expect.objectContaining({
+        amount: "50000.00",
+        referenceType: "loan_reversal",
+        referenceId: "loan-1",
+        loanId: "loan-1",
+      })
+    )
   })
 
   // ── updateLoan ──────────────────────────────────────────────────────
 
   it("updateLoan: updates issuance fee transaction when fee changes", async () => {
     const { db: mockedDb } = await import("@/lib/db")
+    const { postJournalEntry } = await import("@/services/transaction.service")
 
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -498,18 +549,29 @@ describe("Loan Service", () => {
     } as any)
 
     const updatedLoan = { ...mockLoan, issuanceFee: "75000.00" }
-    const setCalls: any[] = []
+    const oldFeeTx = {
+      id: "tx-fee-1",
+      type: "credit",
+      amount: "50000.00",
+      categoryId: "cat-1",
+      referenceType: "loan",
+      referenceId: "loan-1",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: null,
+    }
     const mockTx = {
       update: vi.fn().mockImplementation(() => ({
-        set: vi.fn().mockImplementation((args: any) => {
-          setCalls.push(args)
-          return {
-            where: vi.fn().mockReturnValue({
-              returning: vi.fn().mockResolvedValue([updatedLoan]),
-            }),
-          }
-        }),
+        set: vi.fn().mockImplementation(() => ({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([updatedLoan]),
+          }),
+        })),
       })),
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([oldFeeTx]),
+        }),
+      }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => callback(mockTx)
@@ -520,16 +582,27 @@ describe("Loan Service", () => {
       updateLoan({ loanId: "loan-1", issuanceFee: "75000.00", reason: "Fee adjustment" }, "actor-1")
     )
 
-    // tx.update called for: 1) loan update, 2) issuance fee transaction update
-    expect(mockTx.update).toHaveBeenCalledTimes(2)
+    // tx.update called once for the loan update only
+    expect(mockTx.update).toHaveBeenCalledTimes(1)
 
-    // Second .set() call should be for the transaction row
-    expect(setCalls[1].amount).toBe("75000.00")
-    expect(setCalls[1].description).toBe("Issuance fee for loan LOAN-1")
+    // postJournalEntry called twice: once for reversal, once for new fee
+    expect(postJournalEntry).toHaveBeenCalledTimes(2)
+
+    // Second call should be the new fee posting with correct amount
+    expect(postJournalEntry).toHaveBeenCalledWith(
+      mockTx,
+      expect.objectContaining({
+        amount: "75000.00",
+        referenceType: "loan",
+        referenceId: "loan-1",
+        loanId: "loan-1",
+      })
+    )
   })
 
   it("updateLoan: does not touch transaction when issuanceFee is not provided", async () => {
     const { db: mockedDb } = await import("@/lib/db")
+    const { postJournalEntry } = await import("@/services/transaction.service")
 
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -538,6 +611,16 @@ describe("Loan Service", () => {
     } as any)
 
     const updatedLoan = { ...mockLoan, principalAmount: "600000.00" }
+    const oldDisbursement = {
+      id: "tx-disb-1",
+      type: "debit",
+      amount: "500000.00",
+      referenceType: "loan",
+      referenceId: "loan-1",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: "cash",
+    }
+    let selectCallCount = 0
     const mockTx = {
       update: vi.fn().mockImplementation(() => ({
         set: vi.fn().mockImplementation(() => ({
@@ -546,6 +629,29 @@ describe("Loan Service", () => {
           }),
         })),
       })),
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          // Old disbursement lookup (has orderBy + limit)
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue([oldDisbursement]),
+                }),
+              }),
+            }),
+          }
+        }
+        // Active payments lookup (has orderBy but resolves directly)
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }
+      }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => callback(mockTx)
@@ -558,5 +664,96 @@ describe("Loan Service", () => {
 
     // tx.update should be called only once for the loan update itself
     expect(mockTx.update).toHaveBeenCalledTimes(1)
+
+    // postJournalEntry called twice for principal change (reversal + repost)
+    expect(postJournalEntry).toHaveBeenCalledTimes(2)
+  })
+
+  it("calls autoPostRolloverPrincipalTransfer when rolling over with carried principal", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const { autoPostRolloverPrincipalTransfer } = await import("@/services/transaction.service")
+
+    const existingLoan = {
+      id: "old-loan-1",
+      customerId: "cust-1",
+      principalAmount: "500000.00",
+      status: "active",
+    }
+
+    const newLoan = {
+      ...mockLoan,
+      id: "new-loan-1",
+      principalAmount: "750000.00",
+      rolledOverFrom: "old-loan-1",
+      rolloverAmount: "250000.00",
+    }
+
+    // Mock customer lookup (1st call) returns customer, active loan check (2nd call) returns existing loan
+    let dbSelectCallCount = 0
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      dbSelectCallCount++
+      if (dbSelectCallCount === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([baseCustomer]),
+          }),
+        }
+      }
+      // 2nd call: existing active loan
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([existingLoan]),
+        }),
+      }
+    })
+
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        let insertCallCount = 0
+        const mockTx = {
+          insert: vi.fn().mockImplementation(() => {
+            insertCallCount++
+            if (insertCallCount === 1) {
+              return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([newLoan]) }) }
+            }
+            return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
+          }),
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }
+        return callback(mockTx)
+      }
+    )
+
+    const rolloverInput = {
+      ...baseLoanInput,
+      principalAmount: "500000.00",
+      rollover: {
+        fromLoanId: "old-loan-1",
+        carriedPrincipal: "200000.00",
+        carriedInterest: "50000.00",
+      },
+    }
+
+    const { createLoan } = await import("@/services/loan.service")
+    await Effect.runPromise(createLoan(rolloverInput, "actor-1"))
+
+    expect(autoPostRolloverPrincipalTransfer).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        amount: "200000.00",
+        newLoanId: "new-loan-1",
+        oldLoanId: "old-loan-1",
+        actorId: "actor-1",
+      })
+    )
   })
 })

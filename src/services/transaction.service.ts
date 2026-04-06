@@ -10,7 +10,10 @@ import {
   lte,
   desc,
   count,
+  sql,
+  inArray,
 } from "drizzle-orm"
+import BigNumber from "bignumber.js"
 import {
   DatabaseError,
   TransactionNotFound,
@@ -62,6 +65,7 @@ export async function postJournalEntry(
     recordedBy: string
     debitDepositLocation?: "cash" | "bank" | "strong_room"
     creditDepositLocation?: "cash" | "bank" | "strong_room"
+    loanId?: string
   }
 ): Promise<string> {
   const journalGroupId = randomUUID()
@@ -75,6 +79,7 @@ export async function postJournalEntry(
     categoryId: debitCategoryId,
     referenceType: params.referenceType,
     referenceId: params.referenceId,
+    loanId: params.loanId ?? null,
     description: params.description,
     transactionDate: params.transactionDate,
     recordedBy: params.recordedBy,
@@ -88,6 +93,7 @@ export async function postJournalEntry(
     categoryId: creditCategoryId,
     referenceType: params.referenceType,
     referenceId: params.referenceId,
+    loanId: params.loanId ?? null,
     description: params.description,
     transactionDate: params.transactionDate,
     recordedBy: params.recordedBy,
@@ -338,6 +344,7 @@ export async function autoPostInterestEarned(
     description: `Interest earned - loan ${params.loanId} payment ${params.paymentId}`,
     transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
+    loanId: params.loanId,
   })
 }
 
@@ -366,6 +373,49 @@ export async function autoPostPrincipalDisbursement(
     description: `Principal disbursed - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     creditDepositLocation: params.depositLocation,
+    loanId: params.loanId,
+  })
+}
+
+export async function autoPostRolloverPrincipalTransfer(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    newLoanId: string
+    oldLoanId: string
+    transactionDate: Date
+    actorId: string
+  }
+): Promise<void> {
+  const journalGroupId = randomUUID()
+  const categoryId = await getOrCreateCategory(tx, "Loans Receivable", "asset")
+
+  // DR Loans Receivable (new loan) — increases new loan's receivable
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: params.amount,
+    categoryId,
+    referenceType: "rollover",
+    referenceId: params.oldLoanId,
+    loanId: params.newLoanId,
+    description: `Principal carried from loan ${params.oldLoanId.slice(0, 8).toUpperCase()}`,
+    transactionDate: params.transactionDate,
+    recordedBy: params.actorId,
+    journalGroupId,
+  })
+
+  // CR Loans Receivable (old loan) — decreases old loan's receivable
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: params.amount,
+    categoryId,
+    referenceType: "rollover",
+    referenceId: params.newLoanId,
+    loanId: params.oldLoanId,
+    description: `Principal transferred to loan ${params.newLoanId.slice(0, 8).toUpperCase()}`,
+    transactionDate: params.transactionDate,
+    recordedBy: params.actorId,
+    journalGroupId,
   })
 }
 
@@ -380,6 +430,7 @@ export async function autoPostPrincipalRepayment(
     description: `Principal repaid - loan ${params.loanId.slice(0, 8).toUpperCase()} payment ${params.paymentId.slice(0, 8).toUpperCase()}`,
     transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
+    loanId: params.loanId,
   })
 }
 
@@ -393,6 +444,7 @@ export async function autoPostPrincipalRecovery(
     amount: params.amount, referenceType: "collateral_settlement", referenceId: params.loanId,
     description: `Principal recovered via collateral - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
+    loanId: params.loanId,
   })
 }
 
@@ -436,4 +488,62 @@ export async function autoPostFundTransfer(
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     debitDepositLocation: params.toLocation, creditDepositLocation: params.fromLocation,
   })
+}
+
+/**
+ * Derive per-loan outstanding principal from the ledger.
+ * Queries "Loans Receivable" entries grouped by loanId.
+ * Asset account: DR adds, CR subtracts.
+ */
+export async function getLoanBalancesFromLedger(
+  loanIds: string[],
+  asOf?: Date
+): Promise<Map<string, BigNumber>> {
+  if (loanIds.length === 0) return new Map();
+
+  const conditions = [
+    eq(transactionCategories.name, "Loans Receivable"),
+    inArray(transactions.loanId, loanIds),
+  ];
+  if (asOf) {
+    conditions.push(lte(transactions.transactionDate, asOf));
+  }
+
+  const rows = await db
+    .select({
+      loanId: transactions.loanId,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(and(...conditions))
+    .groupBy(transactions.loanId, transactions.type);
+
+  const balances = new Map<string, BigNumber>();
+  for (const row of rows) {
+    if (!row.loanId) continue;
+    const current = balances.get(row.loanId) ?? new BigNumber(0);
+    const amount = new BigNumber(row.total);
+    // Asset: DR adds, CR subtracts
+    balances.set(
+      row.loanId,
+      row.txType === "debit" ? current.plus(amount) : current.minus(amount)
+    );
+  }
+  return balances;
+}
+
+/**
+ * Derive a single loan's outstanding principal from the ledger.
+ */
+export async function getLoanBalanceFromLedger(
+  loanId: string,
+  asOf?: Date
+): Promise<BigNumber> {
+  const balances = await getLoanBalancesFromLedger([loanId], asOf);
+  return balances.get(loanId) ?? new BigNumber(0);
 }
