@@ -5,8 +5,7 @@ import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { eq, desc, and, isNull } from "drizzle-orm"
+import { eq, desc, asc, and, isNull } from "drizzle-orm"
 import BigNumber from "bignumber.js"
 import {
   DatabaseError,
@@ -16,7 +15,8 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostPrincipalDisbursement } from "./transaction.service"
+import { autoPostPrincipalDisbursement, postJournalEntry } from "./transaction.service"
+import { recalculateFromPayment, reconcileDownstreamJournals } from "./payment.service"
 import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
 
 const checkCustomerCompleteness = (customer: {
@@ -136,26 +136,10 @@ export const createLoan = (
         if (input.rollover && existingActiveLoan) {
           // Post old loan's accrued interest as earned
           if (new BigNumber(input.rollover.carriedInterest).isGreaterThan(0)) {
-            let [interestCategory] = await tx
-              .select()
-              .from(transactionCategories)
-              .where(
-                and(
-                  eq(transactionCategories.name, "Interest Earned"),
-                  eq(transactionCategories.type, "income")
-                )
-              )
-            if (!interestCategory) {
-              ;[interestCategory] = await tx
-                .insert(transactionCategories)
-                .values({ name: "Interest Earned", type: "income", isDefault: true })
-                .returning()
-            }
-
-            await tx.insert(transactions).values({
-              type: "credit",
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Loans Receivable", type: "asset" },
+              creditCategory: { name: "Interest Earned", type: "revenue" },
               amount: input.rollover.carriedInterest,
-              categoryId: interestCategory.id,
               referenceType: "rollover",
               referenceId: existingActiveLoan.id,
               description: `Interest earned - loan ${existingActiveLoan.id.slice(0, 8).toUpperCase()} rolled over into ${loan.id.slice(0, 8).toUpperCase()}`,
@@ -205,34 +189,20 @@ export const createLoan = (
           },
         })
 
-        // Auto-post issuance fee as income transaction
-        let [feeCategory] = await tx
-          .select()
-          .from(transactionCategories)
-          .where(
-            and(
-              eq(transactionCategories.name, "Issuance Fees"),
-              eq(transactionCategories.type, "income")
-            )
-          )
-
-        if (!feeCategory) {
-          ;[feeCategory] = await tx
-            .insert(transactionCategories)
-            .values({ name: "Issuance Fees", type: "income", isDefault: true })
-            .returning()
+        // Auto-post issuance fee as income transaction (skip if zero)
+        if (new BigNumber(input.issuanceFee).isGreaterThan(0)) {
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Cash", type: "asset" },
+            creditCategory: { name: "Issuance Fees", type: "revenue" },
+            amount: input.issuanceFee,
+            referenceType: "loan",
+            referenceId: loan.id,
+            description: `Issuance fee for loan ${loan.id.slice(0, 8).toUpperCase()}`,
+            transactionDate: startDate,
+            recordedBy: actorId,
+            debitDepositLocation: input.disbursementSource,
+          })
         }
-
-        await tx.insert(transactions).values({
-          type: "credit",
-          amount: input.issuanceFee,
-          categoryId: feeCategory.id,
-          referenceType: "loan",
-          referenceId: loan.id,
-          description: `Issuance fee for loan ${loan.id.slice(0, 8).toUpperCase()}`,
-          transactionDate: startDate,
-          recordedBy: actorId,
-        })
 
         // Auto-post principal disbursement as balance_sheet debit
         await autoPostPrincipalDisbursement(tx, {
@@ -353,6 +323,7 @@ export const updateLoan = (
           afterValue: { ...setObj, reason: input.reason },
         })
 
+        // Update issuance fee transaction (credit only — do not touch disbursement debit)
         if (input.issuanceFee !== undefined) {
           await tx
             .update(transactions)
@@ -363,9 +334,78 @@ export const updateLoan = (
             .where(
               and(
                 eq(transactions.referenceType, "loan"),
-                eq(transactions.referenceId, input.loanId)
+                eq(transactions.referenceId, input.loanId),
+                eq(transactions.type, "credit")
               )
             )
+        }
+
+        // If principal changed, reverse old disbursement and post new one
+        if (input.principalAmount !== undefined && input.principalAmount !== existingLoan.principalAmount) {
+          const [oldDisbursement] = await tx
+            .select()
+            .from(transactions)
+            .where(
+              and(
+                eq(transactions.referenceType, "loan"),
+                eq(transactions.referenceId, input.loanId),
+                eq(transactions.type, "debit")
+              )
+            )
+
+          if (oldDisbursement) {
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Cash", type: "asset" },
+              creditCategory: { name: "Loans Receivable", type: "asset" },
+              amount: oldDisbursement.amount,
+              referenceType: "loan_reversal",
+              referenceId: input.loanId,
+              description: `Reversal - principal updated for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
+              transactionDate: oldDisbursement.transactionDate,
+              recordedBy: actorId,
+              debitDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+              creditDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+            })
+
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Loans Receivable", type: "asset" },
+              creditCategory: { name: "Cash", type: "asset" },
+              amount: input.principalAmount,
+              referenceType: "loan",
+              referenceId: input.loanId,
+              description: `Principal disbursed - loan ${input.loanId.slice(0, 8).toUpperCase()} (updated)`,
+              transactionDate: oldDisbursement.transactionDate,
+              recordedBy: actorId,
+              debitDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+              creditDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+            })
+          }
+
+          // Recalculate all existing payments from the start since principalBalanceBefore changed
+          const activePayments = await tx
+            .select()
+            .from(payments)
+            .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+            .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+
+          if (activePayments.length > 0) {
+            const oldInterestMap = new Map<string, string>()
+            const oldPrincipalMap = new Map<string, string>()
+            for (const p of activePayments) {
+              oldInterestMap.set(p.id, p.interestPortion)
+              oldPrincipalMap.set(p.id, p.principalPortion)
+            }
+
+            await recalculateFromPayment(tx, input.loanId, 0, activePayments)
+            await reconcileDownstreamJournals(
+              tx,
+              activePayments,
+              oldInterestMap,
+              oldPrincipalMap,
+              input.loanId,
+              actorId
+            )
+          }
         }
 
         return updatedLoan as Loan
@@ -407,27 +447,29 @@ export const deleteLoan = (
           .set({ deletedAt: now, deletedBy: actorId, deleteReason: input.reason, updatedAt: now })
           .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
 
-        // Reverse issuance fee transaction
+        // Reverse issuance fee transaction (credit type distinguishes it from disbursement debit)
         const [feeTx] = await tx
           .select()
           .from(transactions)
           .where(
             and(
               eq(transactions.referenceType, "loan"),
-              eq(transactions.referenceId, input.loanId)
+              eq(transactions.referenceId, input.loanId),
+              eq(transactions.type, "credit")
             )
           )
 
         if (feeTx) {
-          await tx.insert(transactions).values({
-            type: "debit",
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Issuance Fees", type: "revenue" },
+            creditCategory: { name: "Cash", type: "asset" },
             amount: feeTx.amount,
-            categoryId: feeTx.categoryId,
             referenceType: "loan_reversal",
             referenceId: input.loanId,
             description: `Reversal - loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
-            transactionDate: new Date(),
+            transactionDate: feeTx.transactionDate,
             recordedBy: actorId,
+            creditDepositLocation: feeTx.depositLocation ?? undefined,
           })
         }
 
@@ -444,69 +486,55 @@ export const deleteLoan = (
           )
 
         if (disbursementTx) {
-          await tx.insert(transactions).values({
-            type: "credit",
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Cash", type: "asset" },
+            creditCategory: { name: "Loans Receivable", type: "asset" },
             amount: disbursementTx.amount,
-            categoryId: disbursementTx.categoryId,
             referenceType: "loan_reversal",
             referenceId: input.loanId,
             description: `Reversal - principal disbursement for loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
-            transactionDate: new Date(),
+            transactionDate: disbursementTx.transactionDate,
             recordedBy: actorId,
+            debitDepositLocation: disbursementTx.depositLocation ?? undefined,
+            creditDepositLocation: disbursementTx.depositLocation ?? undefined,
           })
         }
 
-        // Reverse all payment interest transactions for this loan's payments
+        // Reverse interest/principal transactions for payments that were active at deletion time
+        // (already-deleted payments had their journals reversed when they were individually deleted)
         const loanPayments = await tx
           .select()
           .from(payments)
-          .where(eq(payments.loanId, input.loanId))
+          .where(and(eq(payments.loanId, input.loanId), eq(payments.deletedAt, now)))
 
         for (const p of loanPayments) {
           if (new BigNumber(p.interestPortion).isGreaterThan(0)) {
-            // Look up category
-            let [category] = await tx.select().from(transactionCategories)
-              .where(and(
-                eq(transactionCategories.name, "Interest Earned"),
-                eq(transactionCategories.type, "income")
-              ))
-            if (!category) {
-              ;[category] = await tx.insert(transactionCategories)
-                .values({ name: "Interest Earned", type: "income", isDefault: true })
-                .returning()
-            }
-
-            await tx.insert(transactions).values({
-              type: "debit",
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Interest Earned", type: "revenue" },
+              creditCategory: { name: "Cash", type: "asset" },
               amount: p.interestPortion,
-              categoryId: category.id,
               referenceType: "payment_reversal",
               referenceId: p.id,
               description: `Reversal - loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
-              transactionDate: new Date(),
+              transactionDate: new Date(p.paymentDate),
               recordedBy: actorId,
+              creditDepositLocation: p.depositLocation ?? undefined,
             })
           }
 
-            // Reverse principal repayment if > 0
             if (new BigNumber(p.principalPortion).isGreaterThan(0)) {
-              let [principalCategory] = await tx.select().from(transactionCategories)
-                .where(and(
-                  eq(transactionCategories.name, "Principal Repayment"),
-                  eq(transactionCategories.type, "balance_sheet")
-                ))
-              if (principalCategory) {
-                await tx.insert(transactions).values({
-                  type: "debit",
-                  amount: p.principalPortion,
-                  categoryId: principalCategory.id,
-                  referenceType: "payment_reversal",
-                  referenceId: p.id,
-                  description: `Reversal - principal repayment for loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
-                  transactionDate: new Date(),
-                  recordedBy: actorId,
-                })
-              }
+              await postJournalEntry(tx, {
+                debitCategory: { name: "Loans Receivable", type: "asset" },
+                creditCategory: { name: "Cash", type: "asset" },
+                amount: p.principalPortion,
+                referenceType: "payment_reversal",
+                referenceId: p.id,
+                description: `Reversal - principal repayment for loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
+                transactionDate: new Date(p.paymentDate),
+                recordedBy: actorId,
+                debitDepositLocation: p.depositLocation ?? undefined,
+                creditDepositLocation: p.depositLocation ?? undefined,
+              })
             }
         }
 

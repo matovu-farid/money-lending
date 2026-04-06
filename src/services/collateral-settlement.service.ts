@@ -3,8 +3,6 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
-import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { customers } from "@/lib/db/schema/customers"
 import { eq, and, isNull, asc } from "drizzle-orm"
 import BigNumber from "bignumber.js"
@@ -12,35 +10,8 @@ import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"
+import { postJournalEntry, autoPostPrincipalRecovery } from "@/services/transaction.service"
 import type { SettleWithCollateralInput, Loan } from "@/types"
-
-/**
- * Helper to get or auto-create a transaction category by name and type.
- */
-async function getOrCreateCategory(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  name: string,
-  type: "income" | "expense" | "balance_sheet"
-): Promise<{ id: string; name: string; type: string }> {
-  let [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, name),
-        eq(transactionCategories.type, type)
-      )
-    )
-
-  if (!category) {
-    ;[category] = await tx
-      .insert(transactionCategories)
-      .values({ name, type, isDefault: true })
-      .returning()
-  }
-
-  return category
-}
 
 /**
  * Computes accrued interest for a loan given its active payments.
@@ -161,13 +132,12 @@ export const settleWithCollateral = (
 
         const now = new Date()
 
-        // Post accrued interest as "Interest Earned" credit transaction
+        // Post accrued interest as double-entry journal
         if (accruedInterest.isGreaterThan(0)) {
-          const interestCategory = await getOrCreateCategory(tx, "Interest Earned", "income")
-          await tx.insert(transactions).values({
-            type: "credit",
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Seized Collateral", type: "asset" },
+            creditCategory: { name: "Interest Earned", type: "revenue" },
             amount: formatAmount(accruedInterest),
-            categoryId: interestCategory.id,
             referenceType: "collateral_settlement",
             referenceId: input.loanId,
             description: `Accrued interest on collateral settlement for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
@@ -176,18 +146,13 @@ export const settleWithCollateral = (
           })
         }
 
-        // Post outstanding principal as "Collateral Recovery" credit transaction
+        // Post outstanding principal recovery as double-entry journal
         if (outstandingPrincipal.isGreaterThan(0)) {
-          const recoveryCategory = await getOrCreateCategory(tx, "Principal Recovery", "balance_sheet")
-          await tx.insert(transactions).values({
-            type: "credit",
+          await autoPostPrincipalRecovery(tx, {
             amount: formatAmount(outstandingPrincipal),
-            categoryId: recoveryCategory.id,
-            referenceType: "collateral_settlement",
-            referenceId: input.loanId,
-            description: `Principal recovered via collateral seizure for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
-            transactionDate: now,
-            recordedBy: actorId,
+            loanId: input.loanId,
+            transactionDate: now.toISOString(),
+            actorId,
           })
         }
 

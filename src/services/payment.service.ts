@@ -3,13 +3,11 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
-import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, formatAmount } from "@/lib/interest/engine"
-import { autoPostInterestEarned, autoPostPrincipalRepayment } from "./transaction.service"
+import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import type {
@@ -27,7 +25,7 @@ import type {
  * After recalculateFromPayment updates downstream payments, reverse and repost
  * journal entries for any whose interestPortion changed.
  */
-async function reconcileDownstreamJournals(
+export async function reconcileDownstreamJournals(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   downstreamPayments: { id: string; interestPortion: string; paymentDate: Date; loanId: string }[],
   oldInterestMap: Map<string, string>,
@@ -50,33 +48,16 @@ async function reconcileDownstreamJournals(
 
     if (oldAmount.isEqualTo(newAmount)) continue
 
-    // Look up the Interest Earned category
-    let [category] = await tx
-      .select()
-      .from(transactionCategories)
-      .where(
-        and(
-          eq(transactionCategories.name, "Interest Earned"),
-          eq(transactionCategories.type, "income")
-        )
-      )
-    if (!category) {
-      ;[category] = await tx
-        .insert(transactionCategories)
-        .values({ name: "Interest Earned", type: "income", isDefault: true })
-        .returning()
-    }
-
-    // Reverse old interest if > 0
+    // Reverse old interest if > 0 (use payment date, not current date, for correct period attribution)
     if (oldAmount.isGreaterThan(0)) {
-      await tx.insert(transactions).values({
-        type: "debit",
+      await postJournalEntry(tx, {
+        debitCategory: { name: "Interest Earned", type: "revenue" },
+        creditCategory: { name: "Cash", type: "asset" },
         amount: oldInterest,
-        categoryId: category.id,
         referenceType: "payment_reversal",
         referenceId: dp.id,
         description: `Reversal - downstream recalculation from payment ${triggerPaymentId} edit`,
-        transactionDate: new Date(),
+        transactionDate: dp.paymentDate,
         recordedBy: actorId,
       })
     }
@@ -99,46 +80,34 @@ async function reconcileDownstreamJournals(
       const newPrincipalAmount = new BigNumber(refreshed.principalPortion)
 
       if (!oldPrincipalAmount.isEqualTo(newPrincipalAmount)) {
-        let [principalCategory] = await tx
-          .select()
-          .from(transactionCategories)
-          .where(
-            and(
-              eq(transactionCategories.name, "Principal Repayment"),
-              eq(transactionCategories.type, "balance_sheet")
-            )
-          )
+        if (oldPrincipalAmount.isGreaterThan(0)) {
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Loans Receivable", type: "asset" },
+            creditCategory: { name: "Cash", type: "asset" },
+            amount: oldPrincipal,
+            referenceType: "payment_reversal",
+            referenceId: dp.id,
+            description: `Reversal - downstream principal recalculation from payment ${triggerPaymentId} edit`,
+            transactionDate: dp.paymentDate,
+            recordedBy: actorId,
+          })
+        }
 
-        if (principalCategory) {
-          if (oldPrincipalAmount.isGreaterThan(0)) {
-            await tx.insert(transactions).values({
-              type: "debit",
-              amount: oldPrincipal,
-              categoryId: principalCategory.id,
-              referenceType: "payment_reversal",
-              referenceId: dp.id,
-              description: `Reversal - downstream principal recalculation from payment ${triggerPaymentId} edit`,
-              transactionDate: new Date(),
-              recordedBy: actorId,
-            })
-          }
-
-          if (newPrincipalAmount.isGreaterThan(0)) {
-            await autoPostPrincipalRepayment(tx, {
-              amount: refreshed.principalPortion,
-              loanId: refreshed.loanId,
-              paymentId: dp.id,
-              paymentDate: refreshed.paymentDate.toISOString(),
-              actorId,
-            })
-          }
+        if (newPrincipalAmount.isGreaterThan(0)) {
+          await autoPostPrincipalRepayment(tx, {
+            amount: refreshed.principalPortion,
+            loanId: refreshed.loanId,
+            paymentId: dp.id,
+            paymentDate: refreshed.paymentDate.toISOString(),
+            actorId,
+          })
         }
       }
     }
   }
 }
 
-async function recalculateFromPayment(
+export async function recalculateFromPayment(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   loanId: string,
   fromIndex: number,
@@ -508,58 +477,31 @@ export const editPayment = (
 
         // Post reversing entry using the payment's own interestPortion (immune to repeated edits)
         if (new BigNumber(beforeValue.interestPortion).isGreaterThan(0)) {
-          let [category] = await tx
-            .select()
-            .from(transactionCategories)
-            .where(
-              and(
-                eq(transactionCategories.name, "Interest Earned"),
-                eq(transactionCategories.type, "income")
-              )
-            )
-          if (!category) {
-            ;[category] = await tx
-              .insert(transactionCategories)
-              .values({ name: "Interest Earned", type: "income", isDefault: true })
-              .returning()
-          }
-
-          await tx.insert(transactions).values({
-            type: "debit",
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Interest Earned", type: "revenue" },
+            creditCategory: { name: "Cash", type: "asset" },
             amount: beforeValue.interestPortion,
-            categoryId: category.id,
             referenceType: "payment_reversal",
             referenceId: input.paymentId,
             description: `Reversal - payment ${input.paymentId} edited: ${input.reason}`,
-            transactionDate: new Date(),
+            transactionDate: new Date(beforeValue.paymentDate),
             recordedBy: actorId,
+            creditDepositLocation: beforeValue.depositLocation ?? undefined,
           })
         }
 
         // Reverse old principal repayment
         if (new BigNumber(beforeValue.principalPortion).isGreaterThan(0)) {
-          let [principalCategory] = await tx
-            .select()
-            .from(transactionCategories)
-            .where(
-              and(
-                eq(transactionCategories.name, "Principal Repayment"),
-                eq(transactionCategories.type, "balance_sheet")
-              )
-            )
-
-          if (principalCategory) {
-            await tx.insert(transactions).values({
-              type: "debit",
-              amount: beforeValue.principalPortion,
-              categoryId: principalCategory.id,
-              referenceType: "payment_reversal",
-              referenceId: input.paymentId,
-              description: `Reversal - principal repayment ${input.paymentId} edited: ${input.reason}`,
-              transactionDate: new Date(),
-              recordedBy: actorId,
-            })
-          }
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Loans Receivable", type: "asset" },
+            creditCategory: { name: "Cash", type: "asset" },
+            amount: beforeValue.principalPortion,
+            referenceType: "payment_reversal",
+            referenceId: input.paymentId,
+            description: `Reversal - principal repayment ${input.paymentId} edited: ${input.reason}`,
+            transactionDate: new Date(beforeValue.paymentDate),
+            recordedBy: actorId,
+          })
         }
 
         const newInterestPortion = updatedPayment.interestPortion
@@ -702,58 +644,31 @@ export const deletePayment = (
 
         // Post reversing entry using the payment's own interestPortion (immune to repeated edits)
         if (new BigNumber(payment.interestPortion).isGreaterThan(0)) {
-          let [category] = await tx
-            .select()
-            .from(transactionCategories)
-            .where(
-              and(
-                eq(transactionCategories.name, "Interest Earned"),
-                eq(transactionCategories.type, "income")
-              )
-            )
-          if (!category) {
-            ;[category] = await tx
-              .insert(transactionCategories)
-              .values({ name: "Interest Earned", type: "income", isDefault: true })
-              .returning()
-          }
-
-          await tx.insert(transactions).values({
-            type: "debit",
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Interest Earned", type: "revenue" },
+            creditCategory: { name: "Cash", type: "asset" },
             amount: payment.interestPortion,
-            categoryId: category.id,
             referenceType: "payment_reversal",
             referenceId: input.paymentId,
             description: `Reversal - payment ${input.paymentId} deleted: ${input.reason}`,
-            transactionDate: new Date(),
+            transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
+            creditDepositLocation: payment.depositLocation ?? undefined,
           })
         }
 
         // Reverse principal repayment
         if (new BigNumber(payment.principalPortion).isGreaterThan(0)) {
-          let [principalCategory] = await tx
-            .select()
-            .from(transactionCategories)
-            .where(
-              and(
-                eq(transactionCategories.name, "Principal Repayment"),
-                eq(transactionCategories.type, "balance_sheet")
-              )
-            )
-
-          if (principalCategory) {
-            await tx.insert(transactions).values({
-              type: "debit",
-              amount: payment.principalPortion,
-              categoryId: principalCategory.id,
-              referenceType: "payment_reversal",
-              referenceId: input.paymentId,
-              description: `Reversal - principal repayment ${input.paymentId} deleted: ${input.reason}`,
-              transactionDate: new Date(),
-              recordedBy: actorId,
-            })
-          }
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Loans Receivable", type: "asset" },
+            creditCategory: { name: "Cash", type: "asset" },
+            amount: payment.principalPortion,
+            referenceType: "payment_reversal",
+            referenceId: input.paymentId,
+            description: `Reversal - principal repayment ${input.paymentId} deleted: ${input.reason}`,
+            transactionDate: new Date(payment.paymentDate),
+            recordedBy: actorId,
+          })
         }
 
         const [deletedRow] = await tx
