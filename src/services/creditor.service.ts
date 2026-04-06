@@ -10,7 +10,7 @@ import {
   InvestmentNotFound,
 } from "@/lib/errors";
 import { writeAuditLog } from "./audit.service";
-import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/transaction.service";
+import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid, getCreditorBalancesFromLedger } from "@/services/transaction.service";
 import {
   calculateInterest,
   allocatePayment,
@@ -273,6 +273,7 @@ export const recordCreditorRepayment = (
             investmentId: input.investmentId,
             repaymentDate: input.repaymentDate,
             actorId,
+            sourceLocation: input.sourceLocation,
           });
         }
 
@@ -342,8 +343,14 @@ export const getCreditorDashboard = (
         repaymentsByInvestment.set(r.investmentId, list);
       }
 
+      // Derive per-investment principal balances from ledger
+      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds);
+
       for (const investment of investments) {
         totalInvested = totalInvested.plus(investment.amount);
+
+        // Use ledger-derived balance, falling back to table field
+        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.principalBalance);
 
         const repayments = repaymentsByInvestment.get(investment.id) ?? [];
 
@@ -361,7 +368,7 @@ export const getCreditorDashboard = (
         const daysElapsed = daysBetween(prevDate, now);
 
         const interestAccrued = calculateInterest(
-          investment.principalBalance,
+          formatAmount(principalBalance),
           investment.interestRateMonthly,
           daysElapsed,
           0,
@@ -373,14 +380,14 @@ export const getCreditorDashboard = (
           amount: investment.amount,
           interestRateMonthly: investment.interestRateMonthly,
           investmentDate: new Date(investment.investmentDate),
-          principalBalance: investment.principalBalance,
+          principalBalance: formatAmount(principalBalance),
           interestAccrued: formatAmount(interestAccrued),
           totalRepaid: formatAmount(totalRepaid),
         });
       }
 
-      const totalPrincipalBalance = investments.reduce(
-        (acc, inv) => acc.plus(inv.principalBalance),
+      const totalPrincipalBalance = Array.from(ledgerBalances.values()).reduce(
+        (acc, bal) => acc.plus(bal),
         new BigNumber(0),
       );
       const outstandingBalance =
@@ -412,56 +419,66 @@ export const getSystemCapital = (): Effect.Effect<
 > =>
   Effect.tryPromise({
     try: async () => {
-      const allCreditors = await db.select().from(creditors);
+      const allInvestments = await db.select().from(creditorInvestments);
       const now = new Date();
 
       let totalInvested = new BigNumber(0);
       let totalInterestAccrued = new BigNumber(0);
       let totalRepaymentsMade = new BigNumber(0);
-      let totalPrincipal = new BigNumber(0);
 
-      for (const creditor of allCreditors) {
-        const investments = await db
-          .select()
-          .from(creditorInvestments)
-          .where(eq(creditorInvestments.creditorId, creditor.id));
+      const investmentIds = allInvestments.map((inv) => inv.id);
 
-        for (const investment of investments) {
-          totalInvested = totalInvested.plus(investment.amount);
-          totalPrincipal = totalPrincipal.plus(investment.principalBalance);
+      // Derive principal balances from ledger
+      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds);
 
-          const repayments = await db
+      // Batch-fetch all repayments
+      const allRepayments = investmentIds.length > 0
+        ? await db
             .select()
             .from(creditorRepayments)
-            .where(eq(creditorRepayments.investmentId, investment.id))
-            .orderBy(
-              asc(creditorRepayments.repaymentDate),
-              asc(creditorRepayments.createdAt),
-            );
+            .where(inArray(creditorRepayments.investmentId, investmentIds))
+            .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
+        : [];
 
-          const totalRepaid = repayments.reduce(
-            (acc, r) => acc.plus(r.amount),
-            new BigNumber(0),
-          );
-          totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid);
-
-          const prevDate =
-            repayments.length === 0
-              ? new Date(investment.investmentDate)
-              : new Date(repayments[repayments.length - 1].repaymentDate);
-
-          const daysElapsed = daysBetween(prevDate, now);
-
-          const interestAccrued = calculateInterest(
-            investment.principalBalance,
-            investment.interestRateMonthly,
-            daysElapsed,
-            0,
-          );
-          totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
-        }
+      const repaymentsByInvestment = new Map<string, typeof allRepayments>();
+      for (const r of allRepayments) {
+        const list = repaymentsByInvestment.get(r.investmentId) ?? [];
+        list.push(r);
+        repaymentsByInvestment.set(r.investmentId, list);
       }
 
+      for (const investment of allInvestments) {
+        totalInvested = totalInvested.plus(investment.amount);
+
+        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.principalBalance);
+        const repayments = repaymentsByInvestment.get(investment.id) ?? [];
+
+        const totalRepaid = repayments.reduce(
+          (acc, r) => acc.plus(r.amount),
+          new BigNumber(0),
+        );
+        totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid);
+
+        const prevDate =
+          repayments.length === 0
+            ? new Date(investment.investmentDate)
+            : new Date(repayments[repayments.length - 1].repaymentDate);
+
+        const daysElapsed = daysBetween(prevDate, now);
+
+        const interestAccrued = calculateInterest(
+          formatAmount(principalBalance),
+          investment.interestRateMonthly,
+          daysElapsed,
+          0,
+        );
+        totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
+      }
+
+      const totalPrincipal = Array.from(ledgerBalances.values()).reduce(
+        (acc, bal) => acc.plus(bal),
+        new BigNumber(0),
+      );
       const totalOutstanding = totalPrincipal.plus(totalInterestAccrued);
 
       return {

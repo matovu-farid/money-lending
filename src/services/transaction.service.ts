@@ -642,6 +642,48 @@ export async function getInterestPayableFromLedger(
   return balances;
 }
 
+/**
+ * Derive per-investment creditor principal balances from the ledger.
+ * Creditor Investment is a liability: CR adds, DR subtracts.
+ */
+export async function getCreditorBalancesFromLedger(
+  investmentIds: string[]
+): Promise<Map<string, BigNumber>> {
+  if (investmentIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      referenceId: transactions.referenceId,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        eq(transactionCategories.name, "Creditor Investment"),
+        inArray(transactions.referenceId, investmentIds)
+      )
+    )
+    .groupBy(transactions.referenceId, transactions.type);
+
+  const balances = new Map<string, BigNumber>();
+  for (const row of rows) {
+    if (!row.referenceId) continue;
+    const current = balances.get(row.referenceId) ?? new BigNumber(0);
+    const amount = new BigNumber(row.total);
+    // Liability: CR adds, DR subtracts
+    balances.set(
+      row.referenceId,
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount)
+    );
+  }
+  return balances;
+}
+
 // ── Interest Accrual Functions ─────────────────────────────────────────
 
 function accrualDaysBetween(from: Date, to: Date): number {
@@ -849,9 +891,15 @@ export const accrueInterestForCreditors = (
       }
 
       const allInvestments = await db.select().from(creditorInvestments)
-      const activeInvestments = allInvestments.filter(
-        (inv) => new BigNumber(inv.principalBalance).isGreaterThan(0)
-      )
+
+      // Use ledger to determine active investments and their balances
+      const investmentIds = allInvestments.map((inv) => inv.id)
+      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds)
+
+      const activeInvestments = allInvestments.filter((inv) => {
+        const ledgerBal = ledgerBalances.get(inv.id)
+        return ledgerBal ? ledgerBal.isGreaterThan(0) : new BigNumber(inv.principalBalance).isGreaterThan(0)
+      })
 
       let entriesPosted = 0
 
@@ -866,9 +914,10 @@ export const accrueInterestForCreditors = (
           ? new Date(investment.investmentDate)
           : new Date(repaymentsList[repaymentsList.length - 1].repaymentDate)
 
+        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.principalBalance)
         const daysElapsed = accrualDaysBetween(prevDate, asOfDate)
         const interestSinceLastRepayment = calculateInterest(
-          investment.principalBalance, investment.interestRateMonthly, daysElapsed, 0
+          formatAmount(principalBalance), investment.interestRateMonthly, daysElapsed, 0
         )
 
         const existingAccrualRows = await db
