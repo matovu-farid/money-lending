@@ -20,7 +20,7 @@ import type { SettleWithCollateralInput, Loan } from "@/types"
 async function getOrCreateCategory(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
   name: string,
-  type: "income" | "expense"
+  type: "income" | "expense" | "balance_sheet"
 ): Promise<{ id: string; name: string; type: string }> {
   let [category] = await tx
     .select()
@@ -178,7 +178,7 @@ export const settleWithCollateral = (
 
         // Post outstanding principal as "Collateral Recovery" credit transaction
         if (outstandingPrincipal.isGreaterThan(0)) {
-          const recoveryCategory = await getOrCreateCategory(tx, "Collateral Recovery", "income")
+          const recoveryCategory = await getOrCreateCategory(tx, "Principal Recovery", "balance_sheet")
           await tx.insert(transactions).values({
             type: "credit",
             amount: formatAmount(outstandingPrincipal),
