@@ -148,6 +148,13 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Forbidden" }
   }
 
+  // Rollover requires supervisor+
+  if (input.rollover) {
+    if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+      return { error: "Only supervisors and above can perform loan rollovers" }
+    }
+  }
+
   if (!input.customerId?.trim()) {
     return { error: "Customer ID is required" }
   }
