@@ -25,6 +25,15 @@ const DEFAULT_INCOME_CATEGORIES = [
   "Interest Earned",
 ]
 
+const DEFAULT_BALANCE_SHEET_CATEGORIES = [
+  "Loan Disbursement",
+  "Principal Repayment",
+  "Principal Recovery",
+  "Creditor Investment",
+  "Creditor Principal Repaid",
+  "Fund Transfer",
+]
+
 export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -33,7 +42,7 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
 
       const toInsert: {
         name: string
-        type: "expense" | "income"
+        type: "expense" | "income" | "balance_sheet"
         isDefault: boolean
       }[] = []
 
@@ -49,6 +58,12 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
         }
       }
 
+      for (const name of DEFAULT_BALANCE_SHEET_CATEGORIES) {
+        if (!existingNames.has(`balance_sheet:${name}`)) {
+          toInsert.push({ name, type: "balance_sheet", isDefault: true })
+        }
+      }
+
       if (toInsert.length > 0) {
         await db.insert(transactionCategories).values(toInsert)
       }
@@ -57,7 +72,7 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
   })
 
 export const listCategories = (
-  type?: "expense" | "income"
+  type?: "expense" | "income" | "balance_sheet"
 ): Effect.Effect<(typeof transactionCategories.$inferSelect)[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
@@ -156,7 +171,7 @@ export const deleteCategory = (
 
 export const getCategoryByName = (
   name: string,
-  type: "expense" | "income"
+  type: "expense" | "income" | "balance_sheet"
 ): Effect.Effect<
   typeof transactionCategories.$inferSelect,
   DatabaseError | CategoryNotFound
