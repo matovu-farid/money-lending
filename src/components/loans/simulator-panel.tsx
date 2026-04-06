@@ -21,6 +21,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 interface SimulatorPanelProps {
   loan: Loan
   payments: Payment[]
+  ledgerBalance: string | null
 }
 
 interface SimulatorResult {
@@ -32,7 +33,7 @@ interface SimulatorResult {
   afterUnpaidInterest: string
 }
 
-export function SimulatorPanel({ loan, payments }: SimulatorPanelProps) {
+export function SimulatorPanel({ loan, payments, ledgerBalance }: SimulatorPanelProps) {
   const { control, watch } = useForm<{ amount: string }>({
     defaultValues: { amount: "" },
   })
@@ -48,9 +49,8 @@ export function SimulatorPanel({ loan, payments }: SimulatorPanelProps) {
     (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
   )
   const lastPayment = sortedPayments.at(-1)
-  const currentOutstanding = lastPayment
-    ? lastPayment.principalBalanceAfter
-    : loan.principalAmount
+  const currentOutstanding = ledgerBalance
+    ?? (lastPayment ? lastPayment.principalBalanceAfter : loan.principalAmount)
 
   const now = new Date()
   const totalDaysElapsed = Math.floor(
@@ -59,7 +59,7 @@ export function SimulatorPanel({ loan, payments }: SimulatorPanelProps) {
 
   // Use actual days for accrual — min period only applies to payment allocation
   const totalInterestAccrued = calculateInterest(
-    loan.principalAmount,
+    currentOutstanding,
     effectiveRate,
     totalDaysElapsed,
     0

@@ -65,6 +65,7 @@ interface LoanDetailClientProps {
   canModify: boolean
   openEditOnMount?: boolean
   userNameMap: Record<string, string>
+  ledgerBalance: string | null
   userRole: UserRole
   collateralNature?: string
   collateralDescription?: string | null
@@ -88,7 +89,7 @@ function loanStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, userRole, collateralNature, collateralDescription }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, ledgerBalance, userRole, collateralNature, collateralDescription }: LoanDetailClientProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -156,10 +157,12 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   const activePayments = payments
     .filter((p) => p.deletedAt === null)
     .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
-  const outstandingBalance =
+  // Prefer ledger-derived balance from server; fall back to payments-chain value
+  const paymentsChainBalance =
     activePayments.length > 0
       ? activePayments[activePayments.length - 1].principalBalanceAfter
       : loan.principalAmount
+  const outstandingBalance = ledgerBalance ?? paymentsChainBalance
 
   const principalNum = parseFloat(loan.principalAmount)
   const balanceNum = parseFloat(outstandingBalance)
@@ -764,6 +767,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         <SimulatorPanel
           loan={loan}
           payments={payments.filter(p => !p.deletedAt)}
+          ledgerBalance={balanceData?.outstandingPrincipal ?? ledgerBalance}
         />
       )}
 
