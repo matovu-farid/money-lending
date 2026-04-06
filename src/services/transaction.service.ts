@@ -3,15 +3,21 @@ import { randomUUID } from "crypto"
 import { db } from "@/lib/db"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
+import { loans } from "@/lib/db/schema/loans"
+import { payments } from "@/lib/db/schema/payments"
+import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
+import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import {
   eq,
   and,
   gte,
   lte,
   desc,
+  asc,
   count,
   sql,
   inArray,
+  isNull,
 } from "drizzle-orm"
 import BigNumber from "bignumber.js"
 import {
@@ -19,6 +25,7 @@ import {
   TransactionNotFound,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
+import { calculateInterest, formatAmount } from "@/lib/interest/engine"
 import type {
   CreateExpenseInput,
   CreateIncomeInput,
@@ -297,6 +304,7 @@ export const deleteTransaction = (
         "creditor_repayment", "creditor_investment",
         "loan", "loan_reversal", "loan_repost",
         "rollover", "collateral_settlement", "fund_transfer",
+        "interest_accrual",
       ]
       if (transaction.referenceType && systemReferenceTypes.includes(transaction.referenceType)) {
         throw { _tag: "TransactionNotFound", id }
@@ -547,3 +555,360 @@ export async function getLoanBalanceFromLedger(
   const balances = await getLoanBalancesFromLedger([loanId], asOf);
   return balances.get(loanId) ?? new BigNumber(0);
 }
+
+/**
+ * Derive per-loan total interest earned (cash basis) from the ledger.
+ * Queries "Interest Earned" entries grouped by loanId.
+ * Revenue account: CR adds, DR subtracts.
+ */
+export async function getInterestEarnedFromLedger(
+  loanIds: string[]
+): Promise<Map<string, BigNumber>> {
+  if (loanIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      loanId: transactions.loanId,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Earned"),
+        inArray(transactions.loanId, loanIds)
+      )
+    )
+    .groupBy(transactions.loanId, transactions.type);
+
+  const balances = new Map<string, BigNumber>();
+  for (const row of rows) {
+    if (!row.loanId) continue;
+    const current = balances.get(row.loanId) ?? new BigNumber(0);
+    const amount = new BigNumber(row.total);
+    // Revenue: CR adds, DR subtracts
+    balances.set(
+      row.loanId,
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount)
+    );
+  }
+  return balances;
+}
+
+/**
+ * Derive per-investment total interest payable from the ledger.
+ * Queries "Interest Payable" entries grouped by referenceId.
+ * Liability account: CR adds, DR subtracts.
+ */
+export async function getInterestPayableFromLedger(
+  investmentIds: string[]
+): Promise<Map<string, BigNumber>> {
+  if (investmentIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      referenceId: transactions.referenceId,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Payable"),
+        inArray(transactions.referenceId, investmentIds)
+      )
+    )
+    .groupBy(transactions.referenceId, transactions.type);
+
+  const balances = new Map<string, BigNumber>();
+  for (const row of rows) {
+    if (!row.referenceId) continue;
+    const current = balances.get(row.referenceId) ?? new BigNumber(0);
+    const amount = new BigNumber(row.total);
+    // Liability: CR adds, DR subtracts
+    balances.set(
+      row.referenceId,
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount)
+    );
+  }
+  return balances;
+}
+
+// ── Interest Accrual Functions ─────────────────────────────────────────
+
+function accrualDaysBetween(from: Date, to: Date): number {
+  return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+/**
+ * Reverses outstanding Interest Receivable accrual entries for a specific loan.
+ * Called before posting cash-basis interest earned on payment receipt.
+ * Posts: DR Interest Earned / CR Interest Receivable (undoes accrual).
+ */
+export async function reverseInterestAccrual(
+  tx: DrizzleTransaction,
+  params: {
+    loanId: string
+    paymentDate: string
+    actorId: string
+  }
+): Promise<void> {
+  const [receivableCat] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Receivable"),
+        eq(transactionCategories.type, "income")
+      )
+    )
+
+  if (!receivableCat) return
+
+  const [earnedCat] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Earned"),
+        eq(transactionCategories.type, "income")
+      )
+    )
+
+  if (!earnedCat) return
+
+  const accrualRows = await tx
+    .select({ amount: transactions.amount, type: transactions.type })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.referenceType, "interest_accrual"),
+        eq(transactions.referenceId, params.loanId),
+        eq(transactions.categoryId, receivableCat.id)
+      )
+    )
+
+  let netAccrual = new BigNumber(0)
+  for (const row of accrualRows) {
+    if (row.type === "debit") {
+      netAccrual = netAccrual.plus(row.amount)
+    } else {
+      netAccrual = netAccrual.minus(row.amount)
+    }
+  }
+
+  if (netAccrual.isLessThanOrEqualTo(0)) return
+
+  const reversalAmount = formatAmount(netAccrual)
+  const now = new Date(params.paymentDate)
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: reversalAmount,
+    categoryId: receivableCat.id,
+    referenceType: "interest_accrual",
+    referenceId: params.loanId,
+    description: `Reverse interest accrual on payment - loan ${params.loanId}`,
+    transactionDate: now,
+    recordedBy: params.actorId,
+  })
+
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: reversalAmount,
+    categoryId: earnedCat.id,
+    referenceType: "interest_accrual",
+    referenceId: params.loanId,
+    description: `Reverse interest accrual on payment - loan ${params.loanId}`,
+    transactionDate: now,
+    recordedBy: params.actorId,
+  })
+}
+
+/**
+ * Accrues interest for all active loans as of `asOfDate`.
+ * Idempotent: calling multiple times will not double-post.
+ * Posts: DR Interest Receivable / CR Interest Earned
+ */
+export const accrueInterestForLoans = (
+  asOfDate: Date = new Date()
+): Effect.Effect<{ loansProcessed: number; entriesPosted: number }, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const [receivableCat] = await db
+        .select()
+        .from(transactionCategories)
+        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "income")))
+
+      const [earnedCat] = await db
+        .select()
+        .from(transactionCategories)
+        .where(and(eq(transactionCategories.name, "Interest Earned"), eq(transactionCategories.type, "income")))
+
+      if (!receivableCat || !earnedCat) {
+        console.warn("[accrueInterestForLoans] Required categories not found — skipping")
+        return { loansProcessed: 0, entriesPosted: 0 }
+      }
+
+      const activeLoans = await db
+        .select()
+        .from(loans)
+        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
+
+      let entriesPosted = 0
+
+      for (const loan of activeLoans) {
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const totalDaysElapsed = accrualDaysBetween(new Date(loan.startDate), asOfDate)
+
+        const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
+
+        const loanPayments = await db
+          .select({ interestPortion: payments.interestPortion })
+          .from(payments)
+          .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+
+        const cashInterestRecognized = loanPayments.reduce(
+          (sum: BigNumber, p: { interestPortion: string }) => sum.plus(new BigNumber(p.interestPortion)),
+          new BigNumber(0)
+        )
+
+        const existingAccrualRows = await db
+          .select({ amount: transactions.amount, type: transactions.type })
+          .from(transactions)
+          .where(and(
+            eq(transactions.referenceType, "interest_accrual"),
+            eq(transactions.referenceId, loan.id),
+            eq(transactions.categoryId, receivableCat.id)
+          ))
+
+        let netExistingAccrual = new BigNumber(0)
+        for (const row of existingAccrualRows) {
+          if (row.type === "debit") netExistingAccrual = netExistingAccrual.plus(row.amount)
+          else netExistingAccrual = netExistingAccrual.minus(row.amount)
+        }
+
+        const target = totalInterestAccrued.minus(cashInterestRecognized).minus(netExistingAccrual)
+
+        if (target.isGreaterThan(0)) {
+          const amount = formatAmount(target)
+          await db.transaction(async (tx) => {
+            await tx.insert(transactions).values({
+              type: "debit", amount, categoryId: receivableCat.id,
+              referenceType: "interest_accrual", referenceId: loan.id,
+              description: `Interest accrual - loan ${loan.id}`,
+              transactionDate: asOfDate, recordedBy: "system",
+            })
+            await tx.insert(transactions).values({
+              type: "credit", amount, categoryId: earnedCat.id,
+              referenceType: "interest_accrual", referenceId: loan.id,
+              description: `Interest accrual - loan ${loan.id}`,
+              transactionDate: asOfDate, recordedBy: "system",
+            })
+          })
+          entriesPosted++
+        }
+      }
+
+      return { loansProcessed: activeLoans.length, entriesPosted }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+
+/**
+ * Accrues interest for all active creditor investments as of `asOfDate`.
+ * Idempotent: calling multiple times will not double-post.
+ * Posts: DR Interest Expense / CR Interest Payable
+ */
+export const accrueInterestForCreditors = (
+  asOfDate: Date = new Date()
+): Effect.Effect<{ investmentsProcessed: number; entriesPosted: number }, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const [payableCat] = await db
+        .select()
+        .from(transactionCategories)
+        .where(and(eq(transactionCategories.name, "Interest Payable"), eq(transactionCategories.type, "expense")))
+
+      const [expenseCat] = await db
+        .select()
+        .from(transactionCategories)
+        .where(and(eq(transactionCategories.name, "Interest Payments"), eq(transactionCategories.type, "expense")))
+
+      if (!payableCat || !expenseCat) {
+        console.warn("[accrueInterestForCreditors] Required categories not found — skipping")
+        return { investmentsProcessed: 0, entriesPosted: 0 }
+      }
+
+      const allInvestments = await db.select().from(creditorInvestments)
+      const activeInvestments = allInvestments.filter(
+        (inv) => new BigNumber(inv.principalBalance).isGreaterThan(0)
+      )
+
+      let entriesPosted = 0
+
+      for (const investment of activeInvestments) {
+        const repaymentsList = await db
+          .select()
+          .from(creditorRepayments)
+          .where(eq(creditorRepayments.investmentId, investment.id))
+          .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
+
+        const prevDate = repaymentsList.length === 0
+          ? new Date(investment.investmentDate)
+          : new Date(repaymentsList[repaymentsList.length - 1].repaymentDate)
+
+        const daysElapsed = accrualDaysBetween(prevDate, asOfDate)
+        const interestSinceLastRepayment = calculateInterest(
+          investment.principalBalance, investment.interestRateMonthly, daysElapsed, 0
+        )
+
+        const existingAccrualRows = await db
+          .select({ amount: transactions.amount, type: transactions.type })
+          .from(transactions)
+          .where(and(
+            eq(transactions.referenceType, "interest_accrual"),
+            eq(transactions.referenceId, investment.id),
+            eq(transactions.categoryId, payableCat.id)
+          ))
+
+        let netExistingAccrual = new BigNumber(0)
+        for (const row of existingAccrualRows) {
+          if (row.type === "credit") netExistingAccrual = netExistingAccrual.plus(row.amount)
+          else netExistingAccrual = netExistingAccrual.minus(row.amount)
+        }
+
+        const target = interestSinceLastRepayment.minus(netExistingAccrual)
+
+        if (target.isGreaterThan(0)) {
+          const amount = formatAmount(target)
+          await db.transaction(async (tx) => {
+            await tx.insert(transactions).values({
+              type: "debit", amount, categoryId: expenseCat.id,
+              referenceType: "interest_accrual", referenceId: investment.id,
+              description: `Interest accrual - investment ${investment.id}`,
+              transactionDate: asOfDate, recordedBy: "system",
+            })
+            await tx.insert(transactions).values({
+              type: "credit", amount, categoryId: payableCat.id,
+              referenceType: "interest_accrual", referenceId: investment.id,
+              description: `Interest accrual - investment ${investment.id}`,
+              transactionDate: asOfDate, recordedBy: "system",
+            })
+          })
+          entriesPosted++
+        }
+      }
+
+      return { investmentsProcessed: activeInvestments.length, entriesPosted }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
