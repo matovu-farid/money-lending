@@ -11,14 +11,14 @@ import {
   IncompleteLoanRequirements,
   LoanNotFound,
 } from "@/lib/errors"
-import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type ScheduleEntry } from "@/types"
+import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanType } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { payments } from "@/lib/db/schema/payments"
 import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm"
-import { calculateDaysOverdue, calculateDailyRate, calculateInterest, calculateSchedule } from "@/lib/interest"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
 import { getLoanBalancesFromLedger } from "@/services/transaction.service"
@@ -282,63 +282,20 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
 
       if (loan.status === "active") {
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const loanType = loan.loanType ?? "perpetual"
+        const balanceForCalc = outstandingBalance
 
-        if (loanType === "perpetual") {
-          // Existing perpetual logic — unchanged
-          const totalDaysElapsed = Math.floor(
-            (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-          )
-          const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
-          const dailyRateBN = calculateDailyRate(effectiveRate)
-          const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRateBN)
-          dailyRate = dailyInterestAmount.toFixed(2)
-
-          const totalInterestPaid = loanPayments.reduce(
-            (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-          )
-
-          const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaid)
-          unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
-
-          const daysOverdueBN = calculateDaysOverdue(
-            totalInterestAccrued,
-            totalInterestPaid,
-            dailyInterestAmount
-          )
-          daysOverdue = Math.floor(daysOverdueBN.toNumber())
-        } else {
-          // Term loans (fixed_rate, reducing_balance): overdue = missed installments
-          const monthsElapsed = Math.floor(
-            (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24 * 30)
-          )
-          const expectedPayments = Math.min(monthsElapsed, loan.termMonths ?? 0)
-          const actualPayments = loanPayments.length
-          const missedPayments = Math.max(expectedPayments - actualPayments, 0)
-          daysOverdue = missedPayments * 30
-
-          // Calculate daily rate for display
-          const monthlyInterest = loanType === "fixed_rate"
-            ? new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(effectiveRate))
-            : new BigNumber(outstandingBalance).multipliedBy(new BigNumber(effectiveRate))
-          dailyRate = monthlyInterest.dividedBy(30).toFixed(2)
-
-          // Unpaid interest = expected interest through elapsed months - paid interest
-          const totalInterestPaid = loanPayments.reduce(
-            (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-          )
-          const schedule = calculateSchedule(
-            loan.principalAmount,
-            effectiveRate,
-            loan.termMonths!,
-            loanType as "fixed_rate" | "reducing_balance"
-          )
-          const expectedInterest = schedule
-            .slice(0, expectedPayments)
-            .reduce((s: BigNumber, e: ScheduleEntry) => s.plus(new BigNumber(e.monthlyInterest)), new BigNumber(0))
-          const unpaidInterestBN = expectedInterest.minus(totalInterestPaid)
-          unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
-        }
+        const info = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          effectiveRate,
+          startDate: new Date(loan.startDate),
+          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          termMonths: loan.termMonths,
+          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          outstandingBalance: balanceForCalc,
+        })
+        daysOverdue = info.daysOverdue
+        dailyRate = info.dailyRate
+        unpaidInterest = info.unpaidInterest
       }
 
       return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }

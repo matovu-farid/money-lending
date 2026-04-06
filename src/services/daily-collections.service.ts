@@ -6,8 +6,8 @@ import { customers } from "@/lib/db/schema/customers"
 import { sql, eq, and, isNull, asc, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import BigNumber from "bignumber.js"
-import { calculateInterest, calculateDailyRate, calculateDaysOverdue } from "@/lib/interest/engine"
-import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import type { DailyCollectionsSummary, LoanDueToday, LoanType } from "@/types"
 
 export const getDailyCollections = (
   date: string
@@ -62,6 +62,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           interestRate: loans.interestRate,
           interestRateOverride: loans.interestRateOverride,
           loanType: loans.loanType,
+          termMonths: loans.termMonths,
           customerName: customers.fullName,
         })
         .from(loans)
@@ -95,22 +96,16 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const totalDaysElapsed = Math.floor(
-          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-        )
-        const totalInterestAccrued = calculateInterest(
-          loan.principalAmount, effectiveRate, totalDaysElapsed, 0
-        )
-        const totalInterestPaid = loanPayments.reduce(
-          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-        )
-        const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(
-          calculateDailyRate(effectiveRate)
-        )
-        const daysOverdueBN = calculateDaysOverdue(
-          totalInterestAccrued, totalInterestPaid, dailyInterestAmount
-        )
-        const daysOverdue = Math.floor(daysOverdueBN.toNumber())
+        const info = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          effectiveRate,
+          startDate: new Date(loan.startDate),
+          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          termMonths: loan.termMonths,
+          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          outstandingBalance: loan.principalAmount,
+        })
+        const daysOverdue = info.daysOverdue
 
         if (daysOverdue >= 30) {
           const ledgerBalance = ledgerBalances.get(loan.id)

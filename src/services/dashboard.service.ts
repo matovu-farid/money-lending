@@ -2,86 +2,141 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
+import { transactions } from "@/lib/db/schema/transactions"
+import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { auditLog } from "@/lib/db/schema/audit"
 import { customers } from "@/lib/db/schema/customers"
-import { eq, isNull, sum, desc, and, inArray } from "drizzle-orm"
+import { eq, isNull, desc, and, inArray, asc, sql } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
-import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
-import { getSystemCapital } from "@/services/creditor.service"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
-import type { DashboardKPIs, ActivityFeedItem } from "@/types"
+import type { DashboardKPIs, ActivityFeedItem, LoanType } from "@/types"
 
 export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> =>
-  Effect.flatMap(
-    getSystemCapital(),
-    (systemCapital) =>
-      Effect.tryPromise({
-        try: async () => {
-          const activeLoans = await db
-            .select()
-            .from(loans)
-            .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
+  Effect.tryPromise({
+    try: async () => {
+      // Derive aggregate KPIs from the ledger (single source of truth)
+      const ledgerRows = await db
+        .select({
+          categoryName: transactionCategories.name,
+          txType: transactions.type,
+          referenceType: transactions.referenceType,
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id)
+        )
+        .where(
+          inArray(transactionCategories.name, [
+            "Loans Receivable",
+            "Interest Earned",
+            "Cash",
+            "Creditor Investment",
+          ])
+        )
+        .groupBy(
+          transactionCategories.name,
+          transactions.type,
+          transactions.referenceType
+        )
 
-          let totalOutstanding = new BigNumber(0)
-          let overdueCount = 0
-          const now = new Date()
+      let loansReceivableDr = new BigNumber(0)
+      let loansReceivableCr = new BigNumber(0)
+      let interestEarnedCr = new BigNumber(0)
+      let interestEarnedDr = new BigNumber(0)
+      let cashDrFromPayments = new BigNumber(0)
+      let cashCrFromPayments = new BigNumber(0)
+      let creditorInvestmentDr = new BigNumber(0)
+      let creditorInvestmentCr = new BigNumber(0)
 
-          for (const loan of activeLoans) {
-            const loanPayments = await db
+      for (const row of ledgerRows) {
+        const amount = new BigNumber(row.total)
+        const isDebit = row.txType === "debit"
+
+        if (row.categoryName === "Loans Receivable") {
+          if (isDebit) loansReceivableDr = loansReceivableDr.plus(amount)
+          else loansReceivableCr = loansReceivableCr.plus(amount)
+        } else if (row.categoryName === "Interest Earned") {
+          if (isDebit) interestEarnedDr = interestEarnedDr.plus(amount)
+          else interestEarnedCr = interestEarnedCr.plus(amount)
+        } else if (row.categoryName === "Cash") {
+          // Only count cash movements from payment activity
+          if (row.referenceType === "payment" || row.referenceType === "payment_reversal") {
+            if (isDebit) cashDrFromPayments = cashDrFromPayments.plus(amount)
+            else cashCrFromPayments = cashCrFromPayments.plus(amount)
+          }
+        } else if (row.categoryName === "Creditor Investment") {
+          if (isDebit) creditorInvestmentDr = creditorInvestmentDr.plus(amount)
+          else creditorInvestmentCr = creditorInvestmentCr.plus(amount)
+        }
+      }
+
+      // Asset: DR adds, CR subtracts
+      const loansOutstanding = loansReceivableDr.minus(loansReceivableCr)
+      // Revenue: CR adds, DR subtracts
+      const interestEarned = interestEarnedCr.minus(interestEarnedDr)
+      // Net cash received from borrower payments (debits minus reversal credits)
+      const repaymentsCollected = cashDrFromPayments.minus(cashCrFromPayments)
+      // Liability: CR adds, DR subtracts
+      const capitalInSystem = creditorInvestmentCr.minus(creditorInvestmentDr)
+
+      // Overdue count — needs per-loan payment data for interest accrual math
+      const activeLoans = await db
+        .select()
+        .from(loans)
+        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
+
+      const loanIds = activeLoans.map((l) => l.id)
+      const allPayments =
+        loanIds.length > 0
+          ? await db
               .select()
               .from(payments)
-              .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-              .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
+              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+              .orderBy(asc(payments.paymentDate))
+          : []
 
-            const lastPayment = loanPayments[0]
-            const outstanding = lastPayment
-              ? new BigNumber(lastPayment.principalBalanceAfter)
-              : new BigNumber(loan.principalAmount)
-            totalOutstanding = totalOutstanding.plus(outstanding)
+      const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
+      for (const p of allPayments) {
+        const existing = paymentsByLoanId.get(p.loanId) ?? []
+        existing.push(p)
+        paymentsByLoanId.set(p.loanId, existing)
+      }
 
-            const totalDaysElapsed = Math.floor(
-              (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-            )
-            const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-            const dailyRate = calculateDailyRate(effectiveRate)
-            // Use actual days for accrual — min period only applies to payment allocation
-            const totalInterestAccrued = calculateInterest(
-              loan.principalAmount, effectiveRate, totalDaysElapsed, 0
-            )
-            const totalInterestPaid = loanPayments.reduce(
-              (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-            )
-            const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
-            const daysOverdue = calculateDaysOverdue(
-              totalInterestAccrued, totalInterestPaid, dailyInterestAmount
-            )
-            if (daysOverdue.isGreaterThanOrEqualTo(30)) {
-              overdueCount++
-            }
-          }
+      let overdueCount = 0
 
-          const [paymentStats] = await db
-            .select({
-              totalCollected: sum(payments.amount),
-              totalInterestEarned: sum(payments.interestPortion),
-            })
-            .from(payments)
-            .where(isNull(payments.deletedAt))
+      for (const loan of activeLoans) {
+        const loanPayments = paymentsByLoanId.get(loan.id) ?? []
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const info = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          effectiveRate,
+          startDate: new Date(loan.startDate),
+          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          termMonths: loan.termMonths,
+          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          outstandingBalance: loan.principalAmount,
+        })
+        if (info.daysOverdue >= 30) {
+          overdueCount++
+        }
+      }
 
-          const activeBorrowers = new Set(activeLoans.map(l => l.customerId)).size
+      const activeBorrowers = new Set(activeLoans.map((l) => l.customerId)).size
 
-          return {
-            loansOutstanding: totalOutstanding.toFixed(2),
-            repaymentsCollected: new BigNumber(paymentStats?.totalCollected ?? "0").toFixed(2),
-            interestEarned: new BigNumber(paymentStats?.totalInterestEarned ?? "0").toFixed(2),
-            activeBorrowers,
-            overdueCount,
-            capitalInSystem: systemCapital.totalOutstanding,
-          }
-        },
-        catch: (e) => new DatabaseError({ cause: e }),
-      })
-  )
+      return {
+        loansOutstanding: loansOutstanding.toFixed(2),
+        repaymentsCollected: repaymentsCollected.toFixed(2),
+        interestEarned: interestEarned.toFixed(2),
+        activeBorrowers,
+        overdueCount,
+        capitalInSystem: capitalInSystem.toFixed(2),
+      }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
 
 const formatAmount = (amount: string | number | undefined): string => {
   if (amount === undefined || amount === null) return "?"
