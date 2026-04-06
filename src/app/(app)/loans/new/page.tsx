@@ -7,6 +7,7 @@ import { useForm, Controller } from "react-hook-form"
 import { Loader2 } from "lucide-react"
 import { getCustomerAction } from "@/actions/customer.actions"
 import { getCollateralNaturesAction } from "@/actions/loan.actions"
+import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
 import { useCreateLoan } from "@/hooks/use-create-loan"
 import { useSession } from "@/lib/auth-client"
 import { queryKeys } from "@/hooks/query-keys"
@@ -20,7 +21,9 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
 import { formatDate, formatCurrency } from "@/lib/utils"
+import { RolloverBanner } from "@/components/loans/rollover-banner"
 import { PageHeader } from "@/components/ui/page-header"
+import BigNumber from "bignumber.js"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptDisbursement } from "@/components/receipts/pos-receipt-disbursement"
 import {
@@ -146,6 +149,17 @@ function NewLoanPageInner() {
     select: (data) => data?.fullName ?? null,
   })
 
+  // Check if customer has an active loan (for rollover)
+  const { data: activeLoanData } = useQuery({
+    queryKey: ["active-loan-check", customerId],
+    queryFn: async () => {
+      const result = await checkCustomerActiveLoanAction(customerId)
+      if ("error" in result || !result.data) return null
+      return result.data
+    },
+    enabled: !!customerId && customerId.length > 0,
+  })
+
   // Interest preview (computed on render when at step 3)
   const loanSummary =
     step === 3 && principalAmount && interestRateDisplay
@@ -183,6 +197,14 @@ function NewLoanPageInner() {
       description: data.collateralDescription.trim() || undefined,
     }
 
+    const rolloverData = activeLoanData
+      ? {
+          fromLoanId: activeLoanData.loan.id,
+          carriedPrincipal: activeLoanData.outstandingPrincipal,
+          carriedInterest: activeLoanData.accruedInterest,
+        }
+      : undefined
+
     createLoan.mutate(
       {
         customerId: data.customerId,
@@ -196,6 +218,7 @@ function NewLoanPageInner() {
         disbursementSource: data.disbursementSource,
         loanType,
         termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined,
+        rollover: rolloverData,
       },
       {
         onSuccess: (result) => {
@@ -290,6 +313,15 @@ function NewLoanPageInner() {
                   <p className="text-sm text-destructive">{errors.customerId.message}</p>
                 )}
               </div>
+
+              {activeLoanData && (
+                <RolloverBanner
+                  loanId={activeLoanData.loan.id}
+                  customerName={activeLoanData.customerName}
+                  outstandingPrincipal={activeLoanData.outstandingPrincipal}
+                  accruedInterest={activeLoanData.accruedInterest}
+                />
+              )}
 
               <div className="space-y-2">
                 <Label>Loan Type</Label>
@@ -603,6 +635,34 @@ function NewLoanPageInner() {
                   )}
                 </dl>
               </div>
+
+              {/* Rollover Breakdown */}
+              {activeLoanData && (
+                <div className="rounded-lg border p-3 space-y-2 text-sm">
+                  <p className="font-medium">Rollover Breakdown</p>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Fresh Disbursement</span>
+                    <span>{formatCurrency(principalAmount)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Rolled Over Amount</span>
+                    <span>{formatCurrency(
+                      new BigNumber(activeLoanData.outstandingPrincipal)
+                        .plus(new BigNumber(activeLoanData.accruedInterest))
+                        .toFixed(2)
+                    )}</span>
+                  </div>
+                  <div className="flex justify-between border-t pt-2 font-semibold">
+                    <span>Total New Principal</span>
+                    <span>{formatCurrency(
+                      new BigNumber(principalAmount || "0")
+                        .plus(new BigNumber(activeLoanData.outstandingPrincipal))
+                        .plus(new BigNumber(activeLoanData.accruedInterest))
+                        .toFixed(2)
+                    )}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Interest Calculation Preview */}
               {loanSummary && (
