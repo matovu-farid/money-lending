@@ -7,7 +7,8 @@ import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql } from "drizzle
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, calculateInterest, formatAmount } from "@/lib/interest/engine"
-import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry } from "./transaction.service"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, reverseInterestAccrual } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import type {
@@ -41,31 +42,27 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
     .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
     .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
-  const outstandingPrincipal =
-    activePayments.length === 0
-      ? loan.principalAmount
-      : activePayments[activePayments.length - 1].principalBalanceAfter
+  // Derive outstanding principal from the ledger (single source of truth)
+  const ledgerBalance = await getLoanBalanceFromLedger(loanId)
+  const outstandingPrincipal = ledgerBalance.isGreaterThan(0)
+    ? ledgerBalance.toFixed(2)
+    : loan.principalAmount  // Fallback for loans with no ledger entries yet
 
   const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
   const loanType = loan.loanType ?? "perpetual"
 
-  const prevDate =
-    activePayments.length === 0
-      ? new Date(loan.startDate)
-      : new Date(activePayments[activePayments.length - 1].paymentDate)
-  const daysElapsed = daysBetween(prevDate, new Date())
+  // Use computeLoanOverdueInfo for consistent interest calculation
+  const info = computeLoanOverdueInfo({
+    principalAmount: loan.principalAmount,
+    effectiveRate,
+    startDate: new Date(loan.startDate),
+    loanType: loanType as import("@/types").LoanType,
+    termMonths: loan.termMonths,
+    payments: activePayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+    outstandingBalance: outstandingPrincipal,
+  })
 
-  let accruedInterest: string
-  if (loanType === "perpetual") {
-    accruedInterest = calculateInterest(outstandingPrincipal, effectiveRate, daysElapsed, minInterestDays).toFixed(2)
-  } else if (loanType === "fixed_rate") {
-    accruedInterest = new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(effectiveRate)).toFixed(2)
-  } else {
-    // reducing_balance
-    accruedInterest = new BigNumber(outstandingPrincipal).multipliedBy(new BigNumber(effectiveRate)).toFixed(2)
-  }
-
+  const accruedInterest = info.unpaidInterest
   const totalBalance = new BigNumber(outstandingPrincipal).plus(new BigNumber(accruedInterest)).toFixed(2)
 
   return { outstandingPrincipal, accruedInterest, totalBalance, loanType }
@@ -258,6 +255,18 @@ export const recordPayment = (
             ? loan.principalAmount
             : activePayments[activePayments.length - 1].principalBalanceAfter
 
+        // Ledger cross-check: warn if payments chain and ledger disagree
+        const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
+        if (ledgerBalance.isGreaterThan(0)) {
+          const chainBN = new BigNumber(principalBalanceBefore)
+          if (!chainBN.isEqualTo(ledgerBalance)) {
+            console.warn(
+              `[recordPayment] Balance mismatch for loan ${input.loanId}: ` +
+              `payments chain=${chainBN.toFixed(2)}, ledger=${ledgerBalance.toFixed(2)}`
+            )
+          }
+        }
+
         const prevDate =
           activePayments.length === 0
             ? new Date(loan.startDate)
@@ -334,6 +343,12 @@ export const recordPayment = (
         })
 
         if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+          // Reverse any outstanding interest accrual before posting cash-basis interest
+          await reverseInterestAccrual(tx, {
+            loanId: input.loanId,
+            paymentDate: input.paymentDate,
+            actorId,
+          })
           await autoPostInterestEarned(tx, {
             amount: allocation.interestPortion,
             loanId: input.loanId,
@@ -502,6 +517,21 @@ export const editPayment = (
           .from(payments)
           .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+
+        // Ledger cross-check after recalculation
+        if (refreshed.length > 0) {
+          const chainBalance = refreshed[refreshed.length - 1].principalBalanceAfter
+          const editLedgerBalance = await getLoanBalanceFromLedger(payment.loanId)
+          if (editLedgerBalance.isGreaterThan(0)) {
+            const chainBN = new BigNumber(chainBalance)
+            if (!chainBN.isEqualTo(editLedgerBalance)) {
+              console.warn(
+                `[editPayment] Balance mismatch for loan ${payment.loanId}: ` +
+                `payments chain=${chainBN.toFixed(2)}, ledger=${editLedgerBalance.toFixed(2)}`
+              )
+            }
+          }
+        }
 
         if (refreshed.length > 0) {
           const lastBalance = refreshed[refreshed.length - 1].principalBalanceAfter
