@@ -170,10 +170,13 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           disbursementSource: loans.disbursementSource,
           loanType: loans.loanType,
           termMonths: loans.termMonths,
+          rolledOverFrom: loans.rolledOverFrom,
+          rolloverAmount: loans.rolloverAmount,
           createdAt: loans.createdAt,
           updatedAt: loans.updatedAt,
           deletedAt: loans.deletedAt,
           customerName: customers.fullName,
+          customerContact: customers.contact,
         })
         .from(loans)
         .innerJoin(customers, eq(loans.customerId, customers.id))
@@ -247,7 +250,7 @@ export const updateLoan = (
             )
         }
 
-        return updatedLoan
+        return updatedLoan as Loan
       })
     },
     catch: (e: any) => {
@@ -348,7 +351,7 @@ export const deleteLoan = (
           .set({ deletedAt: now, updatedAt: now })
           .where(eq(loans.id, input.loanId))
 
-        return existingLoan
+        return existingLoan as Loan
       })
     },
     catch: (e: any) => {

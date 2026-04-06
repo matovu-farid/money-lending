@@ -357,10 +357,13 @@ export async function getCustomerLoansWithOverdueAction(customerId: string) {
         disbursementSource: loans.disbursementSource,
         loanType: loans.loanType,
         termMonths: loans.termMonths,
+        rolledOverFrom: loans.rolledOverFrom,
+        rolloverAmount: loans.rolloverAmount,
         createdAt: loans.createdAt,
         updatedAt: loans.updatedAt,
         deletedAt: loans.deletedAt,
         customerName: customers.fullName,
+        customerContact: customers.contact,
       })
       .from(loans)
       .innerJoin(customers, eq(loans.customerId, customers.id))
@@ -410,6 +413,19 @@ export async function exportLoansExcelAction(filter?: "all" | "critical" | "at-r
     const buffer = await generateLoansExcel(entries)
     const base64 = buffer.toString("base64")
     return { data: base64 }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function listActiveLoansWithOverdueAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const allLoans = await Effect.runPromise(listLoans())
+    const activeLoans = allLoans.filter((l) => l.status === "active")
+    return { data: await computeOverdue(activeLoans) }
   } catch {
     return { error: "Internal server error" }
   }

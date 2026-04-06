@@ -25,6 +25,7 @@ export function useCreateLoan() {
         id: `optimistic-${Date.now()}`,
         customerId: input.customerId,
         customerName: "Loading...",
+        customerContact: null,
         principalAmount: input.principalAmount,
         issuanceFee: input.issuanceFee,
         description: input.description,
@@ -38,6 +39,10 @@ export function useCreateLoan() {
         disbursementSource: input.disbursementSource,
         loanType: input.loanType ?? "perpetual",
         termMonths: input.termMonths ?? null,
+        rolledOverFrom: input.rollover?.fromLoanId ?? null,
+        rolloverAmount: input.rollover
+          ? (parseFloat(input.rollover.carriedPrincipal) + parseFloat(input.rollover.carriedInterest)).toFixed(2)
+          : null,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),
