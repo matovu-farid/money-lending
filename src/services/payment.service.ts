@@ -27,7 +27,7 @@ import type {
  */
 export async function reconcileDownstreamJournals(
   tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  downstreamPayments: { id: string; interestPortion: string; paymentDate: Date; loanId: string; depositLocation: string | null }[],
+  downstreamPayments: { id: string; interestPortion: string; paymentDate: Date; loanId: string; depositLocation: "cash" | "bank" | "strong_room" | null }[],
   oldInterestMap: Map<string, string>,
   oldPrincipalMap: Map<string, string>,
   triggerPaymentId: string,
@@ -90,7 +90,7 @@ export async function reconcileDownstreamJournals(
             description: `Reversal - downstream principal recalculation from payment ${triggerPaymentId} edit`,
             transactionDate: dp.paymentDate,
             recordedBy: actorId,
-            creditDepositLocation: (dp.depositLocation as "cash" | "bank" | "strong_room") ?? undefined,
+            creditDepositLocation: dp.depositLocation ?? undefined,
           })
         }
 
