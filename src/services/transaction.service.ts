@@ -286,7 +286,13 @@ export const deleteTransaction = (
 
       if (!transaction) throw { _tag: "TransactionNotFound", id }
 
-      if (transaction.referenceType === "payment" || transaction.referenceType === "creditor_repayment") {
+      const systemReferenceTypes = [
+        "payment", "payment_reversal",
+        "creditor_repayment", "creditor_investment",
+        "loan", "loan_reversal", "loan_repost",
+        "rollover", "collateral_settlement", "fund_transfer",
+      ]
+      if (transaction.referenceType && systemReferenceTypes.includes(transaction.referenceType)) {
         throw { _tag: "TransactionNotFound", id }
       }
 

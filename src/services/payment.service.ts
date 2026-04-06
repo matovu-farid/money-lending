@@ -59,6 +59,7 @@ export async function reconcileDownstreamJournals(
         description: `Reversal - downstream recalculation from payment ${triggerPaymentId} edit`,
         transactionDate: dp.paymentDate,
         recordedBy: actorId,
+        creditDepositLocation: dp.depositLocation ?? undefined,
       })
     }
 
@@ -70,6 +71,7 @@ export async function reconcileDownstreamJournals(
         paymentId: dp.id,
         paymentDate: refreshed.paymentDate.toISOString(),
         actorId,
+        depositLocation: dp.depositLocation ?? undefined,
       })
     }
 
@@ -285,6 +287,7 @@ export const recordPayment = (
             paymentId: newPayment.id,
             paymentDate: input.paymentDate,
             actorId,
+            depositLocation: input.depositLocation,
           })
         }
 
@@ -514,6 +517,7 @@ export const editPayment = (
             paymentId: input.paymentId,
             paymentDate: updatedPayment.paymentDate.toISOString(),
             actorId,
+            depositLocation: updatedPayment.depositLocation ?? undefined,
           })
         }
 

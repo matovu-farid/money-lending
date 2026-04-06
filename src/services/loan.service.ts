@@ -218,20 +218,6 @@ export const createLoan = (
           depositLocation: input.disbursementSource,
         })
 
-        // For rollovers, transfer the carried principal from old loan to new loan (book entry, no cash)
-        if (input.rollover && new BigNumber(input.rollover.carriedPrincipal).isGreaterThan(0)) {
-          await postJournalEntry(tx, {
-            debitCategory: { name: "Loans Receivable", type: "asset" },
-            creditCategory: { name: "Loans Receivable", type: "asset" },
-            amount: input.rollover.carriedPrincipal,
-            referenceType: "rollover",
-            referenceId: loan.id,
-            description: `Principal transferred from loan ${input.rollover.fromLoanId.slice(0, 8).toUpperCase()} to ${loan.id.slice(0, 8).toUpperCase()}`,
-            transactionDate: startDate,
-            recordedBy: actorId,
-          })
-        }
-
         return { ...loan, collateral: coll }
       })
     },
@@ -531,11 +517,13 @@ export const deleteLoan = (
           .from(transactions)
           .where(
             and(
-              eq(transactions.referenceType, "loan"),
+              sql`${transactions.referenceType} IN ('loan', 'loan_repost')`,
               eq(transactions.referenceId, input.loanId),
               eq(transactions.type, "debit")
             )
           )
+          .orderBy(desc(transactions.createdAt))
+          .limit(1)
 
         if (disbursementTx) {
           await postJournalEntry(tx, {
