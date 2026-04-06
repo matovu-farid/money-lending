@@ -322,3 +322,258 @@ export async function autoPostInterestExpense(
     recordedBy: params.actorId,
   })
 }
+
+export async function autoPostPrincipalDisbursement(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    loanId: string
+    transactionDate: string
+    actorId: string
+    depositLocation?: "cash" | "bank" | "strong_room"
+  }
+): Promise<void> {
+  const [category] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Loan Disbursement"),
+        eq(transactionCategories.type, "balance_sheet")
+      )
+    )
+
+  if (!category) {
+    console.warn(
+      '[autoPostPrincipalDisbursement] "Loan Disbursement" category not found — skipping auto-post'
+    )
+    return
+  }
+
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "loan",
+    referenceId: params.loanId,
+    description: `Principal disbursed - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
+    transactionDate: new Date(params.transactionDate),
+    recordedBy: params.actorId,
+    depositLocation: params.depositLocation,
+  })
+}
+
+export async function autoPostPrincipalRepayment(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    loanId: string
+    paymentId: string
+    paymentDate: string
+    actorId: string
+    depositLocation?: "cash" | "bank" | "strong_room"
+  }
+): Promise<void> {
+  const [category] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Principal Repayment"),
+        eq(transactionCategories.type, "balance_sheet")
+      )
+    )
+
+  if (!category) {
+    console.warn(
+      '[autoPostPrincipalRepayment] "Principal Repayment" category not found — skipping auto-post'
+    )
+    return
+  }
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "payment",
+    referenceId: params.paymentId,
+    description: `Principal repaid - loan ${params.loanId.slice(0, 8).toUpperCase()} payment ${params.paymentId.slice(0, 8).toUpperCase()}`,
+    transactionDate: new Date(params.paymentDate),
+    recordedBy: params.actorId,
+    depositLocation: params.depositLocation,
+  })
+}
+
+export async function autoPostPrincipalRecovery(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    loanId: string
+    transactionDate: string
+    actorId: string
+  }
+): Promise<void> {
+  const [category] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Principal Recovery"),
+        eq(transactionCategories.type, "balance_sheet")
+      )
+    )
+
+  if (!category) {
+    console.warn(
+      '[autoPostPrincipalRecovery] "Principal Recovery" category not found — skipping auto-post'
+    )
+    return
+  }
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "collateral_settlement",
+    referenceId: params.loanId,
+    description: `Principal recovered via collateral - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
+    transactionDate: new Date(params.transactionDate),
+    recordedBy: params.actorId,
+  })
+}
+
+export async function autoPostCreditorInvestment(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    investmentId: string
+    investmentDate: string
+    actorId: string
+    depositLocation?: "cash" | "bank" | "strong_room"
+  }
+): Promise<void> {
+  const [category] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Creditor Investment"),
+        eq(transactionCategories.type, "balance_sheet")
+      )
+    )
+
+  if (!category) {
+    console.warn(
+      '[autoPostCreditorInvestment] "Creditor Investment" category not found — skipping auto-post'
+    )
+    return
+  }
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "creditor_investment",
+    referenceId: params.investmentId,
+    description: `Creditor investment received - ${params.investmentId.slice(0, 8).toUpperCase()}`,
+    transactionDate: new Date(params.investmentDate),
+    recordedBy: params.actorId,
+    depositLocation: params.depositLocation,
+  })
+}
+
+export async function autoPostCreditorPrincipalRepaid(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    investmentId: string
+    repaymentDate: string
+    actorId: string
+    sourceLocation?: "cash" | "bank" | "strong_room"
+  }
+): Promise<void> {
+  const [category] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Creditor Principal Repaid"),
+        eq(transactionCategories.type, "balance_sheet")
+      )
+    )
+
+  if (!category) {
+    console.warn(
+      '[autoPostCreditorPrincipalRepaid] "Creditor Principal Repaid" category not found — skipping auto-post'
+    )
+    return
+  }
+
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "creditor_repayment",
+    referenceId: params.investmentId,
+    description: `Creditor principal repaid - investment ${params.investmentId.slice(0, 8).toUpperCase()}`,
+    transactionDate: new Date(params.repaymentDate),
+    recordedBy: params.actorId,
+    depositLocation: params.sourceLocation,
+  })
+}
+
+export async function autoPostFundTransfer(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    transferId: string
+    fromLocation: "cash" | "bank" | "strong_room"
+    toLocation: "cash" | "bank" | "strong_room"
+    transactionDate: string
+    actorId: string
+  }
+): Promise<void> {
+  const [category] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Fund Transfer"),
+        eq(transactionCategories.type, "balance_sheet")
+      )
+    )
+
+  if (!category) {
+    console.warn(
+      '[autoPostFundTransfer] "Fund Transfer" category not found — skipping auto-post'
+    )
+    return
+  }
+
+  const description = `Fund transfer from ${params.fromLocation} to ${params.toLocation}`
+  const transactionDate = new Date(params.transactionDate)
+
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "fund_transfer",
+    referenceId: params.transferId,
+    description,
+    transactionDate,
+    recordedBy: params.actorId,
+    depositLocation: params.fromLocation,
+  })
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: params.amount,
+    categoryId: category.id,
+    referenceType: "fund_transfer",
+    referenceId: params.transferId,
+    description,
+    transactionDate,
+    recordedBy: params.actorId,
+    depositLocation: params.toLocation,
+  })
+}
