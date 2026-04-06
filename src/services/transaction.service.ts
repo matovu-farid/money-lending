@@ -1,4 +1,5 @@
 import { Effect } from "effect"
+import { randomUUID } from "crypto"
 import { db } from "@/lib/db"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
@@ -9,7 +10,6 @@ import {
   lte,
   desc,
   count,
-  sql,
 } from "drizzle-orm"
 import {
   DatabaseError,
@@ -24,6 +24,80 @@ import type {
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
+type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense"
+
+async function getOrCreateCategory(
+  tx: DrizzleTransaction,
+  name: string,
+  type: CategoryType
+): Promise<string> {
+  const [existing] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, name),
+        eq(transactionCategories.type, type)
+      )
+    )
+  if (existing) return existing.id
+
+  const [created] = await tx
+    .insert(transactionCategories)
+    .values({ name, type, isDefault: true })
+    .returning()
+  return created.id
+}
+
+export async function postJournalEntry(
+  tx: DrizzleTransaction,
+  params: {
+    debitCategory: { name: string; type: CategoryType }
+    creditCategory: { name: string; type: CategoryType }
+    amount: string
+    referenceType: string
+    referenceId: string
+    description: string
+    transactionDate: Date
+    recordedBy: string
+    debitDepositLocation?: "cash" | "bank" | "strong_room"
+    creditDepositLocation?: "cash" | "bank" | "strong_room"
+  }
+): Promise<string> {
+  const journalGroupId = randomUUID()
+
+  const debitCategoryId = await getOrCreateCategory(tx, params.debitCategory.name, params.debitCategory.type)
+  const creditCategoryId = await getOrCreateCategory(tx, params.creditCategory.name, params.creditCategory.type)
+
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: params.amount,
+    categoryId: debitCategoryId,
+    referenceType: params.referenceType,
+    referenceId: params.referenceId,
+    description: params.description,
+    transactionDate: params.transactionDate,
+    recordedBy: params.recordedBy,
+    depositLocation: params.debitDepositLocation ?? null,
+    journalGroupId,
+  })
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: params.amount,
+    categoryId: creditCategoryId,
+    referenceType: params.referenceType,
+    referenceId: params.referenceId,
+    description: params.description,
+    transactionDate: params.transactionDate,
+    recordedBy: params.recordedBy,
+    depositLocation: params.creditDepositLocation ?? null,
+    journalGroupId,
+  })
+
+  return journalGroupId
+}
+
 export const recordExpense = (
   input: CreateExpenseInput,
   actorId: string
@@ -31,28 +105,25 @@ export const recordExpense = (
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
-        const [transaction] = await tx
+        const groupId = randomUUID()
+        const [debitTx] = await tx
           .insert(transactions)
           .values({
-            type: "debit",
-            amount: input.amount,
-            categoryId: input.categoryId,
-            transactionDate: new Date(input.transactionDate),
-            description: input.notes ?? null,
-            recordedBy: actorId,
+            type: "debit", amount: input.amount, categoryId: input.categoryId,
+            description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
+            recordedBy: actorId, journalGroupId: groupId,
           })
           .returning()
 
-        await writeAuditLog(tx, {
-          actorId,
-          action: "transaction.create",
-          entityType: "transaction",
-          entityId: transaction.id,
-          beforeValue: null,
-          afterValue: transaction,
+        const cashCategoryId = await getOrCreateCategory(tx, "Cash", "asset")
+        await tx.insert(transactions).values({
+          type: "credit", amount: input.amount, categoryId: cashCategoryId,
+          description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
+          recordedBy: actorId, depositLocation: input.location, journalGroupId: groupId,
         })
 
-        return transaction
+        await writeAuditLog(tx, { actorId, action: "transaction.create", entityType: "transaction", entityId: debitTx.id, beforeValue: null, afterValue: debitTx })
+        return debitTx
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
@@ -65,28 +136,26 @@ export const recordIncome = (
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
-        const [transaction] = await tx
+        const groupId = randomUUID()
+        const cashCategoryId = await getOrCreateCategory(tx, "Cash", "asset")
+
+        await tx.insert(transactions).values({
+          type: "debit", amount: input.amount, categoryId: cashCategoryId,
+          description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
+          recordedBy: actorId, depositLocation: input.location, journalGroupId: groupId,
+        })
+
+        const [creditTx] = await tx
           .insert(transactions)
           .values({
-            type: "credit",
-            amount: input.amount,
-            categoryId: input.categoryId,
-            transactionDate: new Date(input.transactionDate),
-            description: input.notes ?? null,
-            recordedBy: actorId,
+            type: "credit", amount: input.amount, categoryId: input.categoryId,
+            description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
+            recordedBy: actorId, journalGroupId: groupId,
           })
           .returning()
 
-        await writeAuditLog(tx, {
-          actorId,
-          action: "transaction.create",
-          entityType: "transaction",
-          entityId: transaction.id,
-          beforeValue: null,
-          afterValue: transaction,
-        })
-
-        return transaction
+        await writeAuditLog(tx, { actorId, action: "transaction.create", entityType: "transaction", entityId: creditTx.id, beforeValue: null, afterValue: creditTx })
+        return creditTx
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
@@ -248,332 +317,112 @@ export const deleteTransaction = (
 
 export async function autoPostInterestEarned(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    loanId: string
-    paymentId: string
-    paymentDate: string
-    actorId: string
-  }
+  params: { amount: string; loanId: string; paymentId: string; paymentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Interest Earned"),
-        eq(transactionCategories.type, "income")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostInterestEarned] "Interest Earned" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "credit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "payment",
-    referenceId: params.paymentId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Cash", type: "asset" },
+    creditCategory: { name: "Interest Earned", type: "revenue" },
+    amount: params.amount, referenceType: "payment", referenceId: params.paymentId,
     description: `Interest earned - loan ${params.loanId} payment ${params.paymentId}`,
-    transactionDate: new Date(params.paymentDate),
-    recordedBy: params.actorId,
+    transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
+    debitDepositLocation: params.depositLocation,
   })
 }
 
 export async function autoPostInterestExpense(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    investmentId: string
-    repaymentDate: string
-    actorId: string
-  }
+  params: { amount: string; investmentId: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Interest Payments"),
-        eq(transactionCategories.type, "expense")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostInterestExpense] "Interest Payments" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "debit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "creditor_repayment",
-    referenceId: params.investmentId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Interest Payments", type: "expense" },
+    creditCategory: { name: "Cash", type: "asset" },
+    amount: params.amount, referenceType: "creditor_repayment", referenceId: params.investmentId,
     description: `Interest paid - investment ${params.investmentId}`,
-    transactionDate: new Date(params.repaymentDate),
-    recordedBy: params.actorId,
+    transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
+    creditDepositLocation: params.sourceLocation,
   })
 }
 
 export async function autoPostPrincipalDisbursement(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    loanId: string
-    transactionDate: string
-    actorId: string
-    depositLocation?: "cash" | "bank" | "strong_room"
-  }
+  params: { amount: string; loanId: string; transactionDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Loan Disbursement"),
-        eq(transactionCategories.type, "balance_sheet")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostPrincipalDisbursement] "Loan Disbursement" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "debit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "loan",
-    referenceId: params.loanId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Loans Receivable", type: "asset" },
+    creditCategory: { name: "Cash", type: "asset" },
+    amount: params.amount, referenceType: "loan", referenceId: params.loanId,
     description: `Principal disbursed - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
-    transactionDate: new Date(params.transactionDate),
-    recordedBy: params.actorId,
-    depositLocation: params.depositLocation,
+    transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
+    debitDepositLocation: params.depositLocation,
+    creditDepositLocation: params.depositLocation,
   })
 }
 
 export async function autoPostPrincipalRepayment(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    loanId: string
-    paymentId: string
-    paymentDate: string
-    actorId: string
-    depositLocation?: "cash" | "bank" | "strong_room"
-  }
+  params: { amount: string; loanId: string; paymentId: string; paymentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Principal Repayment"),
-        eq(transactionCategories.type, "balance_sheet")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostPrincipalRepayment] "Principal Repayment" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "credit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "payment",
-    referenceId: params.paymentId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Cash", type: "asset" },
+    creditCategory: { name: "Loans Receivable", type: "asset" },
+    amount: params.amount, referenceType: "payment", referenceId: params.paymentId,
     description: `Principal repaid - loan ${params.loanId.slice(0, 8).toUpperCase()} payment ${params.paymentId.slice(0, 8).toUpperCase()}`,
-    transactionDate: new Date(params.paymentDate),
-    recordedBy: params.actorId,
-    depositLocation: params.depositLocation,
+    transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
+    debitDepositLocation: params.depositLocation, creditDepositLocation: params.depositLocation,
   })
 }
 
 export async function autoPostPrincipalRecovery(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    loanId: string
-    transactionDate: string
-    actorId: string
-  }
+  params: { amount: string; loanId: string; transactionDate: string; actorId: string }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Principal Recovery"),
-        eq(transactionCategories.type, "balance_sheet")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostPrincipalRecovery] "Principal Recovery" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "credit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "collateral_settlement",
-    referenceId: params.loanId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Seized Collateral", type: "asset" },
+    creditCategory: { name: "Loans Receivable", type: "asset" },
+    amount: params.amount, referenceType: "collateral_settlement", referenceId: params.loanId,
     description: `Principal recovered via collateral - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
-    transactionDate: new Date(params.transactionDate),
-    recordedBy: params.actorId,
+    transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
   })
 }
 
 export async function autoPostCreditorInvestment(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    investmentId: string
-    investmentDate: string
-    actorId: string
-    depositLocation?: "cash" | "bank" | "strong_room"
-  }
+  params: { amount: string; investmentId: string; investmentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Creditor Investment"),
-        eq(transactionCategories.type, "balance_sheet")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostCreditorInvestment] "Creditor Investment" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "credit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "creditor_investment",
-    referenceId: params.investmentId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Cash", type: "asset" },
+    creditCategory: { name: "Creditor Investment", type: "liability" },
+    amount: params.amount, referenceType: "creditor_investment", referenceId: params.investmentId,
     description: `Creditor investment received - ${params.investmentId.slice(0, 8).toUpperCase()}`,
-    transactionDate: new Date(params.investmentDate),
-    recordedBy: params.actorId,
-    depositLocation: params.depositLocation,
+    transactionDate: new Date(params.investmentDate), recordedBy: params.actorId,
+    debitDepositLocation: params.depositLocation,
   })
 }
 
 export async function autoPostCreditorPrincipalRepaid(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    investmentId: string
-    repaymentDate: string
-    actorId: string
-    sourceLocation?: "cash" | "bank" | "strong_room"
-  }
+  params: { amount: string; investmentId: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Creditor Principal Repaid"),
-        eq(transactionCategories.type, "balance_sheet")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostCreditorPrincipalRepaid] "Creditor Principal Repaid" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  await tx.insert(transactions).values({
-    type: "debit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "creditor_repayment",
-    referenceId: params.investmentId,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Creditor Investment", type: "liability" },
+    creditCategory: { name: "Cash", type: "asset" },
+    amount: params.amount, referenceType: "creditor_repayment", referenceId: params.investmentId,
     description: `Creditor principal repaid - investment ${params.investmentId.slice(0, 8).toUpperCase()}`,
-    transactionDate: new Date(params.repaymentDate),
-    recordedBy: params.actorId,
-    depositLocation: params.sourceLocation,
+    transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
+    creditDepositLocation: params.sourceLocation,
   })
 }
 
 export async function autoPostFundTransfer(
   tx: DrizzleTransaction,
-  params: {
-    amount: string
-    transferId: string
-    fromLocation: "cash" | "bank" | "strong_room"
-    toLocation: "cash" | "bank" | "strong_room"
-    transactionDate: string
-    actorId: string
-  }
+  params: { amount: string; transferId: string; fromLocation: "cash" | "bank" | "strong_room"; toLocation: "cash" | "bank" | "strong_room"; transactionDate: string; actorId: string }
 ): Promise<void> {
-  const [category] = await tx
-    .select()
-    .from(transactionCategories)
-    .where(
-      and(
-        eq(transactionCategories.name, "Fund Transfer"),
-        eq(transactionCategories.type, "balance_sheet")
-      )
-    )
-
-  if (!category) {
-    console.warn(
-      '[autoPostFundTransfer] "Fund Transfer" category not found — skipping auto-post'
-    )
-    return
-  }
-
-  const description = `Fund transfer from ${params.fromLocation} to ${params.toLocation}`
-  const transactionDate = new Date(params.transactionDate)
-
-  await tx.insert(transactions).values({
-    type: "debit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "fund_transfer",
-    referenceId: params.transferId,
-    description,
-    transactionDate,
-    recordedBy: params.actorId,
-    depositLocation: params.fromLocation,
-  })
-
-  await tx.insert(transactions).values({
-    type: "credit",
-    amount: params.amount,
-    categoryId: category.id,
-    referenceType: "fund_transfer",
-    referenceId: params.transferId,
-    description,
-    transactionDate,
-    recordedBy: params.actorId,
-    depositLocation: params.toLocation,
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Cash", type: "asset" },
+    creditCategory: { name: "Cash", type: "asset" },
+    amount: params.amount, referenceType: "fund_transfer", referenceId: params.transferId,
+    description: `Fund transfer from ${params.fromLocation} to ${params.toLocation}`,
+    transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
+    debitDepositLocation: params.toLocation, creditDepositLocation: params.fromLocation,
   })
 }
