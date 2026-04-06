@@ -57,14 +57,19 @@ describe("Category Service", () => {
 
     // All default categories already exist
     const existing = [
+      { type: "asset", name: "Cash" },
+      { type: "asset", name: "Loans Receivable" },
+      { type: "asset", name: "Seized Collateral" },
+      { type: "liability", name: "Creditor Investment" },
+      { type: "equity", name: "Share Capital" },
+      { type: "revenue", name: "Bonuses" },
+      { type: "revenue", name: "Interest Earned" },
+      { type: "revenue", name: "Issuance Fees" },
       { type: "expense", name: "Rent" },
       { type: "expense", name: "Salaries" },
       { type: "expense", name: "Office Expenses" },
       { type: "expense", name: "Interest Payments" },
       { type: "expense", name: "DStv" },
-      { type: "income", name: "Share Capital" },
-      { type: "income", name: "Bonuses" },
-      { type: "income", name: "Interest Earned" },
     ]
 
     mockedDb.select.mockReturnValue({
@@ -86,7 +91,7 @@ describe("Category Service", () => {
 
     const mockCategories = [
       { id: "c1", name: "Rent", type: "expense", isDefault: true },
-      { id: "c2", name: "Bonuses", type: "income", isDefault: true },
+      { id: "c2", name: "Bonuses", type: "revenue", isDefault: true },
     ]
 
     mockedDb.select.mockReturnValue({
@@ -281,7 +286,7 @@ describe("Category Service", () => {
     const { getCategoryByName } = await import("@/services/category.service")
     const mockedDb = vi.mocked(db)
 
-    const mockCategory = { id: "c1", name: "Interest Earned", type: "income", isDefault: true }
+    const mockCategory = { id: "c1", name: "Interest Earned", type: "revenue", isDefault: true }
 
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
@@ -289,7 +294,7 @@ describe("Category Service", () => {
       }),
     } as any)
 
-    const result = await Effect.runPromise(getCategoryByName("Interest Earned", "income"))
+    const result = await Effect.runPromise(getCategoryByName("Interest Earned", "revenue"))
 
     expect(result).toEqual(mockCategory)
   })
@@ -305,7 +310,7 @@ describe("Category Service", () => {
       }),
     } as any)
 
-    const exit = await Effect.runPromiseExit(getCategoryByName("Nonexistent", "income"))
+    const exit = await Effect.runPromiseExit(getCategoryByName("Nonexistent", "revenue"))
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (exit._tag === "Failure") {

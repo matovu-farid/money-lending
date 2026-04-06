@@ -102,6 +102,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
           amount: "50000",
           transactionDate: "2026-03-01",
           notes: "Office supplies",
+          location: "cash",
         },
         "actor-1"
       )
@@ -123,6 +124,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
           amount: "50000",
           transactionDate: "2026-03-01",
           notes: "Office supplies",
+          location: "cash",
         },
         "actor-1"
       )
@@ -154,6 +156,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
           categoryId: "cat-1",
           amount: "50000",
           transactionDate: "2026-03-01",
+          location: "cash",
         },
         "actor-1"
       )
@@ -167,7 +170,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const exit = await Effect.runPromiseExit(
       recordExpense(
-        { categoryId: "cat-1", amount: "50000", transactionDate: "2026-03-01" },
+        { categoryId: "cat-1", amount: "50000", transactionDate: "2026-03-01", location: "cash" },
         "actor-1"
       )
     )
@@ -188,6 +191,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
           amount: "100000",
           transactionDate: "2026-03-01",
           notes: "Application fee",
+          location: "cash",
         },
         "actor-1"
       )
@@ -208,6 +212,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
           categoryId: "cat-2",
           amount: "100000",
           transactionDate: "2026-03-01",
+          location: "cash",
         },
         "actor-1"
       )
@@ -493,7 +498,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   // ── autoPostInterestEarned ───────────────────────────────────────────
 
   it("autoPostInterestEarned: inserts credit transaction when category exists", async () => {
-    const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "income", isDefault: true }
+    const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "revenue", isDefault: true }
     const txMock: any = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({

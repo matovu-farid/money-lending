@@ -26,13 +26,13 @@ describe("Category Service (integration)", () => {
   }, TEST_TIMEOUT)
 
   // ── 1. seedDefaultCategories ───────────────────────────────────────
-  it("seeds all default expense and income categories", async () => {
+  it("seeds all default categories across all types", async () => {
     await Effect.runPromise(seedDefaultCategories())
 
     const categories = await Effect.runPromise(listCategories())
 
-    // 5 expense + 3 income = 8 defaults
-    expect(categories).toHaveLength(8)
+    // 3 asset + 1 liability + 1 equity + 3 revenue + 5 expense = 13 defaults
+    expect(categories).toHaveLength(13)
 
     const expenseNames = categories
       .filter((c) => c.type === "expense")
@@ -46,14 +46,14 @@ describe("Category Service (integration)", () => {
       "Salaries",
     ])
 
-    const incomeNames = categories
-      .filter((c) => c.type === "income")
+    const revenueNames = categories
+      .filter((c) => c.type === "revenue")
       .map((c) => c.name)
       .sort()
-    expect(incomeNames).toEqual([
+    expect(revenueNames).toEqual([
       "Bonuses",
       "Interest Earned",
-      "Share Capital",
+      "Issuance Fees",
     ])
 
     // All should be marked as default
@@ -66,7 +66,7 @@ describe("Category Service (integration)", () => {
     await Effect.runPromise(seedDefaultCategories())
 
     const categories = await Effect.runPromise(listCategories())
-    expect(categories).toHaveLength(8)
+    expect(categories).toHaveLength(13)
   }, TEST_TIMEOUT)
 
   // ── 3. listCategories filters by type ──────────────────────────────
@@ -78,12 +78,12 @@ describe("Category Service (integration)", () => {
     expect(expenses.every((c) => c.type === "expense")).toBe(true)
   }, TEST_TIMEOUT)
 
-  it("filters categories by income type", async () => {
+  it("filters categories by revenue type", async () => {
     await Effect.runPromise(seedDefaultCategories())
 
-    const incomes = await Effect.runPromise(listCategories("income"))
-    expect(incomes).toHaveLength(3)
-    expect(incomes.every((c) => c.type === "income")).toBe(true)
+    const revenues = await Effect.runPromise(listCategories("revenue"))
+    expect(revenues).toHaveLength(3)
+    expect(revenues.every((c) => c.type === "revenue")).toBe(true)
   }, TEST_TIMEOUT)
 
   // ── 4. listCategories returns empty when no categories exist ───────
@@ -130,7 +130,7 @@ describe("Category Service (integration)", () => {
   // ── 7. deleteCategory ──────────────────────────────────────────────
   it("deletes a category and writes an audit log", async () => {
     const category = await Effect.runPromise(
-      createCategory({ name: "Temp Category", type: "income" }, "actor-1")
+      createCategory({ name: "Temp Category", type: "revenue" }, "actor-1")
     )
 
     await Effect.runPromise(deleteCategory(category.id, "actor-2"))
@@ -150,7 +150,7 @@ describe("Category Service (integration)", () => {
     expect(deleteLog!.actorId).toBe("actor-2")
     expect(JSON.parse(deleteLog!.beforeValue!)).toMatchObject({
       name: "Temp Category",
-      type: "income",
+      type: "revenue",
     })
     expect(deleteLog!.afterValue).toBeNull()
   }, TEST_TIMEOUT)
@@ -204,11 +204,11 @@ describe("Category Service (integration)", () => {
     await Effect.runPromise(seedDefaultCategories())
 
     const category = await Effect.runPromise(
-      getCategoryByName("Interest Earned", "income")
+      getCategoryByName("Interest Earned", "revenue")
     )
 
     expect(category.name).toBe("Interest Earned")
-    expect(category.type).toBe("income")
+    expect(category.type).toBe("revenue")
     expect(category.isDefault).toBe(true)
   }, TEST_TIMEOUT)
 
@@ -216,7 +216,7 @@ describe("Category Service (integration)", () => {
     await Effect.runPromise(seedDefaultCategories())
 
     const exit = await Effect.runPromiseExit(
-      getCategoryByName("Nonexistent Category", "income")
+      getCategoryByName("Nonexistent Category", "revenue")
     )
 
     expect(Exit.isFailure(exit)).toBe(true)

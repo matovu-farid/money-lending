@@ -45,8 +45,8 @@ export async function resetDb() {
  */
 export async function seedCategories() {
   await db.insert(schema.transactionCategories).values([
-    { name: "Interest Earned", type: "income", isDefault: true },
-    { name: "Interest Payments", type: "expense", isDefault: true },
-    { name: "Share Capital", type: "income", isDefault: true },
+    { name: "Interest Earned", type: "revenue" as const, isDefault: true },
+    { name: "Interest Payments", type: "expense" as const, isDefault: true },
+    { name: "Share Capital", type: "equity" as const, isDefault: true },
   ])
 }

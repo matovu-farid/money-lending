@@ -21,7 +21,7 @@ import crypto from "node:crypto"
 async function seedExpenseCategory(name = "Office Supplies") {
   const [cat] = await testDb
     .insert(transactionCategories)
-    .values({ name, type: "expense", isDefault: false })
+    .values({ name, type: "expense" as const, isDefault: false })
     .returning()
   return cat
 }
@@ -30,7 +30,7 @@ async function seedExpenseCategory(name = "Office Supplies") {
 async function seedIncomeCategory(name = "Service Fees") {
   const [cat] = await testDb
     .insert(transactionCategories)
-    .values({ name, type: "income", isDefault: false })
+    .values({ name, type: "revenue" as const, isDefault: false })
     .returning()
   return cat
 }
@@ -54,6 +54,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
           amount: "75000",
           transactionDate: "2026-03-15",
           notes: "Printer ink",
+          location: "cash",
         },
         ACTOR_ID
       )
@@ -74,7 +75,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     const txn = await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "50000", transactionDate: "2026-03-15" },
+        { categoryId: cat.id, amount: "50000", transactionDate: "2026-03-15", location: "cash" },
         ACTOR_ID
       )
     )
@@ -97,7 +98,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     const txn = await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "10000", transactionDate: "2026-03-15" },
+        { categoryId: cat.id, amount: "10000", transactionDate: "2026-03-15", location: "cash" },
         ACTOR_ID
       )
     )
@@ -117,6 +118,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
           amount: "200000",
           transactionDate: "2026-03-10",
           notes: "Application fee collected",
+          location: "cash",
         },
         ACTOR_ID
       )
@@ -135,7 +137,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     const txn = await Effect.runPromise(
       recordIncome(
-        { categoryId: cat.id, amount: "100000", transactionDate: "2026-03-10" },
+        { categoryId: cat.id, amount: "100000", transactionDate: "2026-03-10", location: "cash" },
         ACTOR_ID
       )
     )
@@ -157,7 +159,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     const created = await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "30000", transactionDate: "2026-03-12" },
+        { categoryId: cat.id, amount: "30000", transactionDate: "2026-03-12", location: "cash" },
         ACTOR_ID
       )
     )
@@ -192,7 +194,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     const txn = await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "20000", transactionDate: "2026-03-14" },
+        { categoryId: cat.id, amount: "20000", transactionDate: "2026-03-14", location: "cash" },
         ACTOR_ID
       )
     )
@@ -221,7 +223,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     const txn = await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "15000", transactionDate: "2026-03-14" },
+        { categoryId: cat.id, amount: "15000", transactionDate: "2026-03-14", location: "cash" },
         ACTOR_ID
       )
     )
@@ -265,19 +267,19 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     await Effect.runPromise(
       recordExpense(
-        { categoryId: expCat.id, amount: "500000", transactionDate: "2026-03-01" },
+        { categoryId: expCat.id, amount: "500000", transactionDate: "2026-03-01", location: "cash" },
         ACTOR_ID
       )
     )
     await Effect.runPromise(
       recordIncome(
-        { categoryId: incCat.id, amount: "100000", transactionDate: "2026-03-02" },
+        { categoryId: incCat.id, amount: "100000", transactionDate: "2026-03-02", location: "cash" },
         ACTOR_ID
       )
     )
     await Effect.runPromise(
       recordExpense(
-        { categoryId: expCat.id, amount: "50000", transactionDate: "2026-03-03" },
+        { categoryId: expCat.id, amount: "50000", transactionDate: "2026-03-03", location: "cash" },
         ACTOR_ID
       )
     )
@@ -300,13 +302,13 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     await Effect.runPromise(
       recordExpense(
-        { categoryId: expCat.id, amount: "50000", transactionDate: "2026-03-01" },
+        { categoryId: expCat.id, amount: "50000", transactionDate: "2026-03-01", location: "cash" },
         ACTOR_ID
       )
     )
     await Effect.runPromise(
       recordIncome(
-        { categoryId: incCat.id, amount: "100000", transactionDate: "2026-03-02" },
+        { categoryId: incCat.id, amount: "100000", transactionDate: "2026-03-02", location: "cash" },
         ACTOR_ID
       )
     )
@@ -330,13 +332,13 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     await Effect.runPromise(
       recordExpense(
-        { categoryId: cat1.id, amount: "50000", transactionDate: "2026-03-01" },
+        { categoryId: cat1.id, amount: "50000", transactionDate: "2026-03-01", location: "cash" },
         ACTOR_ID
       )
     )
     await Effect.runPromise(
       recordExpense(
-        { categoryId: cat2.id, amount: "30000", transactionDate: "2026-03-02" },
+        { categoryId: cat2.id, amount: "30000", transactionDate: "2026-03-02", location: "cash" },
         ACTOR_ID
       )
     )
@@ -354,19 +356,19 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "10000", transactionDate: "2026-01-15" },
+        { categoryId: cat.id, amount: "10000", transactionDate: "2026-01-15", location: "cash" },
         ACTOR_ID
       )
     )
     await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "20000", transactionDate: "2026-03-15" },
+        { categoryId: cat.id, amount: "20000", transactionDate: "2026-03-15", location: "cash" },
         ACTOR_ID
       )
     )
     await Effect.runPromise(
       recordExpense(
-        { categoryId: cat.id, amount: "30000", transactionDate: "2026-05-15" },
+        { categoryId: cat.id, amount: "30000", transactionDate: "2026-05-15", location: "cash" },
         ACTOR_ID
       )
     )
@@ -393,6 +395,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
             categoryId: cat.id,
             amount: `${i * 10000}`,
             transactionDate: `2026-03-${String(i).padStart(2, "0")}`,
+            location: "cash",
           },
           ACTOR_ID
         )
