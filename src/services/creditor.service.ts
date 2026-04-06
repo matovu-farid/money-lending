@@ -226,9 +226,14 @@ export const recordCreditorRepayment = (
           new Date(input.repaymentDate),
         );
 
+        // Derive principal balance from ledger
+        const ledgerBalances = await getCreditorBalancesFromLedger([input.investmentId]);
+        const principalBalance = ledgerBalances.get(input.investmentId) ?? new BigNumber(investment.principalBalance);
+        const principalBalanceStr = formatAmount(principalBalance);
+
         const allocation = allocatePayment({
           paymentAmount: input.amount,
-          principalBalanceBefore: investment.principalBalance,
+          principalBalanceBefore: principalBalanceStr,
           monthlyRateDecimal: investment.interestRateMonthly,
           daysElapsed,
           minInterestDays: 0,
