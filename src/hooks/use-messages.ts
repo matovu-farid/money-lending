@@ -8,7 +8,7 @@ import type { MessageWithSender } from "@/types"
 
 export function useMessages(conversationId: string, cursor?: string) {
   return useQuery<MessageWithSender[]>({
-    queryKey: queryKeys.chat.messages(conversationId),
+    queryKey: [...queryKeys.chat.messages(conversationId), ...(cursor ? [cursor] : [])],
     queryFn: async () => {
       const result = await getMessagesAction(conversationId, cursor)
       return unwrapAction(result as { data: MessageWithSender[] } | { error: string })

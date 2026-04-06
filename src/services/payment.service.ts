@@ -286,7 +286,7 @@ export const recordPayment = (
 export const editPayment = (
   input: EditPaymentInput,
   actorId: string
-): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | DatabaseError> =>
+): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
@@ -299,6 +299,72 @@ export const editPayment = (
 
         const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
         if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
+
+        const newAmount = input.amount ?? payment.amount
+        const newPaymentDate = input.paymentDate ? new Date(input.paymentDate) : new Date(payment.paymentDate)
+
+        // L2: Reject zero or negative payment amounts
+        if (new BigNumber(newAmount).isLessThanOrEqualTo(0)) {
+          throw { _tag: "ValidationError", message: "Payment amount must be greater than zero", field: "amount" }
+        }
+
+        // L1: Reject payments dated before the loan start date
+        if (newPaymentDate < new Date(loan.startDate)) {
+          throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
+        }
+
+        // M2: Reject overpayments that exceed total owed
+        const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+        const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
+        const loanType = loan.loanType ?? "perpetual"
+
+        const activePayments = await tx
+          .select()
+          .from(payments)
+          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
+          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+
+        const paymentIdx = activePayments.findIndex((p) => p.id === input.paymentId)
+        const principalBalanceBefore = paymentIdx === 0
+          ? loan.principalAmount
+          : activePayments[paymentIdx - 1].principalBalanceAfter
+
+        const prevDate = paymentIdx === 0
+          ? new Date(loan.startDate)
+          : new Date(activePayments[paymentIdx - 1].paymentDate)
+        const daysElapsed = daysBetween(prevDate, newPaymentDate)
+        const paymentNumber = paymentIdx + 1
+
+        const allocation = allocatePayment({
+          paymentAmount: newAmount,
+          principalBalanceBefore,
+          monthlyRateDecimal,
+          daysElapsed,
+          minInterestDays,
+          loanType,
+          originalPrincipal: loan.principalAmount,
+          termMonths: loan.termMonths ?? undefined,
+          paymentNumber,
+        })
+
+        let totalOwed: BigNumber
+        if (loanType === "fixed_rate") {
+          const monthlyInterest = new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(monthlyRateDecimal))
+          const remainingMonths = Math.max((loan.termMonths ?? 0) - paymentNumber + 1, 1)
+          totalOwed = new BigNumber(principalBalanceBefore).plus(monthlyInterest.multipliedBy(remainingMonths))
+        } else if (loanType === "reducing_balance") {
+          const currentInterest = new BigNumber(principalBalanceBefore).multipliedBy(new BigNumber(monthlyRateDecimal))
+          totalOwed = new BigNumber(principalBalanceBefore).plus(currentInterest)
+        } else {
+          totalOwed = new BigNumber(allocation.interestPortion).plus(new BigNumber(principalBalanceBefore))
+        }
+        if (new BigNumber(newAmount).isGreaterThan(totalOwed)) {
+          throw {
+            _tag: "ValidationError",
+            message: `Payment amount ${newAmount} exceeds total owed ${formatAmount(totalOwed)}`,
+            field: "amount",
+          }
+        }
 
         const beforeValue = { ...payment }
 
@@ -428,6 +494,7 @@ export const editPayment = (
     catch: (e: any) => {
       if (e?._tag === "PaymentNotFound") return new PaymentNotFound({ id: e.id })
       if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
       return new DatabaseError({ cause: e })
     },
   })

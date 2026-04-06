@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { creditors } from "@/lib/db/schema/creditors";
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
 import {
   DatabaseError,
   CreditorNotFound,
@@ -301,17 +301,31 @@ export const getCreditorDashboard = (
 
       const investmentSummaries: CreditorInvestmentSummary[] = [];
 
+      // Batch-fetch all repayments for all investments in a single query
+      const investmentIds = investments.map((inv) => inv.id);
+      const allRepayments = investmentIds.length > 0
+        ? await db
+            .select()
+            .from(creditorRepayments)
+            .where(inArray(creditorRepayments.investmentId, investmentIds))
+            .orderBy(
+              asc(creditorRepayments.repaymentDate),
+              asc(creditorRepayments.createdAt),
+            )
+        : [];
+
+      // Group repayments by investmentId
+      const repaymentsByInvestment = new Map<string, typeof allRepayments>();
+      for (const r of allRepayments) {
+        const list = repaymentsByInvestment.get(r.investmentId) ?? [];
+        list.push(r);
+        repaymentsByInvestment.set(r.investmentId, list);
+      }
+
       for (const investment of investments) {
         totalInvested = totalInvested.plus(investment.amount);
 
-        const repayments = await db
-          .select()
-          .from(creditorRepayments)
-          .where(eq(creditorRepayments.investmentId, investment.id))
-          .orderBy(
-            asc(creditorRepayments.repaymentDate),
-            asc(creditorRepayments.createdAt),
-          );
+        const repayments = repaymentsByInvestment.get(investment.id) ?? [];
 
         const totalRepaid = repayments.reduce(
           (acc, r) => acc.plus(r.amount),

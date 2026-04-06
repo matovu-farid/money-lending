@@ -42,7 +42,7 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
       body: { userId, role: targetRole },
       headers: await headers(),
     })
-    return { success: true, role: targetRole }
+    return { data: { role: targetRole } }
   } catch {
     return { error: "Failed to update role" }
   }

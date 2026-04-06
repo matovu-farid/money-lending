@@ -3,6 +3,7 @@ import { customers } from "./customers"
 import { depositLocationEnum } from "./fund-transfers"
 
 export const loanStatusEnum = pgEnum("loan_status", [
+  "pending",
   "active",
   "fully_paid",
 ])

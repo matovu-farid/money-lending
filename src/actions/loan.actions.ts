@@ -15,8 +15,9 @@ import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput,
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
+import { customers } from "@/lib/db/schema/customers"
 import { payments } from "@/lib/db/schema/payments"
-import { eq, and, isNull, asc } from "drizzle-orm"
+import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm"
 import { calculateDaysOverdue, calculateDailyRate, calculateInterest, calculateSchedule } from "@/lib/interest"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
@@ -234,20 +235,34 @@ export async function createLoanAction(input: CreateLoanInput) {
 
 async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
   const now = new Date()
-  return Promise.all(
-    loanList.map(async (loan) => {
+
+  // Batch-fetch all payments for all loans in a single query
+  const loanIds = loanList.map((l) => l.id)
+  const allPayments =
+    loanIds.length > 0
+      ? await db
+          .select()
+          .from(payments)
+          .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+          .orderBy(asc(payments.paymentDate))
+      : []
+
+  // Group payments by loanId
+  const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
+  for (const p of allPayments) {
+    const existing = paymentsByLoanId.get(p.loanId) ?? []
+    existing.push(p)
+    paymentsByLoanId.set(p.loanId, existing)
+  }
+
+  return loanList.map((loan) => {
       let daysOverdue = 0
       let outstandingBalance = loan.principalAmount
       let dailyRate = "0"
       let lastPaymentDate: Date | null = null
       let unpaidInterest = "0"
 
-      // Fetch payments for ALL loans (needed for outstandingBalance, lastPaymentDate)
-      const loanPayments = await db
-        .select()
-        .from(payments)
-        .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-        .orderBy(asc(payments.paymentDate))
+      const loanPayments = paymentsByLoanId.get(loan.id) ?? []
 
       const lastPayment = loanPayments.at(-1)
       if (lastPayment) {
@@ -317,8 +332,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       }
 
       return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }
-    })
-  )
+  })
 }
 
 export async function getCustomerLoansWithOverdueAction(customerId: string) {
@@ -326,8 +340,32 @@ export async function getCustomerLoansWithOverdueAction(customerId: string) {
   if (!session?.user) return { error: "Unauthorized" }
 
   try {
-    const allLoans = await Effect.runPromise(listLoans())
-    const customerLoans = allLoans.filter((l) => l.customerId === customerId)
+    const customerLoans = await db
+      .select({
+        id: loans.id,
+        customerId: loans.customerId,
+        principalAmount: loans.principalAmount,
+        issuanceFee: loans.issuanceFee,
+        description: loans.description,
+        interestRate: loans.interestRate,
+        minInterestDays: loans.minInterestDays,
+        startDate: loans.startDate,
+        status: loans.status,
+        interestRateOverride: loans.interestRateOverride,
+        minPeriodOverride: loans.minPeriodOverride,
+        issuedBy: loans.issuedBy,
+        disbursementSource: loans.disbursementSource,
+        loanType: loans.loanType,
+        termMonths: loans.termMonths,
+        createdAt: loans.createdAt,
+        updatedAt: loans.updatedAt,
+        deletedAt: loans.deletedAt,
+        customerName: customers.fullName,
+      })
+      .from(loans)
+      .innerJoin(customers, eq(loans.customerId, customers.id))
+      .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
+      .orderBy(desc(loans.createdAt))
     return { data: await computeOverdue(customerLoans) }
   } catch {
     return { error: "Internal server error" }

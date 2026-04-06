@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, timestamp, text } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, timestamp, text, index } from "drizzle-orm/pg-core"
 import { creditorInvestments } from "./creditor-investments"
 
 export const creditorRepayments = pgTable("creditor_repayments", {
@@ -13,4 +13,6 @@ export const creditorRepayments = pgTable("creditor_repayments", {
   recordedBy: text("recorded_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index("idx_creditor_repayments_investment_id").on(table.investmentId),
+])

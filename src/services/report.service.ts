@@ -158,9 +158,10 @@ export const getBalanceSheetData = (
           amount: payments.amount,
         })
         .from(payments)
+        .innerJoin(loans, eq(payments.loanId, loans.id))
         .where(and(
-          isNull(payments.deletedAt),
-          lte(payments.paymentDate, asOfDate)
+          lte(payments.paymentDate, asOfDate),
+          isNull(loans.deletedAt)
         ))
 
       for (const p of allPayments) {

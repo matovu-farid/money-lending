@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, boolean, timestamp, pgEnum, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, boolean, timestamp, pgEnum, jsonb, index } from "drizzle-orm/pg-core"
+import { user } from "./auth"
 
 export const notificationTypeEnum = pgEnum("notification_type", [
   "loan_due_soon",
@@ -7,7 +8,7 @@ export const notificationTypeEnum = pgEnum("notification_type", [
 
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: text("user_id").notNull(),
+  userId: text("user_id").notNull().references(() => user.id),
   type: notificationTypeEnum("type").notNull(),
   message: text("message").notNull(),
   isRead: boolean("is_read").notNull().default(false),
@@ -15,4 +16,6 @@ export const notifications = pgTable("notifications", {
   referenceId: text("reference_id"),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index("idx_notifications_user_id").on(table.userId),
+])

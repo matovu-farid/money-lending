@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, text, timestamp, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, text, timestamp, pgEnum, index } from "drizzle-orm/pg-core"
 import { transactionCategories } from "./transaction-categories"
 
 export const transactionTypeEnum = pgEnum("transaction_type", ["credit", "debit"])
@@ -14,4 +14,7 @@ export const transactions = pgTable("transactions", {
   transactionDate: timestamp("transaction_date", { withTimezone: true }).notNull(),
   recordedBy: text("recorded_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index("idx_transactions_date").on(table.transactionDate),
+  index("idx_transactions_category_id").on(table.categoryId),
+])

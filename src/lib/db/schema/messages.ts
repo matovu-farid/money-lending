@@ -7,7 +7,7 @@ export const messages = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     conversationId: uuid("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
-    senderId: text("sender_id").notNull().references(() => user.id),
+    senderId: text("sender_id").notNull().references(() => user.id, { onDelete: "cascade" }),
     content: text("content").notNull(),
     mentions: text("mentions").array().notNull().default([]),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

@@ -15,7 +15,7 @@ export default function ChatPage() {
 
   const user = session?.user
   const currentUserId = user?.id ?? ""
-  const currentUserRole = (user?.role ?? "loanOfficer") as UserRole
+  const currentUserRole = (user?.role ?? "unassigned") as UserRole
 
   const activeConversation = conversations.find(
     (c: ConversationListItem) => c.id === activeConversationId

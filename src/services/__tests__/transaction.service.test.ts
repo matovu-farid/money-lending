@@ -398,7 +398,9 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const countSelect = {
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ count: total }]),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ count: total }]),
+        }),
       }),
     }
 

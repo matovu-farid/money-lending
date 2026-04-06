@@ -67,7 +67,7 @@ export const applyRateChangeImmediately = (
       await db.transaction(async (tx) => {
         await tx
           .update(loans)
-          .set({ interestRate: newRate, updatedAt: new Date() })
+          .set({ interestRateOverride: newRate, updatedAt: new Date() })
           .where(eq(loans.id, loanId))
 
         await writeAuditLog(tx, {
@@ -75,8 +75,8 @@ export const applyRateChangeImmediately = (
           action: "loan.rate_change.immediate",
           entityType: "loan",
           entityId: loanId,
-          beforeValue: { interestRate: loan.interestRate },
-          afterValue: { interestRate: newRate },
+          beforeValue: { interestRateOverride: loan.interestRateOverride, interestRate: loan.interestRate },
+          afterValue: { interestRateOverride: newRate },
         })
       })
     },
@@ -168,7 +168,7 @@ export const reviewRequest = (
           // Apply the rate change to the loan
           await tx
             .update(loans)
-            .set({ interestRate: request.requestedRate, updatedAt: now })
+            .set({ interestRateOverride: request.requestedRate, updatedAt: now })
             .where(eq(loans.id, request.loanId))
 
           await writeAuditLog(tx, {
@@ -177,7 +177,7 @@ export const reviewRequest = (
             entityType: "loan",
             entityId: request.loanId,
             beforeValue: { interestRate: request.currentRate },
-            afterValue: { interestRate: request.requestedRate, requestId: request.id },
+            afterValue: { interestRateOverride: request.requestedRate, requestId: request.id },
           })
         } else {
           await writeAuditLog(tx, {

@@ -98,7 +98,19 @@ export const listTransactions = (
   pageSize: number
 ): Effect.Effect<
   {
-    data: (typeof transactions.$inferSelect & { categoryName: string })[]
+    data: {
+      id: string
+      type: "credit" | "debit"
+      amount: string
+      categoryId: string
+      categoryName: string
+      referenceType: string | null
+      referenceId: string | null
+      description: string | null
+      transactionDate: Date
+      recordedBy: string
+      createdAt: Date
+    }[]
     total: number
   },
   DatabaseError
@@ -156,6 +168,10 @@ export const listTransactions = (
         db
           .select({ count: count() })
           .from(transactions)
+          .innerJoin(
+            transactionCategories,
+            eq(transactions.categoryId, transactionCategories.id)
+          )
           .where(whereClause),
       ])
 

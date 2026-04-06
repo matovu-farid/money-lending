@@ -272,6 +272,8 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           {
             id: "loan-1",
             principalAmount: "1000000",
+            issuanceFee: "0.00",
+            description: "Test loan",
             status: "active",
             customerId: "cust-1",
             startDate: new Date("2026-01-01"),
@@ -279,6 +281,10 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
             interestRateOverride: null,
             minInterestDays: 30,
             minPeriodOverride: null,
+            issuedBy: "actor-1",
+            disbursementSource: "cash",
+            loanType: "perpetual",
+            termMonths: null,
           },
         ]),
       }),
@@ -293,10 +299,12 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 5th select: allPayments (location balances)
+    // 5th select: allPayments (location balances) - now innerJoins with loans
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
       }),
     } as any)
 
@@ -427,6 +435,8 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           {
             id: "loan-1",
             principalAmount: "5000000",
+            issuanceFee: "0.00",
+            description: "Test loan",
             status: "active",
             customerId: "cust-1",
             startDate: new Date("2026-01-01"),
@@ -434,6 +444,10 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
             interestRateOverride: null,
             minInterestDays: 30,
             minPeriodOverride: null,
+            issuedBy: "actor-1",
+            disbursementSource: "cash",
+            loanType: "perpetual",
+            termMonths: null,
           },
         ]),
       }),
@@ -448,10 +462,12 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 3rd select: allPayments (for per-location balances)
+    // 3rd select: allPayments (for per-location balances) - now innerJoins with loans
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]),
+        }),
       }),
     } as any)
 
@@ -530,6 +546,8 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           {
             id: "loan-a",
             principalAmount: "5000000",
+            issuanceFee: "0.00",
+            description: "Test loan",
             status: "active",
             customerId: "cust-a",
             startDate: startDateA,
@@ -537,10 +555,16 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
             interestRateOverride: null,
             minInterestDays: 30,
             minPeriodOverride: null,
+            issuedBy: "actor-1",
+            disbursementSource: "cash",
+            loanType: "perpetual",
+            termMonths: null,
           },
           {
             id: "loan-b",
             principalAmount: "2000000",
+            issuanceFee: "0.00",
+            description: "Test loan",
             status: "active",
             customerId: "cust-b",
             startDate: startDateB,
@@ -548,6 +572,10 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
             interestRateOverride: null,
             minInterestDays: 30,
             minPeriodOverride: null,
+            issuedBy: "actor-1",
+            disbursementSource: "cash",
+            loanType: "perpetual",
+            termMonths: null,
           },
         ]),
       }),

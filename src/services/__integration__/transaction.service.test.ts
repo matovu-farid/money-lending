@@ -187,7 +187,7 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
   // ── deleteTransaction ──────────────────────────────────────────────
 
-  it("deleteTransaction — removes the transaction from the database", async () => {
+  it("deleteTransaction — creates a reversal entry and keeps the original", async () => {
     const cat = await seedExpenseCategory()
 
     const txn = await Effect.runPromise(
@@ -199,9 +199,21 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     await Effect.runPromise(deleteTransaction(txn.id, ACTOR_ID))
 
-    // Verify it's gone
-    const exit = await Effect.runPromiseExit(getTransactionById(txn.id))
-    expect(Exit.isFailure(exit)).toBe(true)
+    // Original transaction should still exist
+    const original = await Effect.runPromise(getTransactionById(txn.id))
+    expect(original.id).toBe(txn.id)
+
+    // A reversal entry should have been created
+    const allTxns = await testDb
+      .select()
+      .from(transactions)
+      .where(eq(transactions.referenceId, txn.id))
+
+    expect(allTxns).toHaveLength(1)
+    const reversal = allTxns[0]
+    expect(reversal.referenceType).toBe("manual_reversal")
+    expect(reversal.type).toBe("credit") // opposite of original debit
+    expect(reversal.amount).toBe(txn.amount)
   })
 
   it("deleteTransaction — writes audit log with beforeValue", async () => {

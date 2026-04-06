@@ -88,6 +88,7 @@ export async function editPaymentAction(input: EditPaymentInput) {
   try {
     const data = await Effect.runPromise(editPayment(input, session.user.id))
     revalidatePath(`/loans/${data.loanId}`)
+    revalidatePath("/payments")
     void sendAdminNotification("payment.updated", {
       actorName: session.user.name ?? "Unknown",
       actorEmail: session.user.email,
@@ -138,6 +139,7 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
   try {
     const data = await Effect.runPromise(deletePayment(input, session.user.id))
     revalidatePath(`/loans/${data.loanId}`)
+    revalidatePath("/payments")
     void sendAdminNotification("payment.deleted", {
       actorName: session.user.name ?? "Unknown",
       actorEmail: session.user.email,

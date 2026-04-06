@@ -24,6 +24,7 @@ export const createCustomer = (
         .insert(customers)
         .values({
           fullName: input.fullName,
+          nin: input.nin,
           contact: input.contact,
           address: input.address,
         })

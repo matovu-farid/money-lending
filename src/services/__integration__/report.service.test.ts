@@ -334,9 +334,10 @@ describe("Report Service — Integration", () => {
       expect(rows[0].generatedBy).toBe(ACTOR)
       expect(rows[1].generatedBy).toBe(ACTOR)
 
-      // Verify snapshot data is valid JSON
+      // Verify snapshot data is a valid object (jsonb is already parsed)
       for (const row of rows) {
-        expect(() => JSON.parse(row.data)).not.toThrow()
+        expect(row.data).toBeTruthy()
+        expect(typeof row.data).toBe("object")
       }
     })
 

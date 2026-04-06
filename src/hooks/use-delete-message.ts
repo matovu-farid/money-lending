@@ -37,8 +37,14 @@ export function useDeleteMessage(conversationId: string) {
       }
       toast.error("Failed to delete message")
     },
-    onSuccess: (result) => {
+    onSuccess: (result, _messageId, context) => {
       if ("error" in result) {
+        if (context?.previousMessages !== undefined) {
+          queryClient.setQueryData(
+            queryKeys.chat.messages(conversationId),
+            context.previousMessages,
+          )
+        }
         toast.error(result.error)
       }
     },

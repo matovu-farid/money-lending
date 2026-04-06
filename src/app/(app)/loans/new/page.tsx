@@ -445,6 +445,9 @@ function NewLoanPageInner() {
                   type="text"
                   autoComplete="off"
                   placeholder="e.g. Land Title, Vehicle Log Book"
+                  role="combobox"
+                  aria-expanded={showNatureSuggestions && filteredNatures.length > 0}
+                  aria-autocomplete="list"
                   {...collateralNatureRegistration}
                   ref={(el) => {
                     rhfNatureRef(el)
@@ -486,11 +489,14 @@ function NewLoanPageInner() {
                 {showNatureSuggestions && filteredNatures.length > 0 && (
                   <ul
                     ref={suggestionsRef}
+                    role="listbox"
                     className="absolute z-50 top-full left-0 right-0 mt-1 max-h-48 overflow-auto rounded-md border border-border bg-popover py-1 shadow-md"
                   >
                     {filteredNatures.map((nature, i) => (
                       <li
                         key={nature}
+                        role="option"
+                        aria-selected={i === highlightedIndex}
                         className={`cursor-pointer px-3 py-1.5 text-sm ${
                           i === highlightedIndex
                             ? "bg-accent text-accent-foreground"

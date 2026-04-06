@@ -9,6 +9,7 @@ export const customerStatusEnum = pgEnum("customer_status", [
 export const customers = pgTable("customers", {
   id: uuid("id").primaryKey().defaultRandom(),
   fullName: text("full_name").notNull(),
+  nin: text("nin").notNull(),
   contact: text("contact").notNull(),
   address: text("address").notNull(),
   status: customerStatusEnum("status").notNull().default("active"),

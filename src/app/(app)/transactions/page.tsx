@@ -1,7 +1,8 @@
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { listTransactions } from "@/services/transaction.service"
 import { listCategories } from "@/services/category.service"
 import { TransactionLogClient } from "./TransactionLogClient"
+import { PageHeader } from "@/components/ui/page-header"
 import type { TransactionLogFilters } from "@/types"
 
 // Transaction Log page — shows all debit/credit entries with filtering
@@ -35,18 +36,21 @@ export default async function TransactionLogPage({ searchParams }: TransactionLo
     filters.dateTo = params.dateTo
   }
 
-  const [transactionsResult, categoriesResult] = await Promise.all([
-    Effect.runPromise(listTransactions(filters, page, pageSize)),
-    Effect.runPromise(listCategories()),
+  const [transactionsExit, categoriesExit] = await Promise.all([
+    Effect.runPromiseExit(listTransactions(filters, page, pageSize)),
+    Effect.runPromiseExit(listCategories()),
   ])
+
+  const transactionsResult = Exit.isSuccess(transactionsExit)
+    ? transactionsExit.value
+    : { data: [], total: 0 }
+  const categories = Exit.isSuccess(categoriesExit)
+    ? categoriesExit.value
+    : []
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Transactions</h1>
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">Complete transaction history</p>
-        </div>
+      <PageHeader title="Transactions" subtitle="Complete transaction history">
         <div className="flex gap-2">
           <a
             href="/api/reports/transactions?format=pdf"
@@ -61,11 +65,11 @@ export default async function TransactionLogPage({ searchParams }: TransactionLo
             Export Excel
           </a>
         </div>
-      </div>
+      </PageHeader>
       <TransactionLogClient
         transactions={transactionsResult.data}
         total={transactionsResult.total}
-        categories={categoriesResult}
+        categories={categories}
         page={page}
         pageSize={pageSize}
         filters={filters}

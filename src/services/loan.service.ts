@@ -35,7 +35,7 @@ export const createLoan = (
   actorId: string
 ): Effect.Effect<
   Loan & { collateral: { id: string; nature: string; description: string | null } },
-  CustomerNotFound | IncompleteLoanRequirements | DatabaseError
+  CustomerNotFound | IncompleteLoanRequirements | ValidationError | DatabaseError
 > =>
   Effect.tryPromise({
     try: async () => {
@@ -129,6 +129,8 @@ export const createLoan = (
       })
     },
     catch: (e: any) => {
+      if (e instanceof ValidationError) return e
+      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
       if (e?._tag === "CustomerNotFound") return new CustomerNotFound({ id: e.id })
       if (e?._tag === "IncompleteLoanRequirements")
         return new IncompleteLoanRequirements({ missing: e.missing })

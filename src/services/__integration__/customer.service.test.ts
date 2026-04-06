@@ -26,6 +26,7 @@ describe("Customer Service (integration)", () => {
     const customer = await Effect.runPromise(
       createCustomer({
         fullName: "Alice Nakato",
+        nin: "CM00000000TEST",
         contact: "0771000001",
         address: "Kampala, Uganda",
       })
@@ -33,6 +34,7 @@ describe("Customer Service (integration)", () => {
 
     expect(customer.id).toBeDefined()
     expect(customer.fullName).toBe("Alice Nakato")
+    expect(customer.nin).toBe("CM00000000TEST")
     expect(customer.contact).toBe("0771000001")
     expect(customer.address).toBe("Kampala, Uganda")
     expect(customer.status).toBe("active")
@@ -45,6 +47,7 @@ describe("Customer Service (integration)", () => {
     const created = await Effect.runPromise(
       createCustomer({
         fullName: "Bob Ssempa",
+        nin: "CM00000000TEST",
         contact: "0772000002",
         address: "Entebbe, Uganda",
       })
@@ -80,6 +83,7 @@ describe("Customer Service (integration)", () => {
     const created = await Effect.runPromise(
       createCustomer({
         fullName: "Carol Apio",
+        nin: "CM00000000TEST",
         contact: "0773000003",
         address: "Gulu, Uganda",
       })
@@ -118,13 +122,13 @@ describe("Customer Service (integration)", () => {
   // ── 6. listCustomers ────────────────────────────────────────────────
   it("lists all customers", async () => {
     await Effect.runPromise(
-      createCustomer({ fullName: "Dan Obol", contact: "0774000004", address: "Lira" })
+      createCustomer({ fullName: "Dan Obol", nin: "CM00000000TEST", contact: "0774000004", address: "Lira" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Eva Kizza", contact: "0775000005", address: "Jinja" })
+      createCustomer({ fullName: "Eva Kizza", nin: "CM00000000TEST", contact: "0775000005", address: "Jinja" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Frank Mwebe", contact: "0776000006", address: "Mbale" })
+      createCustomer({ fullName: "Frank Mwebe", nin: "CM00000000TEST", contact: "0776000006", address: "Mbale" })
     )
 
     const list = await Effect.runPromise(listCustomers())
@@ -137,13 +141,13 @@ describe("Customer Service (integration)", () => {
   // ── 7. searchCustomers by name ──────────────────────────────────────
   it("filters customers by partial name match", async () => {
     await Effect.runPromise(
-      createCustomer({ fullName: "Grace Atim", contact: "0777000007", address: "Soroti" })
+      createCustomer({ fullName: "Grace Atim", nin: "CM00000000TEST", contact: "0777000007", address: "Soroti" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Grace Nambi", contact: "0778000008", address: "Masaka" })
+      createCustomer({ fullName: "Grace Nambi", nin: "CM00000000TEST", contact: "0778000008", address: "Masaka" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Henry Kato", contact: "0779000009", address: "Mbarara" })
+      createCustomer({ fullName: "Henry Kato", nin: "CM00000000TEST", contact: "0779000009", address: "Mbarara" })
     )
 
     const result = await Effect.runPromise(searchCustomers({ name: "Grace" }))
@@ -156,10 +160,10 @@ describe("Customer Service (integration)", () => {
   // ── 8. searchCustomers by status ────────────────────────────────────
   it("filters customers by status", async () => {
     await Effect.runPromise(
-      createCustomer({ fullName: "Irene Nanteza", contact: "0780000010", address: "Wakiso" })
+      createCustomer({ fullName: "Irene Nanteza", nin: "CM00000000TEST", contact: "0780000010", address: "Wakiso" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "James Lwanga", contact: "0781000011", address: "Mukono" })
+      createCustomer({ fullName: "James Lwanga", nin: "CM00000000TEST", contact: "0781000011", address: "Mukono" })
     )
 
     // All customers default to "active"
@@ -182,7 +186,7 @@ describe("Customer Service (integration)", () => {
     const names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]
     for (const name of names) {
       await Effect.runPromise(
-        createCustomer({ fullName: name, contact: `077-${name}`, address: "Kampala" })
+        createCustomer({ fullName: name, nin: "CM00000000TEST", contact: `077-${name}`, address: "Kampala" })
       )
     }
 
@@ -216,7 +220,7 @@ describe("Customer Service (integration)", () => {
   // ── 10. changeCustomerStatus + audit log ────────────────────────────
   it("changes status to blacklisted and writes an audit log entry", async () => {
     const customer = await Effect.runPromise(
-      createCustomer({ fullName: "Kevin Opoka", contact: "0782000012", address: "Arua" })
+      createCustomer({ fullName: "Kevin Opoka", nin: "CM00000000TEST", contact: "0782000012", address: "Arua" })
     )
 
     const updated = await Effect.runPromise(

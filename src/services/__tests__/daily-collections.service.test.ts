@@ -19,6 +19,7 @@ const makePaymentRow = (overrides: Record<string, unknown> = {}) => ({
   interestPortion: "100000.00",
   principalPortion: "50000.00",
   paymentDate: new Date("2026-03-23T09:00:00.000Z"),
+  depositLocation: "cash",
   ...overrides,
 })
 
@@ -26,6 +27,8 @@ const makeLoan = (overrides: Record<string, unknown> = {}) => ({
   id: "loan-1",
   customerId: "cust-1",
   principalAmount: "1000000.00",
+  issuanceFee: "0.00",
+  description: "Test loan",
   interestRate: "0.1000",
   minInterestDays: 30,
   startDate: new Date("2026-01-01T00:00:00.000Z"),
@@ -33,6 +36,9 @@ const makeLoan = (overrides: Record<string, unknown> = {}) => ({
   interestRateOverride: null,
   minPeriodOverride: null,
   issuedBy: "actor-1",
+  disbursementSource: "cash",
+  loanType: "perpetual",
+  termMonths: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   deletedAt: null,

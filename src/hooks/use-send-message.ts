@@ -43,8 +43,14 @@ export function useSendMessage(conversationId: string) {
       }
       toast.error("Failed to send message")
     },
-    onSuccess: (result) => {
+    onSuccess: (result, _input, context) => {
       if ("error" in result) {
+        if (context?.previousMessages !== undefined) {
+          queryClient.setQueryData(
+            queryKeys.chat.messages(conversationId),
+            context.previousMessages,
+          )
+        }
         toast.error(result.error)
       }
     },

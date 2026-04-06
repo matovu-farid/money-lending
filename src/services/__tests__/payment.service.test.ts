@@ -30,6 +30,8 @@ const mockLoan = {
   id: "loan-1",
   customerId: "cust-1",
   principalAmount: "500000",
+  issuanceFee: "0.00",
+  description: "Test loan",
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-02-20T00:00:00.000Z"),
@@ -37,6 +39,7 @@ const mockLoan = {
   interestRateOverride: null,
   minPeriodOverride: null,
   issuedBy: "actor-1",
+  disbursementSource: "cash",
   loanType: "perpetual",
   termMonths: null,
 }
@@ -473,22 +476,26 @@ describe("Payment Service", () => {
                   return Promise.resolve([mockLoan])
                 }
                 if (call === 3) {
-                  // allActive payments
+                  // activePayments for overpayment validation
                   return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
                 }
                 if (call === 4) {
+                  // allActive payments for recalculation
+                  return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
+                }
+                if (call === 5) {
                   // loan refetch in recalculateFromPayment
                   return Promise.resolve([mockLoan])
                 }
-                if (call === 5) {
+                if (call === 6) {
                   // refreshed payments
                   return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
                 }
-                if (call === 6) {
+                if (call === 7) {
                   // updatedPayment fetch
                   return Promise.resolve([editedPayment])
                 }
-                if (call === 7) {
+                if (call === 8) {
                   // category lookup for reversal
                   return Promise.resolve([mockCategory])
                 }
@@ -563,24 +570,28 @@ describe("Payment Service", () => {
                 if (call === 1) return Promise.resolve([{ ...pay1, deletedAt: null }]) // payment lookup
                 if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
                 if (call === 3) {
+                  // activePayments for overpayment validation
+                  return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2]) }
+                }
+                if (call === 4) {
                   // allActive payments (pay1 + pay2 with OLD interest)
                   return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2]) }
                 }
-                if (call === 4) return Promise.resolve([mockLoan]) // loan refetch in recalculateFromPayment
-                if (call === 5) {
+                if (call === 5) return Promise.resolve([mockLoan]) // loan refetch in recalculateFromPayment
+                if (call === 6) {
                   // reconcileDownstreamJournals: refresh pay-2 by id (NEW interest)
                   return Promise.resolve([pay2Refreshed])
                 }
-                if (call === 6) {
+                if (call === 7) {
                   // reconcileDownstreamJournals: category lookup
                   return Promise.resolve([mockCategory])
                 }
-                if (call === 7) {
+                if (call === 8) {
                   // refreshed payments for loan status check
                   return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2Refreshed]) }
                 }
-                if (call === 8) return Promise.resolve([editedPay1]) // updatedPayment fetch
-                if (call === 9) return Promise.resolve([mockCategory]) // category lookup for edited payment reversal
+                if (call === 9) return Promise.resolve([editedPay1]) // updatedPayment fetch
+                if (call === 10) return Promise.resolve([mockCategory]) // category lookup for edited payment reversal
                 return Promise.resolve([editedPay1])
               }),
             }),

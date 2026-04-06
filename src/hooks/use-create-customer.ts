@@ -27,6 +27,7 @@ export function useCreateCustomer() {
       const optimistic: Customer = {
         id: `optimistic-${Date.now()}`,
         fullName: input.fullName,
+        nin: input.nin,
         contact: input.contact,
         address: input.address,
         status: "active",
