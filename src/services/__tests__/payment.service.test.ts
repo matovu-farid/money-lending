@@ -17,10 +17,19 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock("@/services/transaction.service", () => ({
-  autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
-  autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
-  postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+vi.mock("@/services/transaction.service", () => {
+  const BigNumber = require("bignumber.js").default
+  return {
+    autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+    autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+    postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+    getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
+    reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  }
+})
+
+vi.mock("@/lib/interest/overdue", () => ({
+  computeLoanOverdueInfo: vi.fn().mockReturnValue({ daysOverdue: 0, dailyRate: "0", unpaidInterest: "0" }),
 }))
 
 vi.mock("drizzle-orm", async () => {
@@ -958,8 +967,13 @@ describe("Payment Service", () => {
       expect(parseFloat(result.totalBalance)).toBeGreaterThanOrEqual(parseFloat(result.outstandingPrincipal))
     })
 
-    it("uses last payment balance when payments exist", async () => {
+    it("uses ledger balance when available", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const BigNumber = require("bignumber.js").default
+      const { getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+
+      // Mock ledger to return 400000
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new BigNumber("400000"))
 
       let dbSelectCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -968,12 +982,8 @@ describe("Payment Service", () => {
         return {
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockImplementation(() => {
-              if (call === 1) {
-                return Promise.resolve([mockLoan])
-              }
-              return {
-                orderBy: vi.fn().mockResolvedValue([mockPayment]),
-              }
+              if (call === 1) return Promise.resolve([mockLoan])
+              return { orderBy: vi.fn().mockResolvedValue([mockPayment]) }
             }),
           }),
         }
@@ -1001,7 +1011,13 @@ describe("Payment Service", () => {
 
     it("computes fixed_rate interest from original principal", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
       const fixedLoan = { ...mockLoan, loanType: "fixed_rate", termMonths: 12 }
+
+      // Mock computeLoanOverdueInfo to return expected unpaidInterest
+      ;(computeLoanOverdueInfo as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+        daysOverdue: 0, dailyRate: "0", unpaidInterest: "50000.00",
+      })
 
       let dbSelectCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
@@ -1027,7 +1043,18 @@ describe("Payment Service", () => {
 
     it("computes reducing_balance interest from outstanding principal", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const BigNumber = require("bignumber.js").default
+      const { getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
       const reducingLoan = { ...mockLoan, loanType: "reducing_balance", termMonths: 12 }
+
+      // Mock ledger to return 400000 (outstanding after payment)
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new BigNumber("400000"))
+
+      // Mock computeLoanOverdueInfo to return expected unpaidInterest
+      ;(computeLoanOverdueInfo as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+        daysOverdue: 0, dailyRate: "0", unpaidInterest: "40000.00",
+      })
 
       let dbSelectCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {

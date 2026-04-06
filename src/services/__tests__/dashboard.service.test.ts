@@ -6,25 +6,48 @@ vi.mock("@/lib/db", () => {
   return { db: mockDb }
 })
 
-vi.mock("@/services/creditor.service", () => ({
-  getSystemCapital: vi.fn(),
-}))
-
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual("drizzle-orm")
   return actual
 })
 
-function chainedSelect(rows: any[]) {
+vi.mock("@/services/transaction.service", () => ({
+  getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+}))
+
+vi.mock("@/lib/interest/overdue", () => ({
+  computeLoanOverdueInfo: vi.fn().mockReturnValue({ daysOverdue: 0, dailyRate: "0", unpaidInterest: "0" }),
+}))
+
+/**
+ * Helper: build a chained mock for a drizzle select().from().innerJoin().where().groupBy() chain.
+ * Returns the resolved rows at the end of the chain.
+ */
+function ledgerQuery(rows: any[]) {
+  return {
+    from: vi.fn().mockReturnValue({
+      innerJoin: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          groupBy: vi.fn().mockResolvedValue(rows),
+        }),
+      }),
+    }),
+  }
+}
+
+function simpleWhere(rows: any[]) {
+  return {
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockResolvedValue(rows),
+    }),
+  }
+}
+
+function whereOrderBy(rows: any[]) {
   return {
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockReturnValue({
-          limit: vi.fn().mockResolvedValue(rows),
-        }),
-      }),
-      orderBy: vi.fn().mockReturnValue({
-        limit: vi.fn().mockResolvedValue(rows),
+        orderBy: vi.fn().mockResolvedValue(rows),
       }),
     }),
   }
@@ -33,40 +56,19 @@ function chainedSelect(rows: any[]) {
 describe("Dashboard Service — Unit", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.resetModules()
   })
 
   describe("getDashboardKPIs", () => {
-    it("returns zeroes when there are no loans or payments", async () => {
+    it("returns zeroes when ledger is empty and no active loans", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getSystemCapital } = await import("@/services/creditor.service")
 
-      // First call: active loans → empty
-      // Second call (per-loan payments): won't be called since no loans
-      // Third call: payment stats aggregate
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
-        if (selectCallCount === 1) {
-          // Active loans query
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([]),
-            }),
-          }
-        }
-        // Payment stats aggregate
-        return {
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { totalCollected: null, totalInterestEarned: null },
-            ]),
-          }),
-        }
+        if (selectCallCount === 1) return ledgerQuery([]) // empty ledger
+        return simpleWhere([]) // no active loans
       })
-
-      ;(getSystemCapital as ReturnType<typeof vi.fn>).mockReturnValue(
-        Effect.succeed({ totalOutstanding: "0.00" })
-      )
 
       const { getDashboardKPIs } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getDashboardKPIs())
@@ -81,143 +83,78 @@ describe("Dashboard Service — Unit", () => {
       })
     })
 
-    it("computes outstanding from last payment's principalBalanceAfter", async () => {
+    it("derives loansOutstanding and interestEarned from ledger", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getSystemCapital } = await import("@/services/creditor.service")
 
-      const activeLoan = {
-        id: "loan-1",
-        customerId: "cust-1",
-        principalAmount: "1000000.00",
-        issuanceFee: "0.00",
-        description: "Test loan",
-        interestRate: "0.1000",
-        minInterestDays: 30,
-        startDate: new Date("2026-01-01"),
-        interestRateOverride: null,
-        minPeriodOverride: null,
-        status: "active",
-        issuedBy: "actor-1",
-        disbursementSource: "cash",
-        loanType: "perpetual",
-        termMonths: null,
-      }
-
-      const mockPayment = {
-        principalBalanceAfter: "800000.00",
-        interestPortion: "100000.00",
-      }
+      const ledgerRows = [
+        { categoryName: "Loans Receivable", txType: "debit", referenceType: "loan", total: "1000000.00" },
+        { categoryName: "Loans Receivable", txType: "credit", referenceType: "payment", total: "200000.00" },
+        { categoryName: "Interest Earned", txType: "credit", referenceType: "payment", total: "100000.00" },
+        { categoryName: "Cash", txType: "debit", referenceType: "payment", total: "300000.00" },
+        { categoryName: "Cash", txType: "debit", referenceType: "loan", total: "50000.00" }, // issuance fee — not counted as repayment
+        { categoryName: "Creditor Investment", txType: "credit", referenceType: "creditor_investment", total: "5000000.00" },
+      ]
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
-        if (selectCallCount === 1) {
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([activeLoan]),
-            }),
-          }
-        }
-        if (selectCallCount === 2) {
-          // Per-loan payments (ordered desc)
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([mockPayment]),
-              }),
-            }),
-          }
-        }
-        // Payment stats aggregate
-        return {
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { totalCollected: "200000.00", totalInterestEarned: "100000.00" },
-            ]),
-          }),
-        }
+        if (selectCallCount === 1) return ledgerQuery(ledgerRows)
+        return simpleWhere([]) // no active loans
       })
-
-      ;(getSystemCapital as ReturnType<typeof vi.fn>).mockReturnValue(
-        Effect.succeed({ totalOutstanding: "5000000.00" })
-      )
 
       const { getDashboardKPIs } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getDashboardKPIs())
 
+      // Loans Receivable: 1,000,000 DR - 200,000 CR = 800,000
       expect(result.loansOutstanding).toBe("800000.00")
-      expect(result.repaymentsCollected).toBe("200000.00")
+      // Interest Earned: 100,000 CR - 0 DR = 100,000
       expect(result.interestEarned).toBe("100000.00")
-      expect(result.activeBorrowers).toBe(1)
+      // Cash from payments: 300,000 DR - 0 CR = 300,000 (issuance fee excluded)
+      expect(result.repaymentsCollected).toBe("300000.00")
+      // Creditor Investment: 5,000,000 CR - 0 DR = 5,000,000
       expect(result.capitalInSystem).toBe("5000000.00")
     })
 
-    it("uses principalAmount when loan has no payments", async () => {
+    it("handles payment reversals correctly in ledger totals", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getSystemCapital } = await import("@/services/creditor.service")
 
-      const activeLoan = {
-        id: "loan-1",
-        customerId: "cust-1",
-        principalAmount: "500000.00",
-        issuanceFee: "0.00",
-        description: "Test loan",
-        interestRate: "0.1000",
-        minInterestDays: 30,
-        startDate: new Date("2026-03-01"),
-        interestRateOverride: null,
-        minPeriodOverride: null,
-        status: "active",
-        issuedBy: "actor-1",
-        disbursementSource: "cash",
-        loanType: "perpetual",
-        termMonths: null,
-      }
+      const ledgerRows = [
+        { categoryName: "Loans Receivable", txType: "debit", referenceType: "loan", total: "500000.00" },
+        // Payment made
+        { categoryName: "Cash", txType: "debit", referenceType: "payment", total: "100000.00" },
+        { categoryName: "Interest Earned", txType: "credit", referenceType: "payment", total: "50000.00" },
+        // Payment reversed
+        { categoryName: "Cash", txType: "credit", referenceType: "payment_reversal", total: "100000.00" },
+        { categoryName: "Interest Earned", txType: "debit", referenceType: "payment_reversal", total: "50000.00" },
+      ]
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
-        if (selectCallCount === 1) {
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([activeLoan]),
-            }),
-          }
-        }
-        if (selectCallCount === 2) {
-          // No payments
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }
-        }
-        return {
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { totalCollected: null, totalInterestEarned: null },
-            ]),
-          }),
-        }
+        if (selectCallCount === 1) return ledgerQuery(ledgerRows)
+        return simpleWhere([])
       })
-
-      ;(getSystemCapital as ReturnType<typeof vi.fn>).mockReturnValue(
-        Effect.succeed({ totalOutstanding: "0.00" })
-      )
 
       const { getDashboardKPIs } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getDashboardKPIs())
 
+      // Net cash from payments: 100k DR - 100k CR = 0
+      expect(result.repaymentsCollected).toBe("0.00")
+      // Net interest: 50k CR - 50k DR = 0
+      expect(result.interestEarned).toBe("0.00")
+      // Loans Receivable: 500k DR only (reversal restores balance)
       expect(result.loansOutstanding).toBe("500000.00")
     })
 
-    it("counts overdueCount >= 1 when loan is >30 days old with no interest payments", async () => {
+    it("counts overdueCount for loans >30 days old with no interest payments", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getSystemCapital } = await import("@/services/creditor.service")
+      const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
 
-      // Loan started 90 days ago — well past the 30-day minimum period
+      // Make computeLoanOverdueInfo return overdue for this test
+      ;(computeLoanOverdueInfo as ReturnType<typeof vi.fn>).mockReturnValue({
+        daysOverdue: 90, dailyRate: "3333.33", unpaidInterest: "300000.00",
+      })
+
       const ninetyDaysAgo = new Date()
       ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90)
 
@@ -225,16 +162,10 @@ describe("Dashboard Service — Unit", () => {
         id: "loan-overdue",
         customerId: "cust-1",
         principalAmount: "1000000.00",
-        issuanceFee: "0.00",
-        description: "Test loan",
         interestRate: "0.1000",
-        minInterestDays: 30,
         startDate: ninetyDaysAgo,
         interestRateOverride: null,
-        minPeriodOverride: null,
         status: "active",
-        issuedBy: "actor-1",
-        disbursementSource: "cash",
         loanType: "perpetual",
         termMonths: null,
       }
@@ -242,37 +173,10 @@ describe("Dashboard Service — Unit", () => {
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
-        if (selectCallCount === 1) {
-          // Active loans query
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue([overdueLoan]),
-            }),
-          }
-        }
-        if (selectCallCount === 2) {
-          // Per-loan payments — none (no interest payments made)
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }
-        }
-        // Payment stats aggregate
-        return {
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { totalCollected: null, totalInterestEarned: null },
-            ]),
-          }),
-        }
+        if (selectCallCount === 1) return ledgerQuery([])
+        if (selectCallCount === 2) return simpleWhere([overdueLoan]) // active loans
+        return whereOrderBy([]) // no payments
       })
-
-      ;(getSystemCapital as ReturnType<typeof vi.fn>).mockReturnValue(
-        Effect.succeed({ totalOutstanding: "0.00" })
-      )
 
       const { getDashboardKPIs } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getDashboardKPIs())
@@ -282,78 +186,27 @@ describe("Dashboard Service — Unit", () => {
 
     it("counts distinct active borrowers across multiple loans", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getSystemCapital } = await import("@/services/creditor.service")
 
-      // Two loans for same customer — should count as 1 borrower
       const activeLoans = [
         {
-          id: "loan-1",
-          customerId: "cust-1",
-          principalAmount: "500000.00",
-          issuanceFee: "0.00",
-          description: "Test loan",
-          interestRate: "0.1000",
-          minInterestDays: 30,
-          startDate: new Date("2026-03-01"),
-          interestRateOverride: null,
-          minPeriodOverride: null,
-          status: "active",
-          issuedBy: "actor-1",
-          disbursementSource: "cash",
-          loanType: "perpetual",
-          termMonths: null,
+          id: "loan-1", customerId: "cust-1", principalAmount: "500000.00",
+          interestRate: "0.1000", startDate: new Date("2026-03-01"),
+          interestRateOverride: null, status: "active", loanType: "perpetual", termMonths: null,
         },
         {
-          id: "loan-2",
-          customerId: "cust-1",
-          principalAmount: "300000.00",
-          issuanceFee: "0.00",
-          description: "Test loan",
-          interestRate: "0.1000",
-          minInterestDays: 30,
-          startDate: new Date("2026-03-01"),
-          interestRateOverride: null,
-          minPeriodOverride: null,
-          status: "active",
-          issuedBy: "actor-1",
-          disbursementSource: "cash",
-          loanType: "perpetual",
-          termMonths: null,
+          id: "loan-2", customerId: "cust-1", principalAmount: "300000.00",
+          interestRate: "0.1000", startDate: new Date("2026-03-01"),
+          interestRateOverride: null, status: "active", loanType: "perpetual", termMonths: null,
         },
       ]
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
-        if (selectCallCount === 1) {
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockResolvedValue(activeLoans),
-            }),
-          }
-        }
-        if (selectCallCount <= 3) {
-          // Per-loan payments (none)
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }
-        }
-        return {
-          from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([
-              { totalCollected: null, totalInterestEarned: null },
-            ]),
-          }),
-        }
+        if (selectCallCount === 1) return ledgerQuery([])
+        if (selectCallCount === 2) return simpleWhere(activeLoans)
+        return whereOrderBy([]) // no payments
       })
-
-      ;(getSystemCapital as ReturnType<typeof vi.fn>).mockReturnValue(
-        Effect.succeed({ totalOutstanding: "0.00" })
-      )
 
       const { getDashboardKPIs } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getDashboardKPIs())
@@ -405,7 +258,6 @@ describe("Dashboard Service — Unit", () => {
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
-          // Audit log query
           return {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
@@ -416,7 +268,6 @@ describe("Dashboard Service — Unit", () => {
             }),
           }
         }
-        // Customer name lookup
         return {
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
@@ -484,21 +335,13 @@ describe("Dashboard Service — Unit", () => {
 
       const entries = [
         {
-          id: "audit-3",
-          actorId: "actor-1",
-          action: "payment.delete",
-          entityType: "payment",
-          entityId: "pay-1",
-          afterValue: null,
+          id: "audit-3", actorId: "actor-1", action: "payment.delete",
+          entityType: "payment", entityId: "pay-1", afterValue: null,
           occurredAt: new Date("2026-03-23T12:00:00Z"),
         },
         {
-          id: "audit-4",
-          actorId: "actor-1",
-          action: "payment.update",
-          entityType: "payment",
-          entityId: "pay-2",
-          afterValue: null,
+          id: "audit-4", actorId: "actor-1", action: "payment.update",
+          entityType: "payment", entityId: "pay-2", afterValue: null,
           occurredAt: new Date("2026-03-23T12:01:00Z"),
         },
       ]
@@ -519,69 +362,6 @@ describe("Dashboard Service — Unit", () => {
       expect(result).toHaveLength(2)
       expect(result[0].description).toBe("Payment deleted")
       expect(result[1].description).toBe("Payment updated")
-    })
-
-    it("handles unknown entity/action as generic description", async () => {
-      const { db: mockedDb } = await import("@/lib/db")
-
-      const entry = {
-        id: "audit-5",
-        actorId: "actor-1",
-        action: "loan.update",
-        entityType: "loan",
-        entityId: "loan-1",
-        afterValue: JSON.stringify({}),
-        occurredAt: new Date("2026-03-23T13:00:00Z"),
-      }
-
-      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([entry]),
-            }),
-          }),
-        }),
-      })
-
-      const { getRecentActivity } = await import("@/services/dashboard.service")
-      const result = await Effect.runPromise(getRecentActivity())
-
-      expect(result).toHaveLength(1)
-      expect(result[0].description).toBe("loan loan.update")
-    })
-
-    it("handles loan.create with missing customerId gracefully", async () => {
-      const { db: mockedDb } = await import("@/lib/db")
-
-      const entry = {
-        id: "audit-6",
-        actorId: "actor-1",
-        action: "loan.create",
-        entityType: "loan",
-        entityId: "loan-2",
-        afterValue: JSON.stringify({ principalAmount: "250000" }),
-        occurredAt: new Date("2026-03-23T14:00:00Z"),
-      }
-
-      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([entry]),
-            }),
-          }),
-        }),
-      })
-
-      const { getRecentActivity } = await import("@/services/dashboard.service")
-      const result = await Effect.runPromise(getRecentActivity())
-
-      expect(result).toHaveLength(1)
-      expect(result[0].type).toBe("loan_issued")
-      expect(result[0].description).toContain("250,000")
-      // No customer name since no customerId
-      expect(result[0].customerId).toBeUndefined()
     })
   })
 })

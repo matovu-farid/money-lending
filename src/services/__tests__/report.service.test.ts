@@ -11,6 +11,15 @@ vi.mock("@/services/creditor.service", () => ({
   getSystemCapital: vi.fn(),
 }))
 
+vi.mock("@/services/transaction.service", () => ({
+  getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+  getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
+}))
+
+vi.mock("@/lib/interest/overdue", () => ({
+  computeLoanOverdueInfo: vi.fn().mockReturnValue({ daysOverdue: 0, dailyRate: "0", unpaidInterest: "0" }),
+}))
+
 describe("Report Service — P&L aggregation math", () => {
   it("sums income categories and expense categories correctly (RPTS-02)", () => {
     // Given transactions for Feb 2026:
@@ -253,7 +262,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 2nd select: getPnlData → transactions innerJoin
+    // 2nd select: getPnlData → transactions innerJoin with where
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -265,89 +274,30 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 3rd select: getBalanceSheetData → active loans
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          {
-            id: "loan-1",
-            principalAmount: "1000000",
-            issuanceFee: "0.00",
-            description: "Test loan",
-            status: "active",
-            customerId: "cust-1",
-            startDate: new Date("2026-01-01"),
-            interestRate: "0.10",
-            interestRateOverride: null,
-            minInterestDays: 30,
-            minPeriodOverride: null,
-            issuedBy: "actor-1",
-            disbursementSource: "cash",
-            loanType: "perpetual",
-            termMonths: null,
-          },
-        ]),
-      }),
-    } as any)
-
-    // 4th select: payments for loan-1
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    } as any)
-
-    // 5th select: allPayments (location balances) - now innerJoins with loans
+    // 3rd select: getBalanceSheetData → single ledger query with innerJoin + where + groupBy
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
+          where: vi.fn().mockReturnValue({
+            groupBy: vi.fn().mockResolvedValue([
+              { categoryName: "Loans Receivable", categoryType: "asset", txType: "debit", depositLocation: null, total: "1000000" },
+            ]),
+          }),
         }),
       }),
     } as any)
 
-    // 6th select: allLoans (disbursement location balances)
+    // 4th select: Interest Receivable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
     } as any)
 
-    // 7th select: allFundTransfers
+    // 5th select: Interest Payable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
-      }),
-    } as any)
-
-    // Mock getSystemCapital
-    vi.mocked(mockedGetSystemCapital).mockReturnValue(
-      Effect.succeed({
-        totalInvested: "3000000.00",
-        totalInterestAccrued: "0.00",
-        totalRepaymentsMade: "0.00",
-        totalOutstanding: "3000000.00",
-      })
-    )
-
-    // 8th select: share capital transactions (innerJoin)
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        innerJoin: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    } as any)
-
-    // 9th select: all transactions for retained earnings
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          { type: "credit", amount: "500000" },
-          { type: "debit", amount: "200000" },
-        ]),
       }),
     } as any)
 
@@ -383,7 +333,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
 
     await Effect.runPromise(generateMonthlySnapshot("2026-02", "user-1"))
 
-    // insert should NOT have been called
+    // insert should NOT have been called since both types already exist
     expect(mockedDb.insert).not.toHaveBeenCalled()
   })
 
@@ -425,94 +375,43 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     )
   })
 
-  it("getBalanceSheetData: computes assets from active loans, liabilities from getSystemCapital", async () => {
+  it("getBalanceSheetData: computes assets from ledger query, liabilities and equity from categories", async () => {
     const { getBalanceSheetData } = await import("@/services/report.service")
 
-    // 1st select: active loans
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          {
-            id: "loan-1",
-            principalAmount: "5000000",
-            issuanceFee: "0.00",
-            description: "Test loan",
-            status: "active",
-            customerId: "cust-1",
-            startDate: new Date("2026-01-01"),
-            interestRate: "0.10",
-            interestRateOverride: null,
-            minInterestDays: 30,
-            minPeriodOverride: null,
-            issuedBy: "actor-1",
-            disbursementSource: "cash",
-            loanType: "perpetual",
-            termMonths: null,
-          },
-        ]),
-      }),
-    } as any)
-
-    // 2nd select: payments for loan-1 (none — use original principal)
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue([]),
-        }),
-      }),
-    } as any)
-
-    // 3rd select: allPayments (for per-location balances) - now innerJoins with loans
+    // Single ledger query: select -> from -> innerJoin -> where -> groupBy
+    // Returns grouped rows with categoryName, categoryType, txType, depositLocation, total
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
+          where: vi.fn().mockReturnValue({
+            groupBy: vi.fn().mockResolvedValue([
+              // Loans Receivable (asset): debit adds
+              { categoryName: "Loans Receivable", categoryType: "asset", txType: "debit", depositLocation: null, total: "5000000" },
+              // Creditor Investment (liability): credit adds
+              { categoryName: "Creditor Investment", categoryType: "liability", txType: "credit", depositLocation: null, total: "3000000" },
+              // Share Capital (equity): credit adds
+              { categoryName: "Share Capital", categoryType: "equity", txType: "credit", depositLocation: null, total: "1000000" },
+              // Revenue: credit adds
+              { categoryName: "Interest Earned", categoryType: "revenue", txType: "credit", depositLocation: null, total: "2500000" },
+              // Expense: debit adds
+              { categoryName: "Rent", categoryType: "expense", txType: "debit", depositLocation: null, total: "500000" },
+            ]),
+          }),
         }),
       }),
     } as any)
 
-    // 4th select: allLoans (for disbursement location balances)
+    // Interest Receivable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
     } as any)
 
-    // 5th select: allFundTransfers
+    // Interest Payable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
-      }),
-    } as any)
-
-    // Mock getSystemCapital
-    vi.mocked(mockedGetSystemCapital).mockReturnValue(
-      Effect.succeed({
-        totalInvested: "3000000.00",
-        totalInterestAccrued: "0.00",
-        totalRepaymentsMade: "0.00",
-        totalOutstanding: "3000000.00",
-      })
-    )
-
-    // 6th select: share capital transactions (innerJoin)
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        innerJoin: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([
-            { amount: "1000000" },
-          ]),
-        }),
-      }),
-    } as any)
-
-    // 7th select: all transactions for retained earnings
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          { type: "credit", amount: "2500000" },
-          { type: "debit", amount: "500000" },
-        ]),
       }),
     } as any)
 
@@ -520,24 +419,51 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
 
     expect(result.asOf).toBe("2026-02")
     expect(result.assets.totalLoansOutstanding).toBe("5000000.00")
+    expect(result.assets.interestReceivable).toBe("0.00")
     expect(result.assets.cashBalance).toBe("0.00")
     expect(result.assets.bankBalance).toBe("0.00")
     expect(result.assets.strongRoomBalance).toBe("0.00")
     expect(result.assets.totalAssets).toBe("5000000.00")
     expect(result.liabilities.totalCreditorBalances).toBe("3000000.00")
     expect(result.equity.shareCapital).toBe("1000000.00")
-    // retainedEarnings = totalCredits(2500000) - totalDebits(500000) - shareCapital(1000000) = 1000000
-    expect(result.equity.retainedEarnings).toBe("1000000.00")
-    expect(result.equity.totalEquity).toBe("2000000.00")
+    // retainedEarnings = totalRevenue(2500000) - totalExpenses(500000) = 2000000
+    expect(result.equity.retainedEarnings).toBe("2000000.00")
+    expect(result.equity.totalEquity).toBe("3000000.00")
   })
 
   it("getPortfolioData: returns active loans sorted by daysOverdue descending", async () => {
     const { getPortfolioData } = await import("@/services/report.service")
+    const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
+    const { getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/transaction.service")
+    const BigNumber = require("bignumber.js").default
 
     const now = new Date()
     // Loan A: 60 days old, Loan B: 10 days old
     const startDateA = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000)
     const startDateB = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000)
+
+    // Mock ledger balances
+    ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Map([
+        ["loan-a", new BigNumber("5000000")],
+        ["loan-b", new BigNumber("2000000")],
+      ])
+    )
+
+    // Mock interest earned from ledger
+    ;(getInterestEarnedFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new Map())
+
+    // Mock computeLoanOverdueInfo to return different overdue values for each loan
+    let callCount = 0
+    ;(computeLoanOverdueInfo as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      callCount++
+      if (callCount === 1) {
+        // loan-a: 60 days overdue, risk-flagged
+        return { daysOverdue: 60, dailyRate: "16666.67", unpaidInterest: "1000000.00" }
+      }
+      // loan-b: 10 days overdue, not risk-flagged
+      return { daysOverdue: 10, dailyRate: "6666.67", unpaidInterest: "66666.70" }
+    })
 
     // 1st select: active loans (2 loans)
     mockedDb.select.mockReturnValueOnce({

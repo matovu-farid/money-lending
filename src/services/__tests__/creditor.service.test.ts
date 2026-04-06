@@ -164,11 +164,15 @@ vi.mock("@/services/audit.service", () => ({
 
 vi.mock("@/services/transaction.service", () => ({
   autoPostInterestExpense: vi.fn().mockResolvedValue(undefined),
+  autoPostCreditorInvestment: vi.fn().mockResolvedValue(undefined),
+  autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
+  getCreditorBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
 describe("Creditor Service — DB operations (requires test DB)", () => {
   let mockedDb: any
   let mockedWriteAuditLog: any
+  let mockedGetCreditorBalancesFromLedger: any
 
   let createCreditor: any
   let updateCreditor: any
@@ -185,6 +189,8 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedDb = dbMod.db as any
     const auditMod = await import("@/services/audit.service")
     mockedWriteAuditLog = auditMod.writeAuditLog as any
+    const txMod = await import("@/services/transaction.service")
+    mockedGetCreditorBalancesFromLedger = txMod.getCreditorBalancesFromLedger as any
     const svc = await import("@/services/creditor.service")
     createCreditor = svc.createCreditor
     updateCreditor = svc.updateCreditor
@@ -287,11 +293,19 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       from: vi.fn().mockImplementation(() => {
         const idx = callIndex++
         const result = callResults[idx] ?? []
+        const whereObj: any = {
+          orderBy: vi.fn().mockResolvedValue(result),
+          groupBy: vi.fn().mockResolvedValue(result),
+          then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
+        }
         const chainObj: any = {
-          where: vi.fn().mockImplementation(() => ({
-            orderBy: vi.fn().mockResolvedValue(result),
-            then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
-          })),
+          where: vi.fn().mockReturnValue(whereObj),
+          innerJoin: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              groupBy: vi.fn().mockResolvedValue(result),
+              then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
+            }),
+          }),
           orderBy: vi.fn().mockResolvedValue(result),
           then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
         }
@@ -505,6 +519,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
   it("getCreditorDashboard: computes interestAccrued using minInterestDays=0 (CRED-03)", async () => {
     // Creditor exists, 1 investment (10M at 10%/month, 30 days ago), no repayments
+    const BigNumber = require("bignumber.js").default
     const investmentDate = new Date()
     investmentDate.setDate(investmentDate.getDate() - 30)
     const investment30d = {
@@ -516,8 +531,13 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     setupDbSelectChain([
       [mockCreditor],                // creditor exists
       [investment30d],               // investments for creditor
-      [],                            // repayments for investment
+      [],                            // batch repayments
     ])
+
+    // Mock ledger balances: investment has 10M principal
+    mockedGetCreditorBalancesFromLedger.mockResolvedValueOnce(
+      new Map([["inv-1", new BigNumber("10000000")]])
+    )
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
@@ -528,6 +548,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   })
 
   it("getCreditorDashboard: after 500K repayment on 1M interest, shows remaining interest (CRED-05)", async () => {
+    const BigNumber = require("bignumber.js").default
     // Investment: 10M at 10%/month, 60 days ago
     // A repayment of 500K was made 30 days ago (covering partial interest from first 30 days)
     // Another 30 days have elapsed since that repayment → new interest accrues on principal
@@ -560,8 +581,13 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     setupDbSelectChain([
       [mockCreditor],     // creditor exists
       [investment],       // investments
-      [repayment],        // repayments for investment
+      [repayment],        // batch repayments
     ])
+
+    // Mock ledger balances: still 10M since 500K repayment was interest-only
+    mockedGetCreditorBalancesFromLedger.mockResolvedValueOnce(
+      new Map([["inv-1", new BigNumber("10000000")]])
+    )
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
@@ -575,6 +601,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   // ── getSystemCapital ─────────────────────────────────────────────────
 
   it("getSystemCapital: aggregates totalInvested, totalInterestAccrued, totalRepaymentsMade across all creditors (CRED-06)", async () => {
+    const BigNumber = require("bignumber.js").default
     const now = new Date()
     const thirtyDaysAgo = new Date(now)
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -600,18 +627,21 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     }
 
     // getSystemCapital calls:
-    // 1. db.select().from(creditors) -> all creditors
-    // 2. db.select().from(creditorInvestments).where(creditorId=c-1) -> [inv1]
-    // 3. db.select().from(creditorRepayments).where(investmentId=inv-1) -> []
-    // 4. db.select().from(creditorInvestments).where(creditorId=c-2) -> [inv2]
-    // 5. db.select().from(creditorRepayments).where(investmentId=inv-2) -> []
+    // 1. db.select().from(creditorInvestments) -> all investments
+    // 2. getCreditorBalancesFromLedger -> mocked separately
+    // 3. db.select().from(creditorRepayments).where(inArray) -> batch repayments
     setupDbSelectChain([
-      [creditor1, creditor2],  // all creditors
-      [inv1],                  // investments for c-1
-      [],                      // repayments for inv-1
-      [inv2],                  // investments for c-2
-      [],                      // repayments for inv-2
+      [inv1, inv2],           // all investments
+      [],                     // batch repayments (none)
     ])
+
+    // Mock ledger balances for both investments
+    mockedGetCreditorBalancesFromLedger.mockResolvedValueOnce(
+      new Map([
+        ["inv-1", new BigNumber("10000000")],
+        ["inv-2", new BigNumber("5000000")],
+      ])
+    )
 
     const result = await Effect.runPromise(getSystemCapital()) as any
 
