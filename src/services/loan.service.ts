@@ -16,6 +16,7 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
+import { autoPostPrincipalDisbursement } from "./transaction.service"
 import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
 
 const checkCustomerCompleteness = (customer: {
@@ -233,6 +234,15 @@ export const createLoan = (
           recordedBy: actorId,
         })
 
+        // Auto-post principal disbursement as balance_sheet debit
+        await autoPostPrincipalDisbursement(tx, {
+          amount: loan.principalAmount,
+          loanId: loan.id,
+          transactionDate: startDate.toISOString(),
+          actorId,
+          depositLocation: input.disbursementSource,
+        })
+
         return { ...loan, collateral: coll }
       })
     },
@@ -421,6 +431,31 @@ export const deleteLoan = (
           })
         }
 
+        // Reverse principal disbursement
+        const [disbursementTx] = await tx
+          .select()
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.referenceType, "loan"),
+              eq(transactions.referenceId, input.loanId),
+              eq(transactions.type, "debit")
+            )
+          )
+
+        if (disbursementTx) {
+          await tx.insert(transactions).values({
+            type: "credit",
+            amount: disbursementTx.amount,
+            categoryId: disbursementTx.categoryId,
+            referenceType: "loan_reversal",
+            referenceId: input.loanId,
+            description: `Reversal - principal disbursement for loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
+            transactionDate: new Date(),
+            recordedBy: actorId,
+          })
+        }
+
         // Reverse all payment interest transactions for this loan's payments
         const loanPayments = await tx
           .select()
@@ -452,6 +487,27 @@ export const deleteLoan = (
               recordedBy: actorId,
             })
           }
+
+            // Reverse principal repayment if > 0
+            if (new BigNumber(p.principalPortion).isGreaterThan(0)) {
+              let [principalCategory] = await tx.select().from(transactionCategories)
+                .where(and(
+                  eq(transactionCategories.name, "Principal Repayment"),
+                  eq(transactionCategories.type, "balance_sheet")
+                ))
+              if (principalCategory) {
+                await tx.insert(transactions).values({
+                  type: "debit",
+                  amount: p.principalPortion,
+                  categoryId: principalCategory.id,
+                  referenceType: "payment_reversal",
+                  referenceId: p.id,
+                  description: `Reversal - principal repayment for loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
+                  transactionDate: new Date(),
+                  recordedBy: actorId,
+                })
+              }
+            }
         }
 
         await tx
