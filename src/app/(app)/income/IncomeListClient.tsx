@@ -85,6 +85,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
   const [optimisticTransactions, setOptimisticTransactions] = useState<Transaction[]>([])
   const [removedTransactionIds, setRemovedTransactionIds] = useState<Set<string>>(new Set())
   const [optimisticCategories, setOptimisticCategories] = useState<Category[]>([])
+  const [location, setLocation] = useState<"cash" | "bank" | "strong_room">("cash")
   const [_isCategoryPending, startCategoryTransition] = useTransition()
 
   const {
@@ -158,6 +159,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
       toast.success("Income recorded")
       setIsSheetOpen(false)
       reset()
+      setLocation("cash")
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.income.all })
@@ -197,6 +199,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
       amount: data.amount,
       transactionDate: data.date,
       notes: data.notes || undefined,
+      location,
     }
     addMutation.mutate(input)
   }
@@ -210,7 +213,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
     if (!newCategoryName.trim()) return
     startCategoryTransition(async () => {
       try {
-        const created = await createIncomeCategoryAction({ name: newCategoryName.trim(), type: "income" })
+        const created = await createIncomeCategoryAction({ name: newCategoryName.trim(), type: "revenue" })
         if ("error" in created) {
           toast.error(created.error)
           return
@@ -306,7 +309,7 @@ export function IncomeListClient({ transactions: initialTransactions, categories
           }
         />
 
-        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) reset() }}>
+        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) { reset(); setLocation("cash") } }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>Add Income</DialogTitle>
@@ -393,6 +396,20 @@ export function IncomeListClient({ transactions: initialTransactions, categories
                   placeholder="Add any notes..."
                   rows={3}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="income-location">Source Location</Label>
+                <Select value={location} onValueChange={(v) => setLocation(v as "cash" | "bank" | "strong_room")}>
+                  <SelectTrigger id="income-location" className="w-full">
+                    <SelectValue placeholder="Source location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash on Hand</SelectItem>
+                    <SelectItem value="bank">Bank</SelectItem>
+                    <SelectItem value="strong_room">Strong Room</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}

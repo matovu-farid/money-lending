@@ -85,6 +85,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
   const [optimisticTransactions, setOptimisticTransactions] = useState<Transaction[]>([])
   const [removedTransactionIds, setRemovedTransactionIds] = useState<Set<string>>(new Set())
   const [optimisticCategories, setOptimisticCategories] = useState<Category[]>([])
+  const [location, setLocation] = useState<"cash" | "bank" | "strong_room">("cash")
   const [_isCategoryPending, startCategoryTransition] = useTransition()
 
   const {
@@ -154,6 +155,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
       toast.success("Expense recorded")
       setIsSheetOpen(false)
       reset()
+      setLocation("cash")
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.expenses.all })
@@ -193,6 +195,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
       amount: data.amount,
       transactionDate: data.date,
       notes: data.notes || undefined,
+      location,
     }
     addMutation.mutate(input)
   }
@@ -302,7 +305,7 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
           }
         />
 
-        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) reset() }}>
+        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) { reset(); setLocation("cash") } }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>Add Expense</DialogTitle>
@@ -389,6 +392,20 @@ export function ExpenseListClient({ transactions: initialTransactions, categorie
                   placeholder="Add any notes..."
                   rows={3}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="expense-location">Source Location</Label>
+                <Select value={location} onValueChange={(v) => setLocation(v as "cash" | "bank" | "strong_room")}>
+                  <SelectTrigger id="expense-location" className="w-full">
+                    <SelectValue placeholder="Source location" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="cash">Cash on Hand</SelectItem>
+                    <SelectItem value="bank">Bank</SelectItem>
+                    <SelectItem value="strong_room">Strong Room</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}
