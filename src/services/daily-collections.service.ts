@@ -96,6 +96,10 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const ledgerBalance = ledgerBalances.get(loan.id)
+        const outstandingBalance = ledgerBalance
+          ? ledgerBalance.toFixed(2)
+          : loan.principalAmount
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
           effectiveRate,
@@ -103,15 +107,11 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           loanType: (loan.loanType ?? "perpetual") as LoanType,
           termMonths: loan.termMonths,
           payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
-          outstandingBalance: loan.principalAmount,
+          outstandingBalance,
         })
         const daysOverdue = info.daysOverdue
 
         if (daysOverdue >= 30) {
-          const ledgerBalance = ledgerBalances.get(loan.id)
-          const outstandingBalance = ledgerBalance
-            ? ledgerBalance.toFixed(2)
-            : loan.principalAmount
 
           const lastPayment = loanPayments.at(-1)
 
