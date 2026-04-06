@@ -3,13 +3,13 @@ import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
-import { eq, ilike, inArray, and, count, isNull } from "drizzle-orm"
+import { eq, ilike, inArray, and, count, isNull, asc } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
-import BigNumber from "bignumber.js"
+import { getLoanBalancesFromLedger } from "@/services/transaction.service"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, CustomerStatus } from "@/types"
-import type { Customer } from "@/types"
+import type { Customer, LoanType } from "@/types"
 
 function escapeLikePattern(input: string): string {
   return input.replace(/%/g, '\\%').replace(/_/g, '\\_')
@@ -96,7 +96,6 @@ export const searchCustomers = (
           .where(whereClause)
           .orderBy(customers.fullName)
 
-        const now = new Date()
         const filteredRows: Customer[] = []
 
         for (const customer of allRows) {
@@ -107,36 +106,40 @@ export const searchCustomers = (
 
           if (activeLoans.length === 0) continue
 
-          let maxDaysOverdue = new BigNumber(0)
+          let maxDaysOverdue = 0
+
+          // Batch-fetch ledger balances for this customer's active loans
+          const customerLoanIds = activeLoans.map((l) => l.id)
+          const customerLedgerBalances = await getLoanBalancesFromLedger(customerLoanIds)
 
           for (const loan of activeLoans) {
             const loanPayments = await db
               .select()
               .from(payments)
               .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+              .orderBy(asc(payments.paymentDate))
 
-            const totalDaysElapsed = Math.floor(
-              (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-            )
             const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-            const dailyRate = calculateDailyRate(effectiveRate)
-            // Use actual days for accrual — min period only applies to payment allocation
-            const totalInterestAccrued = calculateInterest(
-              loan.principalAmount, effectiveRate, totalDaysElapsed, 0
-            )
-            const totalInterestPaid = loanPayments.reduce(
-              (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-            )
-            const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
-            const daysOverdue = calculateDaysOverdue(
-              totalInterestAccrued, totalInterestPaid, dailyInterestAmount
-            )
-            if (daysOverdue.isGreaterThan(maxDaysOverdue)) {
-              maxDaysOverdue = daysOverdue
+            const ledgerBalance = customerLedgerBalances.get(loan.id)
+            const outstandingBalance = ledgerBalance
+              ? ledgerBalance.toFixed(2)
+              : loan.principalAmount
+
+            const info = computeLoanOverdueInfo({
+              principalAmount: loan.principalAmount,
+              effectiveRate,
+              startDate: new Date(loan.startDate),
+              loanType: (loan.loanType ?? "perpetual") as LoanType,
+              termMonths: loan.termMonths,
+              payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+              outstandingBalance,
+            })
+            if (info.daysOverdue > maxDaysOverdue) {
+              maxDaysOverdue = info.daysOverdue
             }
           }
 
-          const days = maxDaysOverdue.toNumber()
+          const days = maxDaysOverdue
           if (params.daysRemainingFilter === "due_within_30" && days > 0 && days < 30) {
             filteredRows.push(customer)
           } else if (params.daysRemainingFilter === "overdue_30_plus" && days >= 30) {
