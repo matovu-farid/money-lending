@@ -2,7 +2,6 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
-import { fundTransfers } from "@/lib/db/schema/fund-transfers"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
@@ -24,9 +23,8 @@ import {
   calculateDailyRate,
   formatAmount,
 } from "@/lib/interest/engine"
-import { getSystemCapital } from "@/services/creditor.service"
 import BigNumber from "bignumber.js"
-import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
+import type { PnlData, BalanceSheetData, PortfolioEntry, RetainedEarningsData } from "@/types"
 
 export const getPnlData = (
   period: string
@@ -52,7 +50,7 @@ export const getPnlData = (
           and(
             gte(transactions.transactionDate, periodStart),
             lte(transactions.transactionDate, periodEnd),
-            inArray(transactionCategories.type, ["income", "expense"])
+            inArray(transactionCategories.type, ["revenue", "expense"])
           )
         )
 
@@ -101,141 +99,17 @@ export const getPnlData = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
-export const getBalanceSheetData = (
-  asOf: string
-): Effect.Effect<BalanceSheetData, DatabaseError> =>
-  Effect.flatMap(
-    getSystemCapital(),
-    (systemCapital) =>
+export const getRetainedEarningsData = (
+  period: string
+): Effect.Effect<RetainedEarningsData, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      let asOfDate: Date
-      if (/^\d{4}-\d{2}$/.test(asOf)) {
-        const [year, month] = asOf.split("-").map(Number)
-        asOfDate = new Date(year, month, 0, 23, 59, 59, 999) // last day of month
-      } else {
-        asOfDate = new Date(asOf + "T23:59:59.999Z")
-      }
+      const [year, month] = period.split("-").map(Number)
+      const periodStart = new Date(year, month - 1, 1)
+      const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
 
-      const activeLoans = await db
-        .select()
-        .from(loans)
-        .where(and(
-          eq(loans.status, "active"),
-          isNull(loans.deletedAt),
-          lte(loans.startDate, asOfDate)
-        ))
-
-      let totalLoansOutstanding = new BigNumber(0)
-
-      for (const loan of activeLoans) {
-        const loanPayments = await db
-          .select()
-          .from(payments)
-          .where(and(
-            eq(payments.loanId, loan.id),
-            isNull(payments.deletedAt),
-            lte(payments.paymentDate, asOfDate)
-          ))
-          .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
-
-        const lastPayment = loanPayments[0]
-        const outstanding = lastPayment
-          ? new BigNumber(lastPayment.principalBalanceAfter)
-          : new BigNumber(loan.principalAmount)
-        totalLoansOutstanding = totalLoansOutstanding.plus(outstanding)
-      }
-
-      // Calculate per-location balances
-      const locationBalances: Record<string, BigNumber> = {
-        cash: new BigNumber(0),
-        bank: new BigNumber(0),
-        strong_room: new BigNumber(0),
-      }
-
-      // Payments received into each location (active payments only)
-      const allPayments = await db
-        .select({
-          depositLocation: payments.depositLocation,
-          amount: payments.amount,
-        })
-        .from(payments)
-        .innerJoin(loans, eq(payments.loanId, loans.id))
-        .where(and(
-          lte(payments.paymentDate, asOfDate),
-          isNull(loans.deletedAt)
-        ))
-
-      for (const p of allPayments) {
-        const loc = p.depositLocation
-        if (loc && locationBalances[loc] !== undefined) {
-          locationBalances[loc] = locationBalances[loc].plus(new BigNumber(p.amount))
-        }
-      }
-
-      // Disbursements from each location (all non-deleted loans)
-      const allLoans = await db
-        .select({
-          disbursementSource: loans.disbursementSource,
-          principalAmount: loans.principalAmount,
-        })
-        .from(loans)
-        .where(and(
-          isNull(loans.deletedAt),
-          lte(loans.startDate, asOfDate)
-        ))
-
-      for (const l of allLoans) {
-        const loc = l.disbursementSource
-        if (loc && locationBalances[loc] !== undefined) {
-          locationBalances[loc] = locationBalances[loc].minus(new BigNumber(l.principalAmount))
-        }
-      }
-
-      // Fund transfers between locations
-      const allFundTransfers = await db
-        .select()
-        .from(fundTransfers)
-        .where(lte(fundTransfers.createdAt, asOfDate))
-
-      for (const t of allFundTransfers) {
-        const amount = new BigNumber(t.amount)
-        if (locationBalances[t.fromLocation] !== undefined) {
-          locationBalances[t.fromLocation] = locationBalances[t.fromLocation].minus(amount)
-        }
-        if (locationBalances[t.toLocation] !== undefined) {
-          locationBalances[t.toLocation] = locationBalances[t.toLocation].plus(amount)
-        }
-      }
-
-      const cashBalance = locationBalances.cash
-      const bankBalance = locationBalances.bank
-      const strongRoomBalance = locationBalances.strong_room
-      const totalAssets = totalLoansOutstanding.plus(cashBalance).plus(bankBalance).plus(strongRoomBalance)
-
-      const totalCreditorBalances = new BigNumber(systemCapital.totalOutstanding)
-
-      const shareCapitalRows = await db
-        .select({ amount: transactions.amount })
-        .from(transactions)
-        .innerJoin(
-          transactionCategories,
-          eq(transactions.categoryId, transactionCategories.id)
-        )
-        .where(
-          and(
-            eq(transactionCategories.name, "Share Capital"),
-            eq(transactions.type, "credit"),
-            lte(transactions.transactionDate, asOfDate)
-          )
-        )
-
-      const shareCapital = shareCapitalRows.reduce(
-        (sum, row) => sum.plus(new BigNumber(row.amount)),
-        new BigNumber(0)
-      )
-
-      const allTransactions = await db
+      // Beginning balance: all income/expense transactions BEFORE this period
+      const priorRows = await db
         .select({ type: transactions.type, amount: transactions.amount })
         .from(transactions)
         .innerJoin(
@@ -244,21 +118,161 @@ export const getBalanceSheetData = (
         )
         .where(
           and(
-            lte(transactions.transactionDate, asOfDate),
-            inArray(transactionCategories.type, ["income", "expense"])
+            lte(transactions.transactionDate, new Date(periodStart.getTime() - 1)),
+            inArray(transactionCategories.type, ["revenue", "expense"])
           )
         )
 
-      let totalCredits = new BigNumber(0)
-      let totalDebits = new BigNumber(0)
-      for (const row of allTransactions) {
+      let priorCredits = new BigNumber(0)
+      let priorDebits = new BigNumber(0)
+      for (const row of priorRows) {
         if (row.type === "credit") {
-          totalCredits = totalCredits.plus(new BigNumber(row.amount))
+          priorCredits = priorCredits.plus(new BigNumber(row.amount))
         } else {
-          totalDebits = totalDebits.plus(new BigNumber(row.amount))
+          priorDebits = priorDebits.plus(new BigNumber(row.amount))
         }
       }
-      const retainedEarnings = totalCredits.minus(totalDebits).minus(shareCapital)
+      const beginningBalance = priorCredits.minus(priorDebits)
+
+      // Net income for this period
+      const periodRows = await db
+        .select({ type: transactions.type, amount: transactions.amount })
+        .from(transactions)
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id)
+        )
+        .where(
+          and(
+            gte(transactions.transactionDate, periodStart),
+            lte(transactions.transactionDate, periodEnd),
+            inArray(transactionCategories.type, ["revenue", "expense"])
+          )
+        )
+
+      let periodCredits = new BigNumber(0)
+      let periodDebits = new BigNumber(0)
+      for (const row of periodRows) {
+        if (row.type === "credit") {
+          periodCredits = periodCredits.plus(new BigNumber(row.amount))
+        } else {
+          periodDebits = periodDebits.plus(new BigNumber(row.amount))
+        }
+      }
+      const netIncome = periodCredits.minus(periodDebits)
+      const endingBalance = beginningBalance.plus(netIncome)
+
+      return {
+        period,
+        beginningBalance: formatAmount(beginningBalance),
+        netIncome: formatAmount(netIncome),
+        endingBalance: formatAmount(endingBalance),
+      }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+
+export const getBalanceSheetData = (
+  asOf: string
+): Effect.Effect<BalanceSheetData, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      let asOfDate: Date
+      if (/^\d{4}-\d{2}$/.test(asOf)) {
+        const [year, month] = asOf.split("-").map(Number)
+        asOfDate = new Date(year, month, 0, 23, 59, 59, 999)
+      } else {
+        asOfDate = new Date(asOf + "T23:59:59.999Z")
+      }
+
+      // Single ledger query — group by category name, type, transaction type, and location
+      const rows = await db
+        .select({
+          categoryName: transactionCategories.name,
+          categoryType: transactionCategories.type,
+          txType: transactions.type,
+          depositLocation: transactions.depositLocation,
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id)
+        )
+        .where(lte(transactions.transactionDate, asOfDate))
+        .groupBy(
+          transactionCategories.name,
+          transactionCategories.type,
+          transactions.type,
+          transactions.depositLocation
+        )
+
+      // Build balances from ledger using normal balance rules
+      const locationBalances: Record<string, BigNumber> = {
+        cash: new BigNumber(0),
+        bank: new BigNumber(0),
+        strong_room: new BigNumber(0),
+      }
+      let totalLoansOutstanding = new BigNumber(0)
+      let seizedCollateralValue = new BigNumber(0)
+      let totalCreditorBalances = new BigNumber(0)
+      let shareCapital = new BigNumber(0)
+      let totalRevenue = new BigNumber(0)
+      let totalExpenses = new BigNumber(0)
+
+      for (const row of rows) {
+        const amount = new BigNumber(row.total)
+        const isDebit = row.txType === "debit"
+
+        if (row.categoryName === "Cash" && row.depositLocation) {
+          const loc = row.depositLocation
+          if (locationBalances[loc] !== undefined) {
+            // Asset: DR adds, CR subtracts
+            locationBalances[loc] = isDebit
+              ? locationBalances[loc].plus(amount)
+              : locationBalances[loc].minus(amount)
+          }
+        } else if (row.categoryName === "Loans Receivable") {
+          totalLoansOutstanding = isDebit
+            ? totalLoansOutstanding.plus(amount)
+            : totalLoansOutstanding.minus(amount)
+        } else if (row.categoryName === "Seized Collateral") {
+          seizedCollateralValue = isDebit
+            ? seizedCollateralValue.plus(amount)
+            : seizedCollateralValue.minus(amount)
+        } else if (row.categoryName === "Creditor Investment") {
+          // Liability: CR adds, DR subtracts
+          totalCreditorBalances = isDebit
+            ? totalCreditorBalances.minus(amount)
+            : totalCreditorBalances.plus(amount)
+        } else if (row.categoryName === "Share Capital") {
+          // Equity: CR adds, DR subtracts
+          shareCapital = isDebit
+            ? shareCapital.minus(amount)
+            : shareCapital.plus(amount)
+        } else if (row.categoryType === "revenue") {
+          // Revenue: CR adds, DR subtracts
+          totalRevenue = isDebit
+            ? totalRevenue.minus(amount)
+            : totalRevenue.plus(amount)
+        } else if (row.categoryType === "expense") {
+          // Expense: DR adds, CR subtracts
+          totalExpenses = isDebit
+            ? totalExpenses.plus(amount)
+            : totalExpenses.minus(amount)
+        }
+      }
+
+      const cashBalance = locationBalances.cash
+      const bankBalance = locationBalances.bank
+      const strongRoomBalance = locationBalances.strong_room
+      const totalAssets = totalLoansOutstanding
+        .plus(cashBalance)
+        .plus(bankBalance)
+        .plus(strongRoomBalance)
+        .plus(seizedCollateralValue)
+
+      const retainedEarnings = totalRevenue.minus(totalExpenses)
       const totalEquity = shareCapital.plus(retainedEarnings)
 
       const liabilitiesPlusEquity = totalCreditorBalances.plus(totalEquity)
@@ -277,6 +291,7 @@ export const getBalanceSheetData = (
           bankBalance: formatAmount(bankBalance),
           strongRoomBalance: formatAmount(strongRoomBalance),
           totalLoansOutstanding: formatAmount(totalLoansOutstanding),
+          seizedCollateralValue: formatAmount(seizedCollateralValue),
           totalAssets: formatAmount(totalAssets),
         },
         liabilities: {
@@ -291,7 +306,6 @@ export const getBalanceSheetData = (
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
-  )
 
 export const getPortfolioData = (): Effect.Effect<
   PortfolioEntry[],
