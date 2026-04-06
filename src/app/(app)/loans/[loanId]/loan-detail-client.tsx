@@ -17,8 +17,9 @@ import {
   Banknote,
   Receipt,
   UserCircle,
+  ShieldAlert,
 } from "lucide-react"
-import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
+import { editPaymentAction, deletePaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { updateLoanAction, deleteLoanAction } from "@/actions/loan.actions"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
@@ -26,6 +27,7 @@ import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole, type RateChangeRequest } from "@/types"
 import type { Loan, Payment } from "@/types"
+import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -64,6 +66,8 @@ interface LoanDetailClientProps {
   openEditOnMount?: boolean
   userNameMap: Record<string, string>
   userRole: UserRole
+  collateralNature?: string
+  collateralDescription?: string | null
 }
 
 function formatDateForInput(date: Date | string | null | undefined): string {
@@ -79,10 +83,12 @@ function loanStatusVariant(status: string): "default" | "outline" {
 
 function loanStatusLabel(status: string): string {
   if (status === "fully_paid") return "Fully Paid"
+  if (status === "settled_with_collateral") return "Settled (Collateral)"
+  if (status === "rolled_over") return "Rolled Over"
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, userRole }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, userRole, collateralNature, collateralDescription }: LoanDetailClientProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -112,6 +118,8 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   const [loanDeleteReason, setLoanDeleteReason] = useState("")
   const [isLoanDeletePending, startLoanDeleteTransition] = useTransition()
 
+  const [settlingCollateral, setSettlingCollateral] = useState(false)
+
   const [requestingRateChange, setRequestingRateChange] = useState(false)
   const [newRate, setNewRate] = useState("")
   const [isRateChangePending, startRateChangeTransition] = useTransition()
@@ -124,6 +132,16 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       if ("error" in result) return []
       return result.data
     },
+  })
+
+  const { data: balanceData } = useQuery({
+    queryKey: ["loan-balance", loan.id],
+    queryFn: async () => {
+      const result = await getLoanBalanceAction(loan.id)
+      if ("error" in result) return null
+      return result.data
+    },
+    enabled: loan.status === "active",
   })
 
   const pendingRateRequest = rateChangeRequests.find((r: RateChangeRequest) => r.status === "pending")
@@ -363,6 +381,8 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                   <p><strong>Pending</strong> — Loan created but not yet disbursed. No interest accrues.</p>
                   <p><strong>Active</strong> — Money has been given to the borrower. Interest accrues daily.</p>
                   <p><strong>Fully Paid</strong> — Outstanding balance has reached zero. No further payments needed.</p>
+                  <p><strong>Settled (Collateral)</strong> — Loan closed by seizing the borrower&apos;s collateral.</p>
+                  <p><strong>Rolled Over</strong> — Outstanding balance was rolled into a new loan.</p>
                 </div>
               </InfoPopover>
             </div>
@@ -380,6 +400,17 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
               <Trash2 className="h-3.5 w-3.5 mr-1.5" />
               Delete
             </Button>
+            {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSettlingCollateral(true)}
+                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300"
+              >
+                <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
+                Settle with Collateral
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -1034,6 +1065,18 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           </DialogFooter>
         </DrawerDialogContent>
       </DrawerDialog>
+
+      {balanceData && collateralNature && (
+        <SettleCollateralDialog
+          open={settlingCollateral}
+          onOpenChange={setSettlingCollateral}
+          loanId={loan.id}
+          outstandingPrincipal={balanceData.outstandingPrincipal}
+          accruedInterest={balanceData.accruedInterest}
+          collateralNature={collateralNature}
+          collateralDescription={collateralDescription ?? null}
+        />
+      )}
     </div>
   )
 }

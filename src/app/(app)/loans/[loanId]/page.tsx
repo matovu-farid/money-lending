@@ -5,6 +5,7 @@ import { getPaymentsForLoan } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { user } from "@/lib/db/schema/auth"
+import { collateral } from "@/lib/db/schema/collateral"
 import { eq, inArray } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
@@ -68,6 +69,12 @@ export default async function LoanDetailPage({
     }
   }
 
+  // Fetch collateral for this loan
+  const [loanCollateral] = await db
+    .select()
+    .from(collateral)
+    .where(eq(collateral.loanId, loan.id))
+
   // Determine canModify based on role
   const session = await auth.api.getSession({ headers: await headers() })
   const role = ((session?.user?.role ?? "unassigned") as UserRole)
@@ -97,6 +104,8 @@ export default async function LoanDetailPage({
       openEditOnMount={openEdit}
       userNameMap={userNameMap}
       userRole={role}
+      collateralNature={loanCollateral?.nature}
+      collateralDescription={loanCollateral?.description}
     />
   )
 }
