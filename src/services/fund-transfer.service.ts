@@ -4,6 +4,7 @@ import { fundTransfers } from "@/lib/db/schema/fund-transfers"
 import { desc } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
+import { autoPostFundTransfer } from "./transaction.service"
 import type { CreateFundTransferInput, FundTransfer } from "@/types"
 
 export const createFundTransfer = (
@@ -31,6 +32,16 @@ export const createFundTransfer = (
           entityId: transfer.id,
           beforeValue: null,
           afterValue: transfer,
+        })
+
+        // Post paired debit/credit fund transfer entries
+        await autoPostFundTransfer(tx, {
+          amount: input.amount,
+          transferId: transfer.id,
+          fromLocation: input.fromLocation,
+          toLocation: input.toLocation,
+          transactionDate: transfer.createdAt.toISOString(),
+          actorId,
         })
 
         return transfer
