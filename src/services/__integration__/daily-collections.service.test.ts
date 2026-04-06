@@ -177,7 +177,7 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
       expect(entry!.customerName).toBe("Overdue Customer")
       expect(entry!.loanAmount).toBe("1000000.00")
       expect(entry!.outstandingBalance).toBe("1000000.00")
-      expect(entry!.daysSinceLastPayment).toBeGreaterThanOrEqual(30)
+      expect(entry!.daysOverdue).toBeGreaterThanOrEqual(30)
       expect(entry!.lastPaymentDate).toBeNull()
     })
 
@@ -231,7 +231,7 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
       expect(entry).toBeUndefined()
     })
 
-    it("sorts results by daysSinceLastPayment descending", async () => {
+    it("sorts results by daysOverdue descending", async () => {
       const customer1 = await makeCustomer({ fullName: "Customer One", contact: "+256700000004" })
       const customer2 = await makeCustomer({ fullName: "Customer Two", contact: "+256700000005" })
 
@@ -262,8 +262,8 @@ describe("Daily Collections Service — Integration", { timeout: TEST_TIMEOUT, s
       expect(idx2).toBeGreaterThan(-1)
       // Loan2 (more overdue) should come before loan1
       expect(idx2).toBeLessThan(idx1)
-      expect(result[idx2].daysSinceLastPayment).toBeGreaterThan(
-        result[idx1].daysSinceLastPayment
+      expect(result[idx2].daysOverdue).toBeGreaterThan(
+        result[idx1].daysOverdue
       )
     })
   })

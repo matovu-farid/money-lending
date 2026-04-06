@@ -11,6 +11,10 @@ vi.mock("drizzle-orm", async () => {
   return actual
 })
 
+vi.mock("@/services/transaction.service", () => ({
+  getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+}))
+
 const makePaymentRow = (overrides: Record<string, unknown> = {}) => ({
   paymentId: "pay-1",
   loanId: "loan-1",
@@ -53,6 +57,19 @@ const makeCustomer = (overrides: Record<string, unknown> = {}) => ({
   status: "active",
   createdAt: new Date(),
   updatedAt: new Date(),
+  ...overrides,
+})
+
+// Shape returned by the new innerJoin query in getLoansDueToday
+const makeLoanWithCustomer = (overrides: Record<string, unknown> = {}) => ({
+  id: "loan-1",
+  customerId: "cust-1",
+  principalAmount: "1000000.00",
+  startDate: new Date("2026-01-01T00:00:00.000Z"),
+  interestRate: "0.1000",
+  interestRateOverride: null,
+  loanType: "perpetual",
+  customerName: "John Doe",
   ...overrides,
 })
 
@@ -170,17 +187,16 @@ describe("daily-collections.service", () => {
       vi.setSystemTime(new Date("2026-03-23T00:00:00.000Z"))
 
       // Loan started 60 days ago, no payments
-      const loan = makeLoan({
+      const loanRow = makeLoanWithCustomer({
         startDate: new Date("2026-01-22T00:00:00.000Z"),
+        customerName: "Jane Due",
       })
-      const customer = makeCustomer({ id: "cust-1", fullName: "Jane Due" })
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         const callIndex = selectCallCount++
-        if (callIndex === 0) return chainedSelect([loan])     // active loans
-        if (callIndex === 1) return chainedSelect([])         // payments (none)
-        if (callIndex === 2) return chainedSelect([customer]) // customer lookup
+        if (callIndex === 0) return chainedSelect([loanRow])  // loans + customers join
+        if (callIndex === 1) return chainedSelect([])         // batch payments
         return chainedSelect([])
       })
 
@@ -192,29 +208,36 @@ describe("daily-collections.service", () => {
       expect(result).toHaveLength(1)
       expect(result[0].loanId).toBe("loan-1")
       expect(result[0].customerName).toBe("Jane Due")
-      expect(result[0].daysSinceLastPayment).toBeGreaterThanOrEqual(30)
+      expect(result[0].daysOverdue).toBeGreaterThanOrEqual(30)
       expect(result[0].lastPaymentDate).toBeNull()
     })
 
-    it("excludes loans with recent payments", async () => {
+    it("excludes loans where interest-based overdue < 30 days", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
       vi.useFakeTimers()
       vi.setSystemTime(new Date("2026-03-23T00:00:00.000Z"))
 
-      const loan = makeLoan({
+      // Loan started 82 days ago at 10%/month
+      // With sufficient interest payments, daysOverdue can be < 30
+      const loanRow = makeLoanWithCustomer({
         startDate: new Date("2026-01-01T00:00:00.000Z"),
       })
-      // Payment was made 5 days ago — well within 30-day threshold
+      // Payment covers most interest so overdue is low
       const recentPayment = makePayment({
-        paymentDate: new Date("2026-03-18T00:00:00.000Z"), // 5 days ago
+        paymentDate: new Date("2026-03-18T00:00:00.000Z"),
+        // At 10%/month on 1M, daily rate ~= 3333.33, 82 days accrued ~= 273,333
+        // Pay 260,000 in interest to keep overdue < 30 days: (273333-260000)/3333 ~ 4 days
+        interestPortion: "260000.00",
+        amount: "260000.00",
+        principalPortion: "0.00",
       })
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         const callIndex = selectCallCount++
-        if (callIndex === 0) return chainedSelect([loan])           // active loans
-        if (callIndex === 1) return chainedSelect([recentPayment])  // payments
+        if (callIndex === 0) return chainedSelect([loanRow])          // loans join
+        if (callIndex === 1) return chainedSelect([recentPayment])    // batch payments
         return chainedSelect([])
       })
 
@@ -233,18 +256,17 @@ describe("daily-collections.service", () => {
       vi.setSystemTime(new Date("2026-03-23T00:00:00.000Z"))
 
       // Loan started 45 days ago, no payments
-      const loan = makeLoan({
+      const loanRow = makeLoanWithCustomer({
         id: "loan-new",
-        startDate: new Date("2026-02-06T00:00:00.000Z"), // 45 days ago
+        startDate: new Date("2026-02-06T00:00:00.000Z"),
+        customerName: "New Borrower",
       })
-      const customer = makeCustomer({ id: "cust-1", fullName: "New Borrower" })
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         const callIndex = selectCallCount++
-        if (callIndex === 0) return chainedSelect([loan])
-        if (callIndex === 1) return chainedSelect([])         // no payments
-        if (callIndex === 2) return chainedSelect([customer])
+        if (callIndex === 0) return chainedSelect([loanRow])  // loans join
+        if (callIndex === 1) return chainedSelect([])         // batch payments (none)
         return chainedSelect([])
       })
 
@@ -255,43 +277,39 @@ describe("daily-collections.service", () => {
 
       expect(result).toHaveLength(1)
       expect(result[0].loanId).toBe("loan-new")
-      // daysSinceLastPayment should be computed from startDate
-      expect(result[0].daysSinceLastPayment).toBeGreaterThanOrEqual(30)
+      // daysOverdue should be computed via interest-based formula
+      expect(result[0].daysOverdue).toBeGreaterThanOrEqual(30)
       expect(result[0].lastPaymentDate).toBeNull()
-      // outstandingBalance should be the principal (no payments made)
+      // outstandingBalance should be the principal (no ledger entry, no payments)
       expect(result[0].outstandingBalance).toBe("1000000.00")
     })
 
-    it("sorts by daysSinceLastPayment descending", async () => {
+    it("sorts by daysOverdue descending", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
       vi.useFakeTimers()
       vi.setSystemTime(new Date("2026-03-23T00:00:00.000Z"))
 
       // Loan 1: started 60 days ago
-      const loan1 = makeLoan({
+      const loan1 = makeLoanWithCustomer({
         id: "loan-60",
         customerId: "cust-1",
+        customerName: "Customer One",
         startDate: new Date("2026-01-22T00:00:00.000Z"),
       })
       // Loan 2: started 90 days ago (more overdue)
-      const loan2 = makeLoan({
+      const loan2 = makeLoanWithCustomer({
         id: "loan-90",
         customerId: "cust-2",
+        customerName: "Customer Two",
         startDate: new Date("2025-12-23T00:00:00.000Z"),
       })
-
-      const customer1 = makeCustomer({ id: "cust-1", fullName: "Customer One" })
-      const customer2 = makeCustomer({ id: "cust-2", fullName: "Customer Two" })
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         const callIndex = selectCallCount++
-        if (callIndex === 0) return chainedSelect([loan1, loan2]) // active loans
-        if (callIndex === 1) return chainedSelect([])             // payments for loan1
-        if (callIndex === 2) return chainedSelect([customer1])    // customer for loan1
-        if (callIndex === 3) return chainedSelect([])             // payments for loan2
-        if (callIndex === 4) return chainedSelect([customer2])    // customer for loan2
+        if (callIndex === 0) return chainedSelect([loan1, loan2]) // loans join
+        if (callIndex === 1) return chainedSelect([])             // batch payments
         return chainedSelect([])
       })
 
@@ -301,11 +319,11 @@ describe("daily-collections.service", () => {
       const result = await Effect.runPromise(getLoansDueToday())
 
       expect(result).toHaveLength(2)
-      // loan-90 should come first (most days since last payment)
+      // loan-90 should come first (most overdue)
       expect(result[0].loanId).toBe("loan-90")
       expect(result[1].loanId).toBe("loan-60")
-      expect(result[0].daysSinceLastPayment).toBeGreaterThan(
-        result[1].daysSinceLastPayment
+      expect(result[0].daysOverdue).toBeGreaterThan(
+        result[1].daysOverdue
       )
     })
   })

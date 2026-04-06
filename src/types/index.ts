@@ -321,6 +321,7 @@ export interface BalanceSheetData {
     bankBalance: string
     strongRoomBalance: string
     totalLoansOutstanding: string
+    interestReceivable: string
     seizedCollateralValue: string
     totalAssets: string
   }
@@ -392,7 +393,7 @@ export interface LoanDueToday {
   customerName: string
   loanAmount: string
   outstandingBalance: string
-  daysSinceLastPayment: number
+  daysOverdue: number
   lastPaymentDate: Date | null
 }
 

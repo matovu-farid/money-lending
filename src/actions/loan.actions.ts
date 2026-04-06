@@ -21,6 +21,7 @@ import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm"
 import { calculateDaysOverdue, calculateDailyRate, calculateInterest, calculateSchedule } from "@/lib/interest"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
+import { getLoanBalancesFromLedger } from "@/services/transaction.service"
 
 export async function getCollateralNaturesAction(): Promise<string[]> {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -262,20 +263,22 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
     paymentsByLoanId.set(p.loanId, existing)
   }
 
+  const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+
   return loanList.map((loan) => {
       let daysOverdue = 0
-      let outstandingBalance = loan.principalAmount
       let dailyRate = "0"
-      let lastPaymentDate: Date | null = null
       let unpaidInterest = "0"
 
       const loanPayments = paymentsByLoanId.get(loan.id) ?? []
 
+      const ledgerBalance = ledgerBalances.get(loan.id)
+      let outstandingBalance = ledgerBalance
+        ? ledgerBalance.toFixed(2)
+        : loan.principalAmount
+
       const lastPayment = loanPayments.at(-1)
-      if (lastPayment) {
-        outstandingBalance = lastPayment.principalBalanceAfter
-        lastPaymentDate = lastPayment.paymentDate
-      }
+      let lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
 
       if (loan.status === "active") {
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate

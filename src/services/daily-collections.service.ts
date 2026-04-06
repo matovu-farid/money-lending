@@ -3,9 +3,10 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
-import { sql, eq, and, isNull, asc } from "drizzle-orm"
+import { sql, eq, and, isNull, asc, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import BigNumber from "bignumber.js"
+import { calculateInterest, calculateDailyRate, calculateDaysOverdue } from "@/lib/interest/engine"
 import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 
 export const getDailyCollections = (
@@ -53,53 +54,85 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
   Effect.tryPromise({
     try: async () => {
       const activeLoans = await db
-        .select()
+        .select({
+          id: loans.id,
+          customerId: loans.customerId,
+          principalAmount: loans.principalAmount,
+          startDate: loans.startDate,
+          interestRate: loans.interestRate,
+          interestRateOverride: loans.interestRateOverride,
+          loanType: loans.loanType,
+          customerName: customers.fullName,
+        })
         .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
+
+      if (activeLoans.length === 0) return []
+
+      const loanIds = activeLoans.map((l) => l.id)
+
+      // Batch-fetch payments and ledger balances
+      const allPayments = await db
+        .select()
+        .from(payments)
+        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+        .orderBy(asc(payments.paymentDate))
+
+      const { getLoanBalancesFromLedger } = await import("@/services/transaction.service")
+      const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+
+      const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
+      for (const p of allPayments) {
+        const existing = paymentsByLoanId.get(p.loanId) ?? []
+        existing.push(p)
+        paymentsByLoanId.set(p.loanId, existing)
+      }
 
       const now = new Date()
       const results: LoanDueToday[] = []
 
       for (const loan of activeLoans) {
-        const loanPayments = await db
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-          .orderBy(asc(payments.paymentDate))
-
-        const lastPayment = loanPayments.at(-1)
-        const anchorDate = lastPayment
-          ? new Date(lastPayment.paymentDate)
-          : new Date(loan.startDate)
-
-        const daysSinceLastPayment = Math.floor(
-          (now.getTime() - anchorDate.getTime()) / (1000 * 60 * 60 * 24)
+        const loanPayments = paymentsByLoanId.get(loan.id) ?? []
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const totalDaysElapsed = Math.floor(
+          (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
         )
+        const totalInterestAccrued = calculateInterest(
+          loan.principalAmount, effectiveRate, totalDaysElapsed, 0
+        )
+        const totalInterestPaid = loanPayments.reduce(
+          (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
+        )
+        const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(
+          calculateDailyRate(effectiveRate)
+        )
+        const daysOverdueBN = calculateDaysOverdue(
+          totalInterestAccrued, totalInterestPaid, dailyInterestAmount
+        )
+        const daysOverdue = Math.floor(daysOverdueBN.toNumber())
 
-        if (daysSinceLastPayment >= 30) {
-          const [customer] = await db
-            .select()
-            .from(customers)
-            .where(eq(customers.id, loan.customerId))
-
-          const outstandingBalance = lastPayment
-            ? lastPayment.principalBalanceAfter
+        if (daysOverdue >= 30) {
+          const ledgerBalance = ledgerBalances.get(loan.id)
+          const outstandingBalance = ledgerBalance
+            ? ledgerBalance.toFixed(2)
             : loan.principalAmount
+
+          const lastPayment = loanPayments.at(-1)
 
           results.push({
             loanId: loan.id,
             customerId: loan.customerId,
-            customerName: customer?.fullName ?? "Unknown",
+            customerName: loan.customerName,
             loanAmount: loan.principalAmount,
             outstandingBalance,
-            daysSinceLastPayment,
+            daysOverdue,
             lastPaymentDate: lastPayment ? new Date(lastPayment.paymentDate) : null,
           })
         }
       }
 
-      results.sort((a, b) => b.daysSinceLastPayment - a.daysSinceLastPayment)
-
+      results.sort((a, b) => b.daysOverdue - a.daysOverdue)
       return results
     },
     catch: (e) => new DatabaseError({ cause: e }),

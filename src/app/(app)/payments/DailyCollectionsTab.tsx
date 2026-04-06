@@ -287,7 +287,7 @@ export function DailyCollectionsTab() {
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(loan.outstandingBalance)}</TableCell>
                   <TableCell>
-                    <OverdueBadge daysOverdue={loan.daysSinceLastPayment} />
+                    <OverdueBadge daysOverdue={loan.daysOverdue} />
                   </TableCell>
                   <TableCell className="font-mono tabular-nums text-muted-foreground">
                     {loan.lastPaymentDate ? formatDate(loan.lastPaymentDate) : "Never"}
