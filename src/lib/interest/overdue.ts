@@ -18,12 +18,13 @@ export function computeLoanOverdueInfo(params: {
   startDate: Date
   loanType: LoanType
   termMonths: number | null
-  payments: { interestPortion: string; paymentDate: Date }[]
+  totalInterestPaid: string
+  paymentCount: number
   outstandingBalance: string
   asOf?: Date
 }): LoanOverdueInfo {
   const now = params.asOf ?? new Date()
-  const { principalAmount, effectiveRate, startDate, loanType, termMonths, payments, outstandingBalance } = params
+  const { principalAmount, effectiveRate, startDate, loanType, termMonths, totalInterestPaid, paymentCount, outstandingBalance } = params
 
   if (loanType === "perpetual" || !loanType) {
     const totalDaysElapsed = Math.floor(
@@ -32,11 +33,9 @@ export function computeLoanOverdueInfo(params: {
     const totalInterestAccrued = calculateInterest(principalAmount, effectiveRate, totalDaysElapsed, 0)
     const dailyRateBN = calculateDailyRate(effectiveRate)
     const dailyInterestAmount = new BigNumber(principalAmount).multipliedBy(dailyRateBN)
-    const totalInterestPaid = payments.reduce(
-      (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-    )
-    const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaid)
-    const daysOverdueBN = calculateDaysOverdue(totalInterestAccrued, totalInterestPaid, dailyInterestAmount)
+    const totalInterestPaidBN = new BigNumber(totalInterestPaid)
+    const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaidBN)
+    const daysOverdueBN = calculateDaysOverdue(totalInterestAccrued, totalInterestPaidBN, dailyInterestAmount)
 
     return {
       daysOverdue: Math.floor(daysOverdueBN.toNumber()),
@@ -50,7 +49,7 @@ export function computeLoanOverdueInfo(params: {
     (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
   )
   const expectedPayments = Math.min(monthsElapsed, termMonths ?? 0)
-  const actualPayments = payments.length
+  const actualPayments = paymentCount
   const missedPayments = Math.max(expectedPayments - actualPayments, 0)
   const daysOverdue = missedPayments * 30
 
@@ -59,9 +58,7 @@ export function computeLoanOverdueInfo(params: {
     : new BigNumber(outstandingBalance).multipliedBy(new BigNumber(effectiveRate))
   const dailyRate = monthlyInterest.dividedBy(30).toFixed(2)
 
-  const totalInterestPaid = payments.reduce(
-    (s, p) => s.plus(new BigNumber(p.interestPortion)), new BigNumber(0)
-  )
+  const totalInterestPaidBN = new BigNumber(totalInterestPaid)
   const schedule = calculateSchedule(
     principalAmount,
     effectiveRate,
@@ -71,7 +68,7 @@ export function computeLoanOverdueInfo(params: {
   const expectedInterest = schedule
     .slice(0, expectedPayments)
     .reduce((s: BigNumber, e: ScheduleEntry) => s.plus(new BigNumber(e.monthlyInterest)), new BigNumber(0))
-  const unpaidInterestBN = expectedInterest.minus(totalInterestPaid)
+  const unpaidInterestBN = expectedInterest.minus(totalInterestPaidBN)
 
   return {
     daysOverdue,
