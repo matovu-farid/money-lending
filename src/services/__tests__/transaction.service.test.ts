@@ -25,6 +25,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   let deleteTransaction: any
   let autoPostInterestEarned: any
   let autoPostInterestExpense: any
+  let getPaymentPortionsFromLedger: any
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -40,6 +41,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     deleteTransaction = svc.deleteTransaction
     autoPostInterestEarned = svc.autoPostInterestEarned
     autoPostInterestExpense = svc.autoPostInterestExpense
+    getPaymentPortionsFromLedger = svc.getPaymentPortionsFromLedger
   })
 
   // ── helpers ──────────────────────────────────────────────────────────
@@ -696,5 +698,109 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     // 2 category creates + 2 journal entries = 4 inserts
     expect(txMock.insert).toHaveBeenCalledTimes(4)
+  })
+
+  // ── getPaymentPortionsFromLedger ─────────────────────────────────────
+
+  function setupLedgerPortionsSelect(rows: any[]) {
+    mockedDb.select.mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            groupBy: vi.fn().mockResolvedValue(rows),
+          }),
+        }),
+      }),
+    })
+  }
+
+  it("getPaymentPortionsFromLedger: returns empty map for empty input", async () => {
+    const result = await getPaymentPortionsFromLedger([])
+    expect(result).toBeInstanceOf(Map)
+    expect(result.size).toBe(0)
+    expect(mockedDb.select).not.toHaveBeenCalled()
+  })
+
+  it("getPaymentPortionsFromLedger: derives interest and principal portions for a single payment", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "pay-1", categoryName: "Interest Earned", txType: "credit", total: "5000.00" },
+      { referenceId: "pay-1", categoryName: "Loans Receivable", txType: "credit", total: "45000.00" },
+    ])
+
+    const result = await getPaymentPortionsFromLedger(["pay-1"])
+
+    expect(result.size).toBe(1)
+    const portions = result.get("pay-1")
+    expect(portions).toBeDefined()
+    expect(portions!.interestPortion).toBe("5000.00")
+    expect(portions!.principalPortion).toBe("45000.00")
+  })
+
+  it("getPaymentPortionsFromLedger: handles multiple payments in a single query", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "pay-1", categoryName: "Interest Earned", txType: "credit", total: "3000.00" },
+      { referenceId: "pay-1", categoryName: "Loans Receivable", txType: "credit", total: "27000.00" },
+      { referenceId: "pay-2", categoryName: "Interest Earned", txType: "credit", total: "2500.00" },
+      { referenceId: "pay-2", categoryName: "Loans Receivable", txType: "credit", total: "22500.00" },
+    ])
+
+    const result = await getPaymentPortionsFromLedger(["pay-1", "pay-2"])
+
+    expect(result.size).toBe(2)
+    expect(result.get("pay-1")!.interestPortion).toBe("3000.00")
+    expect(result.get("pay-1")!.principalPortion).toBe("27000.00")
+    expect(result.get("pay-2")!.interestPortion).toBe("2500.00")
+    expect(result.get("pay-2")!.principalPortion).toBe("22500.00")
+  })
+
+  it("getPaymentPortionsFromLedger: subtracts DR entries for Interest Earned (reversal)", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "pay-1", categoryName: "Interest Earned", txType: "credit", total: "5000.00" },
+      { referenceId: "pay-1", categoryName: "Interest Earned", txType: "debit", total: "5000.00" },
+      { referenceId: "pay-1", categoryName: "Loans Receivable", txType: "credit", total: "45000.00" },
+    ])
+
+    const result = await getPaymentPortionsFromLedger(["pay-1"])
+
+    const portions = result.get("pay-1")
+    expect(portions!.interestPortion).toBe("0.00")
+    expect(portions!.principalPortion).toBe("45000.00")
+  })
+
+  it("getPaymentPortionsFromLedger: subtracts DR entries for Loans Receivable (disbursement row)", async () => {
+    // DR Loans Receivable means asset increase (disbursement) — should subtract from principal portion
+    setupLedgerPortionsSelect([
+      { referenceId: "pay-1", categoryName: "Loans Receivable", txType: "credit", total: "45000.00" },
+      { referenceId: "pay-1", categoryName: "Loans Receivable", txType: "debit", total: "5000.00" },
+    ])
+
+    const result = await getPaymentPortionsFromLedger(["pay-1"])
+
+    const portions = result.get("pay-1")
+    expect(portions!.principalPortion).toBe("40000.00")
+    expect(portions!.interestPortion).toBe("0.00")
+  })
+
+  it("getPaymentPortionsFromLedger: returns string values with 2 decimal places", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "pay-1", categoryName: "Interest Earned", txType: "credit", total: "1000" },
+      { referenceId: "pay-1", categoryName: "Loans Receivable", txType: "credit", total: "9000" },
+    ])
+
+    const result = await getPaymentPortionsFromLedger(["pay-1"])
+
+    const portions = result.get("pay-1")
+    expect(portions!.interestPortion).toBe("1000.00")
+    expect(portions!.principalPortion).toBe("9000.00")
+  })
+
+  it("getPaymentPortionsFromLedger: skips rows with null referenceId", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: null, categoryName: "Interest Earned", txType: "credit", total: "5000.00" },
+    ])
+
+    const result = await getPaymentPortionsFromLedger(["pay-1"])
+
+    expect(result.size).toBe(0)
   })
 })
