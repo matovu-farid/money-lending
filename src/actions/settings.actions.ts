@@ -20,8 +20,12 @@ export async function getSettingsAction() {
     return { error: "Unauthorized" }
   }
 
-  const settings = await db.select().from(systemSettings)
-  return { data: settings }
+  try {
+    const settings = await db.select().from(systemSettings)
+    return { data: settings }
+  } catch {
+    return { error: "Failed to load settings" }
+  }
 }
 
 export async function updateSettingAction(input: UpdateSettingInput) {
@@ -42,21 +46,25 @@ export async function updateSettingAction(input: UpdateSettingInput) {
     return { error: "Setting value is required" }
   }
 
-  const [result] = await db
-    .insert(systemSettings)
-    .values({
-      key: input.key,
-      value: input.value,
-      updatedBy: session.user.id,
-    })
-    .onConflictDoUpdate({
-      target: systemSettings.key,
-      set: {
+  try {
+    const [result] = await db
+      .insert(systemSettings)
+      .values({
+        key: input.key,
         value: input.value,
         updatedBy: session.user.id,
-        updatedAt: new Date(),
-      },
-    })
-    .returning()
-  return { data: result }
+      })
+      .onConflictDoUpdate({
+        target: systemSettings.key,
+        set: {
+          value: input.value,
+          updatedBy: session.user.id,
+          updatedAt: new Date(),
+        },
+      })
+      .returning()
+    return { data: result }
+  } catch {
+    return { error: "Failed to update setting" }
+  }
 }

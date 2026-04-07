@@ -162,18 +162,27 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock("@/services/transaction.service", () => ({
-  autoPostInterestExpense: vi.fn().mockResolvedValue(undefined),
-  autoPostCreditorInvestment: vi.fn().mockResolvedValue(undefined),
-  autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
-  getCreditorBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
-  reverseCreditorInterestAccrual: vi.fn().mockResolvedValue(undefined),
-}))
+vi.mock("@/services/transaction.service", () => {
+  const BigNumber = require("bignumber.js").default
+  return {
+    autoPostInterestExpense: vi.fn().mockResolvedValue(undefined),
+    autoPostCreditorInvestment: vi.fn().mockResolvedValue(undefined),
+    autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
+    getCreditorBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+    getInterestPayableFromLedger: vi.fn().mockResolvedValue(new Map()),
+    getCreditorTotalInvestedFromLedger: vi.fn().mockResolvedValue(new BigNumber(0)),
+    getCreditorTotalRepaidFromLedger: vi.fn().mockResolvedValue(new BigNumber(0)),
+    reverseCreditorInterestAccrual: vi.fn().mockResolvedValue(undefined),
+  }
+})
 
 describe("Creditor Service — DB operations (requires test DB)", () => {
   let mockedDb: any
   let mockedWriteAuditLog: any
   let mockedGetCreditorBalancesFromLedger: any
+  let mockedGetInterestPayableFromLedger: any
+  let mockedGetCreditorTotalInvestedFromLedger: any
+  let mockedGetCreditorTotalRepaidFromLedger: any
 
   let createCreditor: any
   let updateCreditor: any
@@ -192,6 +201,9 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedWriteAuditLog = auditMod.writeAuditLog as any
     const txMod = await import("@/services/transaction.service")
     mockedGetCreditorBalancesFromLedger = txMod.getCreditorBalancesFromLedger as any
+    mockedGetInterestPayableFromLedger = txMod.getInterestPayableFromLedger as any
+    mockedGetCreditorTotalInvestedFromLedger = txMod.getCreditorTotalInvestedFromLedger as any
+    mockedGetCreditorTotalRepaidFromLedger = txMod.getCreditorTotalRepaidFromLedger as any
     const svc = await import("@/services/creditor.service")
     createCreditor = svc.createCreditor
     updateCreditor = svc.updateCreditor
@@ -534,11 +546,19 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedGetCreditorBalancesFromLedger.mockResolvedValueOnce(
       new Map([["inv-1", new BigNumber("10000000")]])
     )
+    // Mock interest payable from ledger: ~1M accrued
+    mockedGetInterestPayableFromLedger.mockResolvedValueOnce(
+      new Map([["inv-1", new BigNumber("999999.99")]])
+    )
+    // Mock total invested from ledger
+    mockedGetCreditorTotalInvestedFromLedger.mockResolvedValueOnce(new BigNumber("10000000"))
+    // Mock total repaid from ledger
+    mockedGetCreditorTotalRepaidFromLedger.mockResolvedValueOnce(new BigNumber("0"))
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
     expect(result.totalInvested).toBe("10000000.00")
-    // 10M * (0.10/30) * 30 ≈ 999999.99
+    // Interest now comes from ledger
     expect(parseFloat(result.interestAccrued)).toBeCloseTo(1000000, -2)
     expect(result.repaymentsMade).toBe("0.00")
   })
@@ -579,11 +599,17 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedGetCreditorBalancesFromLedger.mockResolvedValueOnce(
       new Map([["inv-1", new BigNumber("10000000")]])
     )
+    // Mock interest payable: ~1M accrued over last 30 days
+    mockedGetInterestPayableFromLedger.mockResolvedValueOnce(
+      new Map([["inv-1", new BigNumber("999999.99")]])
+    )
+    mockedGetCreditorTotalInvestedFromLedger.mockResolvedValueOnce(new BigNumber("10000000"))
+    mockedGetCreditorTotalRepaidFromLedger.mockResolvedValueOnce(new BigNumber("500000"))
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
     expect(result.repaymentsMade).toBe("500000.00")
-    // Interest accrued over last 30 days on 10M at 10%/month ≈ 999,999.99
+    // Interest now from ledger
     expect(parseFloat(result.interestAccrued)).toBeCloseTo(1000000, -2)
     // Outstanding = principal (10M) + interestAccrued (~1M) ≈ 11M
     expect(parseFloat(result.outstandingBalance)).toBeGreaterThan(10000000)
@@ -631,13 +657,22 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
         ["inv-2", new BigNumber("5000000")],
       ])
     )
+    // Mock interest payable from ledger
+    mockedGetInterestPayableFromLedger.mockResolvedValueOnce(
+      new Map([
+        ["inv-1", new BigNumber("999999.99")],
+        ["inv-2", new BigNumber("499999.99")],
+      ])
+    )
+    mockedGetCreditorTotalInvestedFromLedger.mockResolvedValueOnce(new BigNumber("15000000"))
+    mockedGetCreditorTotalRepaidFromLedger.mockResolvedValueOnce(new BigNumber("0"))
 
     const result = await Effect.runPromise(getSystemCapital()) as any
 
     // Total invested = 10M + 5M = 15M
     expect(result.totalInvested).toBe("15000000.00")
     expect(result.totalRepaymentsMade).toBe("0.00")
-    // Interest accrued on both investments over 30 days
+    // Interest accrued on both investments from ledger
     expect(parseFloat(result.totalInterestAccrued)).toBeGreaterThan(0)
     // totalOutstanding = totalPrincipal + totalInterestAccrued > 15M
     expect(parseFloat(result.totalOutstanding)).toBeGreaterThan(15000000)

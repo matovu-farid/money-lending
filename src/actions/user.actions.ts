@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 
-const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "admin", "superAdmin"]
+const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "supervisor", "admin", "superAdmin"]
 
 export async function assignRole(input: { userId: string; role: UserRole }) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -38,6 +38,16 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
   }
 
   try {
+    // Verify the target user's current role is below the actor's level
+    const targetUser = await auth.api.getUser({ query: { id: userId }, headers: await headers() })
+    if (targetUser) {
+      const existingRole = (targetUser.role ?? "unassigned") as UserRole
+      const existingLevel = ROLE_LEVELS[existingRole] ?? 0
+      if (existingLevel >= actorLevel) {
+        return { error: "Cannot modify a user at or above your own role level" }
+      }
+    }
+
     await auth.api.setRole({
       body: { userId, role: targetRole },
       headers: await headers(),

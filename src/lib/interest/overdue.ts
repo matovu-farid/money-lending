@@ -32,7 +32,8 @@ export function computeLoanOverdueInfo(params: {
     )
     const totalInterestAccrued = calculateInterest(principalAmount, effectiveRate, totalDaysElapsed, 0)
     const dailyRateBN = calculateDailyRate(effectiveRate)
-    const dailyInterestAmount = new BigNumber(principalAmount).multipliedBy(dailyRateBN)
+    const currentBalance = new BigNumber(outstandingBalance).isGreaterThan(0) ? outstandingBalance : principalAmount
+    const dailyInterestAmount = new BigNumber(currentBalance).multipliedBy(dailyRateBN)
     const totalInterestPaidBN = new BigNumber(totalInterestPaid)
     const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaidBN)
     const daysOverdueBN = calculateDaysOverdue(totalInterestAccrued, totalInterestPaidBN, dailyInterestAmount)
@@ -45,9 +46,9 @@ export function computeLoanOverdueInfo(params: {
   }
 
   // Term loans (fixed_rate, reducing_balance)
-  const monthsElapsed = Math.floor(
-    (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24 * 30)
-  )
+  const monthsElapsed = (now.getFullYear() - startDate.getFullYear()) * 12
+    + (now.getMonth() - startDate.getMonth())
+    + (now.getDate() >= startDate.getDate() ? 0 : -1)
   const expectedPayments = Math.min(monthsElapsed, termMonths ?? 0)
   const actualPayments = paymentCount
   const missedPayments = Math.max(expectedPayments - actualPayments, 0)

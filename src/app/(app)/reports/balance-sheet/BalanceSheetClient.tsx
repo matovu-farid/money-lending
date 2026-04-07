@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import {
@@ -16,6 +17,7 @@ import {
 import BigNumber from "bignumber.js"
 import type { BalanceSheetData } from "@/types"
 import { formatCurrency } from "@/lib/utils"
+import { InfoPopover } from "@/components/ui/info-popover"
 
 function getMonthOptions(): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = []
@@ -50,6 +52,7 @@ interface BalanceSheetClientProps {
 export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
   const router = useRouter()
   const monthOptions = getMonthOptions()
+  const [downloading, setDownloading] = useState(false)
 
   function handlePeriodChange(value: string | null) {
     if (value !== null) {
@@ -58,6 +61,8 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
   }
 
   async function handleDownload(format: "pdf" | "excel") {
+    if (downloading) return
+    setDownloading(true)
     const href = `/api/reports/balance-sheet?format=${format}&period=${period}`
     try {
       const response = await fetch(href)
@@ -76,6 +81,8 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
       URL.revokeObjectURL(url)
     } catch {
       toast.error("Export failed. Please try again.")
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -85,6 +92,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
     .toFixed(2)
 
   const totalLiabilitiesPlusEquity = new BigNumber(data.liabilities.totalCreditorBalances)
+    .plus(data.liabilities.interestPayable ?? "0")
     .plus(data.equity.totalEquity)
     .toFixed(2)
 
@@ -108,16 +116,20 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
         </Select>
 
         <button
+          type="button"
           onClick={() => handleDownload("pdf")}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent"
+          disabled={downloading}
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
         >
-          Export PDF
+          {downloading ? "Exporting..." : "Export PDF"}
         </button>
         <button
+          type="button"
           onClick={() => handleDownload("excel")}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent"
+          disabled={downloading}
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
         >
-          Export Excel
+          {downloading ? "Exporting..." : "Export Excel"}
         </button>
       </div>
 
@@ -146,7 +158,15 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   {/* Current Assets */}
                   <tr>
                     <td className="py-1.5 font-semibold text-muted-foreground" colSpan={2}>
-                      Current Assets
+                      <span className="inline-flex items-center gap-1">
+                        Current Assets
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Current Assets</p>
+                          <p className="text-xs text-muted-foreground">
+                            Cash and cash-equivalents that are readily available for use in the business. These are liquid funds held across your three deposit locations.
+                          </p>
+                        </InfoPopover>
+                      </span>
                     </td>
                   </tr>
                   <tr>
@@ -177,18 +197,46 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   {/* Non-Current Assets */}
                   <tr>
                     <td className="py-1.5 font-semibold text-muted-foreground" colSpan={2}>
-                      Non-Current Assets
+                      <span className="inline-flex items-center gap-1">
+                        Non-Current Assets
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Non-Current Assets</p>
+                          <p className="text-xs text-muted-foreground">
+                            Assets that are not immediately liquid. These include money lent out to borrowers (loans outstanding), interest owed but not yet collected, and any collateral seized from defaulting borrowers.
+                          </p>
+                        </InfoPopover>
+                      </span>
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1.5 pl-6">Loans Outstanding</td>
+                    <td className="py-1.5 pl-6">
+                      <span className="inline-flex items-center gap-1">
+                        Loans Outstanding
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Loans Outstanding</p>
+                          <p className="text-xs text-muted-foreground">
+                            Total remaining principal balance across all active loans. This is money owed to the business by borrowers, excluding accrued interest.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
                       {formatCurrency(data.assets.totalLoansOutstanding)}
                     </td>
                   </tr>
                   {parseFloat(data.assets.interestReceivable) > 0 && (
                     <tr>
-                      <td className="py-1.5 pl-6">Interest Receivable</td>
+                      <td className="py-1.5 pl-6">
+                        <span className="inline-flex items-center gap-1">
+                          Interest Receivable
+                          <InfoPopover>
+                            <p className="font-semibold text-sm mb-1">Interest Receivable</p>
+                            <p className="text-xs text-muted-foreground">
+                              Total accrued but unpaid interest across all active loans. This is interest that borrowers owe but have not yet paid.
+                            </p>
+                          </InfoPopover>
+                        </span>
+                      </td>
                       <td className="py-1.5 text-right font-mono tabular-nums">
                         {formatCurrency(data.assets.interestReceivable)}
                       </td>
@@ -196,7 +244,17 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   )}
                   {parseFloat(data.assets.seizedCollateralValue) > 0 && (
                     <tr>
-                      <td className="py-1.5 pl-6">Seized Collateral</td>
+                      <td className="py-1.5 pl-6">
+                      <span className="inline-flex items-center gap-1">
+                        Seized Collateral
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Seized Collateral</p>
+                          <p className="text-xs text-muted-foreground">
+                            Estimated value of collateral seized from borrowers whose loans were settled with collateral. This is recorded at the value declared when the loan was created.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </td>
                       <td className="py-1.5 text-right font-mono tabular-nums">
                         {formatCurrency(data.assets.seizedCollateralValue)}
                       </td>
@@ -240,19 +298,45 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   </tr>
                   <tr>
                     <td className="py-1.5 font-semibold text-muted-foreground" colSpan={2}>
-                      Current Liabilities
+                      <span className="inline-flex items-center gap-1">
+                        Current Liabilities
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Current Liabilities</p>
+                          <p className="text-xs text-muted-foreground">
+                            Obligations the business owes to external parties. For a lending business, this is primarily money owed to creditors (investors) who provided capital to fund loans.
+                          </p>
+                        </InfoPopover>
+                      </span>
                     </td>
                   </tr>
-                  <tr className="border-b">
-                    <td className="py-1.5 pl-6">Creditor Balances</td>
+                  <tr className={new BigNumber(data.liabilities.interestPayable ?? "0").isGreaterThan(0) ? "" : "border-b"}>
+                    <td className="py-1.5 pl-6">
+                      <span className="inline-flex items-center gap-1">
+                        Creditor Balances
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Creditor Balances</p>
+                          <p className="text-xs text-muted-foreground">
+                            Total outstanding obligation to all creditors (investors). This is the sum of invested principal plus accrued interest, minus any repayments made back to them.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
                       {formatCurrency(data.liabilities.totalCreditorBalances)}
                     </td>
                   </tr>
+                  {new BigNumber(data.liabilities.interestPayable ?? "0").isGreaterThan(0) && (
+                    <tr className="border-b">
+                      <td className="py-1.5 pl-6">Interest Payable</td>
+                      <td className="py-1.5 text-right font-mono tabular-nums">
+                        {formatCurrency(data.liabilities.interestPayable!)}
+                      </td>
+                    </tr>
+                  )}
                   <tr>
                     <td className="py-2 pl-2 font-semibold">Total Liabilities</td>
                     <td className="py-2 text-right font-mono tabular-nums font-semibold">
-                      {formatCurrency(data.liabilities.totalCreditorBalances)}
+                      {formatCurrency(new BigNumber(data.liabilities.totalCreditorBalances).plus(data.liabilities.interestPayable ?? "0").toFixed(2))}
                     </td>
                   </tr>
 
@@ -266,13 +350,33 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                     </td>
                   </tr>
                   <tr>
-                    <td className="py-1.5 pl-6">Share Capital</td>
+                    <td className="py-1.5 pl-6">
+                      <span className="inline-flex items-center gap-1">
+                        Share Capital
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Share Capital</p>
+                          <p className="text-xs text-muted-foreground">
+                            Owner&apos;s initial investment into the business. This is the seed money used to start lending operations, separate from creditor funds.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
                       {formatCurrency(data.equity.shareCapital)}
                     </td>
                   </tr>
                   <tr className="border-b">
-                    <td className="py-1.5 pl-6">Retained Earnings</td>
+                    <td className="py-1.5 pl-6">
+                      <span className="inline-flex items-center gap-1">
+                        Retained Earnings
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Retained Earnings</p>
+                          <p className="text-xs text-muted-foreground">
+                            Cumulative net profit that has been kept in the business rather than withdrawn. Calculated as total revenue earned minus total expenses since inception.
+                          </p>
+                        </InfoPopover>
+                      </span>
+                    </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
                       {formatCurrency(data.equity.retainedEarnings)}
                     </td>

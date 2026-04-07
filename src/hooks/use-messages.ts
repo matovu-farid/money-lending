@@ -14,6 +14,7 @@ export function useMessages(conversationId: string, cursor?: string) {
       return unwrapAction(result as { data: MessageWithSender[] } | { error: string })
     },
     enabled: !!conversationId,
-    refetchInterval: 5_000,
+    refetchInterval: cursor ? false : 5_000,
+    refetchIntervalInBackground: false,
   })
 }

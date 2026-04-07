@@ -18,8 +18,8 @@ export function formatNumberWithCommas(value: string): string {
 
   let parts = cleaned.split(".")
   if (parts.length > 2) {
-    // Multiple dots: keep only first dot
-    parts = [parts[0], parts.slice(1).join("")]
+    // Multiple dots: keep only first dot, discard everything after second dot
+    parts = [parts[0], parts[1]]
   }
   // Format integer part with commas
   const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",")
@@ -63,8 +63,8 @@ export function formatDateTime(date: Date | string | null | undefined): string {
  */
 export function formatCurrency(amount: string | number | null | undefined): string {
   if (amount == null) return "UGX —"
-  const num = typeof amount === "string" ? parseFloat(amount) : amount
-  if (isNaN(num)) return "UGX —"
+  const num = typeof amount === "string" ? Number(amount) : amount
+  if (!Number.isFinite(num)) return "UGX —"
   return `UGX ${new Intl.NumberFormat("en-UG", { style: "decimal", maximumFractionDigits: 0 }).format(num)}`
 }
 
@@ -74,4 +74,13 @@ export function formatCurrency(amount: string | number | null | undefined): stri
 export function formatRelativeTime(date: Date | string): string {
   const d = typeof date === "string" ? new Date(date) : date
   return formatDistanceToNow(d, { addSuffix: true })
+}
+
+/**
+ * Get the YYYY-MM string for the last fully completed calendar month.
+ */
+export function getLastCompletedMonth(): string {
+  const now = new Date()
+  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  return `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`
 }

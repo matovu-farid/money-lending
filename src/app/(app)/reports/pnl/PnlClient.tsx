@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
 import {
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/card"
 import type { PnlData } from "@/types"
 import { formatCurrency } from "@/lib/utils"
+import { InfoPopover } from "@/components/ui/info-popover"
 
 function getMonthOptions(): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = []
@@ -49,6 +51,7 @@ interface PnlClientProps {
 export function PnlClient({ data, period }: PnlClientProps) {
   const router = useRouter()
   const monthOptions = getMonthOptions()
+  const [downloading, setDownloading] = useState(false)
 
   function handlePeriodChange(value: string | null) {
     if (value !== null) {
@@ -57,6 +60,8 @@ export function PnlClient({ data, period }: PnlClientProps) {
   }
 
   async function handleDownload(format: "pdf" | "excel") {
+    if (downloading) return
+    setDownloading(true)
     const href = `/api/reports/pnl?format=${format}&period=${period}`
     try {
       const response = await fetch(href)
@@ -72,6 +77,8 @@ export function PnlClient({ data, period }: PnlClientProps) {
       URL.revokeObjectURL(url)
     } catch {
       toast.error("Export failed. Please try again.")
+    } finally {
+      setDownloading(false)
     }
   }
 
@@ -95,16 +102,20 @@ export function PnlClient({ data, period }: PnlClientProps) {
         </Select>
 
         <button
+          type="button"
           onClick={() => handleDownload("pdf")}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent"
+          disabled={downloading}
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
         >
-          Export PDF
+          {downloading ? "Exporting..." : "Export PDF"}
         </button>
         <button
+          type="button"
           onClick={() => handleDownload("excel")}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent"
+          disabled={downloading}
+          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
         >
-          Export Excel
+          {downloading ? "Exporting..." : "Export Excel"}
         </button>
       </div>
 
@@ -129,7 +140,17 @@ export function PnlClient({ data, period }: PnlClientProps) {
               <tbody>
                 {/* Revenue Section */}
                 <tr>
-                  <td className="py-2 font-semibold" colSpan={2}>Revenues</td>
+                  <td className="py-2 font-semibold" colSpan={2}>
+                    <span className="inline-flex items-center gap-1">
+                      Revenues
+                      <InfoPopover>
+                        <p className="font-semibold text-sm mb-1">Revenues</p>
+                        <p className="text-xs text-muted-foreground">
+                          All income earned during this period, including interest collected from borrower payments, issuance fees, and any other credit transactions recorded.
+                        </p>
+                      </InfoPopover>
+                    </span>
+                  </td>
                 </tr>
                 {data.income.map((row) => (
                   <tr key={row.category}>
@@ -152,7 +173,17 @@ export function PnlClient({ data, period }: PnlClientProps) {
 
                 {/* Expenses Section */}
                 <tr>
-                  <td className="py-2 font-semibold" colSpan={2}>Expenses</td>
+                  <td className="py-2 font-semibold" colSpan={2}>
+                    <span className="inline-flex items-center gap-1">
+                      Expenses
+                      <InfoPopover>
+                        <p className="font-semibold text-sm mb-1">Expenses</p>
+                        <p className="text-xs text-muted-foreground">
+                          All costs incurred during this period, including interest paid to creditors, operational expenses, salaries, and any other debit transactions recorded.
+                        </p>
+                      </InfoPopover>
+                    </span>
+                  </td>
                 </tr>
                 {data.expenses.map((row, i) => (
                   <tr
@@ -175,7 +206,20 @@ export function PnlClient({ data, period }: PnlClientProps) {
 
                 {/* Net Income — double underline (accounting convention) */}
                 <tr className="border-t-2">
-                  <td className="pt-3 pb-1 font-bold text-base">Net Income</td>
+                  <td className="pt-3 pb-1 font-bold text-base">
+                    <span className="inline-flex items-center gap-1">
+                      Net Income
+                      <InfoPopover>
+                        <p className="font-semibold text-sm mb-1">Net Income</p>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Profit (or loss) for the period after subtracting all expenses from total revenue.
+                        </p>
+                        <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+                          Net Income = Total Revenue &minus; Total Expenses
+                        </p>
+                      </InfoPopover>
+                    </span>
+                  </td>
                   <td
                     className={`pt-3 pb-1 text-right font-mono tabular-nums font-bold text-base ${
                       parseFloat(data.netProfit) >= 0

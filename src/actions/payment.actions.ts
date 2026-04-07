@@ -33,8 +33,8 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
   if (parseFloat(input.amount) <= 0) {
     return { error: "Amount must be greater than zero" }
   }
-  if (!input.paymentDate?.trim()) {
-    return { error: "Payment date is required" }
+  if (!input.paymentDate?.trim() || isNaN(Date.parse(input.paymentDate))) {
+    return { error: "Payment date must be a valid date" }
   }
 
   const validLocations = ["cash", "bank", "strong_room"]
@@ -81,7 +81,7 @@ export async function editPaymentAction(input: EditPaymentInput) {
     const [payment] = await db
       .select()
       .from(payments)
-      .where(eq(payments.id, input.paymentId))
+      .where(and(eq(payments.id, input.paymentId), isNull(payments.deletedAt)))
     if (!payment) {
       return { error: "Payment not found" }
     }
@@ -132,7 +132,7 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
     const [payment] = await db
       .select()
       .from(payments)
-      .where(eq(payments.id, input.paymentId))
+      .where(and(eq(payments.id, input.paymentId), isNull(payments.deletedAt)))
     if (!payment) {
       return { error: "Payment not found" }
     }
@@ -275,8 +275,9 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
       const [payment] = await tx
         .select()
         .from(payments)
-        .where(eq(payments.id, paymentId))
+        .where(and(eq(payments.id, paymentId), isNull(payments.deletedAt)))
       if (!payment) throw { _tag: "PaymentNotFound" }
+      if (payment.markedWrong) throw { _tag: "AlreadyMarkedWrong" }
 
       const [updatedPayment] = await tx
         .update(payments)
@@ -290,7 +291,7 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
         .returning()
 
       // Derive portions from ledger (not cached columns)
-      const portions = await getPaymentPortionsFromLedger([paymentId])
+      const portions = await getPaymentPortionsFromLedger([paymentId], tx)
       const portion = portions.get(paymentId)
 
       // Reverse interest journal entry
@@ -326,7 +327,7 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
       }
 
       // Check if loan should revert from fully_paid to active
-      const ledgerBalance = await getLoanBalanceFromLedger(payment.loanId)
+      const ledgerBalance = await getLoanBalanceFromLedger(payment.loanId, undefined, tx)
       const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
       if (loan && loan.status === "fully_paid" && ledgerBalance.isGreaterThan(0)) {
         await tx
@@ -344,6 +345,7 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
     return { data: updated }
   } catch (e: any) {
     if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
+    if (e?._tag === "AlreadyMarkedWrong") return { error: "Payment is already marked as wrong" }
     return { error: "Internal server error" }
   }
 }
@@ -368,8 +370,9 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
       const [payment] = await tx
         .select()
         .from(payments)
-        .where(eq(payments.id, paymentId))
+        .where(and(eq(payments.id, paymentId), isNull(payments.deletedAt)))
       if (!payment) throw { _tag: "PaymentNotFound" }
+      if (!payment.markedWrong) throw { _tag: "NotMarkedWrong" }
 
       const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
       if (!loan) throw { _tag: "LoanNotFound" }
@@ -394,18 +397,28 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
       const activePayments = await tx
         .select()
         .from(payments)
-        .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
+        .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
         .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
       const paymentIndex = activePayments.findIndex((p) => p.id === paymentId)
       const prevPayment = paymentIndex > 0 ? activePayments[paymentIndex - 1] : null
       const prevDate = prevPayment ? new Date(prevPayment.paymentDate) : new Date(loan.startDate)
 
-      // Derive principal balance from ledger (not cached columns)
-      const ledgerBal = await getLoanBalanceFromLedger(payment.loanId)
-      const principalBalanceBefore = ledgerBal.isGreaterThan(0)
-        ? ledgerBal.toFixed(2)
-        : loan.principalAmount
+      // Reconstruct principalBalanceBefore by walking prior payments' ledger portions
+      // (current ledger balance is wrong when this isn't the latest payment, since
+      // later payments' journals are still active)
+      let principalBalanceBefore = loan.principalAmount
+      if (paymentIndex > 0) {
+        const priorPaymentIds = activePayments.slice(0, paymentIndex).map((p) => p.id)
+        const priorPortions = await getPaymentPortionsFromLedger(priorPaymentIds, tx)
+        let runningBalance = new BigNumber(loan.principalAmount)
+        for (const priorId of priorPaymentIds) {
+          const pp = priorPortions.get(priorId)
+          if (pp) runningBalance = runningBalance.minus(new BigNumber(pp.principalPortion))
+        }
+        if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0)
+        principalBalanceBefore = runningBalance.toFixed(2)
+      }
       const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate))
       const paymentNumber = paymentIndex + 1
 
@@ -468,6 +481,7 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
   } catch (e: any) {
     if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
     if (e?._tag === "LoanNotFound") return { error: "Loan not found" }
+    if (e?._tag === "NotMarkedWrong") return { error: "Payment is not marked as wrong" }
     return { error: "Internal server error" }
   }
 }

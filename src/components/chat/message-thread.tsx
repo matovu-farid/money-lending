@@ -1,11 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
+import { useQuery } from "@tanstack/react-query"
 import { Users } from "lucide-react"
 import { useMessages } from "@/hooks/use-messages"
 import { useSendMessage } from "@/hooks/use-send-message"
 import { useDeleteMessage } from "@/hooks/use-delete-message"
 import { markAsReadAction, getConversationParticipantsAction } from "@/actions/chat.actions"
+import { queryKeys } from "@/hooks/query-keys"
 import { MessageBubble } from "./message-bubble"
 import { MessageInput } from "./message-input"
 import { cn } from "@/lib/utils"
@@ -26,18 +28,18 @@ export function MessageThread({
   const { data: messages = [], isLoading } = useMessages(conversation.id)
   const { mutate: sendMessage, isPending: isSending } = useSendMessage(conversation.id)
   const { mutate: deleteMessage } = useDeleteMessage(conversation.id)
-  const [participants, setParticipants] = useState<ChatUser[]>([])
   const bottomRef = useRef<HTMLDivElement>(null)
   const prevMessageCount = useRef(0)
 
-  // Load full participants list
-  useEffect(() => {
-    getConversationParticipantsAction(conversation.id).then((result) => {
-      if (result && "data" in result && result.data) {
-        setParticipants(result.data)
-      }
-    })
-  }, [conversation.id])
+  // Load full participants list via TanStack Query (handles race conditions on rapid conversation switches)
+  const { data: participants = [] } = useQuery<ChatUser[]>({
+    queryKey: queryKeys.chat.participants(conversation.id),
+    queryFn: async () => {
+      const result = await getConversationParticipantsAction(conversation.id)
+      if (result && "data" in result && result.data) return result.data
+      return []
+    },
+  })
 
   // Mark as read on open
   useEffect(() => {
@@ -60,7 +62,7 @@ export function MessageThread({
     if (!isLoading && messages.length > 0) {
       bottomRef.current?.scrollIntoView({ behavior: "instant" })
     }
-  }, [isLoading])
+  }, [isLoading, messages.length])
 
   function handleSend(
     content: string,

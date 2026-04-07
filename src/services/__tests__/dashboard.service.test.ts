@@ -259,6 +259,7 @@ describe("Dashboard Service — Unit", () => {
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
+          // Audit log query
           return {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
@@ -269,11 +270,10 @@ describe("Dashboard Service — Unit", () => {
             }),
           }
         }
+        // Batch customer name lookup (no .limit() — uses inArray)
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([{ fullName: "John Doe" }]),
-            }),
+            where: vi.fn().mockResolvedValue([{ id: "cust-1", fullName: "John Doe" }]),
           }),
         }
       })

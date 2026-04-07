@@ -1,10 +1,10 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useState } from "react"
 import { Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
-import { searchActiveLoansAction } from "@/actions/payment.actions"
+import { useSearchActiveLoans } from "@/hooks/use-search-active-loans"
 import { formatNumberWithCommas } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
 
@@ -17,56 +17,27 @@ interface LoanSearchComboboxProps {
 export function LoanSearchCombobox({ selectedLoan, onSelect, onClear }: LoanSearchComboboxProps) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
-  const [results, setResults] = useState<ActiveLoanSearchResult[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // sideOffset value maintained for spec compliance
   const sideOffset = 4
+
+  const { data: results = [], isLoading: isSearching } = useSearchActiveLoans(query)
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value
     setQuery(value)
-
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current)
-    }
-
-    if (value.trim().length < 2) {
-      setOpen(false)
-      setResults([])
-      setIsSearching(false)
-      return
-    }
-
-    setIsSearching(true)
-    setOpen(true)
-
-    debounceTimer.current = setTimeout(async () => {
-      const result = await searchActiveLoansAction(value)
-      setIsSearching(false)
-      if ("error" in result) {
-        setResults([])
-      } else {
-        setResults(result.data.slice(0, 10))
-      }
-    }, 200)
+    setOpen(value.trim().length >= 2)
   }
 
   function handleSelect(loan: ActiveLoanSearchResult) {
     onSelect(loan)
     setOpen(false)
     setQuery("")
-    setResults([])
   }
 
   function handleClear() {
     onClear()
     setQuery("")
-    setResults([])
     setOpen(false)
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current)
-    }
   }
 
   // Show selected state when a loan is chosen

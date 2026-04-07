@@ -3,19 +3,16 @@ import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
-import { eq, ilike, inArray, and, count, isNull, asc } from "drizzle-orm"
+import { eq, ilike, inArray, and, count, isNull } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
 import { formatAmount } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import { escapeLikePattern } from "@/lib/db/utils"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, CustomerStatus } from "@/types"
 import type { Customer, LoanType } from "@/types"
-
-function escapeLikePattern(input: string): string {
-  return input.replace(/%/g, '\\%').replace(/_/g, '\\_')
-}
 
 export const createCustomer = (
   input: CreateCustomerInput
@@ -89,7 +86,7 @@ export const searchCustomers = (
       const whereClause = conditions.length ? and(...conditions) : undefined
 
       const pageSize = params.pageSize ?? 20
-      const page = params.page ?? 0
+      const page = params.page ?? 1
 
       if (params.daysRemainingFilter && params.daysRemainingFilter !== "any") {
         const allRows = await db
@@ -98,32 +95,58 @@ export const searchCustomers = (
           .where(whereClause)
           .orderBy(customers.fullName)
 
+        // Batch-fetch all active loans for all customers at once
+        const customerIds = allRows.map((c) => c.id)
+        const allActiveLoans = customerIds.length > 0
+          ? await db
+              .select()
+              .from(loans)
+              .where(and(inArray(loans.customerId, customerIds), eq(loans.status, "active")))
+          : []
+
+        // Group loans by customer
+        const loansByCustomer = new Map<string, typeof allActiveLoans>()
+        for (const loan of allActiveLoans) {
+          const existing = loansByCustomer.get(loan.customerId) ?? []
+          existing.push(loan)
+          loansByCustomer.set(loan.customerId, existing)
+        }
+
+        // Batch-fetch ledger data for ALL active loans at once
+        const allLoanIds = allActiveLoans.map((l) => l.id)
+        const [allLedgerBalances, allInterestEarned] = await Promise.all([
+          allLoanIds.length > 0 ? getLoanBalancesFromLedger(allLoanIds) : Promise.resolve(new Map<string, BigNumber>()),
+          allLoanIds.length > 0 ? getInterestEarnedFromLedger(allLoanIds) : Promise.resolve(new Map<string, BigNumber>()),
+        ])
+
+        // Batch-fetch all payments for all active loans at once
+        const allLoanPayments = allLoanIds.length > 0
+          ? await db
+              .select()
+              .from(payments)
+              .where(and(inArray(payments.loanId, allLoanIds), isNull(payments.deletedAt)))
+          : []
+
+        // Group payments by loanId
+        const paymentsByLoan = new Map<string, number>()
+        for (const p of allLoanPayments) {
+          paymentsByLoan.set(p.loanId, (paymentsByLoan.get(p.loanId) ?? 0) + 1)
+        }
+
         const filteredRows: Customer[] = []
 
         for (const customer of allRows) {
-          const activeLoans = await db
-            .select()
-            .from(loans)
-            .where(and(eq(loans.customerId, customer.id), eq(loans.status, "active")))
-
-          if (activeLoans.length === 0) continue
+          const activeLoans = loansByCustomer.get(customer.id)
+          if (!activeLoans || activeLoans.length === 0) continue
 
           let maxDaysOverdue = 0
 
-          // Batch-fetch ledger balances for this customer's active loans
-          const customerLoanIds = activeLoans.map((l) => l.id)
-          const customerLedgerBalances = await getLoanBalancesFromLedger(customerLoanIds)
-          const interestEarnedMap = await getInterestEarnedFromLedger(customerLoanIds)
-
           for (const loan of activeLoans) {
-            const loanPayments = await db
-              .select()
-              .from(payments)
-              .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-              .orderBy(asc(payments.paymentDate))
-
             const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-            const ledgerBalance = customerLedgerBalances.get(loan.id)
+            const ledgerBalance = allLedgerBalances.get(loan.id)
+            if (ledgerBalance === undefined) {
+              console.warn(`[searchCustomers] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+            }
             const outstandingBalance = ledgerBalance !== undefined
               ? ledgerBalance.toFixed(2)
               : loan.principalAmount
@@ -134,8 +157,8 @@ export const searchCustomers = (
               startDate: new Date(loan.startDate),
               loanType: (loan.loanType ?? "perpetual") as LoanType,
               termMonths: loan.termMonths,
-              totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
-              paymentCount: loanPayments.length,
+              totalInterestPaid: formatAmount(allInterestEarned.get(loan.id) ?? new BigNumber(0)),
+              paymentCount: paymentsByLoan.get(loan.id) ?? 0,
               outstandingBalance,
             })
             if (info.daysOverdue > maxDaysOverdue) {
@@ -152,7 +175,7 @@ export const searchCustomers = (
         }
 
         const total = filteredRows.length
-        const paginatedRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize)
+        const paginatedRows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
 
         return { rows: paginatedRows, total }
       }
@@ -167,7 +190,7 @@ export const searchCustomers = (
         .from(customers)
         .where(whereClause)
         .limit(pageSize)
-        .offset(page * pageSize)
+        .offset((page - 1) * pageSize)
         .orderBy(customers.fullName)
 
       return { rows, total }

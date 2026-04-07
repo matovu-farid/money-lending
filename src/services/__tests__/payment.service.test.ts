@@ -24,6 +24,7 @@ vi.mock("@/services/transaction.service", () => {
     autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
+    getLoanBalancesFromLedger: vi.fn((_loanIds: string[]) => Promise.resolve(new Map())),
     reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
     getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
@@ -145,10 +146,11 @@ describe("Payment Service", () => {
 
     it("recordPayment: first payment on active loan keeps it active (no status transition unless fully paid)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/transaction.service")
       // Mock ledger to return non-zero balance (loan not fully paid)
+      ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new Map([["loan-1", new BigNumber("500000")]])) // for principalBalanceBefore
       ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>)
-        .mockResolvedValueOnce(new BigNumber("500000")) // for principalBalanceBefore
         .mockResolvedValueOnce(new BigNumber("400000")) // for postPaymentBalance check
 
       const partialPayment = { ...mockPayment }
@@ -203,6 +205,14 @@ describe("Payment Service", () => {
 
     it("recordPayment: transitions loan status to fully_paid when balance reaches zero (LOAN-08)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/transaction.service")
+
+      // Mock ledger to return actual balance (ledger path, not fallback)
+      ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new Map([["loan-1", new BigNumber("100000")]]))
+      // Post-payment balance is zero → triggers fully_paid
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new BigNumber(0))
 
       // Loan with small principal so payment can fully pay it off
       const smallLoan = { ...mockLoan, principalAmount: "100000", status: "active" }
@@ -491,7 +501,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }]) // payment lookup
-                if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
+                if (call === 2) return { for: vi.fn().mockResolvedValue([mockLoan]) } // loan lookup (FOR UPDATE)
                 if (call === 3) return { orderBy: vi.fn().mockResolvedValue([editedPayment]) } // activePayments
                 if (call === 4) return Promise.resolve([editedPayment]) // updatedPayment fetch
                 return Promise.resolve([editedPayment])
@@ -560,7 +570,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }]) // payment lookup
-                if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
+                if (call === 2) return { for: vi.fn().mockResolvedValue([mockLoan]) } // loan lookup (FOR UPDATE)
                 // Final select for deleted row
                 return Promise.resolve([softDeletedResult])
               }),
@@ -636,7 +646,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }]) // payment lookup
-                if (call === 2) return Promise.resolve([{ ...mockLoan, status: "active" }]) // loan lookup
+                if (call === 2) return { for: vi.fn().mockResolvedValue([{ ...mockLoan, status: "active" }]) } // loan lookup (FOR UPDATE)
                 return Promise.resolve([softDeletedResult]) // final deleted row
               }),
             }),
@@ -701,7 +711,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([lastPayment]) // payment lookup
-                if (call === 2) return Promise.resolve([{ ...mockLoan, status: "fully_paid" }]) // loan lookup
+                if (call === 2) return { for: vi.fn().mockResolvedValue([{ ...mockLoan, status: "fully_paid" }]) } // loan lookup (FOR UPDATE)
                 return Promise.resolve([softDeletedResult]) // final deleted row
               }),
             }),
@@ -829,10 +839,12 @@ describe("Payment Service", () => {
     it("uses ledger balance when available", async () => {
       const { db: mockedDb } = await import("@/lib/db")
       const BigNumber = require("bignumber.js").default
-      const { getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalancesFromLedger } = await import("@/services/transaction.service")
 
-      // Mock ledger to return 400000
-      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new BigNumber("400000"))
+      // Mock ledger to return 400000 for loan-1
+      ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["loan-1", new BigNumber("400000")]])
+      )
 
       let dbSelectCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {

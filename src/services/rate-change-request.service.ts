@@ -6,6 +6,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { eq, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
+import { autoPostRateChangeAdjustment } from "./transaction.service"
 import type { CreateRateChangeRequestInput, ReviewRateChangeRequestInput, RateChangeRequest } from "@/types"
 
 export interface RateChangeRequestWithLoan extends RateChangeRequest {
@@ -57,18 +58,27 @@ export const applyRateChangeImmediately = (
 ): Effect.Effect<void, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [loan] = await db
-        .select()
-        .from(loans)
-        .where(eq(loans.id, loanId))
-
-      if (!loan) throw { _tag: "LoanNotFound", id: loanId }
-
       await db.transaction(async (tx) => {
+        const [loan] = await tx
+          .select()
+          .from(loans)
+          .where(eq(loans.id, loanId))
+          .for("update")
+
+        if (!loan) throw { _tag: "LoanNotFound", id: loanId }
+
         await tx
           .update(loans)
           .set({ interestRateOverride: newRate, updatedAt: new Date() })
           .where(eq(loans.id, loanId))
+
+        // Reset accrual baseline so next accrual run uses the new rate
+        await autoPostRateChangeAdjustment(tx, {
+          loanId,
+          oldRate: loan.interestRateOverride ?? loan.interestRate,
+          newRate,
+          actorId,
+        })
 
         await writeAuditLog(tx, {
           actorId,
@@ -170,6 +180,14 @@ export const reviewRequest = (
             .update(loans)
             .set({ interestRateOverride: request.requestedRate, updatedAt: now })
             .where(eq(loans.id, request.loanId))
+
+          // Reset accrual baseline so next accrual run uses the new rate
+          await autoPostRateChangeAdjustment(tx, {
+            loanId: request.loanId,
+            oldRate: request.currentRate,
+            newRate: request.requestedRate,
+            actorId: reviewerId,
+          })
 
           await writeAuditLog(tx, {
             actorId: reviewerId,

@@ -194,6 +194,13 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Loan type must be perpetual, fixed_rate, or reducing_balance" }
   }
 
+  // Validate interestRate if provided
+  if (input.interestRate && input.interestRate !== "") {
+    if (!/^\d+(\.\d+)?$/.test(input.interestRate) || parseFloat(input.interestRate) <= 0) {
+      return { error: "Interest rate must be a positive decimal (e.g. 0.10 for 10%/month)" }
+    }
+  }
+
   // Validate termMonths for term loans
   if (loanType !== "perpetual") {
     if (!input.termMonths || input.termMonths <= 0 || !Number.isInteger(input.termMonths)) {
@@ -243,8 +250,6 @@ export async function createLoanAction(input: CreateLoanInput) {
 }
 
 async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
-  const now = new Date()
-
   // Batch-fetch all payments for all loans in a single query
   const loanIds = loanList.map((l) => l.id)
   const allPayments =
@@ -275,12 +280,15 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       const loanPayments = paymentsByLoanId.get(loan.id) ?? []
 
       const ledgerBalance = ledgerBalances.get(loan.id)
-      let outstandingBalance = ledgerBalance !== undefined
+      if (ledgerBalance === undefined) {
+        console.warn(`[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+      }
+      const outstandingBalance = ledgerBalance !== undefined
         ? ledgerBalance.toFixed(2)
         : loan.principalAmount
 
       const lastPayment = loanPayments.at(-1)
-      let lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
+      const lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
 
       if (loan.status === "active") {
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate

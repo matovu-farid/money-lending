@@ -5,6 +5,7 @@ import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
+import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq, desc, asc, and, isNull, sql } from "drizzle-orm"
 import BigNumber from "bignumber.js"
 import {
@@ -441,7 +442,7 @@ export const updateLoan = (
           if (activePayments.length > 0) {
             // Fetch all payment portions from ledger
             const paymentIds = activePayments.map((p) => p.id)
-            const oldPortions = await getPaymentPortionsFromLedger(paymentIds)
+            const oldPortions = await getPaymentPortionsFromLedger(paymentIds, tx)
 
             // Reverse all payment journals
             for (const p of activePayments) {
@@ -636,7 +637,7 @@ export const deleteLoan = (
         // (already-deleted payments had their journals reversed when they were individually deleted)
         const loanPayments = activePaymentIds
         const paymentPortions = loanPayments.length > 0
-          ? await getPaymentPortionsFromLedger(loanPayments.map((p) => p.id))
+          ? await getPaymentPortionsFromLedger(loanPayments.map((p) => p.id), tx)
           : new Map()
 
         for (const p of loanPayments) {
@@ -672,6 +673,64 @@ export const deleteLoan = (
                 loanId: input.loanId,
               })
             }
+        }
+
+        // Reverse rollover ledger entries (carried principal + carried interest debits on Loans Receivable)
+        if (existingLoan.rolledOverFrom) {
+          const rolloverDebits = await tx
+            .select({ amount: transactions.amount, transactionDate: transactions.transactionDate })
+            .from(transactions)
+            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+            .where(
+              and(
+                eq(transactions.referenceType, "rollover"),
+                eq(transactions.loanId, input.loanId),
+                eq(transactions.type, "debit"),
+                eq(transactionCategories.name, "Loans Receivable")
+              )
+            )
+
+          for (const entry of rolloverDebits) {
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Cash", type: "asset" },
+              creditCategory: { name: "Loans Receivable", type: "asset" },
+              amount: entry.amount,
+              referenceType: "loan_reversal",
+              referenceId: input.loanId,
+              description: `Reversal - rollover entry for deleted loan ${input.loanId.slice(0, 8).toUpperCase()}: ${input.reason}`,
+              transactionDate: entry.transactionDate,
+              recordedBy: actorId,
+              loanId: input.loanId,
+            })
+          }
+
+          // Also reverse the Interest Earned credit posted for carried interest
+          const rolloverInterestCredits = await tx
+            .select({ amount: transactions.amount, transactionDate: transactions.transactionDate })
+            .from(transactions)
+            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+            .where(
+              and(
+                eq(transactions.referenceType, "rollover"),
+                eq(transactions.loanId, input.loanId),
+                eq(transactions.type, "credit"),
+                eq(transactionCategories.name, "Interest Earned")
+              )
+            )
+
+          for (const entry of rolloverInterestCredits) {
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Interest Earned", type: "revenue" },
+              creditCategory: { name: "Cash", type: "asset" },
+              amount: entry.amount,
+              referenceType: "loan_reversal",
+              referenceId: input.loanId,
+              description: `Reversal - rollover interest for deleted loan ${input.loanId.slice(0, 8).toUpperCase()}: ${input.reason}`,
+              transactionDate: entry.transactionDate,
+              recordedBy: actorId,
+              loanId: input.loanId,
+            })
+          }
         }
 
         await tx

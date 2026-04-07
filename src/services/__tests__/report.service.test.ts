@@ -206,6 +206,7 @@ describe("Report Service — exports", () => {
       "getPnlData",
       "getBalanceSheetData",
       "getPortfolioData",
+      "getRetainedEarningsData",
       "generateMonthlySnapshot",
     ]
     for (const name of expectedExports) {
@@ -267,8 +268,8 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([
-            { type: "credit", amount: "500000", categoryName: "Interest Earned" },
-            { type: "debit", amount: "200000", categoryName: "Rent" },
+            { type: "credit", amount: "500000", categoryName: "Interest Earned", categoryType: "revenue" },
+            { type: "debit", amount: "200000", categoryName: "Rent", categoryType: "expense" },
           ]),
         }),
       }),
@@ -344,10 +345,10 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([
-            { type: "credit", amount: "500000", categoryName: "Interest Earned" },
-            { type: "credit", amount: "1000000", categoryName: "Share Capital" },
-            { type: "debit", amount: "200000", categoryName: "Rent" },
-            { type: "debit", amount: "300000", categoryName: "Salaries" },
+            { type: "credit", amount: "500000", categoryName: "Interest Earned", categoryType: "revenue" },
+            { type: "credit", amount: "1000000", categoryName: "Share Capital", categoryType: "revenue" },
+            { type: "debit", amount: "200000", categoryName: "Rent", categoryType: "expense" },
+            { type: "debit", amount: "300000", categoryName: "Salaries", categoryType: "expense" },
           ]),
         }),
       }),
@@ -465,76 +466,58 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       return { daysOverdue: 10, dailyRate: "6666.67", unpaidInterest: "66666.70" }
     })
 
-    // 1st select: active loans (2 loans)
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          {
-            id: "loan-a",
-            principalAmount: "5000000",
-            issuanceFee: "0.00",
-            description: "Test loan",
-            status: "active",
-            customerId: "cust-a",
-            startDate: startDateA,
-            interestRate: "0.10",
-            interestRateOverride: null,
-            minInterestDays: 30,
-            minPeriodOverride: null,
-            issuedBy: "actor-1",
-            disbursementSource: "cash",
-            loanType: "perpetual",
-            termMonths: null,
-          },
-          {
-            id: "loan-b",
-            principalAmount: "2000000",
-            issuanceFee: "0.00",
-            description: "Test loan",
-            status: "active",
-            customerId: "cust-b",
-            startDate: startDateB,
-            interestRate: "0.10",
-            interestRateOverride: null,
-            minInterestDays: 30,
-            minPeriodOverride: null,
-            issuedBy: "actor-1",
-            disbursementSource: "cash",
-            loanType: "perpetual",
-            termMonths: null,
-          },
-        ]),
-      }),
-    } as any)
+    const loanA = {
+      id: "loan-a",
+      principalAmount: "5000000",
+      issuanceFee: "0.00",
+      description: "Test loan",
+      status: "active",
+      customerId: "cust-a",
+      startDate: startDateA,
+      interestRate: "0.10",
+      interestRateOverride: null,
+      minInterestDays: 30,
+      minPeriodOverride: null,
+      issuedBy: "actor-1",
+      disbursementSource: "cash",
+      loanType: "perpetual",
+      termMonths: null,
+    }
+    const loanB = {
+      id: "loan-b",
+      principalAmount: "2000000",
+      issuanceFee: "0.00",
+      description: "Test loan",
+      status: "active",
+      customerId: "cust-b",
+      startDate: startDateB,
+      interestRate: "0.10",
+      interestRateOverride: null,
+      minInterestDays: 30,
+      minPeriodOverride: null,
+      issuedBy: "actor-1",
+      disbursementSource: "cash",
+      loanType: "perpetual",
+      termMonths: null,
+    }
 
-    // 2nd select: customer for loan-a
+    // 1st select: active loans joined with customers
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ fullName: "Alice" }]),
-      }),
-    } as any)
-
-    // 3rd select: payments for loan-a (none — so overdue)
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue([]),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { loan: loanA, customerName: "Alice" },
+            { loan: loanB, customerName: "Bob" },
+          ]),
         }),
       }),
     } as any)
 
-    // 4th select: customer for loan-b
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ fullName: "Bob" }]),
-      }),
-    } as any)
-
-    // 5th select: payments for loan-b (none)
+    // 2nd select: batch payment counts (empty — no payments)
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue([]),
+          groupBy: vi.fn().mockResolvedValue([]),
         }),
       }),
     } as any)

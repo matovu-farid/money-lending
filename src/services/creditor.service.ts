@@ -10,9 +10,8 @@ import {
   InvestmentNotFound,
 } from "@/lib/errors";
 import { writeAuditLog } from "./audit.service";
-import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid, getCreditorBalancesFromLedger, reverseCreditorInterestAccrual } from "@/services/transaction.service";
+import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid, getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger, reverseCreditorInterestAccrual } from "@/services/transaction.service";
 import {
-  calculateInterest,
   allocatePayment,
   formatAmount,
 } from "@/lib/interest/engine";
@@ -225,9 +224,12 @@ export const recordCreditorRepayment = (
           new Date(input.repaymentDate),
         );
 
-        // Derive principal balance from ledger
-        const ledgerBalances = await getCreditorBalancesFromLedger([input.investmentId]);
-        const principalBalance = ledgerBalances.get(input.investmentId) ?? new BigNumber(investment.amount);
+        // Derive principal balance from ledger (pass tx for transactional consistency)
+        const ledgerBalances = await getCreditorBalancesFromLedger([input.investmentId], tx);
+        const principalBalance = ledgerBalances.get(input.investmentId) ?? (() => {
+          console.warn(`[recordCreditorRepayment] No ledger entries for investment ${input.investmentId}, using amount as fallback`)
+          return new BigNumber(investment.amount);
+        })();
         const principalBalanceStr = formatAmount(principalBalance);
 
         const allocation = allocatePayment({
@@ -272,6 +274,7 @@ export const recordCreditorRepayment = (
           await autoPostInterestExpense(tx, {
             amount: allocation.interestPortion,
             investmentId: input.investmentId,
+            repaymentId: repayment.id,
             repaymentDate: input.repaymentDate,
             actorId,
             sourceLocation: input.sourceLocation,
@@ -283,6 +286,7 @@ export const recordCreditorRepayment = (
           await autoPostCreditorPrincipalRepaid(tx, {
             amount: allocation.principalPortion,
             investmentId: input.investmentId,
+            repaymentId: repayment.id,
             repaymentDate: input.repaymentDate,
             actorId,
             sourceLocation: input.sourceLocation,
@@ -316,65 +320,42 @@ export const getCreditorDashboard = (
         .where(eq(creditorInvestments.creditorId, creditorId))
         .orderBy(asc(creditorInvestments.investmentDate));
 
-      const now = new Date();
-      let totalInvested = new BigNumber(0);
-      let totalInterestAccrued = new BigNumber(0);
-      let totalRepaymentsMade = new BigNumber(0);
-
       const investmentSummaries: CreditorInvestmentSummary[] = [];
 
-      // Batch-fetch all repayments for all investments in a single query
       const investmentIds = investments.map((inv) => inv.id);
+
+      // Derive all financial figures from the ledger
+      const [ledgerBalances, interestPayableMap, totalInvestedBN, totalRepaymentsMadeBN] = await Promise.all([
+        getCreditorBalancesFromLedger(investmentIds),
+        getInterestPayableFromLedger(investmentIds),
+        getCreditorTotalInvestedFromLedger(investmentIds),
+        getCreditorTotalRepaidFromLedger(investmentIds),
+      ]);
+
+      // Batch-fetch repayment portions from ledger for per-investment repaid totals
       const allRepayments = investmentIds.length > 0
         ? await db
             .select()
             .from(creditorRepayments)
             .where(inArray(creditorRepayments.investmentId, investmentIds))
-            .orderBy(
-              asc(creditorRepayments.repaymentDate),
-              asc(creditorRepayments.createdAt),
-            )
         : [];
 
-      // Group repayments by investmentId
-      const repaymentsByInvestment = new Map<string, typeof allRepayments>();
+      const repaymentAmountsByInvestment = new Map<string, BigNumber>();
       for (const r of allRepayments) {
-        const list = repaymentsByInvestment.get(r.investmentId) ?? [];
-        list.push(r);
-        repaymentsByInvestment.set(r.investmentId, list);
+        const current = repaymentAmountsByInvestment.get(r.investmentId) ?? new BigNumber(0);
+        repaymentAmountsByInvestment.set(r.investmentId, current.plus(r.amount));
       }
 
-      // Derive per-investment principal balances from ledger
-      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds);
+      let totalInterestAccrued = new BigNumber(0);
 
       for (const investment of investments) {
-        totalInvested = totalInvested.plus(investment.amount);
-
-        // Use ledger-derived balance, falling back to original investment amount
+        if (!ledgerBalances.has(investment.id)) {
+          console.warn(`[getCreditorDashboard] No ledger entries for investment ${investment.id}, using amount as fallback`)
+        }
         const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
-
-        const repayments = repaymentsByInvestment.get(investment.id) ?? [];
-
-        const totalRepaid = repayments.reduce(
-          (acc, r) => acc.plus(r.amount),
-          new BigNumber(0),
-        );
-        totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid);
-
-        const prevDate =
-          repayments.length === 0
-            ? new Date(investment.investmentDate)
-            : new Date(repayments[repayments.length - 1].repaymentDate);
-
-        const daysElapsed = daysBetween(prevDate, now);
-
-        const interestAccrued = calculateInterest(
-          formatAmount(principalBalance),
-          investment.interestRateMonthly,
-          daysElapsed,
-          0,
-        );
+        const interestAccrued = interestPayableMap.get(investment.id) ?? new BigNumber(0);
         totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
+        const totalRepaid = repaymentAmountsByInvestment.get(investment.id) ?? new BigNumber(0);
 
         investmentSummaries.push({
           id: investment.id,
@@ -395,9 +376,9 @@ export const getCreditorDashboard = (
         totalPrincipalBalance.plus(totalInterestAccrued);
 
       return {
-        totalInvested: formatAmount(totalInvested),
+        totalInvested: formatAmount(totalInvestedBN),
         interestAccrued: formatAmount(totalInterestAccrued),
-        repaymentsMade: formatAmount(totalRepaymentsMade),
+        repaymentsMade: formatAmount(totalRepaymentsMadeBN),
         outstandingBalance: formatAmount(outstandingBalance),
         investments: investmentSummaries,
       };
@@ -421,58 +402,20 @@ export const getSystemCapital = (): Effect.Effect<
   Effect.tryPromise({
     try: async () => {
       const allInvestments = await db.select().from(creditorInvestments);
-      const now = new Date();
-
-      let totalInvested = new BigNumber(0);
-      let totalInterestAccrued = new BigNumber(0);
-      let totalRepaymentsMade = new BigNumber(0);
 
       const investmentIds = allInvestments.map((inv) => inv.id);
 
-      // Derive principal balances from ledger
-      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds);
+      // Derive all financial figures from the ledger
+      const [ledgerBalances, interestPayableMap, totalInvestedBN, totalRepaymentsMadeBN] = await Promise.all([
+        getCreditorBalancesFromLedger(investmentIds),
+        getInterestPayableFromLedger(investmentIds),
+        getCreditorTotalInvestedFromLedger(investmentIds),
+        getCreditorTotalRepaidFromLedger(investmentIds),
+      ]);
 
-      // Batch-fetch all repayments
-      const allRepayments = investmentIds.length > 0
-        ? await db
-            .select()
-            .from(creditorRepayments)
-            .where(inArray(creditorRepayments.investmentId, investmentIds))
-            .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
-        : [];
-
-      const repaymentsByInvestment = new Map<string, typeof allRepayments>();
-      for (const r of allRepayments) {
-        const list = repaymentsByInvestment.get(r.investmentId) ?? [];
-        list.push(r);
-        repaymentsByInvestment.set(r.investmentId, list);
-      }
-
+      let totalInterestAccrued = new BigNumber(0);
       for (const investment of allInvestments) {
-        totalInvested = totalInvested.plus(investment.amount);
-
-        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
-        const repayments = repaymentsByInvestment.get(investment.id) ?? [];
-
-        const totalRepaid = repayments.reduce(
-          (acc, r) => acc.plus(r.amount),
-          new BigNumber(0),
-        );
-        totalRepaymentsMade = totalRepaymentsMade.plus(totalRepaid);
-
-        const prevDate =
-          repayments.length === 0
-            ? new Date(investment.investmentDate)
-            : new Date(repayments[repayments.length - 1].repaymentDate);
-
-        const daysElapsed = daysBetween(prevDate, now);
-
-        const interestAccrued = calculateInterest(
-          formatAmount(principalBalance),
-          investment.interestRateMonthly,
-          daysElapsed,
-          0,
-        );
+        const interestAccrued = interestPayableMap.get(investment.id) ?? new BigNumber(0);
         totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
       }
 
@@ -483,9 +426,9 @@ export const getSystemCapital = (): Effect.Effect<
       const totalOutstanding = totalPrincipal.plus(totalInterestAccrued);
 
       return {
-        totalInvested: formatAmount(totalInvested),
+        totalInvested: formatAmount(totalInvestedBN),
         totalInterestAccrued: formatAmount(totalInterestAccrued),
-        totalRepaymentsMade: formatAmount(totalRepaymentsMade),
+        totalRepaymentsMade: formatAmount(totalRepaymentsMadeBN),
         totalOutstanding: formatAmount(totalOutstanding),
       };
     },

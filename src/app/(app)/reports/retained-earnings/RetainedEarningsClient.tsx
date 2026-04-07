@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/card"
 import type { RetainedEarningsData } from "@/types"
 import { formatCurrency } from "@/lib/utils"
+import { InfoPopover } from "@/components/ui/info-popover"
 
 function getMonthOptions(): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = []
@@ -92,7 +93,15 @@ export function RetainedEarningsClient({ data, period }: RetainedEarningsClientP
               {/* Beginning Retained Earnings */}
               <tr>
                 <td className="py-2">
-                  Retained Earnings, {formatPeriodDate(period, "start")}
+                  <span className="inline-flex items-center gap-1">
+                    Retained Earnings, {formatPeriodDate(period, "start")}
+                    <InfoPopover>
+                      <p className="font-semibold text-sm mb-1">Beginning Balance</p>
+                      <p className="text-xs text-muted-foreground">
+                        The retained earnings carried forward from the previous period. This is the cumulative profit kept in the business up to the start of this month.
+                      </p>
+                    </InfoPopover>
+                  </span>
                 </td>
                 <td className="py-2 text-right font-mono tabular-nums">
                   {formatCurrency(data.beginningBalance)}
@@ -102,7 +111,15 @@ export function RetainedEarningsClient({ data, period }: RetainedEarningsClientP
               {/* Add: Net Income */}
               <tr className="border-b">
                 <td className="py-2">
-                  Add: Net Income
+                  <span className="inline-flex items-center gap-1">
+                    Add: Net Income
+                    <InfoPopover>
+                      <p className="font-semibold text-sm mb-1">Net Income</p>
+                      <p className="text-xs text-muted-foreground">
+                        Profit (or loss) earned during this month, as shown on the Income Statement. A negative value means expenses exceeded revenue.
+                      </p>
+                    </InfoPopover>
+                  </span>
                 </td>
                 <td className={`py-2 text-right font-mono tabular-nums ${
                   parseFloat(data.netIncome) < 0 ? "text-destructive" : ""
@@ -114,7 +131,18 @@ export function RetainedEarningsClient({ data, period }: RetainedEarningsClientP
               {/* Ending Retained Earnings — double underline */}
               <tr className="border-t-2">
                 <td className="pt-3 pb-1 font-bold text-base">
-                  Retained Earnings, {formatPeriodDate(period, "end")}
+                  <span className="inline-flex items-center gap-1">
+                    Retained Earnings, {formatPeriodDate(period, "end")}
+                    <InfoPopover>
+                      <p className="font-semibold text-sm mb-1">Ending Retained Earnings</p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        The cumulative profit kept in the business as of the end of this month. This flows into the Balance Sheet as part of Owner&apos;s Equity.
+                      </p>
+                      <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+                        Ending = Beginning Balance + Net Income
+                      </p>
+                    </InfoPopover>
+                  </span>
                 </td>
                 <td className="pt-3 pb-1 text-right font-mono tabular-nums font-bold text-base">
                   {formatCurrency(data.endingBalance)}

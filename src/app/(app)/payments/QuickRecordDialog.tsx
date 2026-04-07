@@ -95,7 +95,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
 
   // Fetch balance for selected loan
   const { data: balanceData } = useQuery({
-    queryKey: ["loanBalance", selectedLoan?.loanId],
+    queryKey: queryKeys.loans.balance(selectedLoan?.loanId ?? ""),
     queryFn: async () => {
       if (!selectedLoan?.loanId) return null
       const r = await getLoanBalanceAction(selectedLoan.loanId)
@@ -170,6 +170,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       queryClient.invalidateQueries({ queryKey: queryKeys.recentLoans.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.loansDueToday.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     })
   }
 

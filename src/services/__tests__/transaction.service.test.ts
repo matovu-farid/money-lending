@@ -574,13 +574,17 @@ describe("Transaction Service — DB operations (mocked)", () => {
         // First call: getOrCreateCategory creates Cash
         .mockReturnValueOnce({
           values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([createdCashCat]),
+            onConflictDoNothing: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([createdCashCat]),
+            }),
           }),
         })
         // Second call: getOrCreateCategory creates Interest Earned
         .mockReturnValueOnce({
           values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([createdInterestCat]),
+            onConflictDoNothing: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([createdInterestCat]),
+            }),
           }),
         })
         // Third call: debit transaction insert
@@ -672,13 +676,17 @@ describe("Transaction Service — DB operations (mocked)", () => {
         // First call: getOrCreateCategory creates Interest Payments
         .mockReturnValueOnce({
           values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([createdInterestExpCat]),
+            onConflictDoNothing: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([createdInterestExpCat]),
+            }),
           }),
         })
         // Second call: getOrCreateCategory creates Cash
         .mockReturnValueOnce({
           values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([createdCashCat]),
+            onConflictDoNothing: vi.fn().mockReturnValue({
+              returning: vi.fn().mockResolvedValue([createdCashCat]),
+            }),
           }),
         })
         // Third call: debit transaction insert

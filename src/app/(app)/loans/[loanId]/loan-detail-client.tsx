@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useEffect } from "react"
+import { useState, useTransition, useEffect, useMemo, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useQueryClient } from "@tanstack/react-query"
@@ -19,7 +19,7 @@ import {
   UserCircle,
   ShieldAlert,
 } from "lucide-react"
-import { editPaymentAction, deletePaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
+import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
 import { updateLoanAction, deleteLoanAction } from "@/actions/loan.actions"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { InfoPopover } from "@/components/ui/info-popover"
+import BigNumber from "bignumber.js"
 import { cn, formatDate, formatCurrency } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
 
@@ -97,6 +98,21 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   // Use TanStack Query for payments so subsequent navigations are cached
   const { data: payments = initialPayments } = useLoanPayments(loan.id, true, initialPayments)
 
+  // Client-side query for payment portions — refreshes when payments change
+  const activePaymentIds = payments.filter((p) => p.deletedAt === null && !p.markedWrong).map((p) => p.id)
+  const { data: livePortions } = useQuery<Record<string, { interestPortion: string; principalPortion: string }>>({
+    queryKey: [...queryKeys.payments.portions(loan.id), activePaymentIds.join(",")],
+    queryFn: async () => {
+      if (activePaymentIds.length === 0) return {}
+      const result = await getPaymentPortionsAction(activePaymentIds)
+      if ("error" in result) return {}
+      return result.data
+    },
+    enabled: activePaymentIds.length > 0,
+    initialData: paymentPortions,
+  })
+  const currentPortions = livePortions ?? paymentPortions
+
   const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
   const [editAmount, setEditAmount] = useState("")
   const [editDate, setEditDate] = useState("")
@@ -137,7 +153,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   })
 
   const { data: balanceData } = useQuery({
-    queryKey: ["loan-balance", loan.id],
+    queryKey: queryKeys.loans.balance(loan.id),
     queryFn: async () => {
       const result = await getLoanBalanceAction(loan.id)
       if ("error" in result) return null
@@ -148,12 +164,21 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
 
   const pendingRateRequest = rateChangeRequests.find((r: RateChangeRequest) => r.status === "pending")
 
+  const openLoanEditDialog = useCallback(() => {
+    setLoanPrincipal(loan.principalAmount)
+    setLoanInterestRate((parseFloat(loan.interestRate) * 100).toFixed(1))
+    setLoanStartDate(formatDateForInput(loan.startDate))
+    setLoanEditReason("")
+    setEditingLoan(true)
+  }, [loan.principalAmount, loan.interestRate, loan.startDate])
+
+  const didOpenRef = useRef(false)
   useEffect(() => {
-    if (openEditOnMount && canModify) {
+    if (!didOpenRef.current && openEditOnMount && canModify) {
+      didOpenRef.current = true
       openLoanEditDialog()
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [openEditOnMount, canModify, openLoanEditDialog])
 
   const activePayments = payments
     .filter((p) => p.deletedAt === null)
@@ -163,8 +188,37 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
 
   const principalNum = parseFloat(loan.principalAmount)
   const balanceNum = parseFloat(outstandingBalance)
-  const totalPaid = principalNum - balanceNum
-  const repaymentPercent = principalNum > 0 ? Math.min(100, Math.round((totalPaid / principalNum) * 100)) : 0
+  const totalPaid = Math.max(0, principalNum - balanceNum)
+  const repaymentPercent = principalNum > 0 ? Math.min(100, Math.max(0, Math.round((totalPaid / principalNum) * 100))) : 0
+
+  const schedule = useMemo(
+    () => loan.termMonths
+      ? calculateSchedule(
+          loan.principalAmount,
+          loan.interestRateOverride ?? loan.interestRate,
+          loan.termMonths,
+          loan.loanType as "fixed_rate" | "reducing_balance"
+        )
+      : [],
+    [loan.principalAmount, loan.interestRateOverride, loan.interestRate, loan.termMonths, loan.loanType]
+  )
+
+  // Compute running balance per payment for the "Balance" column
+  const runningBalanceMap = useMemo(() => {
+    const map: Record<string, string> = {}
+    let balance = new BigNumber(loan.principalAmount)
+    // Use non-deleted payments sorted by date
+    const sorted = payments
+      .filter((p) => p.deletedAt === null && !p.markedWrong)
+      .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime() || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+    for (const p of sorted) {
+      const principal = currentPortions[p.id]?.principalPortion ?? "0"
+      balance = balance.minus(new BigNumber(principal))
+      if (balance.isLessThan(0)) balance = new BigNumber(0)
+      map[p.id] = balance.toFixed(2)
+    }
+    return map
+  }, [payments, currentPortions, loan.principalAmount])
 
   function openEditDialog(payment: Payment) {
     setEditingPayment(payment)
@@ -188,14 +242,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   function closeDeleteDialog() {
     setDeletingPayment(null)
     setDeleteReason("")
-  }
-
-  function openLoanEditDialog() {
-    setLoanPrincipal(loan.principalAmount)
-    setLoanInterestRate((parseFloat(loan.interestRate) * 100).toFixed(1))
-    setLoanStartDate(formatDateForInput(loan.startDate))
-    setLoanEditReason("")
-    setEditingLoan(true)
   }
 
   function closeLoanEditDialog() {
@@ -231,7 +277,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         return
       }
 
-      toast("Payment updated")
+      toast.success("Payment updated")
       closeEditDialog()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
@@ -258,7 +304,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         return
       }
 
-      toast("Payment deleted")
+      toast.success("Payment deleted")
       closeDeleteDialog()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
@@ -287,7 +333,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         return
       }
 
-      toast("Loan updated")
+      toast.success("Loan updated")
       closeLoanEditDialog()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
@@ -308,7 +354,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         return
       }
 
-      toast("Loan deleted")
+      toast.success("Loan deleted")
       closeLoanDeleteDialog()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
@@ -479,6 +525,12 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <div className="flex items-center gap-2 text-muted-foreground mb-2">
             <Banknote className="h-4 w-4" />
             <span className="text-xs font-medium uppercase tracking-wider">Issuance Fee</span>
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Issuance Fee</p>
+              <p className="text-xs text-muted-foreground">
+                A one-time fee charged when the loan is disbursed. This is deducted upfront and recorded as revenue. It does not affect the principal balance or interest calculations.
+              </p>
+            </InfoPopover>
           </div>
           <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
             {formatCurrency(loan.issuanceFee)}
@@ -487,6 +539,14 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2 text-muted-foreground mb-2">
             <span className="text-xs font-medium uppercase tracking-wider">Loan Type</span>
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Loan Type</p>
+              <div className="text-xs text-muted-foreground space-y-2">
+                <p><strong>Fixed Rate</strong> — Interest is always calculated on the original principal amount, regardless of how much has been repaid.</p>
+                <p><strong>Reducing Balance</strong> — Interest is calculated on the remaining principal balance, so it decreases as the borrower pays down the loan.</p>
+                <p><strong>Perpetual</strong> — No maturity date. The loan runs indefinitely in 30-day cycles until fully paid or settled.</p>
+              </div>
+            </InfoPopover>
           </div>
           <p className="text-lg font-semibold">
             {loan.loanType === "fixed_rate" ? "Fixed Rate" : loan.loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}
@@ -505,7 +565,18 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       {/* Amortization Schedule */}
       {loan.loanType && loan.loanType !== "perpetual" && loan.termMonths && (
         <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground">Amortization Schedule</h3>
+          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+            Amortization Schedule
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Amortization Schedule</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                A projected breakdown of each monthly payment showing how much goes to interest vs principal. Actual payments may differ if payments are made early, late, or in different amounts.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                For <strong>Fixed Rate</strong> loans, interest is the same each month. For <strong>Reducing Balance</strong> loans, interest decreases as the principal is paid down.
+              </p>
+            </InfoPopover>
+          </h3>
           <div className="rounded-md border overflow-auto max-h-64">
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0">
@@ -518,12 +589,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 </tr>
               </thead>
               <tbody>
-                {calculateSchedule(
-                  loan.principalAmount,
-                  loan.interestRateOverride ?? loan.interestRate,
-                  loan.termMonths,
-                  loan.loanType as "fixed_rate" | "reducing_balance"
-                ).map((entry) => (
+                {schedule.map((entry) => (
                   <tr key={entry.month} className="border-t">
                     <td className="px-3 py-2">{entry.month}</td>
                     <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
@@ -621,7 +687,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           )}
         </div>
 
-        {payments.length === 0 ? (
+        {activePayments.length === 0 ? (
           <div className="rounded-xl border border-dashed border-border bg-muted/30 flex flex-col items-center justify-center py-16 gap-3 text-center">
             <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
               <Banknote className="h-6 w-6 text-muted-foreground" />
@@ -668,13 +734,13 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                           {formatCurrency(payment.amount)}
                         </TableCell>
                         <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {formatCurrency(paymentPortions[payment.id]?.interestPortion ?? "0.00")}
+                          {formatCurrency(currentPortions[payment.id]?.interestPortion ?? "0.00")}
                         </TableCell>
                         <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {formatCurrency(paymentPortions[payment.id]?.principalPortion ?? "0.00")}
+                          {formatCurrency(currentPortions[payment.id]?.principalPortion ?? "0.00")}
                         </TableCell>
                         <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {formatCurrency(outstandingBalance)}
+                          {payment.markedWrong ? "—" : formatCurrency(runningBalanceMap[payment.id] ?? outstandingBalance)}
                         </TableCell>
                         <TableCell className={cn("text-sm", cellClass)}>
                           <div className="flex items-center gap-1.5">
@@ -724,6 +790,9 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           loan={loan}
           payments={payments.filter(p => !p.deletedAt)}
           ledgerBalance={balanceData?.outstandingPrincipal ?? ledgerBalance}
+          totalInterestPaid={Object.values(currentPortions).reduce(
+            (sum, p) => sum.plus(p.interestPortion), new BigNumber(0)
+          ).toFixed(2)}
         />
       )}
 

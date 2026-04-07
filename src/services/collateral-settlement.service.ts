@@ -10,7 +10,7 @@ import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"
-import { postJournalEntry, autoPostPrincipalRecovery, getLoanBalanceFromLedger, reverseInterestAccrual } from "@/services/transaction.service"
+import { postJournalEntry, autoPostPrincipalRecovery, getLoanBalancesFromLedger, reverseInterestAccrual } from "@/services/transaction.service"
 import type { SettleWithCollateralInput, Loan } from "@/types"
 
 /**
@@ -47,28 +47,33 @@ export function computeAccruedInterest(
     return totalAccrued
   }
 
-  if (loanType === "fixed_rate") {
-    // Monthly interest on original principal
-    const monthlyInterest = new BigNumber(loan.principalAmount).multipliedBy(
-      new BigNumber(monthlyRateDecimal)
-    )
-    return monthlyInterest
-  }
-
-  if (loanType === "reducing_balance") {
-    // Monthly interest on outstanding principal
-    const monthlyInterest = outstandingPrincipal.multipliedBy(
-      new BigNumber(monthlyRateDecimal)
-    )
-    return monthlyInterest
-  }
-
-  // Fallback: perpetual
   const prevDate =
     activePayments.length === 0
       ? new Date(loan.startDate)
       : new Date(activePayments[activePayments.length - 1].paymentDate)
   const daysElapsed = daysBetween(prevDate, now)
+
+  if (loanType === "fixed_rate") {
+    // Pro-rate monthly interest on original principal by days elapsed
+    return calculateInterest(
+      loan.principalAmount,
+      monthlyRateDecimal,
+      daysElapsed,
+      minInterestDays
+    )
+  }
+
+  if (loanType === "reducing_balance") {
+    // Pro-rate monthly interest on outstanding principal by days elapsed
+    return calculateInterest(
+      outstandingPrincipal.toFixed(2),
+      monthlyRateDecimal,
+      daysElapsed,
+      minInterestDays
+    )
+  }
+
+  // Fallback: perpetual
   return calculateInterest(
     outstandingPrincipal.toFixed(2),
     monthlyRateDecimal,
@@ -110,14 +115,18 @@ export const settleWithCollateral = (
         }
       }
 
-      // Fetch ledger-derived balance BEFORE entering the transaction
-      // (acceptable for rare collateral settlement operations)
-      const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
-      const outstandingPrincipal = ledgerBalance.isGreaterThan(0)
-        ? ledgerBalance
-        : new BigNumber(loan.principalAmount)
-
       return await db.transaction(async (tx) => {
+        // Fetch ledger-derived balance INSIDE the transaction for consistency
+        const settleBalanceMap = await getLoanBalancesFromLedger([input.loanId], undefined, tx)
+        const settleHasLedger = settleBalanceMap.has(input.loanId)
+        const settleLedgerBalance = settleBalanceMap.get(input.loanId) ?? new BigNumber(0)
+        if (!settleHasLedger) {
+          console.warn(`[settleWithCollateral] No ledger entries for loan ${input.loanId}, using principalAmount as fallback`)
+        }
+        const outstandingPrincipal = settleHasLedger
+          ? settleLedgerBalance
+          : new BigNumber(loan.principalAmount)
+
         const activePayments = await tx
           .select()
           .from(payments)
@@ -239,9 +248,14 @@ export async function getCustomerActiveLoan(customerId: string): Promise<{
     .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
     .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
-  const ledgerBalance = await getLoanBalanceFromLedger(loan.id)
-  const outstandingPrincipal = ledgerBalance.isGreaterThan(0)
-    ? ledgerBalance
+  const custBalanceMap = await getLoanBalancesFromLedger([loan.id])
+  const custHasLedger = custBalanceMap.has(loan.id)
+  const custLedgerBalance = custBalanceMap.get(loan.id) ?? new BigNumber(0)
+  if (!custHasLedger) {
+    console.warn(`[getCustomerActiveLoan] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+  }
+  const outstandingPrincipal = custHasLedger
+    ? custLedgerBalance
     : new BigNumber(loan.principalAmount)
 
   const accruedInterest = computeAccruedInterest(loan, activePayments, outstandingPrincipal)

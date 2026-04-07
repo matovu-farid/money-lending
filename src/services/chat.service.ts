@@ -7,16 +7,13 @@ import { eq, and, desc, sql, inArray, ilike, lt } from "drizzle-orm"
 import { DatabaseError, ConversationNotFound, MessageNotFound, ValidationError, ForbiddenError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { createNotification } from "./notification.service"
+import { escapeLikePattern } from "@/lib/db/utils"
 import type { ConversationListItem, MessageWithSender, ChatUser } from "@/types"
 
 const MAX_ATTACHMENT_SIZE = 5 * 1024 * 1024
 const MAX_ATTACHMENTS_PER_MESSAGE = 3
 const ATTACHMENT_TTL_DAYS = 7
 const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"]
-
-function escapeLikePattern(input: string): string {
-  return input.replace(/%/g, "\\%").replace(/_/g, "\\_")
-}
 
 export const createConversation = (
   createdBy: string,
@@ -191,7 +188,7 @@ export const getConversations = (
         isGroup: conv.isGroup,
         participants: participantsByConv.get(conv.id) ?? [],
         lastMessage: lastMessageByConv.get(conv.id) ?? null,
-        unreadCount: conv.lastReadAt ? (unreadByConv.get(conv.id) ?? 0) : 0,
+        unreadCount: unreadByConv.get(conv.id) ?? 0,
         updatedAt: conv.updatedAt,
       }))
     },
@@ -618,8 +615,9 @@ export const getConversationParticipants = (
  * transferring large payloads; callers request it on demand.
  */
 export const getAttachmentData = (
-  attachmentId: string
-): Effect.Effect<{ data: string; mimeType: string }, DatabaseError | ValidationError> =>
+  attachmentId: string,
+  requesterId: string
+): Effect.Effect<{ data: string; mimeType: string }, DatabaseError | ValidationError | ForbiddenError> =>
   Effect.tryPromise({
     try: async () => {
       const [att] = await db
@@ -627,17 +625,32 @@ export const getAttachmentData = (
           data: messageAttachments.data,
           mimeType: messageAttachments.mimeType,
           expiresAt: messageAttachments.expiresAt,
+          conversationId: messages.conversationId,
         })
         .from(messageAttachments)
+        .innerJoin(messages, eq(messageAttachments.messageId, messages.id))
         .where(eq(messageAttachments.id, attachmentId))
 
       if (!att) throw new ValidationError({ message: "Attachment not found" })
       if (att.expiresAt <= new Date()) throw new ValidationError({ message: "Attachment expired" })
 
+      // Verify requester is a participant in the conversation
+      const [participant] = await db
+        .select()
+        .from(conversationParticipants)
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, att.conversationId),
+            eq(conversationParticipants.userId, requesterId)
+          )
+        )
+      if (!participant) throw new ForbiddenError({ action: "getAttachmentData", role: "non-participant" })
+
       return { data: att.data, mimeType: att.mimeType }
     },
     catch: (e) => {
       if (e instanceof ValidationError) return e
+      if (e instanceof ForbiddenError) return e
       return new DatabaseError({ cause: e })
     },
   })

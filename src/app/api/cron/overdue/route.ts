@@ -33,13 +33,21 @@ export async function POST(request: NextRequest) {
     const alertResults: { loanId: string; daysUntilDue: number }[] = []
 
     const targetUsersResult = await db.execute(
-      sql`SELECT id FROM "user" WHERE role IN ('admin', 'loanOfficer', 'superAdmin')`
+      sql`SELECT id FROM "user" WHERE role IN ('admin', 'loanOfficer', 'supervisor', 'superAdmin')`
     )
     const targetUserIds = (targetUsersResult as unknown as Array<{ id: string }>).map(
       (r) => r.id
     )
 
     const loanIds = activeLoans.map((l) => l.id)
+
+    // Batch-fetch customer names for all active loans
+    const customerIds = [...new Set(activeLoans.map((l) => l.customerId))]
+    const customerRows = customerIds.length > 0
+      ? await db.select({ id: customers.id, fullName: customers.fullName }).from(customers).where(inArray(customers.id, customerIds))
+      : []
+    const customerNameMap = new Map(customerRows.map((c) => [c.id, c.fullName]))
+
     const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
     const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
@@ -64,6 +72,9 @@ export async function POST(request: NextRequest) {
         const loanPayments = paymentsByLoan.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const ledgerBalance = ledgerBalances.get(loan.id)
+        if (ledgerBalance === undefined) {
+          console.warn(`[overdue-cron] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+        }
         const outstandingBalance =
           ledgerBalance !== undefined
             ? ledgerBalance.toFixed(2)
@@ -100,12 +111,9 @@ export async function POST(request: NextRequest) {
         )
 
         if (daysUntilDue >= 0 && daysUntilDue <= 5) {
-          const [customer] = await db
-            .select()
-            .from(customers)
-            .where(eq(customers.id, loan.customerId))
+          const customerName = customerNameMap.get(loan.customerId) ?? "Unknown"
 
-          const message = `Loan for ${customer?.fullName ?? "Unknown"} — due in ${daysUntilDue} days`
+          const message = `Loan for ${customerName} — due in ${daysUntilDue} days`
 
           await createNotificationsForLoan(
             loan.id,

@@ -91,17 +91,16 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
     expanded,
   );
 
+  const activePaymentIds = payments?.filter((p) => p.deletedAt === null).map((p) => p.id) ?? [];
   const { data: portionsData } = useQuery<Record<string, { interestPortion: string; principalPortion: string }>>({
-    queryKey: ["payment-portions", item.loan.id],
+    queryKey: [...queryKeys.payments.portions(item.loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
-      if (!payments || payments.length === 0) return {};
-      const activeIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id);
-      if (activeIds.length === 0) return {};
-      const result = await getPaymentPortionsAction(activeIds);
+      if (activePaymentIds.length === 0) return {};
+      const result = await getPaymentPortionsAction(activePaymentIds);
       if ("error" in result) return {};
       return result.data;
     },
-    enabled: expanded && !!payments && payments.length > 0,
+    enabled: expanded && activePaymentIds.length > 0,
   });
 
   return (

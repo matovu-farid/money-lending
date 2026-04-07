@@ -4,7 +4,6 @@ import { db } from "@/lib/db"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { loans } from "@/lib/db/schema/loans"
-import { payments } from "@/lib/db/schema/payments"
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import {
@@ -55,8 +54,22 @@ async function getOrCreateCategory(
   const [created] = await tx
     .insert(transactionCategories)
     .values({ name, type, isDefault: true })
+    .onConflictDoNothing()
     .returning()
-  return created.id
+
+  if (created) return created.id
+
+  // Re-fetch if conflict occurred (concurrent insert)
+  const [refetched] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, name),
+        eq(transactionCategories.type, type)
+      )
+    )
+  return refetched.id
 }
 
 export async function postJournalEntry(
@@ -358,12 +371,12 @@ export async function autoPostInterestEarned(
 
 export async function autoPostInterestExpense(
   tx: DrizzleTransaction,
-  params: { amount: string; investmentId: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; investmentId: string; repaymentId?: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Interest Payments", type: "expense" },
     creditCategory: { name: "Cash", type: "asset" },
-    amount: params.amount, referenceType: "creditor_repayment", referenceId: params.investmentId,
+    amount: params.amount, referenceType: "creditor_repayment", referenceId: params.repaymentId ?? params.investmentId,
     description: `Interest paid - investment ${params.investmentId}`,
     transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
     creditDepositLocation: params.sourceLocation,
@@ -472,15 +485,32 @@ export async function autoPostCreditorInvestment(
 
 export async function autoPostCreditorPrincipalRepaid(
   tx: DrizzleTransaction,
-  params: { amount: string; investmentId: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; investmentId: string; repaymentId?: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Creditor Investment", type: "liability" },
     creditCategory: { name: "Cash", type: "asset" },
-    amount: params.amount, referenceType: "creditor_repayment", referenceId: params.investmentId,
+    amount: params.amount, referenceType: "creditor_repayment", referenceId: params.repaymentId ?? params.investmentId,
     description: `Creditor principal repaid - investment ${params.investmentId.slice(0, 8).toUpperCase()}`,
     transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
     creditDepositLocation: params.sourceLocation,
+  })
+}
+
+/**
+ * Post a rate-change accrual adjustment that resets the accrual baseline.
+ * Reverses any outstanding Interest Receivable for the loan, so the next
+ * accrual run picks up from the new rate cleanly.
+ */
+export async function autoPostRateChangeAdjustment(
+  tx: DrizzleTransaction,
+  params: { loanId: string; oldRate: string; newRate: string; actorId: string }
+): Promise<void> {
+  // Reverse any outstanding interest accrual for this loan
+  await reverseInterestAccrual(tx, {
+    loanId: params.loanId,
+    paymentDate: new Date().toISOString(),
+    actorId: params.actorId,
   })
 }
 
@@ -505,7 +535,8 @@ export async function autoPostFundTransfer(
  */
 export async function getLoanBalancesFromLedger(
   loanIds: string[],
-  asOf?: Date
+  asOf?: Date,
+  queryDb: Pick<typeof db, "select"> = db
 ): Promise<Map<string, BigNumber>> {
   if (loanIds.length === 0) return new Map();
 
@@ -517,7 +548,7 @@ export async function getLoanBalancesFromLedger(
     conditions.push(lte(transactions.transactionDate, asOf));
   }
 
-  const rows = await db
+  const rows = await queryDb
     .select({
       loanId: transactions.loanId,
       txType: transactions.type,
@@ -550,9 +581,10 @@ export async function getLoanBalancesFromLedger(
  */
 export async function getLoanBalanceFromLedger(
   loanId: string,
-  asOf?: Date
+  asOf?: Date,
+  queryDb?: Pick<typeof db, "select">
 ): Promise<BigNumber> {
-  const balances = await getLoanBalancesFromLedger([loanId], asOf);
+  const balances = await getLoanBalancesFromLedger([loanId], asOf, queryDb);
   return balances.get(loanId) ?? new BigNumber(0);
 }
 
@@ -647,11 +679,12 @@ export async function getInterestPayableFromLedger(
  * Creditor Investment is a liability: CR adds, DR subtracts.
  */
 export async function getCreditorBalancesFromLedger(
-  investmentIds: string[]
+  investmentIds: string[],
+  queryDb: Pick<typeof db, "select"> = db
 ): Promise<Map<string, BigNumber>> {
   if (investmentIds.length === 0) return new Map();
 
-  const rows = await db
+  const rows = await queryDb
     .select({
       referenceId: transactions.referenceId,
       txType: transactions.type,
@@ -692,11 +725,12 @@ export async function getCreditorBalancesFromLedger(
  * Returns Map<paymentId, { interestPortion: string; principalPortion: string }>
  */
 export async function getPaymentPortionsFromLedger(
-  paymentIds: string[]
+  paymentIds: string[],
+  queryDb: Pick<typeof db, "select"> = db
 ): Promise<Map<string, { interestPortion: string; principalPortion: string }>> {
   if (paymentIds.length === 0) return new Map();
 
-  const rows = await db
+  const rows = await queryDb
     .select({
       referenceId: transactions.referenceId,
       categoryName: transactionCategories.name,
@@ -807,6 +841,88 @@ export async function getCreditorRepaymentPortionsFromLedger(
   return result;
 }
 
+/**
+ * Derive total capital invested by creditors from the ledger.
+ * Queries "Creditor Investment" CR entries (liability increase = investment received).
+ * Returns the gross total invested (not net of repayments).
+ */
+export async function getCreditorTotalInvestedFromLedger(
+  investmentIds: string[]
+): Promise<BigNumber> {
+  if (investmentIds.length === 0) return new BigNumber(0);
+
+  const rows = await db
+    .select({
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        eq(transactionCategories.name, "Creditor Investment"),
+        eq(transactions.referenceType, "creditor_investment"),
+        inArray(transactions.referenceId, investmentIds)
+      )
+    )
+    .groupBy(transactions.type);
+
+  let total = new BigNumber(0);
+  for (const row of rows) {
+    const amount = new BigNumber(row.total);
+    // Liability: CR adds (investment received)
+    if (row.txType === "credit") total = total.plus(amount);
+  }
+  return total;
+}
+
+/**
+ * Derive total amount repaid to creditors from the ledger.
+ * Queries "Creditor Investment" DR entries (liability decrease = principal repaid)
+ * plus "Interest Payments" DR entries (expense = interest paid).
+ */
+export async function getCreditorTotalRepaidFromLedger(
+  investmentIds: string[]
+): Promise<BigNumber> {
+  if (investmentIds.length === 0) return new BigNumber(0);
+
+  const rows = await db
+    .select({
+      txType: transactions.type,
+      categoryName: transactionCategories.name,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        eq(transactions.referenceType, "creditor_repayment"),
+        inArray(transactions.referenceId, investmentIds),
+        inArray(transactionCategories.name, ["Creditor Investment", "Interest Payments"])
+      )
+    )
+    .groupBy(transactions.type, transactionCategories.name);
+
+  let total = new BigNumber(0);
+  for (const row of rows) {
+    const amount = new BigNumber(row.total);
+    if (row.categoryName === "Creditor Investment" && row.txType === "debit") {
+      // Liability DR = principal repaid
+      total = total.plus(amount);
+    } else if (row.categoryName === "Interest Payments" && row.txType === "debit") {
+      // Expense DR = interest paid
+      total = total.plus(amount);
+    }
+  }
+  return total;
+}
+
 // ── Interest Accrual Functions ─────────────────────────────────────────
 
 function accrualDaysBetween(from: Date, to: Date): number {
@@ -832,7 +948,7 @@ export async function reverseInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Receivable"),
-        eq(transactionCategories.type, "income")
+        eq(transactionCategories.type, "revenue")
       )
     )
 
@@ -844,7 +960,7 @@ export async function reverseInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Earned"),
-        eq(transactionCategories.type, "income")
+        eq(transactionCategories.type, "revenue")
       )
     )
 
@@ -874,6 +990,7 @@ export async function reverseInterestAccrual(
 
   const reversalAmount = formatAmount(netAccrual)
   const now = new Date(params.paymentDate)
+  const journalGroupId = randomUUID()
 
   await tx.insert(transactions).values({
     type: "credit",
@@ -884,6 +1001,7 @@ export async function reverseInterestAccrual(
     description: `Reverse interest accrual on payment - loan ${params.loanId}`,
     transactionDate: now,
     recordedBy: params.actorId,
+    journalGroupId,
   })
 
   await tx.insert(transactions).values({
@@ -895,6 +1013,7 @@ export async function reverseInterestAccrual(
     description: `Reverse interest accrual on payment - loan ${params.loanId}`,
     transactionDate: now,
     recordedBy: params.actorId,
+    journalGroupId,
   })
 }
 
@@ -958,6 +1077,7 @@ export async function reverseCreditorInterestAccrual(
 
   const reversalAmount = formatAmount(netAccrual)
   const now = new Date(params.repaymentDate)
+  const journalGroupId = randomUUID()
 
   await tx.insert(transactions).values({
     type: "debit",
@@ -968,6 +1088,7 @@ export async function reverseCreditorInterestAccrual(
     description: `Reverse creditor interest accrual on repayment - investment ${params.investmentId}`,
     transactionDate: now,
     recordedBy: params.actorId,
+    journalGroupId,
   })
 
   await tx.insert(transactions).values({
@@ -979,6 +1100,7 @@ export async function reverseCreditorInterestAccrual(
     description: `Reverse creditor interest accrual on repayment - investment ${params.investmentId}`,
     transactionDate: now,
     recordedBy: params.actorId,
+    journalGroupId,
   })
 }
 
@@ -995,12 +1117,12 @@ export const accrueInterestForLoans = (
       const [receivableCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "income")))
+        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "revenue")))
 
       const [earnedCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Earned"), eq(transactionCategories.type, "income")))
+        .where(and(eq(transactionCategories.name, "Interest Earned"), eq(transactionCategories.type, "revenue")))
 
       if (!receivableCat || !earnedCat) {
         console.warn("[accrueInterestForLoans] Required categories not found — skipping")
@@ -1013,7 +1135,10 @@ export const accrueInterestForLoans = (
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
       const loanIds = activeLoans.map((l) => l.id)
-      const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+      const [ledgerBalances, interestEarnedBatch] = await Promise.all([
+        getLoanBalancesFromLedger(loanIds),
+        getInterestEarnedFromLedger(loanIds),
+      ])
 
       let entriesPosted = 0
 
@@ -1022,31 +1147,36 @@ export const accrueInterestForLoans = (
         const totalDaysElapsed = accrualDaysBetween(new Date(loan.startDate), asOfDate)
 
         const outstandingBalance = ledgerBalances.get(loan.id)
+        if (!outstandingBalance || outstandingBalance.isEqualTo(0)) {
+          console.warn(`[accrueInterestForLoans] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+        }
         const principalForAccrual = outstandingBalance && outstandingBalance.isGreaterThan(0)
           ? formatAmount(outstandingBalance)
           : loan.principalAmount
         const totalInterestAccrued = calculateInterest(principalForAccrual, effectiveRate, totalDaysElapsed, 0)
 
         // Net Interest Earned from ledger = cash interest + accruals - reversals
-        const interestEarnedMap = await getInterestEarnedFromLedger([loan.id])
-        const totalInterestEarned = interestEarnedMap.get(loan.id) ?? new BigNumber(0)
+        const totalInterestEarned = interestEarnedBatch.get(loan.id) ?? new BigNumber(0)
 
         const target = totalInterestAccrued.minus(totalInterestEarned)
 
         if (target.isGreaterThan(0)) {
           const amount = formatAmount(target)
           await db.transaction(async (tx) => {
+            const journalGroupId = randomUUID()
             await tx.insert(transactions).values({
               type: "debit", amount, categoryId: receivableCat.id,
               referenceType: "interest_accrual", referenceId: loan.id,
               description: `Interest accrual - loan ${loan.id}`,
               transactionDate: asOfDate, recordedBy: "system",
+              journalGroupId,
             })
             await tx.insert(transactions).values({
               type: "credit", amount, categoryId: earnedCat.id,
               referenceType: "interest_accrual", referenceId: loan.id,
               description: `Interest accrual - loan ${loan.id}`,
               transactionDate: asOfDate, recordedBy: "system",
+              journalGroupId,
             })
           })
           entriesPosted++
@@ -1107,7 +1237,10 @@ export const accrueInterestForCreditors = (
           ? new Date(investment.investmentDate)
           : new Date(repaymentsList[repaymentsList.length - 1].repaymentDate)
 
-        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount)
+        const principalBalance = ledgerBalances.get(investment.id) ?? (() => {
+          console.warn(`[accrueInterestForCreditors] No ledger entries for investment ${investment.id}, using amount as fallback`)
+          return new BigNumber(investment.amount)
+        })()
         const daysElapsed = accrualDaysBetween(prevDate, asOfDate)
         const interestSinceLastRepayment = calculateInterest(
           formatAmount(principalBalance), investment.interestRateMonthly, daysElapsed, 0
@@ -1133,17 +1266,20 @@ export const accrueInterestForCreditors = (
         if (target.isGreaterThan(0)) {
           const amount = formatAmount(target)
           await db.transaction(async (tx) => {
+            const journalGroupId = randomUUID()
             await tx.insert(transactions).values({
               type: "debit", amount, categoryId: expenseCat.id,
               referenceType: "interest_accrual", referenceId: investment.id,
               description: `Interest accrual - investment ${investment.id}`,
               transactionDate: asOfDate, recordedBy: "system",
+              journalGroupId,
             })
             await tx.insert(transactions).values({
               type: "credit", amount, categoryId: payableCat.id,
               referenceType: "interest_accrual", referenceId: investment.id,
               description: `Interest accrual - investment ${investment.id}`,
               transactionDate: asOfDate, recordedBy: "system",
+              journalGroupId,
             })
           })
           entriesPosted++

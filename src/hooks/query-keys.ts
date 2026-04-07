@@ -16,8 +16,11 @@ export const queryKeys = {
   loans: {
     all: ["loans"] as const,
     detail: (id: string) => [...queryKeys.loans.all, id] as const,
+    balance: (id: string) => [...queryKeys.loans.detail(id), "balance"] as const,
     byCustomer: (customerId: string) =>
       [...queryKeys.loans.all, "byCustomer", customerId] as const,
+    searchActive: (query: string) =>
+      [...queryKeys.loans.all, "searchActive", query] as const,
   },
 
   dailyCollections: {
@@ -37,6 +40,8 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.payments.all, id] as const,
     byLoan: (loanId: string) =>
       [...queryKeys.payments.all, "byLoan", loanId] as const,
+    portions: (loanId: string) =>
+      [...queryKeys.payments.all, "portions", loanId] as const,
   },
 
   adminUsers: {
@@ -77,6 +82,10 @@ export const queryKeys = {
     byLoan: (loanId: string) =>
       [...queryKeys.rateChangeRequests.all, "byLoan", loanId] as const,
     pendingCount: () => [...queryKeys.rateChangeRequests.all, "pending-count"] as const,
+  },
+
+  fundTransfers: {
+    all: ["fund-transfers"] as const,
   },
 
   chat: {

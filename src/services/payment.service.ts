@@ -3,10 +3,10 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
-import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql } from "drizzle-orm"
+import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql, inArray } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { allocatePayment, calculateInterest, formatAmount } from "@/lib/interest/engine"
+import { allocatePayment, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, getLoanBalancesFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./transaction.service"
 import BigNumber from "bignumber.js"
@@ -39,14 +39,20 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
   const activePayments = await db
     .select()
     .from(payments)
-    .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
+    .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
     .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
   // Derive outstanding principal from the ledger (single source of truth)
-  const ledgerBalance = await getLoanBalanceFromLedger(loanId)
-  const outstandingPrincipal = ledgerBalance.isGreaterThan(0)
+  // Use getLoanBalancesFromLedger to distinguish "no entries" from "balance = 0 (fully repaid)"
+  const balanceMap = await getLoanBalancesFromLedger([loanId])
+  const hasLedgerEntries = balanceMap.has(loanId)
+  const ledgerBalance = balanceMap.get(loanId) ?? new BigNumber(0)
+  if (!hasLedgerEntries) {
+    console.warn(`[getLoanBalanceSummary] No ledger entries for loan ${loanId}, using principalAmount as fallback`)
+  }
+  const outstandingPrincipal = hasLedgerEntries
     ? ledgerBalance.toFixed(2)
-    : loan.principalAmount  // Fallback for loans with no ledger entries yet
+    : loan.principalAmount
 
   const interestEarnedMap = await getInterestEarnedFromLedger([loanId])
 
@@ -97,13 +103,19 @@ export const recordPayment = (
         const activePayments = await tx
           .select()
           .from(payments)
-          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
           .for('update')
 
         // Derive principalBalanceBefore from the ledger (single source of truth)
-        const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
-        const principalBalanceBefore = ledgerBalance.isGreaterThan(0)
+        // Use getLoanBalancesFromLedger to distinguish "no entries" from "balance = 0 (fully repaid)"
+        const balanceMap = await getLoanBalancesFromLedger([input.loanId], undefined, tx)
+        const hasLedgerEntries = balanceMap.has(input.loanId)
+        const ledgerBalance = balanceMap.get(input.loanId) ?? new BigNumber(0)
+        if (!hasLedgerEntries) {
+          console.warn(`[recordPayment] No ledger entries for loan ${input.loanId}, using principalAmount as fallback`)
+        }
+        const principalBalanceBefore = hasLedgerEntries
           ? ledgerBalance.toFixed(2)
           : loan.principalAmount
 
@@ -199,8 +211,8 @@ export const recordPayment = (
           })
         }
 
-        // Check fully-paid status from ledger after posting journals
-        const postPaymentBalance = await getLoanBalanceFromLedger(input.loanId)
+        // Check fully-paid status from ledger after posting journals (use tx to see just-written entries)
+        const postPaymentBalance = await getLoanBalanceFromLedger(input.loanId, undefined, tx)
         if (postPaymentBalance.isZero()) {
           await tx
             .update(loans)
@@ -232,7 +244,7 @@ export const editPayment = (
         if (!payment || payment.deletedAt !== null)
           throw { _tag: "PaymentNotFound", id: input.paymentId }
 
-        const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+        const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId)).for('update')
         if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
 
         const newAmount = input.amount ?? payment.amount
@@ -249,7 +261,7 @@ export const editPayment = (
         }
 
         // 1. Reverse old journals using ledger-derived portions
-        const oldPortions = await getPaymentPortionsFromLedger([input.paymentId])
+        const oldPortions = await getPaymentPortionsFromLedger([input.paymentId], tx)
         const oldPortion = oldPortions.get(input.paymentId)
 
         if (oldPortion && new BigNumber(oldPortion.interestPortion).isGreaterThan(0)) {
@@ -307,7 +319,7 @@ export const editPayment = (
         const activePayments = await tx
           .select()
           .from(payments)
-          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
+          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
         const paymentIdx = activePayments.findIndex((p) => p.id === input.paymentId)
@@ -317,11 +329,21 @@ export const editPayment = (
         const daysElapsed = daysBetween(prevDate, newPaymentDate)
         const paymentNumber = paymentIdx + 1
 
-        // Get principalBalanceBefore from ledger (after reversals)
-        const ledgerBalance = await getLoanBalanceFromLedger(payment.loanId)
-        const principalBalanceBefore = ledgerBalance.isGreaterThan(0)
-          ? ledgerBalance.toFixed(2)
-          : loan.principalAmount
+        // Compute principalBalanceBefore by walking payments in chronological order
+        // (ledger balance after reversals is wrong when editing a non-latest payment
+        // because later payments' journals are still active)
+        let principalBalanceBefore = loan.principalAmount
+        if (paymentIdx > 0) {
+          const priorPaymentIds = activePayments.slice(0, paymentIdx).map((p) => p.id)
+          const priorPortions = await getPaymentPortionsFromLedger(priorPaymentIds, tx)
+          let runningBalance = new BigNumber(loan.principalAmount)
+          for (const priorId of priorPaymentIds) {
+            const pp = priorPortions.get(priorId)
+            if (pp) runningBalance = runningBalance.minus(new BigNumber(pp.principalPortion))
+          }
+          if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0)
+          principalBalanceBefore = runningBalance.toFixed(2)
+        }
 
         const allocation = allocatePayment({
           paymentAmount: newAmount,
@@ -384,7 +406,7 @@ export const editPayment = (
         }
 
         // 5. Check fully-paid status via ledger
-        const postEditBalance = await getLoanBalanceFromLedger(payment.loanId)
+        const postEditBalance = await getLoanBalanceFromLedger(payment.loanId, undefined, tx)
         if (postEditBalance.isZero()) {
           await tx
             .update(loans)
@@ -436,11 +458,11 @@ export const deletePayment = (
         if (!payment || payment.deletedAt !== null)
           throw { _tag: "PaymentNotFound", id: input.paymentId }
 
-        const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+        const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId)).for('update')
         if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
 
         // 1. Get portions from ledger before soft-deleting
-        const portions = await getPaymentPortionsFromLedger([input.paymentId])
+        const portions = await getPaymentPortionsFromLedger([input.paymentId], tx)
         const portion = portions.get(input.paymentId)
 
         // 2. Soft-delete the payment
@@ -502,7 +524,7 @@ export const deletePayment = (
         }
 
         // 4. Check loan status via ledger
-        const postDeleteBalance = await getLoanBalanceFromLedger(payment.loanId)
+        const postDeleteBalance = await getLoanBalanceFromLedger(payment.loanId, undefined, tx)
         if (postDeleteBalance.isZero() && loan.status !== "fully_paid") {
           // No balance remaining - shouldn't happen after delete but handle edge case
           await tx
@@ -576,23 +598,51 @@ export const listPayments = (
           .where(where),
       ])
 
-      // Enrich with ledger-derived portions and balances
+      // Enrich with ledger-derived portions and per-payment running balances
       const paymentIds = rows.map((r) => r.id)
       const loanIds = [...new Set(rows.map((r) => r.loanId))]
 
-      const [portions, ledgerBalances] = await Promise.all([
-        paymentIds.length > 0 ? getPaymentPortionsFromLedger(paymentIds) : Promise.resolve(new Map<string, { interestPortion: string; principalPortion: string }>()),
-        loanIds.length > 0 ? getLoanBalancesFromLedger(loanIds) : Promise.resolve(new Map<string, BigNumber>()),
-      ])
+      // Fetch portions for this page's payments
+      const portions = paymentIds.length > 0
+        ? await getPaymentPortionsFromLedger(paymentIds)
+        : new Map<string, { interestPortion: string; principalPortion: string }>()
+
+      // For each loan on this page, fetch ALL its active payments' portions
+      // to compute correct per-payment running balances
+      const loanPrincipalMap = new Map<string, string>()
+      const perPaymentBalance = new Map<string, string>()
+
+      if (loanIds.length > 0) {
+        // Fetch loan principal amounts
+        const loanRows = await db.select({ id: loans.id, principalAmount: loans.principalAmount })
+          .from(loans).where(inArray(loans.id, loanIds))
+        for (const l of loanRows) loanPrincipalMap.set(l.id, l.principalAmount)
+
+        // For each loan, get all its active payments sorted by date to compute running balance
+        for (const loanId of loanIds) {
+          const loanPayments = await db.select({ id: payments.id, paymentDate: payments.paymentDate, createdAt: payments.createdAt })
+            .from(payments)
+            .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
+            .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+          const allIds = loanPayments.map((p) => p.id)
+          const allPortions = allIds.length > 0 ? await getPaymentPortionsFromLedger(allIds) : new Map()
+          let balance = new BigNumber(loanPrincipalMap.get(loanId) ?? "0")
+          for (const p of loanPayments) {
+            const pp = allPortions.get(p.id)
+            if (pp) balance = balance.minus(new BigNumber(pp.principalPortion))
+            if (balance.isLessThan(0)) balance = new BigNumber(0)
+            perPaymentBalance.set(p.id, balance.toFixed(2))
+          }
+        }
+      }
 
       const enrichedRows: PaymentWithCustomer[] = rows.map((r) => {
         const portion = portions.get(r.id)
-        const loanBalance = ledgerBalances.get(r.loanId)
         return {
           ...r,
           interestPortion: portion?.interestPortion ?? "0.00",
           principalPortion: portion?.principalPortion ?? "0.00",
-          principalBalanceAfter: loanBalance?.toFixed(2) ?? "0.00",
+          principalBalanceAfter: perPaymentBalance.get(r.id) ?? "0.00",
         } as PaymentWithCustomer
       })
 

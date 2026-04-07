@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -23,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { editPaymentAction, deletePaymentAction, markPaymentWrongAction } from "@/actions/payment.actions"
+import { editPaymentAction, deletePaymentAction, markPaymentWrongAction, listPaymentsAction } from "@/actions/payment.actions"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
@@ -96,7 +96,7 @@ export function PaymentsClient() {
   const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "")
   const [amountMin, setAmountMin] = useState(searchParams.get("amountMin") ?? "")
   const [amountMax, setAmountMax] = useState(searchParams.get("amountMax") ?? "")
-  const [page, setPage] = useState(Number(searchParams.get("page") ?? 1))
+  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1))
 
   // Edit sheet state
   const [editOpen, setEditOpen] = useState(false)
@@ -115,53 +115,15 @@ export function PaymentsClient() {
   const [markWrongTarget, setMarkWrongTarget] = useState<PaymentWithCustomer | null>(null)
   const [markWrongReason, setMarkWrongReason] = useState("")
 
-  // Edit mutation with optimistic update
+  // Edit mutation — no optimistic update since ledger-derived portions can't be computed client-side
   const editMutation = useMutation({
     mutationFn: (input: { paymentId: string; amount?: string; paymentDate?: string; reason: string }) =>
       editPaymentAction(input),
-    onMutate: async (input) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
-
-      const previousPayments = queryClient.getQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
-        { queryKey: queryKeys.payments.all },
-      )
-
-      queryClient.setQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
-        { queryKey: queryKeys.payments.all },
-        (old) => {
-          if (!old) return old
-          return {
-            ...old,
-            rows: old.rows.map((p) =>
-              p.id === input.paymentId
-                ? {
-                    ...p,
-                    ...(input.amount != null ? { amount: input.amount } : {}),
-                    ...(input.paymentDate != null ? { paymentDate: new Date(input.paymentDate) } : {}),
-                  }
-                : p,
-            ),
-          }
-        },
-      )
-
-      return { previousPayments }
-    },
-    onError: (_err, _input, context) => {
-      if (context?.previousPayments) {
-        for (const [key, data] of context.previousPayments) {
-          queryClient.setQueryData(key, data)
-        }
-      }
+    onError: () => {
       toast.error("Failed to update payment")
     },
-    onSuccess: (result, _input, context) => {
+    onSuccess: (result) => {
       if ("error" in result) {
-        if (context?.previousPayments) {
-          for (const [key, data] of context.previousPayments) {
-            queryClient.setQueryData(key, data)
-          }
-        }
         toast.error(result.error ?? "Failed to update payment")
         return
       }
@@ -170,6 +132,8 @@ export function PaymentsClient() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     },
   })
 
@@ -220,6 +184,8 @@ export function PaymentsClient() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     },
   })
 
@@ -237,6 +203,8 @@ export function PaymentsClient() {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     },
   })
 
@@ -255,13 +223,13 @@ export function PaymentsClient() {
   ].filter(Boolean).length
 
   // TanStack Query for paginated data
-  const filterParams = {
+  const filterParams = useMemo(() => ({
     dateFrom: dateFrom || undefined,
     dateTo: dateTo || undefined,
     amountMin: amountMin || undefined,
     amountMax: amountMax || undefined,
     customerName: customerName || undefined,
-  }
+  }), [dateFrom, dateTo, amountMin, amountMax, customerName])
 
   const { data, isLoading, isError } = usePayments(filterParams, page)
 
@@ -418,6 +386,19 @@ export function PaymentsClient() {
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
 
+  // Prefetch next page for instant pagination
+  useEffect(() => {
+    if (page * pageSize < total) {
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.payments.list(filterParams, page + 1),
+        queryFn: () => listPaymentsAction({ ...filterParams, page: page + 1, pageSize }).then(
+          (r) => ("data" in r ? r.data : undefined)
+        ),
+        staleTime: 30_000,
+      })
+    }
+  }, [page, total, filterParams, queryClient])
+
   const paymentColumns: Column<PaymentWithCustomer>[] = [
     {
       key: "customerName",
@@ -448,19 +429,55 @@ export function PaymentsClient() {
     },
     {
       key: "interestPortion",
-      header: "Interest",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Interest
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Interest Portion</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The part of this payment that covers accrued interest. Interest is always deducted first before any principal reduction.
+            </p>
+            <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+              Interest Owed = Balance &times; (Rate &divide; 30) &times; Days Since Last Payment
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       align: "right",
       render: (row) => <>UGX {formatNumberWithCommas(row.interestPortion)}</>,
     },
     {
       key: "principalPortion",
-      header: "Principal",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Principal
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Principal Portion</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              The part of this payment that reduces the outstanding loan balance. Only applied after all accrued interest is covered.
+            </p>
+            <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+              Principal Portion = Payment Amount &minus; Interest Portion
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       align: "right",
       render: (row) => <>UGX {formatNumberWithCommas(row.principalPortion)}</>,
     },
     {
       key: "principalBalanceAfter",
-      header: "Balance",
+      header: (
+        <span className="inline-flex items-center gap-1">
+          Balance
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Balance After Payment</p>
+            <p className="text-xs text-muted-foreground">
+              The remaining principal balance on the loan after this payment was applied. When this reaches zero, the loan is fully paid.
+            </p>
+          </InfoPopover>
+        </span>
+      ),
       align: "right",
       render: (row) => <>UGX {formatNumberWithCommas(row.principalBalanceAfter)}</>,
     },
@@ -762,9 +779,22 @@ export function PaymentsClient() {
       <DrawerDialog open={markWrongOpen} onOpenChange={setMarkWrongOpen}>
         <DrawerDialogContent>
           <DialogHeader>
-            <DialogTitle>Mark payment as wrong?</DialogTitle>
+            <DialogTitle>
+              <span className="inline-flex items-center gap-1.5">
+                Mark payment as wrong?
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Mark as Wrong vs Delete</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    <strong>Mark as Wrong</strong> reverses this payment&apos;s ledger entries and flags it for review, but keeps the record visible for audit purposes. The loan balance is recalculated as if this payment never happened.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    <strong>Delete</strong> (Admin only) permanently removes the payment record entirely.
+                  </p>
+                </InfoPopover>
+              </span>
+            </DialogTitle>
             <DialogDescription>
-              This flags the payment as incorrectly recorded. It does not delete or reverse the payment.
+              This reverses the payment&apos;s effect on the loan balance and flags it for review. The record is kept for audit purposes.
             </DialogDescription>
           </DialogHeader>
           {markWrongTarget && (

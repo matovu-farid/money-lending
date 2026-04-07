@@ -1,5 +1,6 @@
 import { pgTable, uuid, numeric, text, timestamp, pgEnum, index } from "drizzle-orm/pg-core"
 import { transactionCategories } from "./transaction-categories"
+import { loans } from "./loans"
 import { depositLocationEnum } from "./fund-transfers"
 
 export const transactionTypeEnum = pgEnum("transaction_type", ["credit", "debit"])
@@ -11,7 +12,7 @@ export const transactions = pgTable("transactions", {
   categoryId: uuid("category_id").notNull().references(() => transactionCategories.id, { onDelete: "restrict" }),
   referenceType: text("reference_type"),
   referenceId: text("reference_id"),
-  loanId: uuid("loan_id"),
+  loanId: uuid("loan_id").references(() => loans.id, { onDelete: "set null" }),
   description: text("description"),
   transactionDate: timestamp("transaction_date", { withTimezone: true }).notNull(),
   recordedBy: text("recorded_by").notNull(),
@@ -23,4 +24,5 @@ export const transactions = pgTable("transactions", {
   index("idx_transactions_category_id").on(table.categoryId),
   index("idx_transactions_journal_group_id").on(table.journalGroupId),
   index("idx_transactions_loan_id").on(table.loanId),
+  index("idx_transactions_reference_id").on(table.referenceId),
 ])

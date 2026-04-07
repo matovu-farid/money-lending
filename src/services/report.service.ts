@@ -12,10 +12,9 @@ import {
   gte,
   lte,
   isNull,
-  asc,
-  desc,
   sql,
   inArray,
+  count,
 } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { formatAmount } from "@/lib/interest/engine"
@@ -33,11 +32,16 @@ export const getPnlData = (
       const periodStart = new Date(year, month - 1, 1)
       const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
 
-      const rows = await db
+      const incomeMap = new Map<string, BigNumber>()
+      const expenseMap = new Map<string, BigNumber>()
+
+      // Need category type to correctly net reversals (DR to revenue = income reversal, not expense)
+      const catTypeRows = await db
         .select({
           type: transactions.type,
           amount: transactions.amount,
           categoryName: transactionCategories.name,
+          categoryType: transactionCategories.type,
         })
         .from(transactions)
         .innerJoin(
@@ -52,17 +56,20 @@ export const getPnlData = (
           )
         )
 
-      const incomeMap = new Map<string, BigNumber>()
-      const expenseMap = new Map<string, BigNumber>()
-
-      for (const row of rows) {
+      for (const row of catTypeRows) {
         const amount = new BigNumber(row.amount)
-        if (row.type === "credit") {
+        if (row.categoryType === "revenue") {
+          // Revenue account: CR adds income, DR subtracts income (reversal)
           const existing = incomeMap.get(row.categoryName) ?? new BigNumber(0)
-          incomeMap.set(row.categoryName, existing.plus(amount))
+          incomeMap.set(row.categoryName, row.type === "credit"
+            ? existing.plus(amount)
+            : existing.minus(amount))
         } else {
+          // Expense account: DR adds expense, CR subtracts expense (reversal)
           const existing = expenseMap.get(row.categoryName) ?? new BigNumber(0)
-          expenseMap.set(row.categoryName, existing.plus(amount))
+          expenseMap.set(row.categoryName, row.type === "debit"
+            ? existing.plus(amount)
+            : existing.minus(amount))
         }
       }
 
@@ -269,7 +276,7 @@ export const getBalanceSheetData = (
       const [receivableCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "income")))
+        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "revenue")))
 
       let interestReceivable = new BigNumber(0)
       if (receivableCat) {
@@ -357,33 +364,41 @@ export const getPortfolioData = (): Effect.Effect<
   Effect.tryPromise({
     try: async () => {
       const activeLoans = await db
-        .select()
+        .select({
+          loan: loans,
+          customerName: customers.fullName,
+        })
         .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
       const results: PortfolioEntry[] = []
 
       // Derive per-loan outstanding principal from ledger in one batch query
-      const loanIds = activeLoans.map((l) => l.id)
+      const loanIds = activeLoans.map((l) => l.loan.id)
       const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
 
       // Batch-fetch interest earned from ledger
       const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
-      for (const loan of activeLoans) {
-        const [customer] = await db
-          .select({ fullName: customers.fullName })
-          .from(customers)
-          .where(eq(customers.id, loan.customerId))
+      // Batch-fetch payment counts per loan
+      const paymentCountRows = loanIds.length > 0
+        ? await db
+            .select({ loanId: payments.loanId, count: count() })
+            .from(payments)
+            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+            .groupBy(payments.loanId)
+        : []
+      const paymentCountMap = new Map(paymentCountRows.map((r) => [r.loanId, Number(r.count)]))
 
-        const loanPayments = await db
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+      for (const { loan, customerName } of activeLoans) {
 
         // Use ledger-derived balance
-        const outstandingBalance = ledgerBalances.get(loan.id)
+        const ledgerBalance = ledgerBalances.get(loan.id)
+        if (!ledgerBalance) {
+          console.warn(`[getPortfolioData] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+        }
+        const outstandingBalance = ledgerBalance
           ?? new BigNumber(loan.principalAmount)
 
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
@@ -397,13 +412,13 @@ export const getPortfolioData = (): Effect.Effect<
           loanType,
           termMonths: loan.termMonths,
           totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
-          paymentCount: loanPayments.length,
+          paymentCount: paymentCountMap.get(loan.id) ?? 0,
           outstandingBalance: formatAmount(outstandingBalance),
         })
 
         results.push({
           loanId: loan.id,
-          customerName: customer?.fullName ?? "Unknown",
+          customerName: customerName ?? "Unknown",
           principalAmount: loan.principalAmount,
           outstandingBalance: formatAmount(outstandingBalance),
           interestAccrued: info.unpaidInterest,

@@ -19,7 +19,7 @@ export function useSendMessage(conversationId: string) {
       )
 
       const optimistic: MessageWithSender = {
-        id: `optimistic-${Date.now()}`,
+        id: `optimistic-${crypto.randomUUID()}`,
         conversationId: input.conversationId,
         senderId: "optimistic",
         senderName: "",

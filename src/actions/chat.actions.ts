@@ -160,6 +160,9 @@ export async function getConversationParticipantsAction(conversationId: string) 
 
   try {
     const data = await Effect.runPromise(getConversationParticipants(conversationId))
+    // Enforce that the caller is a member of this conversation
+    const isMember = data.some((p) => p.id === user.id)
+    if (!isMember) return { error: "Forbidden" }
     return { data }
   } catch (error) {
     if (error instanceof ConversationNotFound) return { error: "Conversation not found" }
@@ -172,10 +175,11 @@ export async function getAttachmentDataAction(attachmentId: string) {
   if (!user) return { error: "Unauthorized" }
 
   try {
-    const data = await Effect.runPromise(getAttachmentData(attachmentId))
+    const data = await Effect.runPromise(getAttachmentData(attachmentId, user.id))
     return { data }
   } catch (error) {
     if (error instanceof ValidationError) return { error: error.message }
+    if (error instanceof ForbiddenError) return { error: "Forbidden" }
     return { error: "Internal server error" }
   }
 }

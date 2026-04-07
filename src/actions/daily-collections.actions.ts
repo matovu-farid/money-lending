@@ -14,6 +14,10 @@ export async function getDailyCollectionsAction(date: string) {
     return { error: "Unauthorized" }
   }
 
+  if (!date?.trim() || isNaN(Date.parse(date))) {
+    return { error: "Invalid date" }
+  }
+
   try {
     const data = await Effect.runPromise(getDailyCollections(date))
     return { data }

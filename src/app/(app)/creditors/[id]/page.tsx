@@ -11,6 +11,7 @@ import type { CreditorRepayment, CreditorInvestment } from "@/types"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { getCreditorRepaymentPortionsFromLedger } from "@/services/transaction.service"
 
 interface Props {
@@ -24,7 +25,7 @@ export default async function CreditorProfilePage({ params }: Props) {
   let dashboard
   let investments: CreditorInvestment[] = []
   let repayments: CreditorRepayment[] = []
-  let repaymentPortions: Record<string, { interestPortion: string; principalPortion: string }> = {}
+  const repaymentPortions: Record<string, { interestPortion: string; principalPortion: string }> = {}
 
   try {
     ;[creditor, dashboard] = await Promise.all([
@@ -53,16 +54,23 @@ export default async function CreditorProfilePage({ params }: Props) {
 
       // Derive portions from ledger instead of cached columns
       if (repayments.length > 0) {
-        const portionsMap = await getCreditorRepaymentPortionsFromLedger(
-          repayments.map((r) => r.id)
-        )
-        for (const [key, value] of portionsMap.entries()) {
-          repaymentPortions[key] = value
+        try {
+          const portionsMap = await getCreditorRepaymentPortionsFromLedger(
+            repayments.map((r) => r.id)
+          )
+          for (const [key, value] of portionsMap.entries()) {
+            repaymentPortions[key] = value
+          }
+        } catch {
+          // Non-critical — page renders without portion breakdown
         }
       }
     }
-  } catch {
-    notFound()
+  } catch (e) {
+    if (e && typeof e === "object" && "_tag" in e && e._tag === "CreditorNotFound") {
+      notFound()
+    }
+    throw e
   }
 
   return (
@@ -80,21 +88,59 @@ export default async function CreditorProfilePage({ params }: Props) {
           label="Total Invested"
           value={formatCurrency(dashboard.totalInvested)}
           icon={Landmark}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Total Invested</p>
+              <p className="text-xs text-muted-foreground">
+                Sum of all capital this creditor has invested. Each investment is tracked separately with its own interest rate and repayment schedule.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Interest Accrued"
           value={formatCurrency(dashboard.interestAccrued)}
           icon={TrendingUp}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Interest Accrued</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Total interest owed to this creditor based on their investment balances and agreed rates.
+              </p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+                Per investment: Balance &times; (Rate &divide; 30) &times; Days Since Last Repayment
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Repayments Made"
           value={formatCurrency(dashboard.repaymentsMade)}
           icon={CreditCard}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Repayments Made</p>
+              <p className="text-xs text-muted-foreground">
+                Total amount paid back to this creditor, including both principal and interest portions. Each repayment covers interest first, then reduces the principal balance.
+              </p>
+            </InfoPopover>
+          }
         />
         <KpiCard
           label="Outstanding Balance"
           value={formatCurrency(dashboard.outstandingBalance)}
           icon={DollarSign}
+          labelExtra={
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Outstanding Balance</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                Current total obligation to this creditor.
+              </p>
+              <p className="text-xs font-mono bg-muted rounded px-2 py-1">
+                Remaining Principal + Accrued Interest
+              </p>
+            </InfoPopover>
+          }
         />
       </div>
 

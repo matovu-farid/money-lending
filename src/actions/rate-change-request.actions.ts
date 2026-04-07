@@ -6,7 +6,6 @@ import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
 import {
-  createRateChangeRequest,
   applyRateChangeImmediately,
   listAllRequests,
   listRequestsForLoan,
@@ -17,7 +16,7 @@ import { LoanNotFound, RateChangeRequestNotFound } from "@/lib/errors"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
-import { eq, and } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 
 /**
  * Determine the required approver role based on the requested rate.
@@ -55,17 +54,18 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     return { error: "Rate must be a decimal between 0 and 1 (e.g., 0.10 for 10%)" }
   }
 
-  // Look up the loan's current rate
+  // Look up the loan's current rate (exclude soft-deleted loans)
   const [loan] = await db
-    .select({ interestRate: loans.interestRate })
+    .select({ interestRate: loans.interestRate, interestRateOverride: loans.interestRateOverride })
     .from(loans)
-    .where(eq(loans.id, input.loanId))
+    .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
   if (!loan) {
     return { error: "Loan not found" }
   }
 
-  if (input.requestedRate === loan.interestRate) {
+  const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+  if (parseFloat(input.requestedRate) === parseFloat(effectiveRate)) {
     return { error: "Requested rate is the same as the current rate" }
   }
 
@@ -88,30 +88,47 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     }
   }
 
-  // Check for existing pending request on this loan (I-4)
-  const [existingPending] = await db
-    .select({ id: rateChangeRequests.id })
-    .from(rateChangeRequests)
-    .where(
-      and(
-        eq(rateChangeRequests.loanId, input.loanId),
-        eq(rateChangeRequests.status, "pending")
-      )
-    )
-
-  if (existingPending) {
-    return { error: "A pending rate change request already exists for this loan" }
-  }
-
-  // Otherwise, create a request for approval
+  // Check + create inside a transaction to prevent duplicate pending requests (TOCTOU race)
   try {
-    const data = await Effect.runPromise(
-      createRateChangeRequest(input, session.user.id, requiredApproverRole, loan.interestRate)
-    )
+    const data = await db.transaction(async (tx) => {
+      const [existingPending] = await tx
+        .select({ id: rateChangeRequests.id })
+        .from(rateChangeRequests)
+        .where(
+          and(
+            eq(rateChangeRequests.loanId, input.loanId),
+            eq(rateChangeRequests.status, "pending")
+          )
+        )
+        .for("update")
+
+      if (existingPending) {
+        throw { _tag: "DuplicatePending" as const }
+      }
+
+      const [request] = await tx
+        .insert(rateChangeRequests)
+        .values({
+          loanId: input.loanId,
+          requestedRate: input.requestedRate,
+          currentRate: effectiveRate,
+          requestedBy: session.user.id,
+          requiredApproverRole,
+          status: "pending",
+        })
+        .returning()
+
+      return request
+    })
+
     revalidatePath("/approvals")
     revalidatePath(`/loans/${input.loanId}`)
     return { data: { applied: false as const, request: data, message: `Rate change request submitted for ${requiredApproverRole} approval` } }
   } catch (error) {
+    const err = error as Record<string, unknown>
+    if (err?._tag === "DuplicatePending") {
+      return { error: "A pending rate change request already exists for this loan" }
+    }
     if (error instanceof LoanNotFound) {
       return { error: "Loan not found" }
     }

@@ -22,7 +22,7 @@ export function useCreateLoan() {
 
       // Create optimistic loan entry
       const optimistic: LoanWithCustomer = {
-        id: `optimistic-${Date.now()}`,
+        id: `optimistic-${crypto.randomUUID()}`,
         customerId: input.customerId,
         customerName: "Loading...",
         customerContact: null,

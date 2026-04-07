@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import {
   LayoutDashboard,
   Users,
@@ -22,6 +23,11 @@ import {
 import { cn } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import { signOut, useSession } from "@/lib/auth-client"
+import { queryKeys } from "@/hooks/query-keys"
+import { getDashboardAction } from "@/actions/dashboard.actions"
+import { getConversationsAction } from "@/actions/chat.actions"
+import { listPaymentsAction } from "@/actions/payment.actions"
+import { searchCustomersAction } from "@/actions/customer.actions"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -97,10 +103,49 @@ export function Sidebar({ onClose }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false)
   const pathname = usePathname()
   const { data: session } = useSession()
+  const queryClient = useQueryClient()
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const user = session?.user
   const userRole = (user?.role ?? "unassigned") as UserRole
   const userLevel = ROLE_LEVELS[userRole] ?? 0
+
+  // Prefetch TanStack Query data on hover with 100ms delay to avoid needless fetches
+  const handlePrefetch = useCallback((href: string) => {
+    clearTimeout(prefetchTimerRef.current)
+    prefetchTimerRef.current = setTimeout(() => {
+      const staleTime = 30_000
+      if (href === "/dashboard") {
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.dashboard.kpis(),
+          queryFn: () => getDashboardAction().then((r) => ("data" in r ? r.data : undefined)),
+          staleTime,
+        })
+      } else if (href === "/chat") {
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.chat.conversations(),
+          queryFn: () => getConversationsAction().then((r) => ("data" in r ? r.data : undefined)),
+          staleTime,
+        })
+      } else if (href === "/payments") {
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.payments.list({}, 1),
+          queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => ("data" in r ? r.data : undefined)),
+          staleTime,
+        })
+      } else if (href === "/customers") {
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.customers.search({}, 0),
+          queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => ("data" in r ? r.data : undefined)),
+          staleTime,
+        })
+      }
+    }, 100)
+  }, [queryClient])
+
+  const cancelPrefetch = useCallback(() => {
+    clearTimeout(prefetchTimerRef.current)
+  }, [])
 
   const filteredNavGroups = getNavGroups(userRole).map((group) => {
     if (group.label !== "Capital") return group
@@ -187,6 +232,9 @@ export function Sidebar({ onClose }: SidebarProps) {
                         <Link
                           href={item.href}
                           onClick={onClose}
+                          onMouseEnter={() => handlePrefetch(item.href)}
+                          onFocus={() => handlePrefetch(item.href)}
+                          onMouseLeave={cancelPrefetch}
                           aria-current={isActive ? "page" : undefined}
                           className={cn(
                             "flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",

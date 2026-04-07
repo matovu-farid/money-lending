@@ -240,6 +240,9 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
     head: [["Liabilities", "Amount (UGX)"]],
     body: [
       ["Total Creditor Balances", formatUGX(data.liabilities.totalCreditorBalances)],
+      ...(parseFloat(data.liabilities.interestPayable ?? "0") > 0
+        ? [["Interest Payable", formatUGX(data.liabilities.interestPayable!)]]
+        : []),
     ],
     styles: { fontSize: 10, cellPadding: 3, lineWidth: 0.3, lineColor: [200, 200, 200] },
     headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: "bold" },
@@ -250,6 +253,7 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
 
   const liabPlusEquity =
     parseFloat(data.liabilities.totalCreditorBalances) +
+    parseFloat(data.liabilities.interestPayable ?? "0") +
     parseFloat(data.equity.totalEquity)
 
   autoTable(doc, {

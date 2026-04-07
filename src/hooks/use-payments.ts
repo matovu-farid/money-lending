@@ -13,6 +13,7 @@ export type PaymentFilterParams = Omit<ListPaymentsInput, "page" | "pageSize">
 export function usePayments(
   params: PaymentFilterParams,
   page: number,
+  enabled = true,
 ) {
   return useQuery<{ rows: PaymentWithCustomer[]; total: number }>({
     queryKey: queryKeys.payments.list(params, page),
@@ -25,6 +26,7 @@ export function usePayments(
       return unwrapAction(result as { data: { rows: PaymentWithCustomer[]; total: number } } | { error: string })
     },
     staleTime: 30_000,
+    enabled,
   })
 }
 

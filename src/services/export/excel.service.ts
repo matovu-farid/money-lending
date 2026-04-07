@@ -233,6 +233,13 @@ export async function generateBalanceSheetExcel(
   ])
   liabRow.getCell(2).numFmt = UGX_FORMAT
   applyDataRowStyle(liabRow, false)
+
+  const interestPayableVal = parseFloat(data.liabilities.interestPayable ?? "0")
+  if (interestPayableVal > 0) {
+    const ipRow = sheet.addRow(["Interest Payable", interestPayableVal])
+    ipRow.getCell(2).numFmt = UGX_FORMAT
+    applyDataRowStyle(ipRow, true)
+  }
   sheet.addRow([])
 
   const equityHeader = sheet.addRow(["Equity", "Amount (UGX)"])
@@ -254,6 +261,7 @@ export async function generateBalanceSheetExcel(
 
   const liabPlusEquity =
     parseFloat(data.liabilities.totalCreditorBalances) +
+    parseFloat(data.liabilities.interestPayable ?? "0") +
     parseFloat(data.equity.totalEquity)
   const totalRow = sheet.addRow(["Total Liabilities + Equity", liabPlusEquity])
   totalRow.getCell(1).font = { bold: true, size: 12 }

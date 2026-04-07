@@ -5,12 +5,7 @@ import { headers } from "next/headers"
 import { getBalanceSheetData } from "@/services/report.service"
 import { generateBalanceSheetPdf } from "@/services/export/pdf.service"
 import { generateBalanceSheetExcel } from "@/services/export/excel.service"
-
-function getLastCompletedMonth(): string {
-  const now = new Date()
-  const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  return `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`
-}
+import { getLastCompletedMonth } from "@/lib/utils"
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() })

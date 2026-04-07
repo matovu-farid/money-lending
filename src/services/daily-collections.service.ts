@@ -35,15 +35,24 @@ export const getDailyCollections = (
         )
         .orderBy(asc(payments.paymentDate))
 
-      const totalCollected = rows
-        .reduce((sum, r) => sum.plus(new BigNumber(r.amount)), new BigNumber(0))
-        .toFixed(2)
-
       // Enrich with ledger-derived portions
       const paymentIds = rows.map((r) => r.paymentId)
       const portions = paymentIds.length > 0
         ? await getPaymentPortionsFromLedger(paymentIds)
         : new Map<string, { interestPortion: string; principalPortion: string }>()
+
+      // Derive totalCollected from ledger (sum of interest + principal portions)
+      const totalCollected = rows
+        .reduce((sum, r) => {
+          const portion = portions.get(r.paymentId)
+          if (portion) {
+            return sum.plus(portion.interestPortion).plus(portion.principalPortion)
+          }
+          // Fallback for payments without ledger entries (should not happen)
+          console.warn(`[getDailyCollections] No ledger entries for payment ${r.paymentId}`)
+          return sum.plus(r.amount)
+        }, new BigNumber(0))
+        .toFixed(2)
 
       const enrichedRows: DailyCollectionRow[] = rows.map((r) => {
         const portion = portions.get(r.paymentId)
@@ -106,13 +115,15 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
         paymentsByLoanId.set(p.loanId, existing)
       }
 
-      const now = new Date()
       const results: LoanDueToday[] = []
 
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const ledgerBalance = ledgerBalances.get(loan.id)
+        if (ledgerBalance === undefined) {
+          console.warn(`[getLoansDueToday] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+        }
         const outstandingBalance = ledgerBalance !== undefined
           ? ledgerBalance.toFixed(2)
           : loan.principalAmount

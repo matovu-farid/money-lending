@@ -8,11 +8,13 @@ import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import { createFundTransferAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
+import { queryKeys } from "@/hooks/query-keys"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { MoneyInput } from "@/components/ui/money-input"
 import { PageHeader } from "@/components/ui/page-header"
+import { InfoPopover } from "@/components/ui/info-popover"
 import {
   Dialog,
   DialogContent,
@@ -63,7 +65,7 @@ export default function FundTransfersPage() {
   const [isPending, startTransition] = useTransition()
 
   const { data: transfers = [], isLoading } = useQuery({
-    queryKey: ["fund-transfers"],
+    queryKey: queryKeys.fundTransfers.all,
     queryFn: async () => {
       const result = await listFundTransfersAction()
       if ("error" in result) throw new Error(result.error)
@@ -111,7 +113,7 @@ export default function FundTransfersPage() {
       toast.success("Fund transfer recorded")
       reset()
       setDialogOpen(false)
-      await queryClient.invalidateQueries({ queryKey: ["fund-transfers"] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.fundTransfers.all })
     })
   }
 
@@ -139,7 +141,22 @@ export default function FundTransfersPage() {
       <div className="flex items-center justify-between">
         <PageHeader
           title="Fund Transfers"
-          subtitle="Move money between cash, bank, and strong room"
+          subtitle={
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1 inline-flex items-center gap-1">
+              Move money between cash, bank, and strong room
+              <InfoPopover>
+                <p className="font-semibold text-sm mb-1">Fund Transfers</p>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Record movements of money between your three deposit locations. This updates the balance sheet to reflect where funds are physically held.
+                </p>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <p><strong>Cash</strong> — Physical cash on hand at the office.</p>
+                  <p><strong>Bank</strong> — Funds held in the business bank account.</p>
+                  <p><strong>Strong Room</strong> — Cash stored in the secure vault/strong room.</p>
+                </div>
+              </InfoPopover>
+            </p>
+          }
         />
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger

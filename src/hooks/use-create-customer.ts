@@ -25,7 +25,7 @@ export function useCreateCustomer() {
 
       // Create an optimistic customer entry
       const optimistic: Customer = {
-        id: `optimistic-${Date.now()}`,
+        id: `optimistic-${crypto.randomUUID()}`,
         fullName: input.fullName,
         nin: input.nin,
         contact: input.contact,

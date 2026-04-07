@@ -41,6 +41,9 @@ export function PortfolioClient({
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
+    } catch {
+      const { toast } = await import("sonner")
+      toast.error("Export failed. Please try again.")
     } finally {
       setDownloading(null)
     }

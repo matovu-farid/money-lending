@@ -17,7 +17,7 @@ export type Loan = InferSelectModel<typeof loans>
 export type LoanWithCustomer = Loan & { customerName: string; customerContact: string | null }
 export type LoanListEntry = LoanWithCustomer & {
   daysOverdue: number          // 0 for non-overdue or non-active loans
-  outstandingBalance: string   // last payment's principalBalanceAfter, or principalAmount if no payments
+  outstandingBalance: string   // ledger-derived outstanding principal (Loans Receivable DR - CR)
   dailyRate: string            // daily interest amount in UGX as string, "0" for non-active
   lastPaymentDate: Date | null // date of most recent payment, null if none
   unpaidInterest: string       // total interest accrued minus total interest paid, "0" for non-active
@@ -29,7 +29,7 @@ export type Payment = InferSelectModel<typeof payments>
 export type NewPayment = InferInsertModel<typeof payments>
 export type AuditLogEntry = InferSelectModel<typeof auditLog>
 
-export type LoanStatus = "active" | "fully_paid" | "settled_with_collateral" | "rolled_over"
+export type LoanStatus = "pending" | "active" | "fully_paid" | "settled_with_collateral" | "rolled_over"
 export type LoanType = "perpetual" | "fixed_rate" | "reducing_balance"
 
 export interface ScheduleEntry {

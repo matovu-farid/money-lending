@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bell } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -23,55 +23,62 @@ import { cn, formatRelativeTime } from "@/lib/utils"
 export function NotificationBell() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [loadingNotifications, setLoadingNotifications] = useState(false)
   const [open, setOpen] = useState(false)
 
   // Fetch unread count with polling every 60s
   const { data: unreadCount = 0 } = useNotificationUnreadCount()
 
-  // Fetch full notification list when popover opens (lazy load)
+  // Fetch full notification list when popover opens (lazy load via enabled)
+  const { data: notifications = [], isLoading: loadingNotifications } = useQuery<Notification[]>({
+    queryKey: [...queryKeys.notifications.all, "list"],
+    queryFn: async () => {
+      const result = await getNotificationsAction()
+      if ("data" in result) return result.data ?? []
+      return []
+    },
+    enabled: open,
+    staleTime: 0,
+  })
+
   function handleOpenChange(isOpen: boolean) {
     setOpen(isOpen)
     if (isOpen) {
-      setLoadingNotifications(true)
-      getNotificationsAction().then((result) => {
-        if ("data" in result) {
-          setNotifications(result.data ?? [])
-        }
-        setLoadingNotifications(false)
-      })
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.notifications.all, "list"] })
     }
   }
+
+  const notificationsListKey = [...queryKeys.notifications.all, "list"]
 
   async function handleMarkAsRead(notification: Notification) {
     if (notification.isRead) return
 
     const result = await markAsReadAction(notification.id)
     if ("data" in result) {
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
+      queryClient.setQueryData<Notification[]>(notificationsListKey, (prev) =>
+        prev?.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
       )
       queryClient.setQueryData(
         queryKeys.notifications.unreadCount(),
         (prev: number) => Math.max(0, (prev ?? 0) - 1)
       )
-    }
 
-    // Navigate to the relevant detail page based on reference type
-    if (notification.referenceType === "loan" && notification.referenceId) {
-      router.push(`/loans/${notification.referenceId}`)
+      // Navigate to the relevant detail page based on reference type
+      if (notification.referenceType === "loan" && notification.referenceId) {
+        router.push(`/loans/${notification.referenceId}`)
+      }
+      if (notification.referenceType === "conversation") {
+        router.push("/chat")
+      }
+      setOpen(false)
     }
-    if (notification.referenceType === "conversation") {
-      router.push("/chat")
-    }
-    setOpen(false)
   }
 
   async function handleMarkAllAsRead() {
     const result = await markAllAsReadAction()
     if ("data" in result) {
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })))
+      queryClient.setQueryData<Notification[]>(notificationsListKey, (prev) =>
+        prev?.map((n) => ({ ...n, isRead: true }))
+      )
       queryClient.setQueryData(queryKeys.notifications.unreadCount(), 0)
     }
   }

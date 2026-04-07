@@ -117,6 +117,9 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const ledgerBalance = ledgerBalances.get(loan.id)
+        if (ledgerBalance === undefined) {
+          console.warn(`[getDashboardKPIs] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+        }
         const outstandingBalance = ledgerBalance !== undefined
           ? ledgerBalance.toFixed(2)
           : loan.principalAmount
@@ -165,6 +168,25 @@ export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseE
         .orderBy(desc(auditLog.occurredAt))
         .limit(10)
 
+      // Pre-fetch customer names for all loan.create entries to avoid N+1
+      const customerIdsToFetch = new Set<string>()
+      for (const entry of recentEntries) {
+        if (entry.entityType === "loan" && entry.action === "loan.create") {
+          const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
+          if (afterVal.customerId) customerIdsToFetch.add(afterVal.customerId)
+        }
+      }
+      const customerNameMap = new Map<string, string>()
+      if (customerIdsToFetch.size > 0) {
+        const customerRows = await db
+          .select({ id: customers.id, fullName: customers.fullName })
+          .from(customers)
+          .where(inArray(customers.id, [...customerIdsToFetch]))
+        for (const row of customerRows) {
+          customerNameMap.set(row.id, row.fullName)
+        }
+      }
+
       const items: ActivityFeedItem[] = []
 
       for (const entry of recentEntries) {
@@ -181,15 +203,7 @@ export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseE
           customerId = afterVal.customerId as string | undefined
           loanId = entry.entityId
 
-          let customerName: string | undefined
-          if (customerId) {
-            const [customer] = await db
-              .select({ fullName: customers.fullName })
-              .from(customers)
-              .where(eq(customers.id, customerId))
-              .limit(1)
-            customerName = customer?.fullName
-          }
+          const customerName = customerId ? customerNameMap.get(customerId) : undefined
 
           description = customerName
             ? `Loan issued to ${customerName} — UGX ${amount}`

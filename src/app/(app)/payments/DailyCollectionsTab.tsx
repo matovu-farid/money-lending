@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { format, addDays, subDays } from "date-fns"
 import { ChevronLeft, ChevronRight, CalendarIcon, Banknote, FileText, BarChart3 } from "lucide-react"
@@ -19,6 +19,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { useDailyCollections, useLoansDueToday } from "@/hooks/use-daily-collections"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { formatNumberWithCommas, formatDate } from "@/lib/utils"
 import BigNumber from "bignumber.js"
 
@@ -29,6 +30,9 @@ export function DailyCollectionsTab() {
   const dateParam = searchParams.get("date") ?? todayStr
   const [selectedDate, setSelectedDate] = useState(dateParam)
   const [calendarOpen, setCalendarOpen] = useState(false)
+
+  // Sync selectedDate with URL param on browser back/forward navigation
+  useEffect(() => { setSelectedDate(dateParam) }, [dateParam])
 
   const { data: collections, isLoading: collectionsLoading, isError: collectionsError } = useDailyCollections(selectedDate)
   const { data: dueLoans, isLoading: dueLoading, isError: dueError } = useLoansDueToday()
@@ -164,7 +168,7 @@ export function DailyCollectionsTab() {
                 <TableHead>Amount (UGX)</TableHead>
                 <TableHead>Interest</TableHead>
                 <TableHead>Principal</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,7 +199,7 @@ export function DailyCollectionsTab() {
                 <TableHead className="text-right">Amount (UGX)</TableHead>
                 <TableHead className="text-right">Interest</TableHead>
                 <TableHead className="text-right">Principal</TableHead>
-                <TableHead>Time</TableHead>
+                <TableHead>Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -211,7 +215,7 @@ export function DailyCollectionsTab() {
                   <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.interestPortion)}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.principalPortion)}</TableCell>
                   <TableCell className="font-mono tabular-nums text-muted-foreground">
-                    {format(new Date(row.paymentDate), "HH:mm")}
+                    {formatDate(row.paymentDate)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -222,7 +226,18 @@ export function DailyCollectionsTab() {
 
       {/* Due Today Section */}
       <div className="mt-12">
-        <h2 className="text-xl font-semibold">Due Today</h2>
+        <h2 className="text-xl font-semibold inline-flex items-center gap-1.5">
+          Due Today
+          <InfoPopover>
+            <p className="font-semibold text-sm mb-1">Due Today</p>
+            <p className="text-xs text-muted-foreground mb-2">
+              Loans where 30 or more days have passed since the last payment (or since the loan started if no payments exist). These borrowers owe at least one full month of interest.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Collecting from these loans first helps prevent them from becoming critically overdue.
+            </p>
+          </InfoPopover>
+        </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Active loans with no payment in 30 or more days
         </p>

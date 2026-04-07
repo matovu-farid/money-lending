@@ -10,6 +10,7 @@ import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
 import { PageHeader } from "@/components/ui/page-header"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -119,7 +120,17 @@ export default function ApprovalsPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6">
-      <PageHeader title="Approvals" subtitle="Rate change requests pending your review" />
+      <PageHeader title="Approvals" subtitle="Rate change requests pending your review">
+        <InfoPopover>
+          <p className="font-semibold text-sm mb-1">How Rate Change Approvals Work</p>
+          <p className="text-xs text-muted-foreground mb-2">
+            When a loan officer requests a rate change, it may require approval depending on the size of the change. Small changes can be applied immediately, while larger changes require a Supervisor or Admin to approve.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Once approved, the new rate takes effect immediately for future interest calculations. Rejected requests keep the current rate unchanged.
+          </p>
+        </InfoPopover>
+      </PageHeader>
 
       {/* Pending Requests */}
       <div className="space-y-3">
@@ -145,7 +156,21 @@ export default function ApprovalsPage() {
                     <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Principal</TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Current Rate</TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Requested Rate</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider">Required Role</TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider">
+                      <span className="inline-flex items-center gap-1">
+                        Required Role
+                        <InfoPopover>
+                          <p className="font-semibold text-sm mb-1">Required Approver Role</p>
+                          <p className="text-xs text-muted-foreground mb-2">
+                            The minimum role needed to approve this request. A user with a higher role can also approve.
+                          </p>
+                          <div className="text-xs text-muted-foreground space-y-1">
+                            <p><strong>Supervisor</strong> — Can approve standard rate changes.</p>
+                            <p><strong>Admin</strong> — Required for larger rate changes.</p>
+                          </div>
+                        </InfoPopover>
+                      </span>
+                    </TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider">Requested</TableHead>
                     <TableHead className="w-24"></TableHead>
                   </TableRow>
