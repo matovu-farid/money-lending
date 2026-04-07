@@ -11,6 +11,7 @@ export const transactions = pgTable("transactions", {
   categoryId: uuid("category_id").notNull().references(() => transactionCategories.id, { onDelete: "restrict" }),
   referenceType: text("reference_type"),
   referenceId: text("reference_id"),
+  loanId: uuid("loan_id"),
   description: text("description"),
   transactionDate: timestamp("transaction_date", { withTimezone: true }).notNull(),
   recordedBy: text("recorded_by").notNull(),
@@ -21,4 +22,5 @@ export const transactions = pgTable("transactions", {
   index("idx_transactions_date").on(table.transactionDate),
   index("idx_transactions_category_id").on(table.categoryId),
   index("idx_transactions_journal_group_id").on(table.journalGroupId),
+  index("idx_transactions_loan_id").on(table.loanId),
 ])

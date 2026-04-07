@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { Download, MoreHorizontal } from "lucide-react"
+import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,7 +23,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { editPaymentAction, deletePaymentAction } from "@/actions/payment.actions"
+import { editPaymentAction, deletePaymentAction, markPaymentWrongAction } from "@/actions/payment.actions"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
@@ -84,8 +84,9 @@ export function PaymentsClient() {
     router.push(`/payments?${params.toString()}`)
   }
 
-  const isAdmin =
-    ROLE_LEVELS[(session?.user?.role ?? "unassigned") as UserRole] >= ROLE_LEVELS.admin
+  const userRole = (session?.user?.role ?? "unassigned") as UserRole
+  const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
+  const isSupervisor = ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
 
   const [quickRecordOpen, setQuickRecordOpen] = useState(false)
 
@@ -108,6 +109,11 @@ export function PaymentsClient() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<PaymentWithCustomer | null>(null)
   const [deleteReason, setDeleteReason] = useState("")
+
+  // Mark as wrong dialog state
+  const [markWrongOpen, setMarkWrongOpen] = useState(false)
+  const [markWrongTarget, setMarkWrongTarget] = useState<PaymentWithCustomer | null>(null)
+  const [markWrongReason, setMarkWrongReason] = useState("")
 
   // Edit mutation with optimistic update
   const editMutation = useMutation({
@@ -216,6 +222,24 @@ export function PaymentsClient() {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
     },
   })
+
+  // Mark as wrong mutation
+  const markWrongMutation = useMutation({
+    mutationFn: (input: { paymentId: string; reason: string }) =>
+      markPaymentWrongAction(input.paymentId, input.reason),
+    onSuccess: (result) => {
+      if ("error" in result) {
+        toast.error(result.error ?? "Failed to mark payment as wrong")
+        return
+      }
+      toast.success("Payment marked as wrong")
+      setMarkWrongOpen(false)
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
+    },
+  })
+
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -376,6 +400,20 @@ export function PaymentsClient() {
     })
   }
 
+  function openMarkWrongDialog(payment: PaymentWithCustomer) {
+    setMarkWrongTarget(payment)
+    setMarkWrongReason("")
+    setMarkWrongOpen(true)
+  }
+
+  function handleMarkWrongSubmit() {
+    if (!markWrongTarget) return
+    markWrongMutation.mutate({
+      paymentId: markWrongTarget.id,
+      reason: markWrongReason,
+    })
+  }
+
   const pageSize = 25
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
@@ -465,7 +503,7 @@ export function PaymentsClient() {
       align: "right",
       render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalBalanceAfter)}</span>,
     },
-    ...(isAdmin ? [{
+    ...((isAdmin || isSupervisor) ? [{
       key: "actions",
       header: "",
       hideInCard: false,
@@ -478,15 +516,25 @@ export function PaymentsClient() {
             <MoreHorizontal className="h-4 w-4" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => openEditSheet(row)}>
-              Edit
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => openDeleteDialog(row)}
-            >
-              Delete
-            </DropdownMenuItem>
+            {isAdmin && (
+              <>
+                <DropdownMenuItem onClick={() => openEditSheet(row)}>
+                  Edit
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => openDeleteDialog(row)}
+                >
+                  Delete
+                </DropdownMenuItem>
+              </>
+            )}
+            {isSupervisor && (
+              <DropdownMenuItem onClick={() => openMarkWrongDialog(row)}>
+                <AlertTriangle className="h-4 w-4 mr-2 text-amber-500" />
+                Mark as Wrong
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ),
@@ -744,6 +792,55 @@ export function PaymentsClient() {
               onClick={handleDeleteSubmit}
             >
               {deleteMutation.isPending ? "Deleting..." : "Delete payment"}
+            </Button>
+          </DialogFooter>
+        </DrawerDialogContent>
+      </DrawerDialog>
+
+      {/* Mark as Wrong Dialog */}
+      <DrawerDialog open={markWrongOpen} onOpenChange={setMarkWrongOpen}>
+        <DrawerDialogContent>
+          <DialogHeader>
+            <DialogTitle>Mark payment as wrong?</DialogTitle>
+            <DialogDescription>
+              This flags the payment as incorrectly recorded. It does not delete or reverse the payment.
+            </DialogDescription>
+          </DialogHeader>
+          {markWrongTarget && (
+            <div className="rounded-lg border p-3 text-sm space-y-1 mb-2">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Customer</span>
+                <span className="font-medium">{markWrongTarget.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Amount</span>
+                <span className="font-mono tabular-nums">UGX {formatNumberWithCommas(markWrongTarget.amount)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Date</span>
+                <span>{formatDate(markWrongTarget.paymentDate)}</span>
+              </div>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label htmlFor="mark-wrong-reason">Reason</Label>
+            <Textarea
+              id="mark-wrong-reason"
+              value={markWrongReason}
+              onChange={(e) => setMarkWrongReason(e.target.value)}
+              placeholder="Explain why this payment is wrong..."
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMarkWrongOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              disabled={!markWrongReason.trim() || markWrongMutation.isPending}
+              onClick={handleMarkWrongSubmit}
+            >
+              {markWrongMutation.isPending ? "Marking..." : "Mark as Wrong"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>

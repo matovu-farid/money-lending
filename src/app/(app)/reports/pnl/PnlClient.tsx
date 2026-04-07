@@ -12,8 +12,6 @@ import {
 import {
   Card,
   CardContent,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card"
 import type { PnlData } from "@/types"
 import { formatCurrency } from "@/lib/utils"
@@ -31,6 +29,16 @@ function getMonthOptions(): { value: string; label: string }[] {
     options.push({ value, label })
   }
   return options
+}
+
+function formatPeriodEnded(period: string): string {
+  const [year, month] = period.split("-").map(Number)
+  const lastDay = new Date(year, month, 0)
+  return lastDay.toLocaleDateString("en-UG", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
 }
 
 interface PnlClientProps {
@@ -107,85 +115,84 @@ export function PnlClient({ data, period }: PnlClientProps) {
         </p>
       ) : (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Profit & Loss — {period}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Income Section */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Income
-              </h3>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 font-medium">Category</th>
-                    <th className="text-right py-2 font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.income.map((row) => (
-                    <tr key={row.category} className="border-b border-muted">
-                      <td className="py-2">{row.category}</td>
-                      <td className="py-2 text-right font-mono tabular-nums">{formatCurrency(row.amount)}</td>
-                    </tr>
-                  ))}
-                  <tr className="font-semibold bg-muted/30">
-                    <td className="py-2 px-1">Total Income</td>
-                    <td className="py-2 px-1 text-right font-mono tabular-nums">
-                      {formatCurrency(data.totalIncome)}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+          <CardContent className="pt-6">
+            {/* Formal Accounting Header */}
+            <div className="text-center mb-6">
+              <p className="text-base font-semibold">Sovereign Ledger</p>
+              <p className="text-sm font-medium">Income Statement</p>
+              <p className="text-sm text-muted-foreground">
+                For the Month Ended {formatPeriodEnded(period)}
+              </p>
             </div>
 
-            {/* Expense Section */}
-            <div>
-              <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Expenses
-              </h3>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 font-medium">Category</th>
-                    <th className="text-right py-2 font-medium">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.expenses.map((row) => (
-                    <tr key={row.category} className="border-b border-muted">
-                      <td className="py-2">{row.category}</td>
-                      <td className="py-2 text-right font-mono tabular-nums">{formatCurrency(row.amount)}</td>
-                    </tr>
-                  ))}
-                  <tr className="font-semibold bg-muted/30">
-                    <td className="py-2 px-1">Total Expenses</td>
-                    <td className="py-2 px-1 text-right font-mono tabular-nums">
-                      {formatCurrency(data.totalExpenses)}
+            <table className="w-full text-sm">
+              <tbody>
+                {/* Revenue Section */}
+                <tr>
+                  <td className="py-2 font-semibold" colSpan={2}>Revenues</td>
+                </tr>
+                {data.income.map((row) => (
+                  <tr key={row.category}>
+                    <td className="py-1.5 pl-6">{row.category}</td>
+                    <td className="py-1.5 text-right font-mono tabular-nums">
+                      {formatCurrency(row.amount)}
                     </td>
                   </tr>
-                </tbody>
-              </table>
-            </div>
+                ))}
+                {/* Total Revenue — single underline on last item, bold total */}
+                <tr className="border-t">
+                  <td className="py-2 pl-2 font-semibold">Total Revenue</td>
+                  <td className="py-2 text-right font-mono tabular-nums font-semibold">
+                    {formatCurrency(data.totalIncome)}
+                  </td>
+                </tr>
 
-            {/* Net Profit Row */}
-            <div className="border-t-2 pt-3">
-              <div className="flex items-center justify-between font-bold text-base">
-                <span>Net Profit</span>
-                <span
-                  className={
-                    parseFloat(data.netProfit) >= 0
-                      ? "text-green-700 font-mono tabular-nums dark:text-green-400"
-                      : "text-destructive font-mono tabular-nums"
-                  }
-                >
-                  {formatCurrency(data.netProfit)}
-                </span>
-              </div>
-            </div>
+                {/* Spacer */}
+                <tr><td className="py-2" colSpan={2}></td></tr>
+
+                {/* Expenses Section */}
+                <tr>
+                  <td className="py-2 font-semibold" colSpan={2}>Expenses</td>
+                </tr>
+                {data.expenses.map((row, i) => (
+                  <tr
+                    key={row.category}
+                    className={i === data.expenses.length - 1 ? "border-b" : ""}
+                  >
+                    <td className="py-1.5 pl-6">{row.category}</td>
+                    <td className="py-1.5 text-right font-mono tabular-nums">
+                      {formatCurrency(row.amount)}
+                    </td>
+                  </tr>
+                ))}
+                {/* Total Expenses */}
+                <tr>
+                  <td className="py-2 pl-2 font-semibold">Total Expenses</td>
+                  <td className="py-2 text-right font-mono tabular-nums font-semibold">
+                    {formatCurrency(data.totalExpenses)}
+                  </td>
+                </tr>
+
+                {/* Net Income — double underline (accounting convention) */}
+                <tr className="border-t-2">
+                  <td className="pt-3 pb-1 font-bold text-base">Net Income</td>
+                  <td
+                    className={`pt-3 pb-1 text-right font-mono tabular-nums font-bold text-base ${
+                      parseFloat(data.netProfit) >= 0
+                        ? "text-green-700 dark:text-green-400"
+                        : "text-destructive"
+                    }`}
+                  >
+                    {formatCurrency(data.netProfit)}
+                  </td>
+                </tr>
+                <tr>
+                  <td colSpan={2}>
+                    <div className="border-b-[3px] border-double border-foreground/60 w-32 ml-auto" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </CardContent>
         </Card>
       )}

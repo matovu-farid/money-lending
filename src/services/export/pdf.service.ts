@@ -216,7 +216,17 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
     startY: currentY,
     head: [["Assets", "Amount (UGX)"]],
     body: [
-      ["Total Loans Outstanding", formatUGX(data.assets.totalLoansOutstanding)],
+      ["Cash on Hand", formatUGX(data.assets.cashBalance)],
+      ["Bank", formatUGX(data.assets.bankBalance)],
+      ["Strong Room", formatUGX(data.assets.strongRoomBalance)],
+      ["Loans Outstanding", formatUGX(data.assets.totalLoansOutstanding)],
+      ...(parseFloat(data.assets.interestReceivable) > 0
+        ? [["Interest Receivable", formatUGX(data.assets.interestReceivable)]]
+        : []),
+      ...(parseFloat(data.assets.seizedCollateralValue) > 0
+        ? [["Seized Collateral", formatUGX(data.assets.seizedCollateralValue)]]
+        : []),
+      [{ content: "Total Assets", styles: { fontStyle: "bold" as const } }, { content: formatUGX(data.assets.totalAssets), styles: { fontStyle: "bold" as const } }],
     ],
     styles: { fontSize: 10, cellPadding: 3, lineWidth: 0.3, lineColor: [200, 200, 200] },
     headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: "bold" },

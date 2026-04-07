@@ -23,17 +23,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import {
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { cn } from "@/lib/utils"
+import { cn, formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { Payment } from "@/types"
+
+interface BalanceData {
+  outstandingPrincipal: string
+  accruedInterest: string
+  totalBalance: string
+}
 
 interface RecordPaymentFormProps {
   loanId: string
   customerName: string
   loanReference: string
+  balanceData: BalanceData
 }
 
 function todayISODate(): string {
@@ -51,17 +65,36 @@ interface ReceiptPaymentData extends Payment {
   depositLocationValue: string
 }
 
-export function RecordPaymentForm({ loanId, customerName, loanReference }: RecordPaymentFormProps) {
+const AMOUNT_PRESETS = [
+  { label: "50K", value: "50000" },
+  { label: "100K", value: "100000" },
+  { label: "200K", value: "200000" },
+  { label: "500K", value: "500000" },
+  { label: "1M", value: "1000000" },
+  { label: "2M", value: "2000000" },
+]
+
+const DEPOSIT_LABELS: Record<string, string> = {
+  cash: "Cash",
+  bank: "Bank",
+  strong_room: "Strong Room",
+}
+
+export function RecordPaymentForm({ loanId, customerName, loanReference, balanceData }: RecordPaymentFormProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { data: session } = useSession()
   const [isPending, startTransition] = useTransition()
   const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingData, setPendingData] = useState<PaymentFormValues | null>(null)
 
   const {
     register,
     handleSubmit,
     control,
+    setValue,
+    watch,
     formState: { errors },
   } = useForm<PaymentFormValues>({
     defaultValues: {
@@ -72,14 +105,29 @@ export function RecordPaymentForm({ loanId, customerName, loanReference }: Recor
     },
   })
 
-  function onSubmit(data: PaymentFormValues) {
+  const currentAmount = watch("amount")
+
+  function handlePresetClick(value: string) {
+    setValue("amount", value, { shouldValidate: true })
+  }
+
+  function onFormSubmit(data: PaymentFormValues) {
+    // Show confirmation dialog instead of submitting directly
+    setPendingData(data)
+    setConfirmOpen(true)
+  }
+
+  function handleConfirmedSubmit() {
+    if (!pendingData) return
+    setConfirmOpen(false)
+
     startTransition(async () => {
       const result = await recordPaymentAction({
         loanId,
-        paymentDate: data.paymentDate + "T12:00:00",
-        amount: data.amount.trim(),
-        depositLocation: data.depositLocation,
-        note: data.note.trim() || undefined,
+        paymentDate: pendingData.paymentDate + "T12:00:00",
+        amount: pendingData.amount.trim(),
+        depositLocation: pendingData.depositLocation,
+        note: pendingData.note.trim() || undefined,
       })
 
       if ("error" in result) {
@@ -95,9 +143,10 @@ export function RecordPaymentForm({ loanId, customerName, loanReference }: Recor
       ])
 
       setReceiptData({
-        payment: { ...result.data, depositLocationValue: data.depositLocation },
+        payment: { ...result.data, depositLocationValue: pendingData.depositLocation },
         receiptNumber: generateReceiptNumber(),
       })
+      setPendingData(null)
     })
   }
 
@@ -113,6 +162,34 @@ export function RecordPaymentForm({ loanId, customerName, loanReference }: Recor
       </div>
 
       <h1 className="text-2xl font-semibold mb-6">Record Payment</h1>
+
+      {/* Loan Balance Summary */}
+      <Card className="mb-4">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-muted-foreground">Customer</span>
+            <span className="font-medium">{customerName}</span>
+          </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-muted-foreground">Loan Ref</span>
+            <span className="font-mono text-sm">{loanReference}</span>
+          </div>
+          <div className="border-t my-2" />
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm text-muted-foreground">Outstanding Principal</span>
+            <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.outstandingPrincipal)}</span>
+          </div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-sm text-muted-foreground">Accrued Interest</span>
+            <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.accruedInterest)}</span>
+          </div>
+          <div className="border-t my-2" />
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-semibold">Total Balance Owed</span>
+            <span className="font-mono tabular-nums font-bold text-lg">{formatCurrency(balanceData.totalBalance)}</span>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>
@@ -139,7 +216,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference }: Recor
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="paymentDate">Payment Date</Label>
               <Input
@@ -161,6 +238,23 @@ export function RecordPaymentForm({ loanId, customerName, loanReference }: Recor
               disabled={isPending}
               id="amount"
             />
+
+            {/* Quick amount presets */}
+            <div className="flex flex-wrap gap-2">
+              {AMOUNT_PRESETS.map((preset) => (
+                <Button
+                  key={preset.value}
+                  type="button"
+                  variant={currentAmount === preset.value ? "default" : "outline"}
+                  size="sm"
+                  className="rounded-full text-xs px-3 h-7"
+                  disabled={isPending}
+                  onClick={() => handlePresetClick(preset.value)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
 
             <div className="space-y-1">
               <Label htmlFor="depositLocation">Deposit Location</Label>
@@ -215,6 +309,67 @@ export function RecordPaymentForm({ loanId, customerName, loanReference }: Recor
           </form>
         </CardContent>
       </Card>
+
+      {/* Confirmation Dialog */}
+      <DrawerDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DrawerDialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Confirm Payment</DialogTitle>
+            <DialogDescription>
+              Please review the payment details below before submitting.
+            </DialogDescription>
+          </DialogHeader>
+          {pendingData && (
+            <div className="space-y-3 py-2">
+              <div className="rounded-lg border p-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span className="font-medium">{customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Loan Reference</span>
+                  <span className="font-mono">{loanReference}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-mono tabular-nums font-semibold">
+                    UGX {formatNumberWithCommas(pendingData.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Deposit Location</span>
+                  <span>{DEPOSIT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Payment Date</span>
+                  <span>{formatDate(pendingData.paymentDate)}</span>
+                </div>
+                {pendingData.note.trim() && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Note</span>
+                    <span className="text-right max-w-[60%]">{pendingData.note.trim()}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleConfirmedSubmit} disabled={isPending}>
+              {isPending ? (
+                <>
+                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  Recording...
+                </>
+              ) : (
+                "Confirm & Record"
+              )}
+            </Button>
+          </DialogFooter>
+        </DrawerDialogContent>
+      </DrawerDialog>
 
       {/* POS Receipt Modal */}
       <PosReceiptModal

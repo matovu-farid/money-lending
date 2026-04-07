@@ -29,6 +29,8 @@ export default async function BalanceSheetPage({
           bankBalance: "0",
           strongRoomBalance: "0",
           totalLoansOutstanding: "0",
+          interestReceivable: "0",
+          seizedCollateralValue: "0",
           totalAssets: "0",
         },
         liabilities: { totalCreditorBalances: "0" },

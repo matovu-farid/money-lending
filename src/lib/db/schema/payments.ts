@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, timestamp, text, index } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, timestamp, text, boolean, index } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 import { loans } from "./loans"
 import { depositLocationEnum } from "./fund-transfers"
@@ -18,6 +18,9 @@ export const payments = pgTable("payments", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   deletedBy: text("deleted_by"),
   deleteReason: text("delete_reason"),
+  markedWrong: boolean("marked_wrong").default(false).notNull(),
+  markedWrongReason: text("marked_wrong_reason"),
+  markedWrongBy: text("marked_wrong_by"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [

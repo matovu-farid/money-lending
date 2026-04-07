@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { notFound } from "next/navigation"
 import { getLoan } from "@/services/loan.service"
 import { getPaymentsForLoan } from "@/services/payment.service"
+import { getLoanBalanceFromLedger } from "@/services/transaction.service"
 import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { user } from "@/lib/db/schema/auth"
@@ -39,6 +40,15 @@ export default async function LoanDetailPage({
   )
 
   const payments = paymentsResult._tag === "Right" ? paymentsResult.right : []
+
+  // Fetch ledger-derived outstanding balance
+  let ledgerBalance: string | null = null
+  try {
+    const balance = await getLoanBalanceFromLedger(loanId)
+    ledgerBalance = balance.toFixed(2)
+  } catch {
+    // Non-critical — client will fall back to payments-chain balance
+  }
 
   // Fetch customer name for display
   let customerName: string | null = null
@@ -103,6 +113,7 @@ export default async function LoanDetailPage({
       canModify={canModify}
       openEditOnMount={openEdit}
       userNameMap={userNameMap}
+      ledgerBalance={ledgerBalance}
       userRole={role}
       collateralNature={loanCollateral?.nature}
       collateralDescription={loanCollateral?.description}

@@ -69,7 +69,9 @@ describe("Category Service", () => {
       { type: "expense", name: "Salaries" },
       { type: "expense", name: "Office Expenses" },
       { type: "expense", name: "Interest Payments" },
+      { type: "expense", name: "Interest Payable" },
       { type: "expense", name: "DStv" },
+      { type: "revenue", name: "Interest Receivable" },
     ]
 
     mockedDb.select.mockReturnValue({

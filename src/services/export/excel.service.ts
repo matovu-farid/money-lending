@@ -198,12 +198,30 @@ export async function generateBalanceSheetExcel(
   const assetsHeader = sheet.addRow(["Assets", "Amount (UGX)"])
   applyHeaderStyle(assetsHeader)
 
-  const assetsRow = sheet.addRow([
-    "Total Loans Outstanding",
-    parseFloat(data.assets.totalLoansOutstanding),
-  ])
-  assetsRow.getCell(2).numFmt = UGX_FORMAT
-  applyDataRowStyle(assetsRow, false)
+  const assetRows = [
+    ["Cash on Hand", parseFloat(data.assets.cashBalance)],
+    ["Bank", parseFloat(data.assets.bankBalance)],
+    ["Strong Room", parseFloat(data.assets.strongRoomBalance)],
+    ["Loans Outstanding", parseFloat(data.assets.totalLoansOutstanding)],
+  ] as [string, number][]
+
+  if (parseFloat(data.assets.interestReceivable) > 0) {
+    assetRows.push(["Interest Receivable", parseFloat(data.assets.interestReceivable)])
+  }
+
+  if (parseFloat(data.assets.seizedCollateralValue) > 0) {
+    assetRows.push(["Seized Collateral", parseFloat(data.assets.seizedCollateralValue)])
+  }
+
+  assetRows.push(["Total Assets", parseFloat(data.assets.totalAssets)])
+
+  for (let i = 0; i < assetRows.length; i++) {
+    const row = sheet.addRow(assetRows[i])
+    row.getCell(2).numFmt = UGX_FORMAT
+    const isTotal = i === assetRows.length - 1
+    applyDataRowStyle(row, isTotal)
+    if (isTotal) row.font = { bold: true }
+  }
   sheet.addRow([])
 
   const liabHeader = sheet.addRow(["Liabilities", "Amount (UGX)"])

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { FileText, TrendingUp, Scale, ScrollText } from "lucide-react"
+import { FileText, TrendingUp, Scale, ScrollText, ClipboardList, PiggyBank } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -28,10 +28,24 @@ const reportCards = [
     href: "/reports/pnl",
   },
   {
+    icon: PiggyBank,
+    title: "Retained Earnings",
+    description:
+      "Beginning balance, net income, and ending retained earnings.",
+    href: "/reports/retained-earnings",
+  },
+  {
     icon: Scale,
     title: "Balance Sheet",
     description: "Assets, liabilities, and equity — must balance.",
     href: "/reports/balance-sheet",
+  },
+  {
+    icon: ClipboardList,
+    title: "Active Loans",
+    description:
+      "Active loans with principal, interest, contact info, and days overdue.",
+    href: "/reports/active-loans",
   },
   {
     icon: ScrollText,

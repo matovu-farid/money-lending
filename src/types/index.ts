@@ -325,7 +325,7 @@ export interface BalanceSheetData {
     seizedCollateralValue: string
     totalAssets: string
   }
-  liabilities: { totalCreditorBalances: string }
+  liabilities: { totalCreditorBalances: string; interestPayable?: string }
   equity: { shareCapital: string; retainedEarnings: string; totalEquity: string }
 }
 

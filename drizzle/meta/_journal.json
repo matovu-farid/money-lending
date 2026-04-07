@@ -127,6 +127,13 @@
       "when": 1775700000000,
       "tag": "0017_double_entry_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1775488861571,
+      "tag": "0018_conscious_nico_minoru",
+      "breakpoints": true
     }
   ]
 }

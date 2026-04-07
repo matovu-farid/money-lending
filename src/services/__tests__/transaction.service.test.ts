@@ -68,6 +68,11 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
   function makeTxMock(overrides?: { insertResult?: any }) {
     const mockTx: any = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ id: "cat-cash", name: "Cash", type: "asset", isDefault: true }]),
+        }),
+      }),
       insert: vi.fn().mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([overrides?.insertResult ?? mockTransaction]),
@@ -110,7 +115,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     expect(result).toEqual(mockTransaction)
     expect(mockedDb.transaction).toHaveBeenCalledOnce()
-    expect(txMock.insert).toHaveBeenCalledOnce()
+    expect(txMock.insert).toHaveBeenCalledTimes(2) // debit + credit counterpart
   })
 
   it("recordExpense: writes audit log in same transaction", async () => {
@@ -497,12 +502,15 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
   // ── autoPostInterestEarned ───────────────────────────────────────────
 
-  it("autoPostInterestEarned: inserts credit transaction when category exists", async () => {
-    const mockCategory = { id: "cat-interest", name: "Interest Earned", type: "revenue", isDefault: true }
+  it("autoPostInterestEarned: inserts debit+credit transactions when categories exist", async () => {
+    const mockCashCategory = { id: "cat-cash", name: "Cash", type: "asset", isDefault: true }
+    const mockInterestCategory = { id: "cat-interest", name: "Interest Earned", type: "revenue", isDefault: true }
     const txMock: any = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([mockCategory]),
+          where: vi.fn()
+            .mockResolvedValueOnce([mockCashCategory])
+            .mockResolvedValueOnce([mockInterestCategory]),
         }),
       }),
       insert: vi.fn().mockReturnValue({
@@ -518,56 +526,92 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    expect(txMock.insert).toHaveBeenCalledOnce()
+    expect(txMock.insert).toHaveBeenCalledTimes(2) // debit + credit
 
-    // Verify the shape of the inserted row
-    const valuesCall = txMock.insert.mock.results[0].value.values
-    expect(valuesCall).toHaveBeenCalledWith(
+    // Verify the debit entry shape
+    const debitValuesCall = txMock.insert.mock.results[0].value.values
+    expect(debitValuesCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "debit",
+        amount: "100000",
+        referenceType: "payment",
+        referenceId: "payment-1",
+        recordedBy: "actor-1",
+        loanId: "loan-1",
+      })
+    )
+
+    // Verify the credit entry shape
+    const creditValuesCall = txMock.insert.mock.results[1].value.values
+    expect(creditValuesCall).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "credit",
         amount: "100000",
         referenceType: "payment",
         referenceId: "payment-1",
         recordedBy: "actor-1",
+        loanId: "loan-1",
       })
     )
   })
 
-  it("autoPostInterestEarned: skips when category not found (no error thrown)", async () => {
+  it("autoPostInterestEarned: auto-creates missing categories and still posts entries", async () => {
+    const createdCashCat = { id: "cat-cash-new", name: "Cash", type: "asset", isDefault: true }
+    const createdInterestCat = { id: "cat-interest-new", name: "Interest Earned", type: "revenue", isDefault: true }
     const txMock: any = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
+          where: vi.fn()
+            .mockResolvedValueOnce([]) // Cash not found
+            .mockResolvedValueOnce([]), // Interest Earned not found
         }),
       }),
-      insert: vi.fn(),
+      insert: vi.fn()
+        // First call: getOrCreateCategory creates Cash
+        .mockReturnValueOnce({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([createdCashCat]),
+          }),
+        })
+        // Second call: getOrCreateCategory creates Interest Earned
+        .mockReturnValueOnce({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([createdInterestCat]),
+          }),
+        })
+        // Third call: debit transaction insert
+        .mockReturnValueOnce({
+          values: vi.fn().mockResolvedValue(undefined),
+        })
+        // Fourth call: credit transaction insert
+        .mockReturnValueOnce({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
     }
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     await autoPostInterestEarned(txMock, {
       amount: "100000",
       loanId: "loan-1",
+      paymentId: "payment-1",
       paymentDate: "2026-03-01",
       actorId: "actor-1",
     })
 
-    expect(txMock.insert).not.toHaveBeenCalled()
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Interest Earned")
-    )
-
-    warnSpy.mockRestore()
+    // 2 category creates + 2 journal entries = 4 inserts
+    expect(txMock.insert).toHaveBeenCalledTimes(4)
   })
 
   // ── autoPostInterestExpense ──────────────────────────────────────────
 
-  it("autoPostInterestExpense: inserts debit transaction when category exists", async () => {
-    const mockCategory = { id: "cat-interest-exp", name: "Interest Payments", type: "expense", isDefault: true }
+  it("autoPostInterestExpense: inserts debit+credit transactions when categories exist", async () => {
+    const mockInterestExpCat = { id: "cat-interest-exp", name: "Interest Payments", type: "expense", isDefault: true }
+    const mockCashCategory = { id: "cat-cash", name: "Cash", type: "asset", isDefault: true }
     const txMock: any = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([mockCategory]),
+          where: vi.fn()
+            .mockResolvedValueOnce([mockInterestExpCat])
+            .mockResolvedValueOnce([mockCashCategory]),
         }),
       }),
       insert: vi.fn().mockReturnValue({
@@ -582,11 +626,11 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    expect(txMock.insert).toHaveBeenCalledOnce()
+    expect(txMock.insert).toHaveBeenCalledTimes(2) // debit + credit
 
-    // Verify the shape of the inserted row
-    const valuesCall = txMock.insert.mock.results[0].value.values
-    expect(valuesCall).toHaveBeenCalledWith(
+    // Verify the debit entry shape
+    const debitValuesCall = txMock.insert.mock.results[0].value.values
+    expect(debitValuesCall).toHaveBeenCalledWith(
       expect.objectContaining({
         type: "debit",
         amount: "50000",
@@ -595,19 +639,53 @@ describe("Transaction Service — DB operations (mocked)", () => {
         recordedBy: "actor-1",
       })
     )
+
+    // Verify the credit entry shape
+    const creditValuesCall = txMock.insert.mock.results[1].value.values
+    expect(creditValuesCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "credit",
+        amount: "50000",
+        referenceType: "creditor_repayment",
+        referenceId: "inv-1",
+        recordedBy: "actor-1",
+      })
+    )
   })
 
-  it("autoPostInterestExpense: skips when category not found (no error thrown)", async () => {
+  it("autoPostInterestExpense: auto-creates missing categories and still posts entries", async () => {
+    const createdInterestExpCat = { id: "cat-interest-exp-new", name: "Interest Payments", type: "expense", isDefault: true }
+    const createdCashCat = { id: "cat-cash-new", name: "Cash", type: "asset", isDefault: true }
     const txMock: any = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
-          where: vi.fn().mockResolvedValue([]),
+          where: vi.fn()
+            .mockResolvedValueOnce([]) // Interest Payments not found
+            .mockResolvedValueOnce([]), // Cash not found
         }),
       }),
-      insert: vi.fn(),
+      insert: vi.fn()
+        // First call: getOrCreateCategory creates Interest Payments
+        .mockReturnValueOnce({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([createdInterestExpCat]),
+          }),
+        })
+        // Second call: getOrCreateCategory creates Cash
+        .mockReturnValueOnce({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([createdCashCat]),
+          }),
+        })
+        // Third call: debit transaction insert
+        .mockReturnValueOnce({
+          values: vi.fn().mockResolvedValue(undefined),
+        })
+        // Fourth call: credit transaction insert
+        .mockReturnValueOnce({
+          values: vi.fn().mockResolvedValue(undefined),
+        }),
     }
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     await autoPostInterestExpense(txMock, {
       amount: "50000",
@@ -616,11 +694,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    expect(txMock.insert).not.toHaveBeenCalled()
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Interest Payments")
-    )
-
-    warnSpy.mockRestore()
+    // 2 category creates + 2 journal entries = 4 inserts
+    expect(txMock.insert).toHaveBeenCalledTimes(4)
   })
 })

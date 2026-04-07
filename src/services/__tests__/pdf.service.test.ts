@@ -93,7 +93,7 @@ function makePnlData(overrides: Partial<PnlData> = {}): PnlData {
 function makeBalanceSheetData(overrides: Partial<BalanceSheetData> = {}): BalanceSheetData {
   return {
     asOf: "2026-03-23",
-    assets: { cashBalance: "0.00", bankBalance: "0.00", strongRoomBalance: "0.00", totalLoansOutstanding: "5000000.00", seizedCollateralValue: "0.00", totalAssets: "5000000.00" },
+    assets: { cashBalance: "0.00", bankBalance: "0.00", strongRoomBalance: "0.00", totalLoansOutstanding: "5000000.00", interestReceivable: "0.00", seizedCollateralValue: "0.00", totalAssets: "5000000.00" },
     liabilities: { totalCreditorBalances: "2000000.00" },
     equity: {
       shareCapital: "1000000.00",
@@ -320,8 +320,10 @@ describe("PDF Export Service", () => {
 
       const assetsTable = autoTableCalls[0]
       expect(assetsTable.head[0]).toEqual(["Assets", "Amount (UGX)"])
-      expect(assetsTable.body).toHaveLength(1)
-      expect(assetsTable.body[0][0]).toBe("Total Loans Outstanding")
+      // Cash on Hand, Bank, Strong Room, Loans Outstanding, Total Assets (seized collateral excluded when 0)
+      expect(assetsTable.body).toHaveLength(5)
+      expect(assetsTable.body[0][0]).toBe("Cash on Hand")
+      expect(assetsTable.body[3][0]).toBe("Loans Outstanding")
     })
 
     it("liabilities table has correct structure", async () => {

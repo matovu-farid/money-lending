@@ -81,7 +81,7 @@ describe("Chat Service", () => {
       const conv = makeConv()
 
       // db.execute returns empty (no existing conversation)
-      mockedDb.execute.mockResolvedValue([])
+      mockedDb.execute.mockResolvedValue([] as any)
 
       // transaction runs, inserts conv and participants
       mockedDb.transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) => {
@@ -110,7 +110,7 @@ describe("Chat Service", () => {
       const conv = makeConv()
 
       // db.execute returns an existing conversation_id row
-      mockedDb.execute.mockResolvedValue([{ conversation_id: "conv-1" }])
+      mockedDb.execute.mockResolvedValue([{ conversation_id: "conv-1" }] as any)
 
       // db.select().from().where() returns the existing conversation
       mockedDb.select.mockReturnValue({

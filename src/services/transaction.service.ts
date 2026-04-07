@@ -684,6 +684,71 @@ export async function getCreditorBalancesFromLedger(
   return balances;
 }
 
+/**
+ * Derive per-payment interest and principal portions from the ledger.
+ * Queries "Interest Earned" and "Loans Receivable" entries grouped by referenceId (paymentId).
+ * - "Interest Earned" (revenue): CR adds, DR subtracts
+ * - "Loans Receivable" (asset): CR adds to principal portion (asset being credited = principal repaid)
+ * Returns Map<paymentId, { interestPortion: string; principalPortion: string }>
+ */
+export async function getPaymentPortionsFromLedger(
+  paymentIds: string[]
+): Promise<Map<string, { interestPortion: string; principalPortion: string }>> {
+  if (paymentIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      referenceId: transactions.referenceId,
+      categoryName: transactionCategories.name,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        inArray(transactions.referenceId, paymentIds),
+        inArray(transactions.referenceType, ["payment", "payment_reversal"]),
+        inArray(transactionCategories.name, ["Interest Earned", "Loans Receivable"])
+      )
+    )
+    .groupBy(transactions.referenceId, transactionCategories.name, transactions.type);
+
+  const portionMap = new Map<string, { interest: BigNumber; principal: BigNumber }>();
+
+  for (const row of rows) {
+    if (!row.referenceId) continue;
+    const current = portionMap.get(row.referenceId) ?? { interest: new BigNumber(0), principal: new BigNumber(0) };
+    const amount = new BigNumber(row.total);
+
+    if (row.categoryName === "Interest Earned") {
+      // Revenue account: CR adds, DR subtracts
+      current.interest = row.txType === "credit"
+        ? current.interest.plus(amount)
+        : current.interest.minus(amount);
+    } else if (row.categoryName === "Loans Receivable") {
+      // Asset account: CR adds to principal portion (principal repaid)
+      current.principal = row.txType === "credit"
+        ? current.principal.plus(amount)
+        : current.principal.minus(amount);
+    }
+
+    portionMap.set(row.referenceId, current);
+  }
+
+  const result = new Map<string, { interestPortion: string; principalPortion: string }>();
+  for (const [paymentId, portions] of portionMap) {
+    result.set(paymentId, {
+      interestPortion: portions.interest.toFixed(2),
+      principalPortion: portions.principal.toFixed(2),
+    });
+  }
+  return result;
+}
+
 // ── Interest Accrual Functions ─────────────────────────────────────────
 
 function accrualDaysBetween(from: Date, to: Date): number {

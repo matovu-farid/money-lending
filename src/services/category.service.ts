@@ -28,6 +28,7 @@ const DEFAULT_EQUITY_CATEGORIES = [
 const DEFAULT_REVENUE_CATEGORIES = [
   "Bonuses",
   "Interest Earned",
+  "Interest Receivable",
   "Issuance Fees",
 ]
 
@@ -36,6 +37,7 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   "Salaries",
   "Office Expenses",
   "Interest Payments",
+  "Interest Payable",
   "DStv",
 ]
 

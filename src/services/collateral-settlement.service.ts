@@ -10,7 +10,7 @@ import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"
-import { postJournalEntry, autoPostPrincipalRecovery } from "@/services/transaction.service"
+import { postJournalEntry, autoPostPrincipalRecovery, getLoanBalanceFromLedger, reverseInterestAccrual } from "@/services/transaction.service"
 import type { SettleWithCollateralInput, Loan } from "@/types"
 
 /**
@@ -22,16 +22,12 @@ import type { SettleWithCollateralInput, Loan } from "@/types"
  */
 export function computeAccruedInterest(
   loan: Loan,
-  activePayments: { interestPortion: string; paymentDate: Date; principalBalanceAfter: string }[]
+  activePayments: { interestPortion: string; paymentDate: Date }[],
+  outstandingPrincipal: BigNumber
 ): BigNumber {
   const loanType = loan.loanType ?? "perpetual"
   const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
   const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
-
-  const outstandingPrincipal =
-    activePayments.length === 0
-      ? new BigNumber(loan.principalAmount)
-      : new BigNumber(activePayments[activePayments.length - 1].principalBalanceAfter)
 
   const now = new Date()
 
@@ -114,6 +110,13 @@ export const settleWithCollateral = (
         }
       }
 
+      // Fetch ledger-derived balance BEFORE entering the transaction
+      // (acceptable for rare collateral settlement operations)
+      const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
+      const outstandingPrincipal = ledgerBalance.isGreaterThan(0)
+        ? ledgerBalance
+        : new BigNumber(loan.principalAmount)
+
       return await db.transaction(async (tx) => {
         const activePayments = await tx
           .select()
@@ -121,16 +124,19 @@ export const settleWithCollateral = (
           .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
-        // Outstanding principal
-        const outstandingPrincipal =
-          activePayments.length === 0
-            ? new BigNumber(loan.principalAmount)
-            : new BigNumber(activePayments[activePayments.length - 1].principalBalanceAfter)
-
         // Accrued interest
-        const accruedInterest = computeAccruedInterest(loan as Loan, activePayments)
+        const accruedInterest = computeAccruedInterest(loan as Loan, activePayments, outstandingPrincipal)
 
         const now = new Date()
+
+        // Reverse any outstanding interest accrual before posting settlement interest
+        if (accruedInterest.isGreaterThan(0)) {
+          await reverseInterestAccrual(tx, {
+            loanId: input.loanId,
+            paymentDate: now.toISOString(),
+            actorId,
+          })
+        }
 
         // Post accrued interest as double-entry journal
         if (accruedInterest.isGreaterThan(0)) {
@@ -143,6 +149,7 @@ export const settleWithCollateral = (
             description: `Accrued interest on collateral settlement for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
             transactionDate: now,
             recordedBy: actorId,
+            loanId: input.loanId,
           })
         }
 
@@ -232,12 +239,12 @@ export async function getCustomerActiveLoan(customerId: string): Promise<{
     .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
     .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
-  const outstandingPrincipal =
-    activePayments.length === 0
-      ? new BigNumber(loan.principalAmount)
-      : new BigNumber(activePayments[activePayments.length - 1].principalBalanceAfter)
+  const ledgerBalance = await getLoanBalanceFromLedger(loan.id)
+  const outstandingPrincipal = ledgerBalance.isGreaterThan(0)
+    ? ledgerBalance
+    : new BigNumber(loan.principalAmount)
 
-  const accruedInterest = computeAccruedInterest(loan, activePayments)
+  const accruedInterest = computeAccruedInterest(loan, activePayments, outstandingPrincipal)
 
   return {
     loan,

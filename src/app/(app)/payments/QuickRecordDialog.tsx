@@ -10,6 +10,7 @@ import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog
 import {
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -18,9 +19,9 @@ import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { MoneyInput } from "@/components/ui/money-input"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
-import { getRecentlyCollectedLoansAction, recordPaymentAction } from "@/actions/payment.actions"
+import { getRecentlyCollectedLoansAction, recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { queryKeys } from "@/hooks/query-keys"
-import { formatNumberWithCommas } from "@/lib/utils"
+import { formatNumberWithCommas, formatCurrency, formatDate } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -41,11 +42,28 @@ interface QuickRecordFormValues {
   depositLocation: "cash" | "bank" | "strong_room"
 }
 
+const AMOUNT_PRESETS = [
+  { label: "50K", value: "50000" },
+  { label: "100K", value: "100000" },
+  { label: "200K", value: "200000" },
+  { label: "500K", value: "500000" },
+  { label: "1M", value: "1000000" },
+  { label: "2M", value: "2000000" },
+]
+
+const DEPOSIT_LABELS: Record<string, string> = {
+  cash: "Cash",
+  bank: "Bank",
+  strong_room: "Strong Room",
+}
+
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
   const queryClient = useQueryClient()
   const [selectedLoan, setSelectedLoan] = useState<ActiveLoanSearchResult | null>(null)
   const [successPaymentId, setSuccessPaymentId] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [confirmStep, setConfirmStep] = useState(false)
+  const [pendingData, setPendingData] = useState<QuickRecordFormValues | null>(null)
 
   const {
     register,
@@ -53,6 +71,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     watch,
     reset,
     control,
+    setValue,
     formState: { errors },
   } = useForm<QuickRecordFormValues>({
     defaultValues: {
@@ -74,6 +93,18 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     enabled: open,
   })
 
+  // Fetch balance for selected loan
+  const { data: balanceData } = useQuery({
+    queryKey: ["loanBalance", selectedLoan?.loanId],
+    queryFn: async () => {
+      if (!selectedLoan?.loanId) return null
+      const r = await getLoanBalanceAction(selectedLoan.loanId)
+      return "error" in r ? null : r.data
+    },
+    enabled: !!selectedLoan?.loanId,
+    staleTime: 30_000,
+  })
+
   function resetForm() {
     setSelectedLoan(null)
     reset({
@@ -82,6 +113,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       depositLocation: "cash",
     })
     setSuccessPaymentId(null)
+    setConfirmStep(false)
+    setPendingData(null)
   }
 
   function handleOpenChange(nextOpen: boolean) {
@@ -101,22 +134,33 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     setSelectedLoan(activeLoan)
   }
 
-  function onSubmit(data: QuickRecordFormValues) {
+  function handlePresetClick(value: string) {
+    setValue("amount", value, { shouldValidate: true })
+  }
+
+  function onFormSubmit(data: QuickRecordFormValues) {
     if (!selectedLoan) return
+    setPendingData(data)
+    setConfirmStep(true)
+  }
+
+  function handleConfirmedSubmit() {
+    if (!selectedLoan || !pendingData) return
+    setConfirmStep(false)
 
     startTransition(async () => {
       const result = await recordPaymentAction({
         loanId: selectedLoan.loanId,
-        amount: data.amount,
-        paymentDate: new Date(data.paymentDate + "T12:00:00").toISOString(),
-        depositLocation: data.depositLocation,
+        amount: pendingData.amount,
+        paymentDate: new Date(pendingData.paymentDate + "T12:00:00").toISOString(),
+        depositLocation: pendingData.depositLocation,
       })
 
       if ("error" in result) {
         toast.error(
           result.error === "Loan not found"
             ? "Loan not found. It may have been deleted."
-            : "Failed to record payment. Please try again."
+            : result.error ?? "Failed to record payment. Please try again."
         )
         return
       }
@@ -130,6 +174,10 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   }
 
   const isSubmitDisabled = !selectedLoan || isPending
+
+  const loanRef = selectedLoan
+    ? `LOAN-${selectedLoan.loanId.slice(0, 8).toUpperCase()}`
+    : ""
 
   return (
     <DrawerDialog open={open} onOpenChange={handleOpenChange}>
@@ -160,12 +208,59 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
               </Button>
             </DialogFooter>
           </>
+        ) : confirmStep && pendingData ? (
+          <>
+            <DialogHeader>
+              <DialogTitle>Confirm Payment</DialogTitle>
+              <DialogDescription>
+                Please review the payment details below before submitting.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="rounded-lg border p-4 space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span className="font-medium">{selectedLoan?.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Loan Reference</span>
+                  <span className="font-mono">{loanRef}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-mono tabular-nums font-semibold">
+                    UGX {formatNumberWithCommas(pendingData.amount)}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Deposit Location</span>
+                  <span>{DEPOSIT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Payment Date</span>
+                  <span>{formatDate(pendingData.paymentDate)}</span>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmStep(false)}>
+                Back
+              </Button>
+              <Button onClick={handleConfirmedSubmit} disabled={isPending}>
+                {isPending ? (
+                  <Spinner>Recording...</Spinner>
+                ) : (
+                  "Confirm & Record"
+                )}
+              </Button>
+            </DialogFooter>
+          </>
         ) : (
           <>
             <DialogHeader>
               <DialogTitle>Record Payment</DialogTitle>
             </DialogHeader>
-            <form onSubmit={handleSubmit(onSubmit)}>
+            <form onSubmit={handleSubmit(onFormSubmit)}>
               <div className="space-y-4 py-2">
                 {/* Recently-collected chips */}
                 {recentLoans.length > 0 && (
@@ -197,6 +292,25 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   />
                 </div>
 
+                {/* Balance summary when loan is selected */}
+                {selectedLoan && balanceData && (
+                  <div className="rounded-lg border bg-muted/30 p-3 space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Outstanding Principal</span>
+                      <span className="font-mono tabular-nums">{formatCurrency(balanceData.outstandingPrincipal)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Accrued Interest</span>
+                      <span className="font-mono tabular-nums">{formatCurrency(balanceData.accruedInterest)}</span>
+                    </div>
+                    <div className="border-t my-1" />
+                    <div className="flex justify-between font-semibold">
+                      <span>Total Owed</span>
+                      <span className="font-mono tabular-nums">{formatCurrency(balanceData.totalBalance)}</span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Amount */}
                 <MoneyInput
                   name="amount"
@@ -206,6 +320,25 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   disabled={!selectedLoan}
                   id="quick-record-amount"
                 />
+
+                {/* Quick amount presets */}
+                {selectedLoan && (
+                  <div className="flex flex-wrap gap-2">
+                    {AMOUNT_PRESETS.map((preset) => (
+                      <Button
+                        key={preset.value}
+                        type="button"
+                        variant={amount === preset.value ? "default" : "outline"}
+                        size="sm"
+                        className="rounded-full text-xs px-3 h-7"
+                        disabled={!selectedLoan}
+                        onClick={() => handlePresetClick(preset.value)}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Deposit location */}
                 <div className="space-y-1.5">
