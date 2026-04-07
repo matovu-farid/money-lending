@@ -118,7 +118,7 @@ export default function RegisterPage() {
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 autoComplete="new-password"
-                className="pr-10"
+                className="pr-10 placeholder:text-2xl placeholder:leading-[0] focus:placeholder:text-transparent"
                 disabled={isPending}
                 {...register("password", {
                   required: "Password is required",
@@ -151,7 +151,7 @@ export default function RegisterPage() {
                 type={showConfirmPassword ? "text" : "password"}
                 placeholder="••••••••"
                 autoComplete="new-password"
-                className="pr-10"
+                className="pr-10 placeholder:text-2xl placeholder:leading-[0] focus:placeholder:text-transparent"
                 disabled={isPending}
                 {...register("confirmPassword", {
                   required: "Please confirm your password",
