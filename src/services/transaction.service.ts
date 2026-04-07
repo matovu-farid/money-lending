@@ -749,6 +749,64 @@ export async function getPaymentPortionsFromLedger(
   return result;
 }
 
+export async function getCreditorRepaymentPortionsFromLedger(
+  repaymentIds: string[]
+): Promise<Map<string, { interestPortion: string; principalPortion: string }>> {
+  if (repaymentIds.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      referenceId: transactions.referenceId,
+      categoryName: transactionCategories.name,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id)
+    )
+    .where(
+      and(
+        inArray(transactions.referenceId, repaymentIds),
+        eq(transactions.referenceType, "creditor_repayment"),
+        inArray(transactionCategories.name, ["Interest Payments", "Creditor Investment"])
+      )
+    )
+    .groupBy(transactions.referenceId, transactionCategories.name, transactions.type);
+
+  const portionMap = new Map<string, { interest: BigNumber; principal: BigNumber }>();
+
+  for (const row of rows) {
+    if (!row.referenceId) continue;
+    const current = portionMap.get(row.referenceId) ?? { interest: new BigNumber(0), principal: new BigNumber(0) };
+    const amount = new BigNumber(row.total);
+
+    if (row.categoryName === "Interest Payments") {
+      // Expense account: DR adds, CR subtracts
+      current.interest = row.txType === "debit"
+        ? current.interest.plus(amount)
+        : current.interest.minus(amount);
+    } else if (row.categoryName === "Creditor Investment") {
+      // Liability account: DR adds (decrease = principal repaid), CR subtracts
+      current.principal = row.txType === "debit"
+        ? current.principal.plus(amount)
+        : current.principal.minus(amount);
+    }
+
+    portionMap.set(row.referenceId, current);
+  }
+
+  const result = new Map<string, { interestPortion: string; principalPortion: string }>();
+  for (const [repaymentId, portions] of portionMap) {
+    result.set(repaymentId, {
+      interestPortion: portions.interest.toFixed(2),
+      principalPortion: portions.principal.toFixed(2),
+    });
+  }
+  return result;
+}
+
 // ── Interest Accrual Functions ─────────────────────────────────────────
 
 function accrualDaysBetween(from: Date, to: Date): number {

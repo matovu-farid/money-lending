@@ -26,6 +26,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   let autoPostInterestEarned: any
   let autoPostInterestExpense: any
   let getPaymentPortionsFromLedger: any
+  let getCreditorRepaymentPortionsFromLedger: any
 
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -42,6 +43,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     autoPostInterestEarned = svc.autoPostInterestEarned
     autoPostInterestExpense = svc.autoPostInterestExpense
     getPaymentPortionsFromLedger = svc.getPaymentPortionsFromLedger
+    getCreditorRepaymentPortionsFromLedger = svc.getCreditorRepaymentPortionsFromLedger
   })
 
   // ── helpers ──────────────────────────────────────────────────────────
@@ -800,6 +802,97 @@ describe("Transaction Service — DB operations (mocked)", () => {
     ])
 
     const result = await getPaymentPortionsFromLedger(["pay-1"])
+
+    expect(result.size).toBe(0)
+  })
+
+  // ── getCreditorRepaymentPortionsFromLedger ───────────────────────────
+
+  it("getCreditorRepaymentPortionsFromLedger: returns empty map for empty input", async () => {
+    const result = await getCreditorRepaymentPortionsFromLedger([])
+    expect(result).toBeInstanceOf(Map)
+    expect(result.size).toBe(0)
+    expect(mockedDb.select).not.toHaveBeenCalled()
+  })
+
+  it("getCreditorRepaymentPortionsFromLedger: derives interest and principal portions for a single repayment", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "rep-1", categoryName: "Interest Payments", txType: "debit", total: "5000.00" },
+      { referenceId: "rep-1", categoryName: "Creditor Investment", txType: "debit", total: "45000.00" },
+    ])
+
+    const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
+
+    expect(result.size).toBe(1)
+    const portions = result.get("rep-1")
+    expect(portions).toBeDefined()
+    expect(portions!.interestPortion).toBe("5000.00")
+    expect(portions!.principalPortion).toBe("45000.00")
+  })
+
+  it("getCreditorRepaymentPortionsFromLedger: handles multiple repayments in a single query", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "rep-1", categoryName: "Interest Payments", txType: "debit", total: "3000.00" },
+      { referenceId: "rep-1", categoryName: "Creditor Investment", txType: "debit", total: "27000.00" },
+      { referenceId: "rep-2", categoryName: "Interest Payments", txType: "debit", total: "2500.00" },
+      { referenceId: "rep-2", categoryName: "Creditor Investment", txType: "debit", total: "22500.00" },
+    ])
+
+    const result = await getCreditorRepaymentPortionsFromLedger(["rep-1", "rep-2"])
+
+    expect(result.size).toBe(2)
+    expect(result.get("rep-1")!.interestPortion).toBe("3000.00")
+    expect(result.get("rep-1")!.principalPortion).toBe("27000.00")
+    expect(result.get("rep-2")!.interestPortion).toBe("2500.00")
+    expect(result.get("rep-2")!.principalPortion).toBe("22500.00")
+  })
+
+  it("getCreditorRepaymentPortionsFromLedger: subtracts CR entries for Interest Payments (reversal)", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "rep-1", categoryName: "Interest Payments", txType: "debit", total: "5000.00" },
+      { referenceId: "rep-1", categoryName: "Interest Payments", txType: "credit", total: "5000.00" },
+      { referenceId: "rep-1", categoryName: "Creditor Investment", txType: "debit", total: "45000.00" },
+    ])
+
+    const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
+
+    const portions = result.get("rep-1")
+    expect(portions!.interestPortion).toBe("0.00")
+    expect(portions!.principalPortion).toBe("45000.00")
+  })
+
+  it("getCreditorRepaymentPortionsFromLedger: subtracts CR entries for Creditor Investment", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "rep-1", categoryName: "Creditor Investment", txType: "debit", total: "45000.00" },
+      { referenceId: "rep-1", categoryName: "Creditor Investment", txType: "credit", total: "5000.00" },
+    ])
+
+    const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
+
+    const portions = result.get("rep-1")
+    expect(portions!.principalPortion).toBe("40000.00")
+    expect(portions!.interestPortion).toBe("0.00")
+  })
+
+  it("getCreditorRepaymentPortionsFromLedger: returns string values with 2 decimal places", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: "rep-1", categoryName: "Interest Payments", txType: "debit", total: "1000" },
+      { referenceId: "rep-1", categoryName: "Creditor Investment", txType: "debit", total: "9000" },
+    ])
+
+    const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
+
+    const portions = result.get("rep-1")
+    expect(portions!.interestPortion).toBe("1000.00")
+    expect(portions!.principalPortion).toBe("9000.00")
+  })
+
+  it("getCreditorRepaymentPortionsFromLedger: skips rows with null referenceId", async () => {
+    setupLedgerPortionsSelect([
+      { referenceId: null, categoryName: "Interest Payments", txType: "debit", total: "5000.00" },
+    ])
+
+    const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     expect(result.size).toBe(0)
   })
