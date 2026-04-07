@@ -7,11 +7,16 @@ import { revalidatePath } from "next/cache"
 import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
+import { loans } from "@/lib/db/schema/loans"
 import { eq, and, asc, isNull } from "drizzle-orm"
 import { PaymentNotFound, LoanNotFound } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
 import { sendAdminNotification } from "@/lib/email"
+import { postJournalEntry, autoPostInterestEarned, autoPostPrincipalRepayment, reverseInterestAccrual, getLoanBalanceFromLedger } from "@/services/transaction.service"
+import { allocatePayment } from "@/lib/interest/engine"
+import BigNumber from "bignumber.js"
+import { daysBetween } from "@/lib/db/utils"
 
 export async function recordPaymentAction(input: RecordPaymentInput) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -266,30 +271,75 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
   }
 
   try {
-    const [payment] = await db
-      .select()
-      .from(payments)
-      .where(eq(payments.id, paymentId))
-    if (!payment) {
-      return { error: "Payment not found" }
-    }
+    const updated = await db.transaction(async (tx) => {
+      const [payment] = await tx
+        .select()
+        .from(payments)
+        .where(eq(payments.id, paymentId))
+      if (!payment) throw { _tag: "PaymentNotFound" }
 
-    const [updated] = await db
-      .update(payments)
-      .set({
-        markedWrong: true,
-        markedWrongReason: reason.trim(),
-        markedWrongBy: session.user.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(payments.id, paymentId))
-      .returning()
+      const [updatedPayment] = await tx
+        .update(payments)
+        .set({
+          markedWrong: true,
+          markedWrongReason: reason.trim(),
+          markedWrongBy: session.user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, paymentId))
+        .returning()
+
+      // Reverse interest journal entry
+      if (new BigNumber(payment.interestPortion).isGreaterThan(0)) {
+        await postJournalEntry(tx, {
+          debitCategory: { name: "Interest Earned", type: "revenue" },
+          creditCategory: { name: "Cash", type: "asset" },
+          amount: payment.interestPortion,
+          referenceType: "payment_reversal",
+          referenceId: paymentId,
+          description: `Reversal - payment ${paymentId} marked wrong: ${reason.trim()}`,
+          transactionDate: new Date(payment.paymentDate),
+          recordedBy: session.user.id,
+          creditDepositLocation: payment.depositLocation ?? undefined,
+          loanId: payment.loanId,
+        })
+      }
+
+      // Reverse principal journal entry
+      if (new BigNumber(payment.principalPortion).isGreaterThan(0)) {
+        await postJournalEntry(tx, {
+          debitCategory: { name: "Loans Receivable", type: "asset" },
+          creditCategory: { name: "Cash", type: "asset" },
+          amount: payment.principalPortion,
+          referenceType: "payment_reversal",
+          referenceId: paymentId,
+          description: `Reversal - principal repayment ${paymentId} marked wrong: ${reason.trim()}`,
+          transactionDate: new Date(payment.paymentDate),
+          recordedBy: session.user.id,
+          creditDepositLocation: payment.depositLocation ?? undefined,
+          loanId: payment.loanId,
+        })
+      }
+
+      // Check if loan should revert from fully_paid to active
+      const ledgerBalance = await getLoanBalanceFromLedger(payment.loanId)
+      const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+      if (loan && loan.status === "fully_paid" && ledgerBalance.isGreaterThan(0)) {
+        await tx
+          .update(loans)
+          .set({ status: "active", updatedAt: new Date() })
+          .where(eq(loans.id, payment.loanId))
+      }
+
+      return updatedPayment
+    })
 
     revalidatePath("/payments")
-    revalidatePath(`/loans/${payment.loanId}`)
+    revalidatePath(`/loans/${updated.loanId}`)
 
     return { data: updated }
-  } catch {
+  } catch (e: any) {
+    if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
     return { error: "Internal server error" }
   }
 }
@@ -310,30 +360,107 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
   }
 
   try {
-    const [payment] = await db
-      .select()
-      .from(payments)
-      .where(eq(payments.id, paymentId))
-    if (!payment) {
-      return { error: "Payment not found" }
-    }
+    const updated = await db.transaction(async (tx) => {
+      const [payment] = await tx
+        .select()
+        .from(payments)
+        .where(eq(payments.id, paymentId))
+      if (!payment) throw { _tag: "PaymentNotFound" }
 
-    const [updated] = await db
-      .update(payments)
-      .set({
-        markedWrong: false,
-        markedWrongReason: null,
-        markedWrongBy: null,
-        updatedAt: new Date(),
+      const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+      if (!loan) throw { _tag: "LoanNotFound" }
+
+      const [updatedPayment] = await tx
+        .update(payments)
+        .set({
+          markedWrong: false,
+          markedWrongReason: null,
+          markedWrongBy: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(payments.id, paymentId))
+        .returning()
+
+      // Recompute allocation from loan state to determine interest/principal portions
+      const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+      const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
+      const loanType = loan.loanType ?? "perpetual"
+
+      // Get all active (non-deleted, non-wrong) payments ordered by date to find position
+      const activePayments = await tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
+        .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+
+      const paymentIndex = activePayments.findIndex((p) => p.id === paymentId)
+      const prevPayment = paymentIndex > 0 ? activePayments[paymentIndex - 1] : null
+      const prevDate = prevPayment ? new Date(prevPayment.paymentDate) : new Date(loan.startDate)
+      const principalBalanceBefore = prevPayment
+        ? prevPayment.principalBalanceAfter
+        : loan.principalAmount
+      const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate))
+      const paymentNumber = paymentIndex + 1
+
+      const allocation = allocatePayment({
+        paymentAmount: payment.amount,
+        principalBalanceBefore,
+        monthlyRateDecimal,
+        daysElapsed,
+        minInterestDays,
+        loanType,
+        originalPrincipal: loan.principalAmount,
+        termMonths: loan.termMonths ?? undefined,
+        paymentNumber,
       })
-      .where(eq(payments.id, paymentId))
-      .returning()
+
+      // Re-post interest earned journal entry
+      if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+        await reverseInterestAccrual(tx, {
+          loanId: payment.loanId,
+          paymentDate: payment.paymentDate.toISOString(),
+          actorId: session.user.id,
+        })
+        await autoPostInterestEarned(tx, {
+          amount: allocation.interestPortion,
+          loanId: payment.loanId,
+          paymentId,
+          paymentDate: payment.paymentDate.toISOString(),
+          actorId: session.user.id,
+          depositLocation: payment.depositLocation ?? undefined,
+        })
+      }
+
+      // Re-post principal repayment journal entry
+      if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
+        await autoPostPrincipalRepayment(tx, {
+          amount: allocation.principalPortion,
+          loanId: payment.loanId,
+          paymentId,
+          paymentDate: payment.paymentDate.toISOString(),
+          actorId: session.user.id,
+          depositLocation: payment.depositLocation ?? undefined,
+        })
+      }
+
+      // Check if loan should be marked fully_paid
+      if (allocation.loanFullyPaid && loan.status !== "fully_paid") {
+        await tx
+          .update(loans)
+          .set({ status: "fully_paid", updatedAt: new Date() })
+          .where(eq(loans.id, payment.loanId))
+      }
+
+      return updatedPayment
+    })
 
     revalidatePath("/payments")
-    revalidatePath(`/loans/${payment.loanId}`)
+    revalidatePath(`/loans/${updated.loanId}`)
 
     return { data: updated }
-  } catch {
+  } catch (e: any) {
+    if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
+    if (e?._tag === "LoanNotFound") return { error: "Loan not found" }
     return { error: "Internal server error" }
   }
 }
