@@ -13,7 +13,7 @@ import { PaymentNotFound, LoanNotFound } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
 import { sendAdminNotification } from "@/lib/email"
-import { postJournalEntry, autoPostInterestEarned, autoPostPrincipalRepayment, reverseInterestAccrual, getLoanBalanceFromLedger } from "@/services/transaction.service"
+import { postJournalEntry, autoPostInterestEarned, autoPostPrincipalRepayment, reverseInterestAccrual, getLoanBalanceFromLedger, getPaymentPortionsFromLedger } from "@/services/transaction.service"
 import { allocatePayment } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { daysBetween } from "@/lib/db/utils"
@@ -289,12 +289,16 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
         .where(eq(payments.id, paymentId))
         .returning()
 
+      // Derive portions from ledger (not cached columns)
+      const portions = await getPaymentPortionsFromLedger([paymentId])
+      const portion = portions.get(paymentId)
+
       // Reverse interest journal entry
-      if (new BigNumber(payment.interestPortion).isGreaterThan(0)) {
+      if (portion && new BigNumber(portion.interestPortion).isGreaterThan(0)) {
         await postJournalEntry(tx, {
           debitCategory: { name: "Interest Earned", type: "revenue" },
           creditCategory: { name: "Cash", type: "asset" },
-          amount: payment.interestPortion,
+          amount: portion.interestPortion,
           referenceType: "payment_reversal",
           referenceId: paymentId,
           description: `Reversal - payment ${paymentId} marked wrong: ${reason.trim()}`,
@@ -306,11 +310,11 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
       }
 
       // Reverse principal journal entry
-      if (new BigNumber(payment.principalPortion).isGreaterThan(0)) {
+      if (portion && new BigNumber(portion.principalPortion).isGreaterThan(0)) {
         await postJournalEntry(tx, {
           debitCategory: { name: "Loans Receivable", type: "asset" },
           creditCategory: { name: "Cash", type: "asset" },
-          amount: payment.principalPortion,
+          amount: portion.principalPortion,
           referenceType: "payment_reversal",
           referenceId: paymentId,
           description: `Reversal - principal repayment ${paymentId} marked wrong: ${reason.trim()}`,
@@ -396,8 +400,11 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
       const paymentIndex = activePayments.findIndex((p) => p.id === paymentId)
       const prevPayment = paymentIndex > 0 ? activePayments[paymentIndex - 1] : null
       const prevDate = prevPayment ? new Date(prevPayment.paymentDate) : new Date(loan.startDate)
-      const principalBalanceBefore = prevPayment
-        ? prevPayment.principalBalanceAfter
+
+      // Derive principal balance from ledger (not cached columns)
+      const ledgerBal = await getLoanBalanceFromLedger(payment.loanId)
+      const principalBalanceBefore = ledgerBal.isGreaterThan(0)
+        ? ledgerBal.toFixed(2)
         : loan.principalAmount
       const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate))
       const paymentNumber = paymentIndex + 1
