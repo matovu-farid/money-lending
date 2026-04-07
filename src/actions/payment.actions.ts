@@ -8,6 +8,7 @@ import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLo
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull } from "drizzle-orm"
 import { PaymentNotFound, LoanNotFound } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -389,7 +390,7 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
         .returning()
 
       // Recompute allocation from loan state to determine interest/principal portions
-      const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+      const monthlyRateDecimal = getBaseRate(loan)
       const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
       const loanType = loan.loanType ?? "perpetual"
 

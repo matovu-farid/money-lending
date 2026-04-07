@@ -4,6 +4,7 @@ import { db } from "@/lib/db"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { loans } from "@/lib/db/schema/loans"
+import { payments } from "@/lib/db/schema/payments"
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import {
@@ -25,10 +26,12 @@ import {
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { calculateInterest, formatAmount } from "@/lib/interest/engine"
-import type {
-  CreateExpenseInput,
-  CreateIncomeInput,
-  TransactionLogFilters,
+import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import {
+  toLoanType,
+  type CreateTransactionInput,
+  type TransactionLogFilters,
 } from "@/types"
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -125,7 +128,7 @@ export async function postJournalEntry(
 }
 
 export const recordExpense = (
-  input: CreateExpenseInput,
+  input: CreateTransactionInput,
   actorId: string
 ): Effect.Effect<typeof transactions.$inferSelect, DatabaseError> =>
   Effect.tryPromise({
@@ -156,7 +159,7 @@ export const recordExpense = (
   })
 
 export const recordIncome = (
-  input: CreateIncomeInput,
+  input: CreateTransactionInput,
   actorId: string
 ): Effect.Effect<typeof transactions.$inferSelect, DatabaseError> =>
   Effect.tryPromise({
@@ -1135,24 +1138,46 @@ export const accrueInterestForLoans = (
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
       const loanIds = activeLoans.map((l) => l.id)
-      const [ledgerBalances, interestEarnedBatch] = await Promise.all([
+      const [ledgerBalances, interestEarnedBatch, paymentCountRows] = await Promise.all([
         getLoanBalancesFromLedger(loanIds),
         getInterestEarnedFromLedger(loanIds),
+        loanIds.length > 0
+          ? db.select({ loanId: payments.loanId, cnt: count() })
+              .from(payments)
+              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+              .groupBy(payments.loanId)
+          : Promise.resolve([]),
       ])
+      const paymentCountMap = new Map(paymentCountRows.map((r) => [r.loanId, r.cnt]))
 
       let entriesPosted = 0
 
       for (const loan of activeLoans) {
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const baseRate = getBaseRate(loan)
+        const outstandingBalanceBN = ledgerBalances.get(loan.id)
+        const outstandingBalance = outstandingBalanceBN && outstandingBalanceBN.isGreaterThan(0)
+          ? formatAmount(outstandingBalanceBN)
+          : loan.principalAmount
+        const totalInterestPaid = formatAmount(interestEarnedBatch.get(loan.id) ?? new BigNumber(0))
+        const overdueInfo = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          baseRate,
+          startDate: new Date(loan.startDate),
+          loanType: toLoanType(loan.loanType),
+          termMonths: loan.termMonths,
+          totalInterestPaid,
+          paymentCount: paymentCountMap.get(loan.id) ?? 0,
+          outstandingBalance,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
+        })
+        const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive)
         const totalDaysElapsed = accrualDaysBetween(new Date(loan.startDate), asOfDate)
 
-        const outstandingBalance = ledgerBalances.get(loan.id)
-        if (!outstandingBalance || outstandingBalance.isEqualTo(0)) {
+        if (!outstandingBalanceBN || outstandingBalanceBN.isEqualTo(0)) {
           console.warn(`[accrueInterestForLoans] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
         }
-        const principalForAccrual = outstandingBalance && outstandingBalance.isGreaterThan(0)
-          ? formatAmount(outstandingBalance)
-          : loan.principalAmount
+        const principalForAccrual = outstandingBalance
         const totalInterestAccrued = calculateInterest(principalForAccrual, effectiveRate, totalDaysElapsed, 0)
 
         // Net Interest Earned from ledger = cash interest + accruals - reversals
@@ -1161,23 +1186,63 @@ export const accrueInterestForLoans = (
         const target = totalInterestAccrued.minus(totalInterestEarned)
 
         if (target.isGreaterThan(0)) {
-          const amount = formatAmount(target)
+          // When penalty is active, split into base interest + penalty interest
+          // so the ledger transparently shows the penalty portion
+          let baseAmount: BigNumber
+          let penaltyAmount: BigNumber
+
+          if (overdueInfo.penaltyActive) {
+            const totalAtBaseRate = calculateInterest(principalForAccrual, baseRate, totalDaysElapsed, 0)
+            const baseTarget = totalAtBaseRate.minus(totalInterestEarned)
+            baseAmount = BigNumber.max(baseTarget, 0)
+            penaltyAmount = target.minus(baseAmount)
+            // If base is fully covered, all new accrual is penalty
+            if (penaltyAmount.isLessThan(0)) penaltyAmount = new BigNumber(0)
+          } else {
+            baseAmount = target
+            penaltyAmount = new BigNumber(0)
+          }
+
           await db.transaction(async (tx) => {
-            const journalGroupId = randomUUID()
-            await tx.insert(transactions).values({
-              type: "debit", amount, categoryId: receivableCat.id,
-              referenceType: "interest_accrual", referenceId: loan.id,
-              description: `Interest accrual - loan ${loan.id}`,
-              transactionDate: asOfDate, recordedBy: "system",
-              journalGroupId,
-            })
-            await tx.insert(transactions).values({
-              type: "credit", amount, categoryId: earnedCat.id,
-              referenceType: "interest_accrual", referenceId: loan.id,
-              description: `Interest accrual - loan ${loan.id}`,
-              transactionDate: asOfDate, recordedBy: "system",
-              journalGroupId,
-            })
+            // Post base interest accrual
+            if (baseAmount.isGreaterThan(0)) {
+              const amount = formatAmount(baseAmount)
+              const journalGroupId = randomUUID()
+              await tx.insert(transactions).values({
+                type: "debit", amount, categoryId: receivableCat.id,
+                referenceType: "interest_accrual", referenceId: loan.id,
+                description: `Interest accrual - loan ${loan.id}`,
+                transactionDate: asOfDate, recordedBy: "system",
+                journalGroupId, loanId: loan.id,
+              })
+              await tx.insert(transactions).values({
+                type: "credit", amount, categoryId: earnedCat.id,
+                referenceType: "interest_accrual", referenceId: loan.id,
+                description: `Interest accrual - loan ${loan.id}`,
+                transactionDate: asOfDate, recordedBy: "system",
+                journalGroupId, loanId: loan.id,
+              })
+            }
+
+            // Post penalty interest as a separate, labeled entry
+            if (penaltyAmount.isGreaterThan(0)) {
+              const amount = formatAmount(penaltyAmount)
+              const journalGroupId = randomUUID()
+              await tx.insert(transactions).values({
+                type: "debit", amount, categoryId: receivableCat.id,
+                referenceType: "penalty_interest_accrual", referenceId: loan.id,
+                description: `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`,
+                transactionDate: asOfDate, recordedBy: "system",
+                journalGroupId, loanId: loan.id,
+              })
+              await tx.insert(transactions).values({
+                type: "credit", amount, categoryId: earnedCat.id,
+                referenceType: "penalty_interest_accrual", referenceId: loan.id,
+                description: `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`,
+                transactionDate: asOfDate, recordedBy: "system",
+                journalGroupId, loanId: loan.id,
+              })
+            }
           })
           entriesPosted++
         }

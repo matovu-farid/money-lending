@@ -29,15 +29,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatDate, formatCurrency } from "@/lib/utils"
+import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
+import { approvalStatusBadgeVariant } from "@/lib/status"
 import Link from "next/link"
-
-function statusBadgeVariant(status: string): "default" | "outline" | "secondary" | "destructive" {
-  if (status === "pending") return "default"
-  if (status === "approved") return "secondary"
-  if (status === "rejected") return "destructive"
-  return "outline"
-}
 
 export default function ApprovalsPage() {
   const { data: session } = useSession()
@@ -190,10 +184,10 @@ export default function ApprovalsPage() {
                           {formatCurrency(request.principalAmount)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums text-sm">
-                          {(parseFloat(request.currentRate) * 100).toFixed(1)}%
+                          {formatRate(request.currentRate, 1)}
                         </TableCell>
                         <TableCell className="text-right font-mono tabular-nums text-sm font-medium">
-                          {(parseFloat(request.requestedRate) * 100).toFixed(1)}%
+                          {formatRate(request.requestedRate, 1)}
                         </TableCell>
                         <TableCell>
                           <Badge variant="outline" className="text-xs capitalize">
@@ -266,10 +260,10 @@ export default function ApprovalsPage() {
                       </TableCell>
                       <TableCell className="text-sm font-medium">{request.customerName}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums text-sm">
-                        {(parseFloat(request.currentRate) * 100).toFixed(1)}% &rarr; {(parseFloat(request.requestedRate) * 100).toFixed(1)}%
+                        {formatRate(request.currentRate, 1)} &rarr; {formatRate(request.requestedRate, 1)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusBadgeVariant(request.status)} className="text-xs capitalize">
+                        <Badge variant={approvalStatusBadgeVariant(request.status)} className="text-xs capitalize">
                           {request.status}
                         </Badge>
                       </TableCell>
@@ -310,20 +304,20 @@ export default function ApprovalsPage() {
                 <p>
                   <span className="text-muted-foreground">Rate change:</span>{" "}
                   <span className="font-mono">
-                    {(parseFloat(reviewingRequest.currentRate) * 100).toFixed(1)}% &rarr; {(parseFloat(reviewingRequest.requestedRate) * 100).toFixed(1)}%
+                    {formatRate(reviewingRequest.currentRate, 1)} &rarr; {formatRate(reviewingRequest.requestedRate, 1)}
                   </span>
                 </p>
               </div>
               {reviewAction === "approved" && (
                 <p className="text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 rounded-md p-3">
                   Approving this request will immediately update the loan&apos;s interest rate to{" "}
-                  {(parseFloat(reviewingRequest.requestedRate) * 100).toFixed(1)}%.
+                  {formatRate(reviewingRequest.requestedRate, 1)}.
                 </p>
               )}
               {reviewAction === "rejected" && (
                 <p className="text-sm text-muted-foreground bg-destructive/10 rounded-md p-3">
                   Rejecting this request will keep the current rate at{" "}
-                  {(parseFloat(reviewingRequest.currentRate) * 100).toFixed(1)}%. The requester will see the rejection.
+                  {formatRate(reviewingRequest.currentRate, 1)}. The requester will see the rejection.
                 </p>
               )}
               <div className="space-y-1">

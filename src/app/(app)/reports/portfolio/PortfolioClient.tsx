@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/table"
 import type { PortfolioEntry } from "@/types"
 import { formatCurrency } from "@/lib/utils"
+import { downloadFromUrl } from "@/lib/download"
 
 interface PortfolioClientProps {
   data: PortfolioEntry[]
@@ -28,19 +29,9 @@ export function PortfolioClient({
 
   async function handleDownload(format: "pdf" | "excel", href: string) {
     setDownloading(format)
+    const filename = format === "pdf" ? "portfolio-report.pdf" : "portfolio-report.xlsx"
     try {
-      const response = await fetch(href)
-      if (!response.ok) throw new Error("Download failed")
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download =
-        format === "pdf" ? "portfolio-report.pdf" : "portfolio-report.xlsx"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      await downloadFromUrl(href, filename)
     } catch {
       const { toast } = await import("sonner")
       toast.error("Export failed. Please try again.")

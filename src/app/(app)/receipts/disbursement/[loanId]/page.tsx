@@ -6,7 +6,7 @@ import { user } from "@/lib/db/schema/auth"
 import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PrintButton } from "./print-button"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatRate } from "@/lib/utils"
 
 export default async function DisbursementReceiptPage({
   params,
@@ -54,7 +54,7 @@ export default async function DisbursementReceiptPage({
 
 
   const receiptNumber = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
-  const interestRateDisplay = `${(parseFloat(loan.interestRate) * 100).toFixed(1)}% per month`
+  const interestRateDisplay = `${formatRate(loan.interestRate, 1)} per month`
   const minPeriodDisplay = `${loan.minPeriodOverride ?? loan.minInterestDays} days`
 
   return (

@@ -17,7 +17,7 @@ import { useCustomer } from "@/hooks/use-customer";
 import { useLoanPayments } from "@/hooks/use-payments";
 import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
-import type { Customer, Loan, CustomerStatus } from "@/types";
+import type { Customer, Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,33 +51,9 @@ import {
 } from "@/components/ui/table";
 import { InfoPopover } from "@/components/ui/info-popover";
 import { PageHeader } from "@/components/ui/page-header";
-import { cn, formatDate, formatCurrency } from "@/lib/utils";
-
-function statusVariant(
-  status: string,
-): "default" | "destructive" | "secondary" {
-  if (status === "active") return "default";
-  if (status === "blacklisted") return "destructive";
-  return "secondary";
-}
-
-function statusLabel(status: string): string {
-  if (status === "active") return "Active";
-  if (status === "blacklisted") return "Blacklisted";
-  return "Inactive";
-}
-
-function loanStatusVariant(status: string): "default" | "outline" {
-  if (status === "active") return "default";
-  return "outline";
-}
-
-function loanStatusLabel(status: string): string {
-  if (status === "fully_paid") return "Fully Paid";
-  if (status === "settled_with_collateral") return "Settled (Collateral)";
-  if (status === "rolled_over") return "Rolled Over";
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
+import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils";
+import { customerStatusVariant, customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/status";
+import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 
 interface LoanWithOverdue {
   loan: Loan;
@@ -92,7 +68,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
   );
 
   const activePaymentIds = payments?.filter((p) => p.deletedAt === null).map((p) => p.id) ?? [];
-  const { data: portionsData } = useQuery<Record<string, { interestPortion: string; principalPortion: string }>>({
+  const { data: portionsData } = useQuery<PaymentPortionsMap>({
     queryKey: [...queryKeys.payments.portions(item.loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
       if (activePaymentIds.length === 0) return {};
@@ -115,15 +91,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
               <Badge variant={loanStatusVariant(item.loan.status)}>
                 {loanStatusLabel(item.loan.status)}
               </Badge>
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-                item.loan.loanType === "fixed_rate"
-                  ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                  : item.loan.loanType === "reducing_balance"
-                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                  : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-              }`}>
-                {item.loan.loanType === "fixed_rate" ? "Fixed Rate" : item.loan.loanType === "reducing_balance" ? "Reducing Bal." : "Perpetual"}
-              </span>
+              <LoanTypeBadge loanType={item.loan.loanType} />
               {item.loan.status === "active" &&
                 item.daysOverdue > 0 && (
                   <OverdueBadge daysOverdue={item.daysOverdue} />
@@ -154,7 +122,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
           </p>
           <p className="text-sm text-muted-foreground">
             <span className="font-mono tabular-nums">
-              {(parseFloat(item.loan.interestRate) * 100).toFixed(0)}%
+              {formatRate(item.loan.interestRate)}
             </span>{" "}
             per month
           </p>
@@ -372,7 +340,7 @@ export default function CustomerProfilePage() {
       queryClient.invalidateQueries({ queryKey: queryKeys.customers.all });
       setStatusDialogOpen(false);
       toast.success(
-        `${customer.fullName}'s status updated to ${statusLabel(pendingStatus)}.`,
+        `${customer.fullName}'s status updated to ${customerStatusLabel(pendingStatus)}.`,
       );
       setPendingStatus(null);
       setStatusReason("");
@@ -411,7 +379,7 @@ export default function CustomerProfilePage() {
   const isBlacklisted = pendingStatus === "blacklisted";
   const dialogTitle = isBlacklisted
     ? `Blacklist ${customer.fullName}?`
-    : `Change status to ${pendingStatus ? statusLabel(pendingStatus) : ""}?`;
+    : `Change status to ${pendingStatus ? customerStatusLabel(pendingStatus) : ""}?`;
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
@@ -565,7 +533,7 @@ export default function CustomerProfilePage() {
         <CardContent className="space-y-2">
           <Select value={customer.status} onValueChange={handleStatusSelect}>
             <SelectTrigger className="w-[200px]">
-              <SelectValue>{statusLabel(customer.status)}</SelectValue>
+              <SelectValue>{customerStatusLabel(customer.status)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>

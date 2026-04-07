@@ -7,7 +7,7 @@ import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
 import { eq, asc, inArray } from "drizzle-orm"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorProfileClient } from "./CreditorProfileClient"
-import type { CreditorRepayment, CreditorInvestment } from "@/types"
+import type { CreditorRepayment, CreditorInvestment, PaymentPortionsMap } from "@/types"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
@@ -25,7 +25,7 @@ export default async function CreditorProfilePage({ params }: Props) {
   let dashboard
   let investments: CreditorInvestment[] = []
   let repayments: CreditorRepayment[] = []
-  const repaymentPortions: Record<string, { interestPortion: string; principalPortion: string }> = {}
+  const repaymentPortions: PaymentPortionsMap = {}
 
   try {
     ;[creditor, dashboard] = await Promise.all([

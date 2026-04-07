@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
@@ -278,6 +279,10 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           disbursementSource: loans.disbursementSource,
           loanType: loans.loanType,
           termMonths: loans.termMonths,
+          penaltyMultiplier: loans.penaltyMultiplier,
+          penaltyWaived: loans.penaltyWaived,
+          penaltyWaivedBy: loans.penaltyWaivedBy,
+          penaltyWaivedAt: loans.penaltyWaivedAt,
           rolledOverFrom: loans.rolledOverFrom,
           rolloverAmount: loans.rolloverAmount,
           createdAt: loans.createdAt,
@@ -482,7 +487,7 @@ export const updateLoan = (
 
             // Repost with new allocations based on updated principal
             const loanType = updatedLoan.loanType ?? "perpetual"
-            const monthlyRateDecimal = updatedLoan.interestRateOverride ?? updatedLoan.interestRate
+            const monthlyRateDecimal = getBaseRate(updatedLoan)
             const minInterestDays = updatedLoan.minPeriodOverride ?? updatedLoan.minInterestDays
             let runningBalance = new BigNumber(input.principalAmount)
 

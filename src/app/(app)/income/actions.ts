@@ -7,9 +7,9 @@ import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction } from "@/services/transaction.service"
 import { createCategory, deleteCategory } from "@/services/category.service"
 import { ROLE_LEVELS, type UserRole } from "@/types"
-import type { CreateIncomeInput, CreateCategoryInput } from "@/types"
+import type { CreateTransactionInput, CreateCategoryInput } from "@/types"
 
-export async function recordIncomeAction(input: CreateIncomeInput) {
+export async function recordIncomeAction(input: CreateTransactionInput) {
   const session = await auth.api.getSession({ headers: await headers() })
   if (!session?.user) return { error: "Unauthorized" }
   const role = (session.user.role ?? "unassigned") as UserRole

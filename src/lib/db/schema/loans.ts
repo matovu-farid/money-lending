@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index, boolean } from "drizzle-orm/pg-core"
 import { customers } from "./customers"
 import { depositLocationEnum } from "./fund-transfers"
 
@@ -32,6 +32,10 @@ export const loans = pgTable("loans", {
   disbursementSource: depositLocationEnum("disbursement_source").notNull(),
   loanType: loanTypeEnum("loan_type").notNull().default("perpetual"),
   termMonths: integer("term_months"),
+  penaltyMultiplier: numeric("penalty_multiplier", { precision: 5, scale: 4 }).notNull().default("0.1000"),
+  penaltyWaived: boolean("penalty_waived").notNull().default(false),
+  penaltyWaivedBy: text("penalty_waived_by"),
+  penaltyWaivedAt: timestamp("penalty_waived_at", { withTimezone: true }),
   rolledOverFrom: uuid("rolled_over_from").references((): any => loans.id),
   rolloverAmount: numeric("rollover_amount", { precision: 15, scale: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),

@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { financialSnapshots } from "@/lib/db/schema/financial-snapshots"
@@ -21,7 +22,7 @@ import { formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./transaction.service"
-import type { PnlData, BalanceSheetData, PortfolioEntry, RetainedEarningsData, LoanType } from "@/types"
+import { toLoanType, type PnlData, type BalanceSheetData, type PortfolioEntry, type RetainedEarningsData } from "@/types"
 
 export const getPnlData = (
   period: string
@@ -401,19 +402,21 @@ export const getPortfolioData = (): Effect.Effect<
         const outstandingBalance = ledgerBalance
           ?? new BigNumber(loan.principalAmount)
 
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-        const loanType = (loan.loanType ?? "perpetual") as LoanType
+        const baseRate = getBaseRate(loan)
+        const loanType = toLoanType(loan.loanType)
 
         // Use computeLoanOverdueInfo for consistent overdue calculation
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
-          effectiveRate,
+          baseRate,
           startDate: new Date(loan.startDate),
           loanType,
           termMonths: loan.termMonths,
           totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
           paymentCount: paymentCountMap.get(loan.id) ?? 0,
           outstandingBalance: formatAmount(outstandingBalance),
+          penaltyWaived: loan.penaltyWaived,
+          loan,
         })
 
         results.push({

@@ -77,6 +77,15 @@ export function formatRelativeTime(date: Date | string): string {
 }
 
 /**
+ * Format a decimal rate string as a human-readable percentage.
+ * e.g. "0.10" → "10%", "0.085" → "8.5%"
+ */
+export function formatRate(decimalRate: string | number, decimals = 0): string {
+  const num = (typeof decimalRate === "string" ? parseFloat(decimalRate) : decimalRate) * 100
+  return `${num.toFixed(decimals)}%`
+}
+
+/**
  * Get the YYYY-MM string for the last fully completed calendar month.
  */
 export function getLastCompletedMonth(): string {

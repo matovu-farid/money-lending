@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
+import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql, inArray } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
@@ -11,15 +12,16 @@ import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, getLoanBalancesFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
-import type {
-  RecordPaymentInput,
-  EditPaymentInput,
-  DeletePaymentInput,
-  Payment,
-  ListPaymentsInput,
-  PaymentWithCustomer,
-  ActiveLoanSearchResult,
-  RecentlyCollectedLoan,
+import {
+  toLoanType,
+  type RecordPaymentInput,
+  type EditPaymentInput,
+  type DeletePaymentInput,
+  type Payment,
+  type ListPaymentsInput,
+  type PaymentWithCustomer,
+  type ActiveLoanSearchResult,
+  type RecentlyCollectedLoan,
 } from "@/types"
 
 /**
@@ -56,19 +58,21 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
 
   const interestEarnedMap = await getInterestEarnedFromLedger([loanId])
 
-  const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-  const loanType = loan.loanType ?? "perpetual"
+  const baseRate = getBaseRate(loan)
+  const loanType = toLoanType(loan.loanType)
 
   // Use computeLoanOverdueInfo for consistent interest calculation
   const info = computeLoanOverdueInfo({
     principalAmount: loan.principalAmount,
-    effectiveRate,
+    baseRate,
     startDate: new Date(loan.startDate),
-    loanType: loanType as import("@/types").LoanType,
+    loanType,
     termMonths: loan.termMonths,
     totalInterestPaid: formatAmount(interestEarnedMap.get(loanId) ?? new BigNumber(0)),
     paymentCount: activePayments.length,
     outstandingBalance: outstandingPrincipal,
+    penaltyWaived: loan.penaltyWaived,
+    loan,
   })
 
   const accruedInterest = info.unpaidInterest
@@ -97,7 +101,7 @@ export const recordPayment = (
           throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
         }
 
-        const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+        const baseRate = getBaseRate(loan)
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
 
         const activePayments = await tx
@@ -109,7 +113,10 @@ export const recordPayment = (
 
         // Derive principalBalanceBefore from the ledger (single source of truth)
         // Use getLoanBalancesFromLedger to distinguish "no entries" from "balance = 0 (fully repaid)"
-        const balanceMap = await getLoanBalancesFromLedger([input.loanId], undefined, tx)
+        const [balanceMap, interestEarnedMap] = await Promise.all([
+          getLoanBalancesFromLedger([input.loanId], undefined, tx),
+          getInterestEarnedFromLedger([input.loanId]),
+        ])
         const hasLedgerEntries = balanceMap.has(input.loanId)
         const ledgerBalance = balanceMap.get(input.loanId) ?? new BigNumber(0)
         if (!hasLedgerEntries) {
@@ -118,6 +125,21 @@ export const recordPayment = (
         const principalBalanceBefore = hasLedgerEntries
           ? ledgerBalance.toFixed(2)
           : loan.principalAmount
+
+        // Compute penalty status from overdue info
+        const overdueInfo = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          baseRate,
+          startDate: new Date(loan.startDate),
+          loanType: toLoanType(loan.loanType),
+          termMonths: loan.termMonths,
+          totalInterestPaid: formatAmount(interestEarnedMap.get(input.loanId) ?? new BigNumber(0)),
+          paymentCount: activePayments.length,
+          outstandingBalance: principalBalanceBefore,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
+        })
+        const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
 
         const prevDate =
           activePayments.length === 0
@@ -312,7 +334,7 @@ export const editPayment = (
         await tx.update(payments).set(updates).where(eq(payments.id, input.paymentId))
 
         // 3. Recompute allocation with new amount/date
-        const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+        const monthlyRateDecimal = getBaseRate(loan)
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
         const loanType = loan.loanType ?? "perpetual"
 

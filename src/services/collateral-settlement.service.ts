@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { customers } from "@/lib/db/schema/customers"
 import { eq, and, isNull, asc } from "drizzle-orm"
 import BigNumber from "bignumber.js"
@@ -26,7 +27,7 @@ export function computeAccruedInterest(
   outstandingPrincipal: BigNumber
 ): BigNumber {
   const loanType = loan.loanType ?? "perpetual"
-  const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
+  const monthlyRateDecimal = getBaseRate(loan)
   const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
 
   const now = new Date()

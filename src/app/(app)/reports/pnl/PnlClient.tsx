@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card"
 import type { PnlData } from "@/types"
 import { formatCurrency } from "@/lib/utils"
+import { downloadFromUrl } from "@/lib/download"
 import { InfoPopover } from "@/components/ui/info-popover"
 
 function getMonthOptions(): { value: string; label: string }[] {
@@ -63,18 +64,9 @@ export function PnlClient({ data, period }: PnlClientProps) {
     if (downloading) return
     setDownloading(true)
     const href = `/api/reports/pnl?format=${format}&period=${period}`
+    const filename = format === "pdf" ? `pnl-${period}.pdf` : `pnl-${period}.xlsx`
     try {
-      const response = await fetch(href)
-      if (!response.ok) throw new Error("Download failed")
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = format === "pdf" ? `pnl-${period}.pdf` : `pnl-${period}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      await downloadFromUrl(href, filename)
     } catch {
       toast.error("Export failed. Please try again.")
     } finally {

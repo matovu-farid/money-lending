@@ -13,7 +13,8 @@ import { useSession } from "@/lib/auth-client"
 import { queryKeys } from "@/hooks/query-keys"
 import { calculateLoanSummary } from "@/lib/interest"
 import { generateReceiptNumber } from "@/lib/receipt-number"
-import type { CollateralInput, LoanType } from "@/types"
+import type { CollateralInput, LoanType, DepositLocation } from "@/types"
+import { DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -45,7 +46,7 @@ interface LoanFormValues {
   description: string
   startDate: string
   interestRateDisplay: string
-  disbursementSource: "cash" | "bank" | "strong_room"
+  disbursementSource: DepositLocation
   collateralNature: string
   collateralDescription: string
 }
@@ -444,9 +445,9 @@ function NewLoanPageInner() {
                         <SelectValue placeholder="Select source" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="bank">Bank</SelectItem>
-                        <SelectItem value="strong_room">Strong Room</SelectItem>
+                        {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   )}

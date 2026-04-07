@@ -12,18 +12,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
-
-function statusVariant(status: string): "default" | "destructive" | "secondary" {
-  if (status === "active") return "default"
-  if (status === "blacklisted") return "destructive"
-  return "secondary"
-}
-
-function statusLabel(status: string): string {
-  if (status === "active") return "Active"
-  if (status === "blacklisted") return "Blacklisted"
-  return "Inactive"
-}
+import { customerStatusVariant, customerStatusLabel } from "@/lib/status"
 
 const PAGE_SIZE = 20
 
@@ -125,8 +114,8 @@ export default function CustomersPage() {
                   </span>
                 ),
                 render: (c) => (
-                  <Badge variant={statusVariant(c.status)}>
-                    {statusLabel(c.status)}
+                  <Badge variant={customerStatusVariant(c.status)}>
+                    {customerStatusLabel(c.status)}
                   </Badge>
                 ),
               },

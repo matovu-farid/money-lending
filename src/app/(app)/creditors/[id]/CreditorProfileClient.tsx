@@ -11,13 +11,8 @@ import {
 } from "@/components/ui/table"
 import { AddInvestmentDialog } from "./AddInvestmentDialog"
 import { RecordRepaymentDialog } from "./RecordRepaymentDialog"
-import type { Creditor, CreditorDashboard, CreditorInvestment, CreditorRepayment } from "@/types"
-import { formatDate, formatCurrency } from "@/lib/utils"
-
-function formatRate(rate: string): string {
-  const num = parseFloat(rate) * 100
-  return `${num.toFixed(1)}%`
-}
+import type { Creditor, CreditorDashboard, CreditorInvestment, CreditorRepayment, PaymentPortionsMap } from "@/types"
+import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 
 interface Props {
   creditorId: string
@@ -25,7 +20,7 @@ interface Props {
   dashboard: CreditorDashboard
   investments: CreditorInvestment[]
   repayments: CreditorRepayment[]
-  repaymentPortions: Record<string, { interestPortion: string; principalPortion: string }>
+  repaymentPortions: PaymentPortionsMap
 }
 
 export function CreditorProfileClient({
@@ -76,7 +71,7 @@ export function CreditorProfileClient({
                     <TableRow key={inv.id} data-testid="data-row">
                       <TableCell className="font-mono tabular-nums">{formatDate(inv.investmentDate)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.amount)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatRate(inv.interestRateMonthly)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatRate(inv.interestRateMonthly, 1)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.principalBalance)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.interestAccrued)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.totalRepaid)}</TableCell>

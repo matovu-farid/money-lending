@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, ilike, inArray, and, count, isNull } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
@@ -11,8 +12,7 @@ import { formatAmount } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { escapeLikePattern } from "@/lib/db/utils"
-import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, CustomerStatus } from "@/types"
-import type { Customer, LoanType } from "@/types"
+import { toLoanType, type Customer, type CreateCustomerInput, type UpdateCustomerInput, type CustomerSearchParams, type CustomerStatus } from "@/types"
 
 export const createCustomer = (
   input: CreateCustomerInput
@@ -142,7 +142,7 @@ export const searchCustomers = (
           let maxDaysOverdue = 0
 
           for (const loan of activeLoans) {
-            const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+            const baseRate = getBaseRate(loan)
             const ledgerBalance = allLedgerBalances.get(loan.id)
             if (ledgerBalance === undefined) {
               console.warn(`[searchCustomers] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
@@ -153,13 +153,15 @@ export const searchCustomers = (
 
             const info = computeLoanOverdueInfo({
               principalAmount: loan.principalAmount,
-              effectiveRate,
+              baseRate,
               startDate: new Date(loan.startDate),
-              loanType: (loan.loanType ?? "perpetual") as LoanType,
+              loanType: toLoanType(loan.loanType),
               termMonths: loan.termMonths,
               totalInterestPaid: formatAmount(allInterestEarned.get(loan.id) ?? new BigNumber(0)),
               paymentCount: paymentsByLoan.get(loan.id) ?? 0,
               outstandingBalance,
+              penaltyWaived: loan.penaltyWaived,
+              loan,
             })
             if (info.daysOverdue > maxDaysOverdue) {
               maxDaysOverdue = info.daysOverdue

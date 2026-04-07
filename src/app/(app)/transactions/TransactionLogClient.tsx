@@ -20,33 +20,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { TransactionLogFilters } from "@/types"
-
-type Transaction = {
-  id: string
-  type: string
-  amount: string
-  categoryId: string
-  categoryName: string
-  description: string | null
-  transactionDate: Date
-  recordedBy: string
-  referenceType: string | null
-  referenceId: string | null
-  createdAt: Date
-}
-
-type Category = {
-  id: string
-  name: string
-  type: string
-  isDefault: boolean
-}
+import type { TransactionLogFilters, TransactionRow, CategoryRow } from "@/types"
 
 interface TransactionLogClientProps {
-  transactions: Transaction[]
+  transactions: TransactionRow[]
   total: number
-  categories: Category[]
+  categories: CategoryRow[]
   page: number
   pageSize: number
   filters: TransactionLogFilters

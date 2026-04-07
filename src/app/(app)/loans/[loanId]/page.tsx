@@ -2,7 +2,11 @@ import { Effect } from "effect"
 import { notFound } from "next/navigation"
 import { getLoan } from "@/services/loan.service"
 import { getPaymentsForLoan } from "@/services/payment.service"
-import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger } from "@/services/transaction.service"
+import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import { getBaseRate } from "@/lib/interest/effective-rate"
+import BigNumber from "bignumber.js"
+import { toLoanType, ROLE_LEVELS, type PaymentPortionsMap, type UserRole } from "@/types"
 import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { user } from "@/lib/db/schema/auth"
@@ -10,7 +14,6 @@ import { collateral } from "@/lib/db/schema/collateral"
 import { eq, inArray } from "drizzle-orm"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
-import { ROLE_LEVELS, type UserRole } from "@/types"
 import { LoanDetailClient } from "./loan-detail-client"
 
 export default async function LoanDetailPage({
@@ -42,7 +45,7 @@ export default async function LoanDetailPage({
   const payments = paymentsResult._tag === "Right" ? paymentsResult.right : []
 
   // Fetch payment portions from ledger
-  let paymentPortions: Record<string, { interestPortion: string; principalPortion: string }> = {}
+  let paymentPortions: PaymentPortionsMap = {}
   try {
     const activePaymentIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id)
     if (activePaymentIds.length > 0) {
@@ -60,6 +63,33 @@ export default async function LoanDetailPage({
     ledgerBalance = balance.toFixed(2)
   } catch {
     // Non-critical — client will fall back to payments-chain balance
+  }
+
+  // Compute daysOverdue for penalty derivation
+  let daysOverdue = 0
+  if (loan.status === "active") {
+    try {
+      const interestMap = await getInterestEarnedFromLedger([loan.id])
+      const totalInterestPaid = interestMap.get(loan.id) ?? new BigNumber(0)
+      const activePayments = payments.filter((p) => p.deletedAt === null && !p.markedWrong)
+      const outstandingBalance = ledgerBalance ?? loan.principalAmount
+      const baseRate = getBaseRate(loan)
+      const info = computeLoanOverdueInfo({
+        principalAmount: loan.principalAmount,
+        baseRate,
+        startDate: new Date(loan.startDate),
+        loanType: toLoanType(loan.loanType),
+        termMonths: loan.termMonths,
+        totalInterestPaid: totalInterestPaid.toFixed(2),
+        paymentCount: activePayments.length,
+        outstandingBalance,
+        penaltyWaived: loan.penaltyWaived,
+        loan,
+      })
+      daysOverdue = info.daysOverdue
+    } catch {
+      // Non-critical — penalty badge won't show
+    }
   }
 
   // Fetch customer name for display
@@ -130,6 +160,7 @@ export default async function LoanDetailPage({
       userRole={role}
       collateralNature={loanCollateral?.nature}
       collateralDescription={loanCollateral?.description}
+      daysOverdue={daysOverdue}
     />
   )
 }

@@ -32,6 +32,12 @@ export type AuditLogEntry = InferSelectModel<typeof auditLog>
 export type LoanStatus = "pending" | "active" | "fully_paid" | "settled_with_collateral" | "rolled_over"
 export type LoanType = "perpetual" | "fixed_rate" | "reducing_balance"
 
+/** Coalesce a possibly-null loanType to a typed LoanType (defaults to "perpetual"). */
+export function toLoanType(value: string | null | undefined): LoanType {
+  if (value === "fixed_rate" || value === "reducing_balance" || value === "perpetual") return value
+  return "perpetual"
+}
+
 export interface ScheduleEntry {
   month: number
   monthlyPrincipal: string
@@ -261,21 +267,14 @@ export interface RecordCreditorRepaymentInput {
   sourceLocation?: DepositLocation
 }
 
-export interface CreateExpenseInput {
+export interface CreateTransactionInput {
   categoryId: string
   amount: string
   transactionDate: string
   notes?: string
-  location: "cash" | "bank" | "strong_room"
+  location: DepositLocation
 }
 
-export interface CreateIncomeInput {
-  categoryId: string
-  amount: string
-  transactionDate: string
-  notes?: string
-  location: "cash" | "bank" | "strong_room"
-}
 
 export interface CreateCategoryInput {
   name: string
@@ -284,6 +283,34 @@ export interface CreateCategoryInput {
 
 export type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense"
 export type TransactionType = "credit" | "debit"
+export type RateChangeStatus = "pending" | "approved" | "rejected"
+
+/** Ledger-derived payment allocation per payment ID */
+export type PaymentPortionsMap = Record<string, { interestPortion: string; principalPortion: string }>
+
+/** UI-facing transaction row shape (used by income/expense/transaction list pages) */
+export interface TransactionRow {
+  id: string
+  type: string
+  amount: string
+  categoryId: string
+  categoryName: string
+  description: string | null
+  transactionDate: Date
+  recordedBy: string
+  referenceType: string | null
+  referenceId: string | null
+  createdAt: Date
+  isOptimistic?: boolean
+}
+
+/** UI-facing category shape */
+export interface CategoryRow {
+  id: string
+  name: string
+  type: string
+  isDefault: boolean
+}
 
 // Phase 4: Dashboard types
 export interface CreditorDashboard {

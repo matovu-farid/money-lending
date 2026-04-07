@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useEffect, useMemo, useRef, useCallback } from "react"
+import { useTransition, useEffect, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useQueryClient } from "@tanstack/react-query"
@@ -20,13 +20,14 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
-import { updateLoanAction, deleteLoanAction } from "@/actions/loan.actions"
+import { updateLoanAction, deleteLoanAction, waivePenaltyAction, adjustPenaltyMultiplierAction } from "@/actions/loan.actions"
+import { getEffectiveRate, isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole, type RateChangeRequest } from "@/types"
-import type { Loan, Payment } from "@/types"
+import type { Loan, Payment, PaymentPortionsMap } from "@/types"
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
@@ -56,8 +57,10 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { InfoPopover } from "@/components/ui/info-popover"
 import BigNumber from "bignumber.js"
-import { cn, formatDate, formatCurrency } from "@/lib/utils"
+import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
+import { useLoanDetailStore } from "@/lib/stores/loan-detail"
+import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -67,40 +70,24 @@ interface LoanDetailClientProps {
   openEditOnMount?: boolean
   userNameMap: Record<string, string>
   ledgerBalance: string | null
-  paymentPortions: Record<string, { interestPortion: string; principalPortion: string }>
+  paymentPortions: PaymentPortionsMap
   userRole: UserRole
   collateralNature?: string
   collateralDescription?: string | null
+  daysOverdue: number
 }
 
-function formatDateForInput(date: Date | string | null | undefined): string {
-  if (!date) return ""
-  const d = typeof date === "string" ? new Date(date) : date
-  return d.toISOString().split("T")[0]
-}
-
-function loanStatusVariant(status: string): "default" | "outline" {
-  if (status === "active") return "default"
-  return "outline"
-}
-
-function loanStatusLabel(status: string): string {
-  if (status === "fully_paid") return "Fully Paid"
-  if (status === "settled_with_collateral") return "Settled (Collateral)"
-  if (status === "rolled_over") return "Rolled Over"
-  return status.charAt(0).toUpperCase() + status.slice(1)
-}
-
-export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, ledgerBalance, paymentPortions, userRole, collateralNature, collateralDescription }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, ledgerBalance, paymentPortions, userRole, collateralNature, collateralDescription, daysOverdue }: LoanDetailClientProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
   // Use TanStack Query for payments so subsequent navigations are cached
   const { data: payments = initialPayments } = useLoanPayments(loan.id, true, initialPayments)
 
   // Client-side query for payment portions — refreshes when payments change
   const activePaymentIds = payments.filter((p) => p.deletedAt === null && !p.markedWrong).map((p) => p.id)
-  const { data: livePortions } = useQuery<Record<string, { interestPortion: string; principalPortion: string }>>({
+  const { data: livePortions } = useQuery<PaymentPortionsMap>({
     queryKey: [...queryKeys.payments.portions(loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
       if (activePaymentIds.length === 0) return {}
@@ -113,34 +100,30 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   })
   const currentPortions = livePortions ?? paymentPortions
 
-  const [editingPayment, setEditingPayment] = useState<Payment | null>(null)
-  const [editAmount, setEditAmount] = useState("")
-  const [editDate, setEditDate] = useState("")
-  const [editReason, setEditReason] = useState("")
+  const {
+    editingPayment, editAmount, editDate, editReason,
+    openPaymentEdit, closePaymentEdit, setEditAmount, setEditDate, setEditReason,
+    deletingPayment, deleteReason,
+    openPaymentDelete, closePaymentDelete, setDeleteReason,
+    editingLoan, loanPrincipal, loanInterestRate, loanStartDate, loanEditReason,
+    openLoanEdit, closeLoanEdit, setLoanPrincipal, setLoanInterestRate, setLoanStartDate, setLoanEditReason,
+    deletingLoan, loanDeleteReason,
+    openLoanDelete, closeLoanDelete, setLoanDeleteReason,
+    settlingCollateral, openSettleCollateral, closeSettleCollateral,
+    requestingRateChange, newRate,
+    openRateChange, closeRateChange, setNewRate,
+    adjustingPenalty, penaltyMultiplierInput,
+    openPenaltyAdjust, closePenaltyAdjust, setPenaltyMultiplierInput,
+    reset,
+  } = useLoanDetailStore()
+
   const [isEditPending, startEditTransition] = useTransition()
-
-  const [deletingPayment, setDeletingPayment] = useState<Payment | null>(null)
-  const [deleteReason, setDeleteReason] = useState("")
   const [isDeletePending, startDeleteTransition] = useTransition()
-
-  const [editingLoan, setEditingLoan] = useState(false)
-  const [loanPrincipal, setLoanPrincipal] = useState(loan.principalAmount)
-  const [loanInterestRate, setLoanInterestRate] = useState(
-    (parseFloat(loan.interestRate) * 100).toFixed(1)
-  )
-  const [loanStartDate, setLoanStartDate] = useState(formatDateForInput(loan.startDate))
-  const [loanEditReason, setLoanEditReason] = useState("")
   const [isLoanEditPending, startLoanEditTransition] = useTransition()
-
-  const [deletingLoan, setDeletingLoan] = useState(false)
-  const [loanDeleteReason, setLoanDeleteReason] = useState("")
   const [isLoanDeletePending, startLoanDeleteTransition] = useTransition()
-
-  const [settlingCollateral, setSettlingCollateral] = useState(false)
-
-  const [requestingRateChange, setRequestingRateChange] = useState(false)
-  const [newRate, setNewRate] = useState("")
   const [isRateChangePending, startRateChangeTransition] = useTransition()
+  const [isWaivingPenalty, startWaivePenaltyTransition] = useTransition()
+  const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
 
   // Fetch pending rate change requests for this loan
   const { data: rateChangeRequests = [] } = useQuery({
@@ -164,21 +147,19 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
 
   const pendingRateRequest = rateChangeRequests.find((r: RateChangeRequest) => r.status === "pending")
 
-  const openLoanEditDialog = useCallback(() => {
-    setLoanPrincipal(loan.principalAmount)
-    setLoanInterestRate((parseFloat(loan.interestRate) * 100).toFixed(1))
-    setLoanStartDate(formatDateForInput(loan.startDate))
-    setLoanEditReason("")
-    setEditingLoan(true)
-  }, [loan.principalAmount, loan.interestRate, loan.startDate])
+  // Initialize penalty multiplier on mount and reset on unmount
+  useEffect(() => {
+    setPenaltyMultiplierInput((Number(loan.penaltyMultiplier) * 100).toFixed(0))
+    return () => reset()
+  }, [loan.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const didOpenRef = useRef(false)
   useEffect(() => {
     if (!didOpenRef.current && openEditOnMount && canModify) {
       didOpenRef.current = true
-      openLoanEditDialog()
+      openLoanEdit(loan)
     }
-  }, [openEditOnMount, canModify, openLoanEditDialog])
+  }, [openEditOnMount, canModify, loan, openLoanEdit])
 
   const activePayments = payments
     .filter((p) => p.deletedAt === null)
@@ -221,42 +202,31 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   }, [payments, currentPortions, loan.principalAmount])
 
   function openEditDialog(payment: Payment) {
-    setEditingPayment(payment)
-    setEditAmount(payment.amount)
-    setEditDate(formatDateForInput(payment.paymentDate))
-    setEditReason("")
+    openPaymentEdit(payment)
   }
 
   function closeEditDialog() {
-    setEditingPayment(null)
-    setEditAmount("")
-    setEditDate("")
-    setEditReason("")
+    closePaymentEdit()
   }
 
   function openDeleteDialog(payment: Payment) {
-    setDeletingPayment(payment)
-    setDeleteReason("")
+    openPaymentDelete(payment)
   }
 
   function closeDeleteDialog() {
-    setDeletingPayment(null)
-    setDeleteReason("")
+    closePaymentDelete()
   }
 
   function closeLoanEditDialog() {
-    setEditingLoan(false)
-    setLoanEditReason("")
+    closeLoanEdit()
   }
 
   function openLoanDeleteDialog() {
-    setLoanDeleteReason("")
-    setDeletingLoan(true)
+    openLoanDelete()
   }
 
   function closeLoanDeleteDialog() {
-    setDeletingLoan(false)
-    setLoanDeleteReason("")
+    closeLoanDelete()
   }
 
   function handleEditSubmit() {
@@ -364,13 +334,11 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   }
 
   function openRateChangeDialog() {
-    setNewRate((parseFloat(loan.interestRate) * 100).toFixed(1))
-    setRequestingRateChange(true)
+    openRateChange(loan.interestRate)
   }
 
   function closeRateChangeDialog() {
-    setRequestingRateChange(false)
-    setNewRate("")
+    closeRateChange()
   }
 
   function handleRateChangeSubmit() {
@@ -421,6 +389,16 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 <h1 className="text-xl font-semibold tracking-tight">{customerName}</h1>
               )}
               <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
+              {penaltyActive && (
+                <Badge variant="destructive" className="text-xs">
+                  Penalty Active
+                </Badge>
+              )}
+              {loan.penaltyWaived && !penaltyActive && (
+                <Badge variant="outline" className="text-xs border-amber-500 text-amber-600">
+                  Penalty Waived
+                </Badge>
+              )}
               <InfoPopover>
                 <p className="font-semibold text-sm mb-1">Loan Status</p>
                 <div className="text-xs text-muted-foreground space-y-1.5">
@@ -438,7 +416,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
 
         {canModify && (
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={openLoanEditDialog}>
+            <Button variant="outline" size="sm" onClick={() => openLoanEdit(loan)}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
               Edit
             </Button>
@@ -450,7 +428,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setSettlingCollateral(true)}
+                onClick={() => openSettleCollateral()}
                 className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300"
               >
                 <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
@@ -497,12 +475,98 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
             </InfoPopover>
           </div>
           <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
-            {(parseFloat(loan.interestRate) * 100).toFixed(1)}%
+            {formatRate(loan.interestRate, 1)}
             <span className="text-sm font-normal text-muted-foreground ml-1">/ month</span>
           </p>
+          {penaltyActive && (
+            <div className="mt-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
+              <div className="flex items-center gap-2 mb-1">
+                <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
+                <span className="text-xs font-medium text-destructive">Penalty Rate Active</span>
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Overdue Penalty</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    This loan has had unpaid interest for more than 60 days. A penalty of {formatRate(loan.penaltyMultiplier)} has been added to the base interest rate.
+                  </p>
+                  <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                    Effective Rate = {formatRate(loan.interestRate, 1)} + ({formatRate(loan.penaltyMultiplier)} penalty) = {formatRate(getEffectiveRate(loan, penaltyActive), 1)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    The penalty is automatically removed when the borrower catches up on interest payments (less than 60 days overdue). An admin can also waive it manually.
+                  </p>
+                </InfoPopover>
+              </div>
+              <p className="text-sm font-mono font-semibold text-destructive">
+                Effective: {formatRate(getEffectiveRate(loan, penaltyActive), 1)} / month
+              </p>
+              {ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin && (
+                <div className="flex items-center gap-2 mt-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={isWaivingPenalty}
+                    onClick={() => {
+                      startWaivePenaltyTransition(async () => {
+                        const result = await waivePenaltyAction(loan.id)
+                        if ("error" in result) {
+                          toast.error(result.error)
+                        } else {
+                          toast.success("Penalty waived")
+                          router.refresh()
+                        }
+                      })
+                    }}
+                  >
+                    {isWaivingPenalty ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                    Waive Penalty
+                  </Button>
+                  {!adjustingPenalty ? (
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openPenaltyAdjust()}>
+                      Adjust Rate
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-1">
+                      <Input
+                        className="h-7 w-16 text-xs"
+                        value={penaltyMultiplierInput}
+                        onChange={(e) => setPenaltyMultiplierInput(e.target.value)}
+                        placeholder="%"
+                      />
+                      <span className="text-xs text-muted-foreground">%</span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-xs"
+                        disabled={isAdjustingPenalty}
+                        onClick={() => {
+                          startAdjustPenaltyTransition(async () => {
+                            const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4)
+                            const result = await adjustPenaltyMultiplierAction(loan.id, decimal)
+                            if ("error" in result) {
+                              toast.error(result.error)
+                            } else {
+                              toast.success("Penalty rate adjusted")
+                              closePenaltyAdjust()
+                              router.refresh()
+                            }
+                          })
+                        }}
+                      >
+                        {isAdjustingPenalty ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => closePenaltyAdjust()}>
+                        Cancel
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {pendingRateRequest && (
             <Badge variant="outline" className="mt-2 text-xs">
-              Pending: {(parseFloat(pendingRateRequest.requestedRate) * 100).toFixed(1)}%
+              Pending: {formatRate(pendingRateRequest.requestedRate, 1)}
             </Badge>
           )}
           {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
@@ -1041,7 +1105,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Current rate: {(parseFloat(loan.interestRate) * 100).toFixed(1)}% per month.
+              Current rate: {formatRate(loan.interestRate, 1)} per month.
               {ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
                 ? " As a supervisor or above, rates between 8-10% will be applied immediately."
                 : " Your request will be sent for supervisor or admin approval."}
@@ -1098,7 +1162,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       {balanceData && collateralNature && (
         <SettleCollateralDialog
           open={settlingCollateral}
-          onOpenChange={setSettlingCollateral}
+          onOpenChange={(v) => { if (!v) closeSettleCollateral() }}
           loanId={loan.id}
           outstandingPrincipal={balanceData.outstandingPrincipal}
           accruedInterest={balanceData.accruedInterest}

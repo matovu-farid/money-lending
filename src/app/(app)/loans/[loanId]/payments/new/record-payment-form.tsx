@@ -35,7 +35,8 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { cn, formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
-import type { Payment } from "@/types"
+import type { Payment, DepositLocation } from "@/types"
+import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS, DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 
 interface BalanceData {
   outstandingPrincipal: string
@@ -57,7 +58,7 @@ function todayISODate(): string {
 interface PaymentFormValues {
   paymentDate: string
   amount: string
-  depositLocation: "cash" | "bank" | "strong_room"
+  depositLocation: DepositLocation
   note: string
 }
 
@@ -68,21 +69,6 @@ interface ReceiptPaymentData extends Payment {
     principalPortion: string
     principalBalanceAfter: string
   }
-}
-
-const AMOUNT_PRESETS = [
-  { label: "50K", value: "50000" },
-  { label: "100K", value: "100000" },
-  { label: "200K", value: "200000" },
-  { label: "500K", value: "500000" },
-  { label: "1M", value: "1000000" },
-  { label: "2M", value: "2000000" },
-]
-
-const DEPOSIT_LABELS: Record<string, string> = {
-  cash: "Cash",
-  bank: "Bank",
-  strong_room: "Strong Room",
 }
 
 export function RecordPaymentForm({ loanId, customerName, loanReference, balanceData }: RecordPaymentFormProps) {
@@ -277,9 +263,9 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
                       <SelectValue placeholder="Select location" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="bank">Bank</SelectItem>
-                      <SelectItem value="strong_room">Strong Room</SelectItem>
+                      {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 )}
@@ -343,7 +329,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Deposit Location</span>
-                  <span>{DEPOSIT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
+                  <span>{DEPOSIT_LOCATION_SHORT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Payment Date</span>

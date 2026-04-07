@@ -39,6 +39,10 @@ export function useCreateLoan() {
         disbursementSource: input.disbursementSource,
         loanType: input.loanType ?? "perpetual",
         termMonths: input.termMonths ?? null,
+        penaltyMultiplier: "0.1000",
+        penaltyWaived: false,
+        penaltyWaivedBy: null,
+        penaltyWaivedAt: null,
         rolledOverFrom: input.rollover?.fromLoanId ?? null,
         rolloverAmount: input.rollover
           ? (parseFloat(input.rollover.carriedPrincipal) + parseFloat(input.rollover.carriedInterest)).toFixed(2)

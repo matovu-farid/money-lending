@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -28,6 +28,7 @@ import { getDashboardAction } from "@/actions/dashboard.actions"
 import { getConversationsAction } from "@/actions/chat.actions"
 import { listPaymentsAction } from "@/actions/payment.actions"
 import { searchCustomersAction } from "@/actions/customer.actions"
+import { useSidebarStore } from "@/lib/stores/sidebar"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -100,7 +101,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onClose }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const { collapsed, toggle } = useSidebarStore()
   const pathname = usePathname()
   const { data: session } = useSession()
   const queryClient = useQueryClient()
@@ -186,7 +187,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             variant="ghost"
             size="icon"
             className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={toggle}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? (

@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import {
   applyRateChangeImmediately,
   listAllRequests,
@@ -64,7 +65,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     return { error: "Loan not found" }
   }
 
-  const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+  const effectiveRate = getBaseRate(loan)
   if (parseFloat(input.requestedRate) === parseFloat(effectiveRate)) {
     return { error: "Requested rate is the same as the current rate" }
   }

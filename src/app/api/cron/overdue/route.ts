@@ -3,13 +3,14 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, and, isNull, asc, sql, inArray } from "drizzle-orm"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
 import { formatAmount } from "@/lib/interest/engine"
 import { createNotificationsForLoan } from "@/services/notification.service"
 import BigNumber from "bignumber.js"
-import type { LoanType } from "@/types"
+import { toLoanType } from "@/types"
 
 export async function POST(request: NextRequest) {
   // Fail-closed: reject if CRON_SECRET is not configured
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     for (const loan of activeLoans) {
       try {
         const loanPayments = paymentsByLoan.get(loan.id) ?? []
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const baseRate = getBaseRate(loan)
         const ledgerBalance = ledgerBalances.get(loan.id)
         if (ledgerBalance === undefined) {
           console.warn(`[overdue-cron] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
@@ -82,13 +83,15 @@ export async function POST(request: NextRequest) {
 
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
-          effectiveRate,
+          baseRate,
           startDate: new Date(loan.startDate),
-          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          loanType: toLoanType(loan.loanType),
           termMonths: loan.termMonths,
           totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
           paymentCount: loanPayments.length,
           outstandingBalance,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
         })
 
         if (info.daysOverdue >= 30) {
@@ -96,6 +99,17 @@ export async function POST(request: NextRequest) {
             loanId: loan.id,
             daysOverdue: String(info.daysOverdue),
           })
+        }
+
+        // Reset waiver when borrower returns to good standing (< 60 days overdue)
+        // This ensures future overdue episodes will trigger penalty again
+        if (info.daysOverdue < 60 && loan.penaltyWaived) {
+          await db.update(loans).set({
+            penaltyWaived: false,
+            penaltyWaivedBy: null,
+            penaltyWaivedAt: null,
+          }).where(eq(loans.id, loan.id))
+          console.log(`[overdue-cron] Penalty waiver reset for loan ${loan.id} (back to good standing)`)
         }
 
         const lastPayment = loanPayments.at(-1)

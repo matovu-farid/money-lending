@@ -5,13 +5,14 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { createLoan, listLoans, updateLoan, deleteLoan } from "@/services/loan.service"
 import {
   CustomerNotFound,
   IncompleteLoanRequirements,
   LoanNotFound,
 } from "@/lib/errors"
-import { ROLE_LEVELS, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanType } from "@/types"
+import { ROLE_LEVELS, toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
@@ -291,18 +292,20 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       const lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
 
       if (loan.status === "active") {
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const baseRate = getBaseRate(loan)
         const balanceForCalc = outstandingBalance
 
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
-          effectiveRate,
+          baseRate,
           startDate: new Date(loan.startDate),
-          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          loanType: toLoanType(loan.loanType),
           termMonths: loan.termMonths,
           totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
           paymentCount: loanPayments.length,
           outstandingBalance: balanceForCalc,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
         })
         daysOverdue = info.daysOverdue
         dailyRate = info.dailyRate
@@ -335,6 +338,10 @@ export async function getCustomerLoansWithOverdueAction(customerId: string) {
         disbursementSource: loans.disbursementSource,
         loanType: loans.loanType,
         termMonths: loans.termMonths,
+        penaltyMultiplier: loans.penaltyMultiplier,
+        penaltyWaived: loans.penaltyWaived,
+        penaltyWaivedBy: loans.penaltyWaivedBy,
+        penaltyWaivedAt: loans.penaltyWaivedAt,
         rolledOverFrom: loans.rolledOverFrom,
         rolloverAmount: loans.rolloverAmount,
         createdAt: loans.createdAt,
@@ -404,6 +411,71 @@ export async function listActiveLoansWithOverdueAction() {
     const allLoans = await Effect.runPromise(listLoans())
     const activeLoans = allLoans.filter((l) => l.status === "active")
     return { data: await computeOverdue(activeLoans) }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function waivePenaltyAction(loanId: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  const role = session.user.role as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+    return { error: "Only admins can waive penalties" }
+  }
+
+  try {
+    const [loan] = await db
+      .select({ id: loans.id })
+      .from(loans)
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+
+    if (!loan) return { error: "Loan not found" }
+
+    await db.update(loans).set({
+      penaltyWaived: true,
+      penaltyWaivedBy: session.user.id,
+      penaltyWaivedAt: new Date(),
+    }).where(eq(loans.id, loanId))
+
+    revalidatePath("/loans")
+    revalidatePath(`/loans/${loanId}`)
+    return { success: true }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  const role = session.user.role as UserRole
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+    return { error: "Only admins can adjust penalty rates" }
+  }
+
+  const value = parseFloat(multiplier)
+  if (isNaN(value) || value < 0 || value >= 1) {
+    return { error: "Multiplier must be between 0 and 1 (e.g., 0.10 for 10%)" }
+  }
+
+  try {
+    const [loan] = await db
+      .select({ id: loans.id })
+      .from(loans)
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+
+    if (!loan) return { error: "Loan not found" }
+
+    await db.update(loans).set({
+      penaltyMultiplier: value.toFixed(4),
+    }).where(eq(loans.id, loanId))
+
+    revalidatePath("/loans")
+    revalidatePath(`/loans/${loanId}`)
+    return { success: true }
   } catch {
     return { error: "Internal server error" }
   }

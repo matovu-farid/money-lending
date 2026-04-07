@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
@@ -75,7 +76,7 @@ export const applyRateChangeImmediately = (
         // Reset accrual baseline so next accrual run uses the new rate
         await autoPostRateChangeAdjustment(tx, {
           loanId,
-          oldRate: loan.interestRateOverride ?? loan.interestRate,
+          oldRate: getBaseRate(loan),
           newRate,
           actorId,
         })

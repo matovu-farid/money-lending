@@ -9,11 +9,14 @@ import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import type { LoanListEntry } from "@/types"
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
+import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { exportLoansExcelAction } from "@/actions/loan.actions"
 import { toast } from "sonner"
 import { Download } from "lucide-react"
+import { downloadBase64 } from "@/lib/download"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
+import { LoanTypeBadge } from "@/components/loans/loan-type-badge"
 
 type FilterCategory = "all" | "critical" | "at-risk" | "early"
 
@@ -51,23 +54,12 @@ export default function LoansPage() {
       }
       if (!result.data) return
 
-      const byteString = atob(result.data)
-      const bytes = new Uint8Array(byteString.length)
-      for (let i = 0; i < byteString.length; i++) {
-        bytes[i] = byteString.charCodeAt(i)
-      }
-      const blob = new Blob([bytes], {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
       const dateStr = new Date().toISOString().slice(0, 10)
-      a.href = url
-      a.download = `sovereign-ledger-loans-${dateStr}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      downloadBase64(
+        result.data,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        `sovereign-ledger-loans-${dateStr}.xlsx`,
+      )
       toast.success("Excel file downloaded")
     } catch {
       toast.error("Failed to export loans")
@@ -251,7 +243,14 @@ export default function LoansPage() {
       cardLabel: "Overdue",
       render: (e) =>
         e.daysOverdue > 0 ? (
-          <OverdueBadge daysOverdue={e.daysOverdue} />
+          <div className="flex items-center gap-1.5">
+            <OverdueBadge daysOverdue={e.daysOverdue} />
+            {isPenaltyActive(e.daysOverdue, e.penaltyWaived) && (
+              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
+                Penalty
+              </span>
+            )}
+          </div>
         ) : (
           <span className="text-muted-foreground">—</span>
         ),
@@ -260,17 +259,7 @@ export default function LoansPage() {
       key: "loanType",
       header: "Type",
       cardLabel: "Type",
-      render: (e) => (
-        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-          e.loanType === "fixed_rate"
-            ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-            : e.loanType === "reducing_balance"
-            ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-            : "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-        }`}>
-          {e.loanType === "fixed_rate" ? "Fixed Rate" : e.loanType === "reducing_balance" ? "Reducing Bal." : "Perpetual"}
-        </span>
-      ),
+      render: (e) => <LoanTypeBadge loanType={e.loanType} />,
     },
     {
       key: "lastPayment",

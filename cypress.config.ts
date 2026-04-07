@@ -97,10 +97,27 @@ export default defineConfig({
         async "db:getLoans"() {
           return withSql(async (sql) => {
             const rows = await sql`
-              SELECT id, customer_id, principal_amount, interest_rate, status
+              SELECT id, customer_id, principal_amount, interest_rate, status, penalty_waived, penalty_multiplier
               FROM loans ORDER BY created_at DESC
             `
             return rows
+          })
+        },
+
+        async "db:setPenaltyMultiplier"({ loanId, multiplier }: { loanId: string; multiplier: string }) {
+          return withSql(async (sql) => {
+            await sql`
+              UPDATE loans SET penalty_multiplier = ${multiplier}
+              WHERE id = ${loanId}
+            `
+            return null
+          })
+        },
+
+        async "db:setLoanStartDate"({ loanId, startDate }: { loanId: string; startDate: string }) {
+          return withSql(async (sql) => {
+            await sql`UPDATE loans SET start_date = ${startDate}::timestamptz WHERE id = ${loanId}`
+            return null
           })
         },
       })

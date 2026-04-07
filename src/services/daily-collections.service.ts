@@ -3,12 +3,13 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { sql, eq, and, isNull, asc, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { getPaymentPortionsFromLedger } from "@/services/transaction.service"
-import type { DailyCollectionsSummary, DailyCollectionRow, LoanDueToday, LoanType } from "@/types"
+import { toLoanType, type DailyCollectionsSummary, type DailyCollectionRow, type LoanDueToday } from "@/types"
 
 export const getDailyCollections = (
   date: string
@@ -84,6 +85,8 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           startDate: loans.startDate,
           interestRate: loans.interestRate,
           interestRateOverride: loans.interestRateOverride,
+          penaltyWaived: loans.penaltyWaived,
+          penaltyMultiplier: loans.penaltyMultiplier,
           loanType: loans.loanType,
           termMonths: loans.termMonths,
           customerName: customers.fullName,
@@ -119,7 +122,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
 
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const baseRate = getBaseRate(loan)
         const ledgerBalance = ledgerBalances.get(loan.id)
         if (ledgerBalance === undefined) {
           console.warn(`[getLoansDueToday] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
@@ -129,13 +132,15 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           : loan.principalAmount
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
-          effectiveRate,
+          baseRate,
           startDate: new Date(loan.startDate),
-          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          loanType: toLoanType(loan.loanType),
           termMonths: loan.termMonths,
           totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
           paymentCount: loanPayments.length,
           outstandingBalance,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
         })
         const daysOverdue = info.daysOverdue
 

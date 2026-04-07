@@ -7,6 +7,7 @@ import { Loader2, ArrowRightLeft } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { ROLE_LEVELS, type UserRole } from "@/types"
+import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
 import { createFundTransferAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { Button } from "@/components/ui/button"
@@ -40,12 +41,6 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import type { DepositLocation } from "@/types"
-
-const LOCATION_LABELS: Record<DepositLocation, string> = {
-  cash: "Cash",
-  bank: "Bank",
-  strong_room: "Strong Room",
-}
 
 interface TransferFormValues {
   fromLocation: DepositLocation
@@ -184,9 +179,9 @@ export default function FundTransfersPage() {
                         <SelectValue placeholder="Select source" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="bank">Bank</SelectItem>
-                        <SelectItem value="strong_room">Strong Room</SelectItem>
+                        {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   )}
@@ -211,9 +206,9 @@ export default function FundTransfersPage() {
                         <SelectValue placeholder="Select destination" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="cash">Cash</SelectItem>
-                        <SelectItem value="bank">Bank</SelectItem>
-                        <SelectItem value="strong_room">Strong Room</SelectItem>
+                        {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   )}
@@ -291,8 +286,8 @@ export default function FundTransfersPage() {
                     <TableCell className="font-mono tabular-nums text-sm">
                       {formatDate(t.createdAt)}
                     </TableCell>
-                    <TableCell>{LOCATION_LABELS[t.fromLocation as DepositLocation]}</TableCell>
-                    <TableCell>{LOCATION_LABELS[t.toLocation as DepositLocation]}</TableCell>
+                    <TableCell>{DEPOSIT_LOCATION_SHORT_LABELS[t.fromLocation as DepositLocation]}</TableCell>
+                    <TableCell>{DEPOSIT_LOCATION_SHORT_LABELS[t.toLocation as DepositLocation]}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {formatCurrency(t.amount)}
                     </TableCell>

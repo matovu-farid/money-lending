@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { transactions } from "@/lib/db/schema/transactions"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { auditLog } from "@/lib/db/schema/audit"
 import { customers } from "@/lib/db/schema/customers"
@@ -12,7 +13,7 @@ import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
 import { formatAmount as formatBigNumber } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
-import type { DashboardKPIs, ActivityFeedItem, LoanType } from "@/types"
+import { toLoanType, type DashboardKPIs, type ActivityFeedItem } from "@/types"
 
 export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> =>
   Effect.tryPromise({
@@ -115,7 +116,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
 
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
-        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const baseRate = getBaseRate(loan)
         const ledgerBalance = ledgerBalances.get(loan.id)
         if (ledgerBalance === undefined) {
           console.warn(`[getDashboardKPIs] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
@@ -125,13 +126,15 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
           : loan.principalAmount
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
-          effectiveRate,
+          baseRate,
           startDate: new Date(loan.startDate),
-          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          loanType: toLoanType(loan.loanType),
           termMonths: loan.termMonths,
           totalInterestPaid: formatBigNumber(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
           paymentCount: loanPayments.length,
           outstandingBalance,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
         })
         if (info.daysOverdue >= 30) {
           overdueCount++

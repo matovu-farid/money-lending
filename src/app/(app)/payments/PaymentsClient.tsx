@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -29,12 +29,14 @@ import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
 import { formatNumberWithCommas, formatDate } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer } from "@/types"
+import { usePaymentsPageStore } from "@/lib/stores/payments-page"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DailyCollectionsTab } from "./DailyCollectionsTab"
 import { QuickRecordDialog } from "./QuickRecordDialog"
 import { usePayments } from "@/hooks/use-payments"
 import { queryKeys } from "@/hooks/query-keys"
 import { FilterPanel } from "@/components/ui/filter-panel"
+import { downloadBlob } from "@/lib/download"
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
   const headers = ["Date", "Customer", "Loan Ref", "Amount", "Interest", "Principal", "Balance"]
@@ -51,12 +53,7 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
     ].join(","))
   ]
   const blob = new Blob([csvLines.join("\n")], { type: "text/csv" })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement("a")
-  a.href = url
-  a.download = `payments-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `payments-${new Date().toISOString().slice(0, 10)}.csv`)
 }
 
 export function PaymentsClient() {
@@ -88,32 +85,30 @@ export function PaymentsClient() {
   const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
   const isSupervisor = ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
 
-  const [quickRecordOpen, setQuickRecordOpen] = useState(false)
+  const {
+    quickRecordOpen, openQuickRecord, closeQuickRecord,
+    editOpen, editTarget: selectedPayment, editAmount, editDate, editReason,
+    openEdit: openEditSheet, closeEdit, setEditAmount, setEditDate, setEditReason,
+    deleteOpen, deleteTarget, deleteReason,
+    openDelete: openDeleteDialog, closeDelete, setDeleteReason,
+    markWrongOpen, markWrongTarget, markWrongReason,
+    openMarkWrong: openMarkWrongDialog, closeMarkWrong, setMarkWrongReason,
+    filters, setFilter, clearFilters, setPage, initFilters,
+  } = usePaymentsPageStore()
 
-  // Filter state (initialized from URL search params)
-  const [customerName, setCustomerName] = useState(searchParams.get("customerName") ?? "")
-  const [dateFrom, setDateFrom] = useState(searchParams.get("dateFrom") ?? "")
-  const [dateTo, setDateTo] = useState(searchParams.get("dateTo") ?? "")
-  const [amountMin, setAmountMin] = useState(searchParams.get("amountMin") ?? "")
-  const [amountMax, setAmountMax] = useState(searchParams.get("amountMax") ?? "")
-  const [page, setPage] = useState(Math.max(1, Number(searchParams.get("page")) || 1))
+  const { customerName, dateFrom, dateTo, amountMin, amountMax, page } = filters
 
-  // Edit sheet state
-  const [editOpen, setEditOpen] = useState(false)
-  const [selectedPayment, setSelectedPayment] = useState<PaymentWithCustomer | null>(null)
-  const [editAmount, setEditAmount] = useState("")
-  const [editDate, setEditDate] = useState("")
-  const [editReason, setEditReason] = useState("")
-
-  // Delete dialog state
-  const [deleteOpen, setDeleteOpen] = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<PaymentWithCustomer | null>(null)
-  const [deleteReason, setDeleteReason] = useState("")
-
-  // Mark as wrong dialog state
-  const [markWrongOpen, setMarkWrongOpen] = useState(false)
-  const [markWrongTarget, setMarkWrongTarget] = useState<PaymentWithCustomer | null>(null)
-  const [markWrongReason, setMarkWrongReason] = useState("")
+  // Initialize filters from URL params on mount
+  useEffect(() => {
+    initFilters({
+      customerName: searchParams.get("customerName") ?? "",
+      dateFrom: searchParams.get("dateFrom") ?? "",
+      dateTo: searchParams.get("dateTo") ?? "",
+      amountMin: searchParams.get("amountMin") ?? "",
+      amountMax: searchParams.get("amountMax") ?? "",
+      page: Math.max(1, Number(searchParams.get("page")) || 1),
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Edit mutation — no optimistic update since ledger-derived portions can't be computed client-side
   const editMutation = useMutation({
@@ -128,7 +123,7 @@ export function PaymentsClient() {
         return
       }
       toast.success("Payment updated")
-      setEditOpen(false)
+      closeEdit()
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
@@ -180,7 +175,7 @@ export function PaymentsClient() {
         return
       }
       toast.success("Payment deleted")
-      setDeleteOpen(false)
+      closeDelete()
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
@@ -199,7 +194,7 @@ export function PaymentsClient() {
         return
       }
       toast.success("Payment marked as wrong")
-      setMarkWrongOpen(false)
+      closeMarkWrong()
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
@@ -257,7 +252,6 @@ export function PaymentsClient() {
       if (newAmountMax) params.set("amountMax", newAmountMax)
       else params.delete("amountMax")
       params.delete("page")
-      setPage(1)
       router.push(`/payments?${params.toString()}`)
     },
     [router, searchParams]
@@ -287,41 +281,36 @@ export function PaymentsClient() {
 
   function handleCustomerNameChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value
-    setCustomerName(v)
+    setFilter("customerName", v)
     scheduleApply(v, dateFrom, dateTo, amountMin, amountMax)
   }
 
   function handleDateFromChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value
-    setDateFrom(v)
+    setFilter("dateFrom", v)
     scheduleApply(customerName, v, dateTo, amountMin, amountMax)
   }
 
   function handleDateToChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value
-    setDateTo(v)
+    setFilter("dateTo", v)
     scheduleApply(customerName, dateFrom, v, amountMin, amountMax)
   }
 
   function handleAmountMinChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value
-    setAmountMin(v)
+    setFilter("amountMin", v)
     scheduleApply(customerName, dateFrom, dateTo, v, amountMax)
   }
 
   function handleAmountMaxChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = e.target.value
-    setAmountMax(v)
+    setFilter("amountMax", v)
     scheduleApply(customerName, dateFrom, dateTo, amountMin, v)
   }
 
   function handleClearFilters() {
-    setCustomerName("")
-    setDateFrom("")
-    setDateTo("")
-    setAmountMin("")
-    setAmountMax("")
-    setPage(1)
+    clearFilters()
     router.push("/payments")
   }
 
@@ -330,24 +319,6 @@ export function PaymentsClient() {
     params.set("page", String(newPage))
     setPage(newPage)
     router.push(`/payments?${params.toString()}`)
-  }
-
-  function openEditSheet(payment: PaymentWithCustomer) {
-    setSelectedPayment(payment)
-    setEditAmount(payment.amount)
-    setEditDate(
-      payment.paymentDate instanceof Date
-        ? payment.paymentDate.toISOString().slice(0, 10)
-        : String(payment.paymentDate).slice(0, 10)
-    )
-    setEditReason("")
-    setEditOpen(true)
-  }
-
-  function openDeleteDialog(payment: PaymentWithCustomer) {
-    setDeleteTarget(payment)
-    setDeleteReason("")
-    setDeleteOpen(true)
   }
 
   function handleEditSubmit() {
@@ -366,12 +337,6 @@ export function PaymentsClient() {
       paymentId: deleteTarget.id,
       reason: deleteReason,
     })
-  }
-
-  function openMarkWrongDialog(payment: PaymentWithCustomer) {
-    setMarkWrongTarget(payment)
-    setMarkWrongReason("")
-    setMarkWrongOpen(true)
   }
 
   function handleMarkWrongSubmit() {
@@ -523,7 +488,7 @@ export function PaymentsClient() {
     <div className="space-y-4">
       {/* Page header */}
       <PageHeader title="Payments" subtitle="Payment history and collections">
-        <Button onClick={() => setQuickRecordOpen(true)}>
+        <Button onClick={openQuickRecord}>
           Record Payment
         </Button>
         {activeTab === "list" && (
@@ -688,7 +653,7 @@ export function PaymentsClient() {
       </Tabs>
 
       {/* Edit Payment Sheet */}
-      <DrawerDialog open={editOpen} onOpenChange={setEditOpen}>
+      <DrawerDialog open={editOpen} onOpenChange={(v) => { if (!v) closeEdit() }}>
         <DrawerDialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Edit Payment</DialogTitle>
@@ -743,7 +708,7 @@ export function PaymentsClient() {
       </DrawerDialog>
 
       {/* Delete Payment Dialog */}
-      <DrawerDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+      <DrawerDialog open={deleteOpen} onOpenChange={(v) => { if (!v) closeDelete() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete payment?</DialogTitle>
@@ -761,7 +726,7 @@ export function PaymentsClient() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteOpen(false)}>
+            <Button variant="outline" onClick={closeDelete}>
               Keep payment
             </Button>
             <Button
@@ -776,7 +741,7 @@ export function PaymentsClient() {
       </DrawerDialog>
 
       {/* Mark as Wrong Dialog */}
-      <DrawerDialog open={markWrongOpen} onOpenChange={setMarkWrongOpen}>
+      <DrawerDialog open={markWrongOpen} onOpenChange={(v) => { if (!v) closeMarkWrong() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>
@@ -823,7 +788,7 @@ export function PaymentsClient() {
             />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setMarkWrongOpen(false)}>
+            <Button variant="outline" onClick={closeMarkWrong}>
               Cancel
             </Button>
             <Button
@@ -838,7 +803,7 @@ export function PaymentsClient() {
       </DrawerDialog>
 
       {/* Quick Record Payment Dialog */}
-      <QuickRecordDialog open={quickRecordOpen} onOpenChange={setQuickRecordOpen} />
+      <QuickRecordDialog open={quickRecordOpen} onOpenChange={(v) => v ? openQuickRecord() : closeQuickRecord()} />
     </div>
   )
 }
