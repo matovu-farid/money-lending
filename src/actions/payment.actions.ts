@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
 import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
+import { getPaymentPortionsFromLedger } from "@/services/transaction.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
@@ -468,6 +469,24 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
   } catch (e: any) {
     if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
     if (e?._tag === "LoanNotFound") return { error: "Loan not found" }
+    return { error: "Internal server error" }
+  }
+}
+
+export async function getPaymentPortionsAction(paymentIds: string[]) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return { error: "Unauthorized" }
+  }
+
+  if (!paymentIds || paymentIds.length === 0) {
+    return { data: {} as Record<string, { interestPortion: string; principalPortion: string }> }
+  }
+
+  try {
+    const portions = await getPaymentPortionsFromLedger(paymentIds)
+    return { data: Object.fromEntries(portions) }
+  } catch {
     return { error: "Internal server error" }
   }
 }

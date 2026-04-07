@@ -12,6 +12,7 @@ import {
   changeCustomerStatusAction,
 } from "@/actions/customer.actions";
 import { getCustomerLoansWithOverdueAction } from "@/actions/loan.actions";
+import { getPaymentPortionsAction } from "@/actions/payment.actions";
 import { useCustomer } from "@/hooks/use-customer";
 import { useLoanPayments } from "@/hooks/use-payments";
 import { queryKeys } from "@/hooks/query-keys";
@@ -90,6 +91,19 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
     expanded,
   );
 
+  const { data: portionsData } = useQuery<Record<string, { interestPortion: string; principalPortion: string }>>({
+    queryKey: ["payment-portions", item.loan.id],
+    queryFn: async () => {
+      if (!payments || payments.length === 0) return {};
+      const activeIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id);
+      if (activeIds.length === 0) return {};
+      const result = await getPaymentPortionsAction(activeIds);
+      if ("error" in result) return {};
+      return result.data;
+    },
+    enabled: expanded && !!payments && payments.length > 0,
+  });
+
   return (
     <Card>
       <CardHeader>
@@ -164,6 +178,8 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
+                      <TableHead className="text-right">Interest</TableHead>
+                      <TableHead className="text-right">Principal</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -190,7 +206,24 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
                         >
                           {formatCurrency(payment.amount)}
                         </TableCell>
-                        {/* Interest/principal portions now derived from ledger - to be re-added in Tasks 11-15 */}
+                        <TableCell
+                          className={cn(
+                            "text-right font-mono tabular-nums",
+                            payment.deletedAt &&
+                              "line-through text-muted-foreground",
+                          )}
+                        >
+                          {formatCurrency(portionsData?.[payment.id]?.interestPortion ?? "0.00")}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right font-mono tabular-nums",
+                            payment.deletedAt &&
+                              "line-through text-muted-foreground",
+                          )}
+                        >
+                          {formatCurrency(portionsData?.[payment.id]?.principalPortion ?? "0.00")}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

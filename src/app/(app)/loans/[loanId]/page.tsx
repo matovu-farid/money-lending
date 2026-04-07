@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { notFound } from "next/navigation"
 import { getLoan } from "@/services/loan.service"
 import { getPaymentsForLoan } from "@/services/payment.service"
-import { getLoanBalanceFromLedger } from "@/services/transaction.service"
+import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger } from "@/services/transaction.service"
 import { db } from "@/lib/db"
 import { customers } from "@/lib/db/schema/customers"
 import { user } from "@/lib/db/schema/auth"
@@ -40,6 +40,18 @@ export default async function LoanDetailPage({
   )
 
   const payments = paymentsResult._tag === "Right" ? paymentsResult.right : []
+
+  // Fetch payment portions from ledger
+  let paymentPortions: Record<string, { interestPortion: string; principalPortion: string }> = {}
+  try {
+    const activePaymentIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id)
+    if (activePaymentIds.length > 0) {
+      const portionsMap = await getPaymentPortionsFromLedger(activePaymentIds)
+      paymentPortions = Object.fromEntries(portionsMap)
+    }
+  } catch {
+    // Non-critical — client will show 0.00 for portions
+  }
 
   // Fetch ledger-derived outstanding balance
   let ledgerBalance: string | null = null
@@ -114,6 +126,7 @@ export default async function LoanDetailPage({
       openEditOnMount={openEdit}
       userNameMap={userNameMap}
       ledgerBalance={ledgerBalance}
+      paymentPortions={paymentPortions}
       userRole={role}
       collateralNature={loanCollateral?.nature}
       collateralDescription={loanCollateral?.description}

@@ -8,7 +8,7 @@ import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./transaction.service"
+import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, getLoanBalancesFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import type {
@@ -576,7 +576,27 @@ export const listPayments = (
           .where(where),
       ])
 
-      return { rows: rows as PaymentWithCustomer[], total: Number(total) }
+      // Enrich with ledger-derived portions and balances
+      const paymentIds = rows.map((r) => r.id)
+      const loanIds = [...new Set(rows.map((r) => r.loanId))]
+
+      const [portions, ledgerBalances] = await Promise.all([
+        paymentIds.length > 0 ? getPaymentPortionsFromLedger(paymentIds) : Promise.resolve(new Map<string, { interestPortion: string; principalPortion: string }>()),
+        loanIds.length > 0 ? getLoanBalancesFromLedger(loanIds) : Promise.resolve(new Map<string, BigNumber>()),
+      ])
+
+      const enrichedRows: PaymentWithCustomer[] = rows.map((r) => {
+        const portion = portions.get(r.id)
+        const loanBalance = ledgerBalances.get(r.loanId)
+        return {
+          ...r,
+          interestPortion: portion?.interestPortion ?? "0.00",
+          principalPortion: portion?.principalPortion ?? "0.00",
+          principalBalanceAfter: loanBalance?.toFixed(2) ?? "0.00",
+        } as PaymentWithCustomer
+      })
+
+      return { rows: enrichedRows, total: Number(total) }
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })

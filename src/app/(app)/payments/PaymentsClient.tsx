@@ -37,7 +37,7 @@ import { queryKeys } from "@/hooks/query-keys"
 import { FilterPanel } from "@/components/ui/filter-panel"
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
-  const headers = ["Date", "Customer", "Loan Ref", "Amount"]
+  const headers = ["Date", "Customer", "Loan Ref", "Amount", "Interest", "Principal", "Balance"]
   const csvLines = [
     headers.join(","),
     ...rows.map((r) => [
@@ -45,6 +45,9 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
       `"${r.customerName}"`,
       `LOAN-${r.loanId.slice(0, 8).toUpperCase()}`,
       r.amount,
+      r.interestPortion,
+      r.principalPortion,
+      r.principalBalanceAfter,
     ].join(","))
   ]
   const blob = new Blob([csvLines.join("\n")], { type: "text/csv" })
@@ -443,8 +446,24 @@ export function PaymentsClient() {
       align: "right",
       render: (row) => <>UGX {formatNumberWithCommas(row.amount)}</>,
     },
-    // Interest/principal portions and balance are now derived from the ledger
-    // and will be re-added when read paths are updated (Tasks 11-15)
+    {
+      key: "interestPortion",
+      header: "Interest",
+      align: "right",
+      render: (row) => <>UGX {formatNumberWithCommas(row.interestPortion)}</>,
+    },
+    {
+      key: "principalPortion",
+      header: "Principal",
+      align: "right",
+      render: (row) => <>UGX {formatNumberWithCommas(row.principalPortion)}</>,
+    },
+    {
+      key: "principalBalanceAfter",
+      header: "Balance",
+      align: "right",
+      render: (row) => <>UGX {formatNumberWithCommas(row.principalBalanceAfter)}</>,
+    },
     ...((isAdmin || isSupervisor) ? [{
       key: "actions",
       header: "",

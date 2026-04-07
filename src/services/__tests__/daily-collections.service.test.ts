@@ -14,6 +14,7 @@ vi.mock("drizzle-orm", async () => {
 vi.mock("@/services/transaction.service", () => ({
   getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
   getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
+  getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
 const makePaymentRow = (overrides: Record<string, unknown> = {}) => ({

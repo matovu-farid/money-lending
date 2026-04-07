@@ -7,7 +7,8 @@ import { sql, eq, and, isNull, asc, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import type { DailyCollectionsSummary, LoanDueToday, LoanType } from "@/types"
+import { getPaymentPortionsFromLedger } from "@/services/transaction.service"
+import type { DailyCollectionsSummary, DailyCollectionRow, LoanDueToday, LoanType } from "@/types"
 
 export const getDailyCollections = (
   date: string
@@ -38,11 +39,26 @@ export const getDailyCollections = (
         .reduce((sum, r) => sum.plus(new BigNumber(r.amount)), new BigNumber(0))
         .toFixed(2)
 
+      // Enrich with ledger-derived portions
+      const paymentIds = rows.map((r) => r.paymentId)
+      const portions = paymentIds.length > 0
+        ? await getPaymentPortionsFromLedger(paymentIds)
+        : new Map<string, { interestPortion: string; principalPortion: string }>()
+
+      const enrichedRows: DailyCollectionRow[] = rows.map((r) => {
+        const portion = portions.get(r.paymentId)
+        return {
+          ...r,
+          interestPortion: portion?.interestPortion ?? "0.00",
+          principalPortion: portion?.principalPortion ?? "0.00",
+        }
+      })
+
       return {
         date,
         totalCollected,
         paymentCount: rows.length,
-        rows,
+        rows: enrichedRows,
       }
     },
     catch: (e) => new DatabaseError({ cause: e }),

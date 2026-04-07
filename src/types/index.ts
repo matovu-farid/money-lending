@@ -160,6 +160,9 @@ export interface PaymentWithCustomer {
   customerName: string
   paymentDate: Date
   amount: string
+  interestPortion: string
+  principalPortion: string
+  principalBalanceAfter: string
   recordedBy: string
   depositLocation: DepositLocation
   createdAt: Date
@@ -371,6 +374,8 @@ export interface DailyCollectionRow {
   loanId: string
   customerName: string
   amount: string
+  interestPortion: string
+  principalPortion: string
   paymentDate: Date
   depositLocation: DepositLocation
 }

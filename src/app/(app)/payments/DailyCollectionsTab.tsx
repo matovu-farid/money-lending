@@ -193,6 +193,8 @@ export function DailyCollectionsTab() {
                 <TableHead>Customer</TableHead>
                 <TableHead>Loan Ref</TableHead>
                 <TableHead className="text-right">Amount (UGX)</TableHead>
+                <TableHead className="text-right">Interest</TableHead>
+                <TableHead className="text-right">Principal</TableHead>
                 <TableHead>Time</TableHead>
               </TableRow>
             </TableHeader>
@@ -206,6 +208,8 @@ export function DailyCollectionsTab() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.amount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.interestPortion)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.principalPortion)}</TableCell>
                   <TableCell className="font-mono tabular-nums text-muted-foreground">
                     {format(new Date(row.paymentDate), "HH:mm")}
                   </TableCell>

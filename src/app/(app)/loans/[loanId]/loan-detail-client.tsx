@@ -66,6 +66,7 @@ interface LoanDetailClientProps {
   openEditOnMount?: boolean
   userNameMap: Record<string, string>
   ledgerBalance: string | null
+  paymentPortions: Record<string, { interestPortion: string; principalPortion: string }>
   userRole: UserRole
   collateralNature?: string
   collateralDescription?: string | null
@@ -89,7 +90,7 @@ function loanStatusLabel(status: string): string {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, ledgerBalance, userRole, collateralNature, collateralDescription }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, ledgerBalance, paymentPortions, userRole, collateralNature, collateralDescription }: LoanDetailClientProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
 
@@ -646,6 +647,9 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
                     <TableHead className="text-xs font-medium uppercase tracking-wider">Date</TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Amount</TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Interest</TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Principal</TableHead>
+                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Balance</TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider">Recorded By</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
@@ -662,6 +666,15 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                         </TableCell>
                         <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
                           {formatCurrency(payment.amount)}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                          {formatCurrency(paymentPortions[payment.id]?.interestPortion ?? "0.00")}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                          {formatCurrency(paymentPortions[payment.id]?.principalPortion ?? "0.00")}
+                        </TableCell>
+                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                          {formatCurrency(outstandingBalance)}
                         </TableCell>
                         <TableCell className={cn("text-sm", cellClass)}>
                           <div className="flex items-center gap-1.5">
