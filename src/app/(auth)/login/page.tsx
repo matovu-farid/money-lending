@@ -95,7 +95,7 @@ export default function LoginPage() {
                 type={showPassword ? "text" : "password"}
                 placeholder="••••••••"
                 autoComplete="current-password"
-                className="pr-10"
+                className="pr-10 placeholder:text-2xl placeholder:leading-[0] focus:placeholder:text-transparent"
                 disabled={isPending}
                 {...register("password", { required: "Password is required" })}
               />
