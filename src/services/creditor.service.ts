@@ -159,7 +159,6 @@ export const addInvestment = (
             amount: input.amount,
             interestRateMonthly: input.interestRateMonthly,
             investmentDate: new Date(input.investmentDate),
-            principalBalance: input.amount,
             recordedBy: actorId,
           })
           .returning();
@@ -245,10 +244,6 @@ export const recordCreditorRepayment = (
             investmentId: input.investmentId,
             repaymentDate: new Date(input.repaymentDate),
             amount: input.amount,
-            interestPortion: allocation.interestPortion,
-            principalPortion: allocation.principalPortion,
-            principalBalanceBefore: allocation.principalBalanceBefore,
-            principalBalanceAfter: allocation.principalBalanceAfter,
             recordedBy: actorId,
           })
           .returning();
@@ -259,7 +254,7 @@ export const recordCreditorRepayment = (
           entityType: "creditor_repayment",
           entityId: repayment.id,
           beforeValue: {
-            principalBalance: investment.principalBalance,
+            principalBalance: principalBalanceStr,
           },
           afterValue: repayment,
         });

@@ -11,6 +11,7 @@ import type { CreditorRepayment, CreditorInvestment } from "@/types"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
+import { getCreditorRepaymentPortionsFromLedger } from "@/services/transaction.service"
 
 interface Props {
   params: Promise<{ id: string }>
@@ -23,6 +24,7 @@ export default async function CreditorProfilePage({ params }: Props) {
   let dashboard
   let investments: CreditorInvestment[] = []
   let repayments: CreditorRepayment[] = []
+  let repaymentPortions: Record<string, { interestPortion: string; principalPortion: string }> = {}
 
   try {
     ;[creditor, dashboard] = await Promise.all([
@@ -48,6 +50,16 @@ export default async function CreditorProfilePage({ params }: Props) {
           )
         )
         .orderBy(asc(creditorRepayments.repaymentDate))
+
+      // Derive portions from ledger instead of cached columns
+      if (repayments.length > 0) {
+        const portionsMap = await getCreditorRepaymentPortionsFromLedger(
+          repayments.map((r) => r.id)
+        )
+        for (const [key, value] of portionsMap.entries()) {
+          repaymentPortions[key] = value
+        }
+      }
     }
   } catch {
     notFound()
@@ -92,6 +104,7 @@ export default async function CreditorProfilePage({ params }: Props) {
         dashboard={dashboard}
         investments={investments}
         repayments={repayments}
+        repaymentPortions={repaymentPortions}
       />
     </div>
   )

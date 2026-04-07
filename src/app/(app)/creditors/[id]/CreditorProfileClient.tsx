@@ -25,6 +25,7 @@ interface Props {
   dashboard: CreditorDashboard
   investments: CreditorInvestment[]
   repayments: CreditorRepayment[]
+  repaymentPortions: Record<string, { interestPortion: string; principalPortion: string }>
 }
 
 export function CreditorProfileClient({
@@ -33,6 +34,7 @@ export function CreditorProfileClient({
   dashboard,
   investments,
   repayments,
+  repaymentPortions,
 }: Props) {
   return (
     <div className="space-y-4">
@@ -100,19 +102,20 @@ export function CreditorProfileClient({
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead className="text-right">Interest Portion</TableHead>
                     <TableHead className="text-right">Principal Portion</TableHead>
-                    <TableHead className="text-right">Balance After</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {repayments.map((repayment) => (
-                    <TableRow key={repayment.id} data-testid="data-row">
-                      <TableCell className="font-mono tabular-nums">{formatDate(repayment.repaymentDate)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(repayment.amount)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(repayment.interestPortion)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(repayment.principalPortion)}</TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(repayment.principalBalanceAfter)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {repayments.map((repayment) => {
+                    const portions = repaymentPortions[repayment.id]
+                    return (
+                      <TableRow key={repayment.id} data-testid="data-row">
+                        <TableCell className="font-mono tabular-nums">{formatDate(repayment.repaymentDate)}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{formatCurrency(repayment.amount)}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{formatCurrency(portions?.interestPortion ?? "0")}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{formatCurrency(portions?.principalPortion ?? "0")}</TableCell>
+                      </TableRow>
+                    )
+                  })}
                 </TableBody>
               </Table>
             </div>

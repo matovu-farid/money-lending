@@ -14,6 +14,7 @@ import {
 import { CreditorNotFound, InvestmentNotFound } from "@/lib/errors"
 import { auditLog } from "@/lib/db/schema/audit"
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
+import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import { transactions } from "@/lib/db/schema/transactions"
 import { eq } from "drizzle-orm"
 import crypto from "node:crypto"
@@ -153,7 +154,7 @@ describe("Creditor Service (integration)", { timeout: 30_000 }, () => {
   // ── Investments ──────────────────────────────────────────────────────
 
   // 7. addInvestment
-  it("addInvestment — principalBalance equals amount", async () => {
+  it("addInvestment — inserts investment record", async () => {
     const creditor = await makeCreditor()
 
     const investment = await Effect.runPromise(
@@ -171,7 +172,6 @@ describe("Creditor Service (integration)", { timeout: 30_000 }, () => {
     expect(investment.id).toBeDefined()
     expect(investment.creditorId).toBe(creditor.id)
     expect(investment.amount).toBe("1000000.00")
-    expect(investment.principalBalance).toBe("1000000.00")
     expect(investment.interestRateMonthly).toBe("0.0500")
     expect(investment.recordedBy).toBe("test-actor")
   })
@@ -263,21 +263,13 @@ describe("Creditor Service (integration)", { timeout: 30_000 }, () => {
       ),
     )
 
-    // Interest = 1M * (0.05/30) * 30 ≈ 50000 (BigNumber precision may yield 49999.99)
-    const interestPortion = parseFloat(repayment.interestPortion)
-    expect(interestPortion).toBeCloseTo(50000, -1)
-
-    const principalPortion = parseFloat(repayment.principalPortion)
-    expect(principalPortion).toBeCloseTo(50000, -1)
-
-    const balanceAfter = parseFloat(repayment.principalBalanceAfter)
-    expect(balanceAfter).toBeCloseTo(950000, -1)
-
-    expect(repayment.principalBalanceBefore).toBe("1000000.00")
+    // Cached columns removed — repayment only has amount
+    expect(repayment.amount).toBe("100000")
+    expect(repayment.investmentId).toBe(investment.id)
   })
 
-  // 11. recordCreditorRepayment updates principalBalance
-  it("recordCreditorRepayment — updates investment principalBalance", async () => {
+  // 11. recordCreditorRepayment records repayment (principalBalance derived from ledger)
+  it("recordCreditorRepayment — records repayment correctly", async () => {
     const creditor = await makeCreditor()
 
     const investment = await Effect.runPromise(
@@ -303,15 +295,15 @@ describe("Creditor Service (integration)", { timeout: 30_000 }, () => {
       ),
     )
 
-    // Verify the investment row was updated
-    const [updatedInvestment] = await testDb
+    // principalBalance is now derived from the ledger, not stored on the investment row
+    // Just verify the repayment was recorded
+    const repayments = await testDb
       .select()
-      .from(creditorInvestments)
-      .where(eq(creditorInvestments.id, investment.id))
+      .from(creditorRepayments)
+      .where(eq(creditorRepayments.investmentId, investment.id))
 
-    const principalBalance = parseFloat(updatedInvestment.principalBalance)
-    expect(principalBalance).toBeCloseTo(950000, -1)
-    expect(principalBalance).toBeLessThan(1000000)
+    expect(repayments).toHaveLength(1)
+    expect(repayments[0].amount).toBe("100000")
   })
 
   // 12. recordCreditorRepayment auto-posts interest expense

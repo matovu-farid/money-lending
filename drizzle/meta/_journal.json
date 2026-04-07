@@ -134,6 +134,13 @@
       "when": 1775488861571,
       "tag": "0018_conscious_nico_minoru",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1775563436459,
+      "tag": "0019_quick_ken_ellis",
+      "breakpoints": true
     }
   ]
 }

@@ -218,7 +218,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     amount: "10000000",
     interestRateMonthly: "0.10",
     investmentDate: new Date("2026-01-01"),
-    principalBalance: "10000000",
     recordedBy: "actor-1",
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
@@ -229,10 +228,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     investmentId: "inv-1",
     repaymentDate: new Date("2026-01-31"),
     amount: "1500000",
-    interestPortion: "999999.99",
-    principalPortion: "500000.01",
-    principalBalanceBefore: "10000000",
-    principalBalanceAfter: "9499999.99",
     recordedBy: "actor-1",
     createdAt: new Date("2026-01-31"),
     updatedAt: new Date("2026-01-31"),
@@ -414,7 +409,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
   // ── addInvestment ────────────────────────────────────────────────────
 
-  it("addInvestment: sets principalBalance equal to amount on creation (CRED-02)", async () => {
+  it("addInvestment: inserts investment and returns record (CRED-02)", async () => {
     setupDbSelect([mockCreditor]) // creditor exists check
     const txMock = makeTxMock({ insertResult: mockInvestment })
     setupTransaction(txMock)
@@ -426,8 +421,8 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       ),
     ) as any
 
-    expect(result.principalBalance).toBe("10000000")
-    expect(result.amount).toBe(result.principalBalance)
+    expect(result.amount).toBe("10000000")
+    expect(result.creditorId).toBe("cred-1")
   })
 
   it("addInvestment: writes audit log", async () => {
@@ -472,8 +467,9 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       ),
     ) as any
 
-    expect(result.interestPortion).toBe("999999.99")
-    expect(result.principalPortion).toBe("500000.01")
+    // Cached columns removed — repayment row only has amount, investmentId, etc.
+    expect(result.amount).toBe("1500000")
+    expect(result.investmentId).toBe("inv-1")
   })
 
   it("recordCreditorRepayment: no longer writes cached principalBalance (ledger-first) (CRED-04)", async () => {
@@ -526,7 +522,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     const investment30d = {
       ...mockInvestment,
       investmentDate,
-      principalBalance: "10000000",
     }
 
     setupDbSelectChain([
@@ -562,7 +557,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     const investment = {
       ...mockInvestment,
       investmentDate: sixtyDaysAgo,
-      principalBalance: "10000000", // principal unchanged because 500K < interest
     }
 
     const repayment = {
@@ -570,10 +564,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       investmentId: "inv-1",
       repaymentDate: thirtyDaysAgo,
       amount: "500000",
-      interestPortion: "500000",
-      principalPortion: "0",
-      principalBalanceBefore: "10000000",
-      principalBalanceAfter: "10000000",
       recordedBy: "actor-1",
       createdAt: thirtyDaysAgo,
       updatedAt: thirtyDaysAgo,
@@ -615,7 +605,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       id: "inv-1",
       creditorId: "c-1",
       amount: "10000000",
-      principalBalance: "10000000",
       investmentDate: thirtyDaysAgo,
     }
     const inv2 = {
@@ -623,7 +612,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       id: "inv-2",
       creditorId: "c-2",
       amount: "5000000",
-      principalBalance: "5000000",
       investmentDate: thirtyDaysAgo,
     }
 
