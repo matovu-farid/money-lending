@@ -8,7 +8,7 @@ import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, reverseInterestAccrual } from "./transaction.service"
+import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import type {
@@ -48,6 +48,8 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
     ? ledgerBalance.toFixed(2)
     : loan.principalAmount  // Fallback for loans with no ledger entries yet
 
+  const interestEarnedMap = await getInterestEarnedFromLedger([loanId])
+
   const effectiveRate = loan.interestRateOverride ?? loan.interestRate
   const loanType = loan.loanType ?? "perpetual"
 
@@ -58,7 +60,8 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
     startDate: new Date(loan.startDate),
     loanType: loanType as import("@/types").LoanType,
     termMonths: loan.termMonths,
-    payments: activePayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+    totalInterestPaid: formatAmount(interestEarnedMap.get(loanId) ?? new BigNumber(0)),
+    paymentCount: activePayments.length,
     outstandingBalance: outstandingPrincipal,
   })
 
@@ -250,22 +253,13 @@ export const recordPayment = (
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
           .for('update')
 
-        const principalBalanceBefore =
-          activePayments.length === 0
+        // Derive principalBalanceBefore from the ledger (single source of truth)
+        const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
+        const principalBalanceBefore = ledgerBalance.isGreaterThan(0)
+          ? ledgerBalance.toFixed(2)
+          : activePayments.length === 0
             ? loan.principalAmount
             : activePayments[activePayments.length - 1].principalBalanceAfter
-
-        // Ledger cross-check: warn if payments chain and ledger disagree
-        const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
-        if (ledgerBalance.isGreaterThan(0)) {
-          const chainBN = new BigNumber(principalBalanceBefore)
-          if (!chainBN.isEqualTo(ledgerBalance)) {
-            console.warn(
-              `[recordPayment] Balance mismatch for loan ${input.loanId}: ` +
-              `payments chain=${chainBN.toFixed(2)}, ledger=${ledgerBalance.toFixed(2)}`
-            )
-          }
-        }
 
         const prevDate =
           activePayments.length === 0

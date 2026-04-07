@@ -3,10 +3,13 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
-import { eq, and, isNull, asc, sql } from "drizzle-orm"
-import { calculateDaysOverdue, calculateDailyRate, calculateInterest } from "@/lib/interest"
+import { eq, and, isNull, asc, sql, inArray } from "drizzle-orm"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { formatAmount } from "@/lib/interest/engine"
 import { createNotificationsForLoan } from "@/services/notification.service"
 import BigNumber from "bignumber.js"
+import type { LoanType } from "@/types"
 
 export async function POST(request: NextRequest) {
   // Fail-closed: reject if CRON_SECRET is not configured
@@ -36,77 +39,83 @@ export async function POST(request: NextRequest) {
       (r) => r.id
     )
 
+    const loanIds = activeLoans.map((l) => l.id)
+    const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+    const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
+
+    const allPayments =
+      loanIds.length > 0
+        ? await db
+            .select()
+            .from(payments)
+            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+            .orderBy(asc(payments.paymentDate))
+        : []
+
+    const paymentsByLoan = new Map<string, (typeof allPayments)[number][]>()
+    for (const p of allPayments) {
+      const list = paymentsByLoan.get(p.loanId) ?? []
+      list.push(p)
+      paymentsByLoan.set(p.loanId, list)
+    }
+
     for (const loan of activeLoans) {
       try {
-      const loanPayments = await db
-        .select()
-        .from(payments)
-        .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
-        .orderBy(asc(payments.paymentDate))
+        const loanPayments = paymentsByLoan.get(loan.id) ?? []
+        const effectiveRate = loan.interestRateOverride ?? loan.interestRate
+        const ledgerBalance = ledgerBalances.get(loan.id)
+        const outstandingBalance =
+          ledgerBalance !== undefined
+            ? ledgerBalance.toFixed(2)
+            : loan.principalAmount
 
-      const totalInterestPaid = loanPayments.reduce(
-        (sum, p) => sum.plus(new BigNumber(p.interestPortion)),
-        new BigNumber(0)
-      )
-
-      const totalDaysElapsed = Math.floor(
-        (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-      )
-
-      const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-      const dailyRate = calculateDailyRate(effectiveRate)
-
-      // Use actual days for accrual — min period only applies to payment allocation
-      const totalInterestAccrued = calculateInterest(
-        loan.principalAmount,
-        effectiveRate,
-        totalDaysElapsed,
-        0
-      )
-
-      const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
-      const daysOverdue = calculateDaysOverdue(
-        totalInterestAccrued,
-        totalInterestPaid,
-        dailyInterestAmount
-      )
-
-      if (daysOverdue.isGreaterThanOrEqualTo(30)) {
-        results.push({
-          loanId: loan.id,
-          daysOverdue: daysOverdue.toFixed(0),
+        const info = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          effectiveRate,
+          startDate: new Date(loan.startDate),
+          loanType: (loan.loanType ?? "perpetual") as LoanType,
+          termMonths: loan.termMonths,
+          totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+          paymentCount: loanPayments.length,
+          outstandingBalance,
         })
-      }
 
-      const lastPayment = loanPayments.at(-1)
-      const referenceDate = lastPayment
-        ? new Date(lastPayment.paymentDate)
-        : new Date(loan.startDate)
+        if (info.daysOverdue >= 30) {
+          results.push({
+            loanId: loan.id,
+            daysOverdue: String(info.daysOverdue),
+          })
+        }
 
-      const nextDueDate = new Date(referenceDate)
-      nextDueDate.setDate(nextDueDate.getDate() + 30)
+        const lastPayment = loanPayments.at(-1)
+        const referenceDate = lastPayment
+          ? new Date(lastPayment.paymentDate)
+          : new Date(loan.startDate)
 
-      const daysUntilDue = Math.floor(
-        (nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-      )
+        const nextDueDate = new Date(referenceDate)
+        nextDueDate.setDate(nextDueDate.getDate() + 30)
 
-      if (daysUntilDue >= 0 && daysUntilDue <= 5) {
-        const [customer] = await db
-          .select()
-          .from(customers)
-          .where(eq(customers.id, loan.customerId))
-
-        const message = `Loan for ${customer?.fullName ?? "Unknown"} — due in ${daysUntilDue} days`
-
-        await createNotificationsForLoan(
-          loan.id,
-          message,
-          nextDueDate,
-          targetUserIds
+        const daysUntilDue = Math.floor(
+          (nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
         )
 
-        alertResults.push({ loanId: loan.id, daysUntilDue })
-      }
+        if (daysUntilDue >= 0 && daysUntilDue <= 5) {
+          const [customer] = await db
+            .select()
+            .from(customers)
+            .where(eq(customers.id, loan.customerId))
+
+          const message = `Loan for ${customer?.fullName ?? "Unknown"} — due in ${daysUntilDue} days`
+
+          await createNotificationsForLoan(
+            loan.id,
+            message,
+            nextDueDate,
+            targetUserIds
+          )
+
+          alertResults.push({ loanId: loan.id, daysUntilDue })
+        }
       } catch (err) {
         console.error(`[Cron] Failed to process loan ${loan.id}:`, err)
       }

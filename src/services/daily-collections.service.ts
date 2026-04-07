@@ -80,8 +80,10 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
         .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
         .orderBy(asc(payments.paymentDate))
 
-      const { getLoanBalancesFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/transaction.service")
+      const { formatAmount } = await import("@/lib/interest/engine")
       const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+      const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
       const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
       for (const p of allPayments) {
@@ -97,7 +99,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const ledgerBalance = ledgerBalances.get(loan.id)
-        const outstandingBalance = ledgerBalance
+        const outstandingBalance = ledgerBalance !== undefined
           ? ledgerBalance.toFixed(2)
           : loan.principalAmount
         const info = computeLoanOverdueInfo({
@@ -106,7 +108,8 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           startDate: new Date(loan.startDate),
           loanType: (loan.loanType ?? "perpetual") as LoanType,
           termMonths: loan.termMonths,
-          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+          paymentCount: loanPayments.length,
           outstandingBalance,
         })
         const daysOverdue = info.daysOverdue

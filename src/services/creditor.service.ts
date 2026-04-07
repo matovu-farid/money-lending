@@ -10,7 +10,7 @@ import {
   InvestmentNotFound,
 } from "@/lib/errors";
 import { writeAuditLog } from "./audit.service";
-import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid, getCreditorBalancesFromLedger } from "@/services/transaction.service";
+import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid, getCreditorBalancesFromLedger, reverseCreditorInterestAccrual } from "@/services/transaction.service";
 import {
   calculateInterest,
   allocatePayment,
@@ -228,7 +228,7 @@ export const recordCreditorRepayment = (
 
         // Derive principal balance from ledger
         const ledgerBalances = await getCreditorBalancesFromLedger([input.investmentId]);
-        const principalBalance = ledgerBalances.get(input.investmentId) ?? new BigNumber(investment.principalBalance);
+        const principalBalance = ledgerBalances.get(input.investmentId) ?? new BigNumber(investment.amount);
         const principalBalanceStr = formatAmount(principalBalance);
 
         const allocation = allocatePayment({
@@ -253,14 +253,6 @@ export const recordCreditorRepayment = (
           })
           .returning();
 
-        await tx
-          .update(creditorInvestments)
-          .set({
-            principalBalance: allocation.principalBalanceAfter,
-            updatedAt: new Date(),
-          })
-          .where(eq(creditorInvestments.id, input.investmentId));
-
         await writeAuditLog(tx, {
           actorId,
           action: "creditor_repayment.create",
@@ -271,6 +263,15 @@ export const recordCreditorRepayment = (
           },
           afterValue: repayment,
         });
+
+        // Reverse any outstanding creditor interest accrual before posting cash-basis expense
+        if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+          await reverseCreditorInterestAccrual(tx, {
+            investmentId: input.investmentId,
+            repaymentDate: input.repaymentDate,
+            actorId,
+          })
+        }
 
         if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
           await autoPostInterestExpense(tx, {
@@ -354,8 +355,8 @@ export const getCreditorDashboard = (
       for (const investment of investments) {
         totalInvested = totalInvested.plus(investment.amount);
 
-        // Use ledger-derived balance, falling back to table field
-        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.principalBalance);
+        // Use ledger-derived balance, falling back to original investment amount
+        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
 
         const repayments = repaymentsByInvestment.get(investment.id) ?? [];
 
@@ -455,7 +456,7 @@ export const getSystemCapital = (): Effect.Effect<
       for (const investment of allInvestments) {
         totalInvested = totalInvested.plus(investment.amount);
 
-        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.principalBalance);
+        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
         const repayments = repaymentsByInvestment.get(investment.id) ?? [];
 
         const totalRepaid = repayments.reduce(

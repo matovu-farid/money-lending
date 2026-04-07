@@ -384,9 +384,7 @@ export const getPortfolioData = (): Effect.Effect<
 
         // Use ledger-derived balance
         const outstandingBalance = ledgerBalances.get(loan.id)
-          ?? (loanPayments.at(-1)
-            ? new BigNumber(loanPayments.at(-1)!.principalBalanceAfter)
-            : new BigNumber(loan.principalAmount))
+          ?? new BigNumber(loan.principalAmount)
 
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const loanType = (loan.loanType ?? "perpetual") as LoanType
@@ -398,7 +396,8 @@ export const getPortfolioData = (): Effect.Effect<
           startDate: new Date(loan.startDate),
           loanType,
           termMonths: loan.termMonths,
-          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+          paymentCount: loanPayments.length,
           outstandingBalance: formatAmount(outstandingBalance),
         })
 

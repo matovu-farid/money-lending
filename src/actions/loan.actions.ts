@@ -21,7 +21,8 @@ import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
-import { getLoanBalancesFromLedger } from "@/services/transaction.service"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { formatAmount } from "@/lib/interest/engine"
 
 export async function getCollateralNaturesAction(): Promise<string[]> {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -264,6 +265,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
   }
 
   const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+  const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
   return loanList.map((loan) => {
       let daysOverdue = 0
@@ -273,7 +275,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       const loanPayments = paymentsByLoanId.get(loan.id) ?? []
 
       const ledgerBalance = ledgerBalances.get(loan.id)
-      let outstandingBalance = ledgerBalance
+      let outstandingBalance = ledgerBalance !== undefined
         ? ledgerBalance.toFixed(2)
         : loan.principalAmount
 
@@ -290,7 +292,8 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
           startDate: new Date(loan.startDate),
           loanType: (loan.loanType ?? "perpetual") as LoanType,
           termMonths: loan.termMonths,
-          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+          paymentCount: loanPayments.length,
           outstandingBalance: balanceForCalc,
         })
         daysOverdue = info.daysOverdue

@@ -9,7 +9,8 @@ import { customers } from "@/lib/db/schema/customers"
 import { eq, isNull, desc, and, inArray, asc, sql } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { getLoanBalancesFromLedger } from "@/services/transaction.service"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { formatAmount as formatBigNumber } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import type { DashboardKPIs, ActivityFeedItem, LoanType } from "@/types"
 
@@ -108,6 +109,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
 
       // Batch-fetch per-loan outstanding balances from ledger
       const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+      const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
       let overdueCount = 0
 
@@ -115,7 +117,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const ledgerBalance = ledgerBalances.get(loan.id)
-        const outstandingBalance = ledgerBalance
+        const outstandingBalance = ledgerBalance !== undefined
           ? ledgerBalance.toFixed(2)
           : loan.principalAmount
         const info = computeLoanOverdueInfo({
@@ -124,7 +126,8 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
           startDate: new Date(loan.startDate),
           loanType: (loan.loanType ?? "perpetual") as LoanType,
           termMonths: loan.termMonths,
-          payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+          totalInterestPaid: formatBigNumber(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+          paymentCount: loanPayments.length,
           outstandingBalance,
         })
         if (info.daysOverdue >= 30) {

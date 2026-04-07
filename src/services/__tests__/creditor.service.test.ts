@@ -167,6 +167,7 @@ vi.mock("@/services/transaction.service", () => ({
   autoPostCreditorInvestment: vi.fn().mockResolvedValue(undefined),
   autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
   getCreditorBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+  reverseCreditorInterestAccrual: vi.fn().mockResolvedValue(undefined),
 }))
 
 describe("Creditor Service — DB operations (requires test DB)", () => {
@@ -475,7 +476,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     expect(result.principalPortion).toBe("500000.01")
   })
 
-  it("recordCreditorRepayment: updates principalBalance after repayment (CRED-04)", async () => {
+  it("recordCreditorRepayment: no longer writes cached principalBalance (ledger-first) (CRED-04)", async () => {
     const txMock = makeTxMock({
       insertResult: mockRepayment,
       selectResults: [[mockInvestment], []], // investment fetch + no existing repayments
@@ -489,8 +490,8 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       ),
     )
 
-    // tx.update should be called to update principalBalance on the investment
-    expect(txMock.update).toHaveBeenCalled()
+    // principalBalance is now derived from the ledger — no update to creditorInvestments
+    expect(txMock.update).not.toHaveBeenCalled()
   })
 
   it("recordCreditorRepayment: writes audit log inside transaction (CRED-04)", async () => {

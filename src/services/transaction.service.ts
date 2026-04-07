@@ -776,6 +776,90 @@ export async function reverseInterestAccrual(
 }
 
 /**
+ * Reverse outstanding creditor interest accrual entries (Interest Payable)
+ * when a cash repayment is recorded. Mirrors reverseInterestAccrual for loans.
+ */
+export async function reverseCreditorInterestAccrual(
+  tx: DrizzleTransaction,
+  params: {
+    investmentId: string
+    repaymentDate: string
+    actorId: string
+  }
+): Promise<void> {
+  const [payableCat] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Payable"),
+        eq(transactionCategories.type, "expense")
+      )
+    )
+
+  if (!payableCat) return
+
+  const [expenseCat] = await tx
+    .select()
+    .from(transactionCategories)
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Payments"),
+        eq(transactionCategories.type, "expense")
+      )
+    )
+
+  if (!expenseCat) return
+
+  const accrualRows = await tx
+    .select({ amount: transactions.amount, type: transactions.type })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.referenceType, "interest_accrual"),
+        eq(transactions.referenceId, params.investmentId),
+        eq(transactions.categoryId, payableCat.id)
+      )
+    )
+
+  let netAccrual = new BigNumber(0)
+  for (const row of accrualRows) {
+    if (row.type === "credit") {
+      netAccrual = netAccrual.plus(row.amount)
+    } else {
+      netAccrual = netAccrual.minus(row.amount)
+    }
+  }
+
+  if (netAccrual.isLessThanOrEqualTo(0)) return
+
+  const reversalAmount = formatAmount(netAccrual)
+  const now = new Date(params.repaymentDate)
+
+  await tx.insert(transactions).values({
+    type: "debit",
+    amount: reversalAmount,
+    categoryId: payableCat.id,
+    referenceType: "interest_accrual",
+    referenceId: params.investmentId,
+    description: `Reverse creditor interest accrual on repayment - investment ${params.investmentId}`,
+    transactionDate: now,
+    recordedBy: params.actorId,
+  })
+
+  await tx.insert(transactions).values({
+    type: "credit",
+    amount: reversalAmount,
+    categoryId: expenseCat.id,
+    referenceType: "interest_accrual",
+    referenceId: params.investmentId,
+    description: `Reverse creditor interest accrual on repayment - investment ${params.investmentId}`,
+    transactionDate: now,
+    recordedBy: params.actorId,
+  })
+}
+
+/**
  * Accrues interest for all active loans as of `asOfDate`.
  * Idempotent: calling multiple times will not double-post.
  * Posts: DR Interest Receivable / CR Interest Earned
@@ -805,13 +889,20 @@ export const accrueInterestForLoans = (
         .from(loans)
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
+      const loanIds = activeLoans.map((l) => l.id)
+      const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
+
       let entriesPosted = 0
 
       for (const loan of activeLoans) {
         const effectiveRate = loan.interestRateOverride ?? loan.interestRate
         const totalDaysElapsed = accrualDaysBetween(new Date(loan.startDate), asOfDate)
 
-        const totalInterestAccrued = calculateInterest(loan.principalAmount, effectiveRate, totalDaysElapsed, 0)
+        const outstandingBalance = ledgerBalances.get(loan.id)
+        const principalForAccrual = outstandingBalance && outstandingBalance.isGreaterThan(0)
+          ? formatAmount(outstandingBalance)
+          : loan.principalAmount
+        const totalInterestAccrued = calculateInterest(principalForAccrual, effectiveRate, totalDaysElapsed, 0)
 
         // Net Interest Earned from ledger = cash interest + accruals - reversals
         const interestEarnedMap = await getInterestEarnedFromLedger([loan.id])
@@ -877,7 +968,7 @@ export const accrueInterestForCreditors = (
 
       const activeInvestments = allInvestments.filter((inv) => {
         const ledgerBal = ledgerBalances.get(inv.id)
-        return ledgerBal ? ledgerBal.isGreaterThan(0) : new BigNumber(inv.principalBalance).isGreaterThan(0)
+        return ledgerBal ? ledgerBal.isGreaterThan(0) : true
       })
 
       let entriesPosted = 0
@@ -893,7 +984,7 @@ export const accrueInterestForCreditors = (
           ? new Date(investment.investmentDate)
           : new Date(repaymentsList[repaymentsList.length - 1].repaymentDate)
 
-        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.principalBalance)
+        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount)
         const daysElapsed = accrualDaysBetween(prevDate, asOfDate)
         const interestSinceLastRepayment = calculateInterest(
           formatAmount(principalBalance), investment.interestRateMonthly, daysElapsed, 0

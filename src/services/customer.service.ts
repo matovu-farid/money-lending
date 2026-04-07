@@ -6,7 +6,9 @@ import { payments } from "@/lib/db/schema/payments"
 import { eq, ilike, inArray, and, count, isNull, asc } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { getLoanBalancesFromLedger } from "@/services/transaction.service"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { formatAmount } from "@/lib/interest/engine"
+import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, CustomerStatus } from "@/types"
 import type { Customer, LoanType } from "@/types"
@@ -111,6 +113,7 @@ export const searchCustomers = (
           // Batch-fetch ledger balances for this customer's active loans
           const customerLoanIds = activeLoans.map((l) => l.id)
           const customerLedgerBalances = await getLoanBalancesFromLedger(customerLoanIds)
+          const interestEarnedMap = await getInterestEarnedFromLedger(customerLoanIds)
 
           for (const loan of activeLoans) {
             const loanPayments = await db
@@ -121,7 +124,7 @@ export const searchCustomers = (
 
             const effectiveRate = loan.interestRateOverride ?? loan.interestRate
             const ledgerBalance = customerLedgerBalances.get(loan.id)
-            const outstandingBalance = ledgerBalance
+            const outstandingBalance = ledgerBalance !== undefined
               ? ledgerBalance.toFixed(2)
               : loan.principalAmount
 
@@ -131,7 +134,8 @@ export const searchCustomers = (
               startDate: new Date(loan.startDate),
               loanType: (loan.loanType ?? "perpetual") as LoanType,
               termMonths: loan.termMonths,
-              payments: loanPayments.map((p) => ({ interestPortion: p.interestPortion, paymentDate: p.paymentDate })),
+              totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+              paymentCount: loanPayments.length,
               outstandingBalance,
             })
             if (info.daysOverdue > maxDaysOverdue) {

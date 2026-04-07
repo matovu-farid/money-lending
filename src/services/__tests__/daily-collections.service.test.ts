@@ -13,6 +13,7 @@ vi.mock("drizzle-orm", async () => {
 
 vi.mock("@/services/transaction.service", () => ({
   getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+  getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
 const makePaymentRow = (overrides: Record<string, unknown> = {}) => ({
@@ -214,6 +215,7 @@ describe("daily-collections.service", () => {
 
     it("excludes loans where interest-based overdue < 30 days", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const BigNumber = (await import("bignumber.js")).default
 
       vi.useFakeTimers()
       vi.setSystemTime(new Date("2026-03-23T00:00:00.000Z"))
@@ -232,6 +234,12 @@ describe("daily-collections.service", () => {
         amount: "260000.00",
         principalPortion: "0.00",
       })
+
+      // Mock ledger to reflect the 260,000 interest paid
+      const { getInterestEarnedFromLedger } = await import("@/services/transaction.service")
+      ;(getInterestEarnedFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["loan-1", new BigNumber("260000.00")]])
+      )
 
       let selectCallCount = 0
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {

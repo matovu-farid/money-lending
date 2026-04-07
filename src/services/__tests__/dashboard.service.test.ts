@@ -13,6 +13,7 @@ vi.mock("drizzle-orm", async () => {
 
 vi.mock("@/services/transaction.service", () => ({
   getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
+  getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
 vi.mock("@/lib/interest/overdue", () => ({

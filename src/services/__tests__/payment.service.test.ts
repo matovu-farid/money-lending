@@ -25,6 +25,7 @@ vi.mock("@/services/transaction.service", () => {
     postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
     reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+    getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
   }
 })
 
