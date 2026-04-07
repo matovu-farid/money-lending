@@ -14,11 +14,9 @@ vi.mock("@/services/transaction.service", () => ({
   postJournalEntry: vi.fn().mockResolvedValue("mock-journal-group-id"),
   autoPostPrincipalDisbursement: vi.fn().mockResolvedValue(undefined),
   autoPostRolloverPrincipalTransfer: vi.fn().mockResolvedValue(undefined),
-}))
-
-vi.mock("@/services/payment.service", () => ({
-  recalculateFromPayment: vi.fn().mockResolvedValue(undefined),
-  reconcileDownstreamJournals: vi.fn().mockResolvedValue(undefined),
+  getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
+  autoPostInterestEarned: vi.fn().mockResolvedValue(undefined),
+  autoPostPrincipalRepayment: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock("drizzle-orm", async () => {
@@ -281,7 +279,12 @@ describe("Loan Service", () => {
   it("deleteLoan: creates reversing entries and soft-deletes payments/loans", async () => {
     const { db: mockedDb } = await import("@/lib/db")
     const { writeAuditLog } = await import("@/services/audit.service")
-    const { postJournalEntry } = await import("@/services/transaction.service")
+    const { postJournalEntry, getPaymentPortionsFromLedger } = await import("@/services/transaction.service")
+
+    // Mock ledger to return portions for the payment
+    ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      new Map([["pay-1", { interestPortion: "25000.00", principalPortion: "50000.00" }]])
+    )
 
     const mockFeeTx = {
       id: "tx-fee-1",
@@ -308,8 +311,6 @@ describe("Loan Service", () => {
     const mockPayment = {
       id: "pay-1",
       loanId: "loan-1",
-      interestPortion: "25000.00",
-      principalPortion: "50000.00",
       amount: "75000.00",
       paymentDate: new Date("2026-04-01"),
       depositLocation: "cash",

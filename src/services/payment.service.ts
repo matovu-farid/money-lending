@@ -8,7 +8,7 @@ import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger } from "./transaction.service"
+import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./transaction.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import type {
@@ -71,162 +71,10 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
   return { outstandingPrincipal, accruedInterest, totalBalance, loanType }
 }
 
-/**
- * After recalculateFromPayment updates downstream payments, reverse and repost
- * journal entries for any whose interestPortion changed.
- */
-export async function reconcileDownstreamJournals(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  downstreamPayments: { id: string; interestPortion: string; paymentDate: Date; loanId: string; depositLocation: "cash" | "bank" | "strong_room" | null }[],
-  oldInterestMap: Map<string, string>,
-  oldPrincipalMap: Map<string, string>,
-  triggerPaymentId: string,
-  actorId: string
-): Promise<void> {
-  for (const dp of downstreamPayments) {
-    const oldInterest = oldInterestMap.get(dp.id)
-    if (oldInterest === undefined) continue
-
-    const [refreshed] = await tx
-      .select()
-      .from(payments)
-      .where(eq(payments.id, dp.id))
-    if (!refreshed) continue
-
-    const oldAmount = new BigNumber(oldInterest)
-    const newAmount = new BigNumber(refreshed.interestPortion)
-
-    if (oldAmount.isEqualTo(newAmount)) continue
-
-    // Reverse old interest if > 0 (use payment date, not current date, for correct period attribution)
-    if (oldAmount.isGreaterThan(0)) {
-      await postJournalEntry(tx, {
-        debitCategory: { name: "Interest Earned", type: "revenue" },
-        creditCategory: { name: "Cash", type: "asset" },
-        amount: oldInterest,
-        referenceType: "payment_reversal",
-        referenceId: dp.id,
-        description: `Reversal - downstream recalculation from payment ${triggerPaymentId} edit`,
-        transactionDate: dp.paymentDate,
-        recordedBy: actorId,
-        creditDepositLocation: dp.depositLocation ?? undefined,
-        loanId: dp.loanId,
-      })
-    }
-
-    // Post new interest if > 0
-    if (newAmount.isGreaterThan(0)) {
-      await autoPostInterestEarned(tx, {
-        amount: refreshed.interestPortion,
-        loanId: refreshed.loanId,
-        paymentId: dp.id,
-        paymentDate: refreshed.paymentDate.toISOString(),
-        actorId,
-        depositLocation: dp.depositLocation ?? undefined,
-      })
-    }
-
-    // Reconcile principal portion
-    const oldPrincipal = oldPrincipalMap.get(dp.id)
-    if (oldPrincipal !== undefined) {
-      const oldPrincipalAmount = new BigNumber(oldPrincipal)
-      const newPrincipalAmount = new BigNumber(refreshed.principalPortion)
-
-      if (!oldPrincipalAmount.isEqualTo(newPrincipalAmount)) {
-        if (oldPrincipalAmount.isGreaterThan(0)) {
-          await postJournalEntry(tx, {
-            debitCategory: { name: "Loans Receivable", type: "asset" },
-            creditCategory: { name: "Cash", type: "asset" },
-            amount: oldPrincipal,
-            referenceType: "payment_reversal",
-            referenceId: dp.id,
-            description: `Reversal - downstream principal recalculation from payment ${triggerPaymentId} edit`,
-            transactionDate: dp.paymentDate,
-            recordedBy: actorId,
-            creditDepositLocation: dp.depositLocation ?? undefined,
-            loanId: dp.loanId,
-          })
-        }
-
-        if (newPrincipalAmount.isGreaterThan(0)) {
-          await autoPostPrincipalRepayment(tx, {
-            amount: refreshed.principalPortion,
-            loanId: refreshed.loanId,
-            paymentId: dp.id,
-            paymentDate: refreshed.paymentDate.toISOString(),
-            actorId,
-            depositLocation: dp.depositLocation ?? undefined,
-          })
-        }
-      }
-    }
-  }
-}
-
-export async function recalculateFromPayment(
-  tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
-  loanId: string,
-  fromIndex: number,
-  orderedPayments: Payment[]
-): Promise<void> {
-  if (orderedPayments.length === 0 || fromIndex >= orderedPayments.length) return
-
-  const [loan] = await tx.select().from(loans).where(eq(loans.id, loanId))
-  if (!loan) return
-
-  const loanType = loan.loanType ?? "perpetual"
-  const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
-  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
-
-  for (let i = fromIndex; i < orderedPayments.length; i++) {
-    const current = orderedPayments[i]
-
-    const principalBalanceBefore = i === 0
-      ? loan.principalAmount
-      : orderedPayments[i - 1].principalBalanceAfter
-
-    const prevDate = i === 0
-      ? new Date(loan.startDate)
-      : new Date(orderedPayments[i - 1].paymentDate)
-    const daysElapsed = daysBetween(prevDate, new Date(current.paymentDate))
-
-    const allocation = allocatePayment({
-      paymentAmount: current.amount,
-      principalBalanceBefore,
-      monthlyRateDecimal,
-      daysElapsed,
-      minInterestDays,
-      loanType,
-      originalPrincipal: loan.principalAmount,
-      termMonths: loan.termMonths ?? undefined,
-      paymentNumber: i + 1,
-    })
-
-    await tx
-      .update(payments)
-      .set({
-        interestPortion: allocation.interestPortion,
-        principalPortion: allocation.principalPortion,
-        principalBalanceBefore: allocation.principalBalanceBefore,
-        principalBalanceAfter: allocation.principalBalanceAfter,
-        updatedAt: new Date(),
-      })
-      .where(eq(payments.id, current.id))
-
-    orderedPayments[i] = {
-      ...current,
-      interestPortion: allocation.interestPortion,
-      principalPortion: allocation.principalPortion,
-      principalBalanceBefore: allocation.principalBalanceBefore,
-      principalBalanceAfter: allocation.principalBalanceAfter,
-    }
-  }
-}
-
 export const recordPayment = (
   input: RecordPaymentInput,
   actorId: string
-): Effect.Effect<Payment, LoanNotFound | ValidationError | DatabaseError> =>
+): Effect.Effect<Payment & { allocation: ReturnType<typeof allocatePayment> }, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
@@ -257,9 +105,7 @@ export const recordPayment = (
         const ledgerBalance = await getLoanBalanceFromLedger(input.loanId)
         const principalBalanceBefore = ledgerBalance.isGreaterThan(0)
           ? ledgerBalance.toFixed(2)
-          : activePayments.length === 0
-            ? loan.principalAmount
-            : activePayments[activePayments.length - 1].principalBalanceAfter
+          : loan.principalAmount
 
         const prevDate =
           activePayments.length === 0
@@ -311,21 +157,10 @@ export const recordPayment = (
             loanId: input.loanId,
             paymentDate: new Date(input.paymentDate),
             amount: input.amount,
-            interestPortion: allocation.interestPortion,
-            principalPortion: allocation.principalPortion,
-            principalBalanceBefore: allocation.principalBalanceBefore,
-            principalBalanceAfter: allocation.principalBalanceAfter,
             recordedBy: actorId,
             depositLocation: input.depositLocation,
           })
           .returning()
-
-        if (allocation.loanFullyPaid) {
-          await tx
-            .update(loans)
-            .set({ status: "fully_paid", updatedAt: new Date() })
-            .where(eq(loans.id, input.loanId))
-        }
 
         await writeAuditLog(tx, {
           actorId,
@@ -364,7 +199,16 @@ export const recordPayment = (
           })
         }
 
-        return newPayment
+        // Check fully-paid status from ledger after posting journals
+        const postPaymentBalance = await getLoanBalanceFromLedger(input.loanId)
+        if (postPaymentBalance.isZero()) {
+          await tx
+            .update(loans)
+            .set({ status: "fully_paid", updatedAt: new Date() })
+            .where(eq(loans.id, input.loanId))
+        }
+
+        return { ...newPayment, allocation }
       })
     },
     catch: (e: any) => {
@@ -404,7 +248,58 @@ export const editPayment = (
           throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
         }
 
-        // M2: Reject overpayments that exceed total owed
+        // 1. Reverse old journals using ledger-derived portions
+        const oldPortions = await getPaymentPortionsFromLedger([input.paymentId])
+        const oldPortion = oldPortions.get(input.paymentId)
+
+        if (oldPortion && new BigNumber(oldPortion.interestPortion).isGreaterThan(0)) {
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Interest Earned", type: "revenue" },
+            creditCategory: { name: "Cash", type: "asset" },
+            amount: oldPortion.interestPortion,
+            referenceType: "payment_reversal",
+            referenceId: input.paymentId,
+            description: `Reversal - payment ${input.paymentId} edited: ${input.reason}`,
+            transactionDate: new Date(payment.paymentDate),
+            recordedBy: actorId,
+            creditDepositLocation: payment.depositLocation ?? undefined,
+            loanId: payment.loanId,
+          })
+        }
+
+        if (oldPortion && new BigNumber(oldPortion.principalPortion).isGreaterThan(0)) {
+          await postJournalEntry(tx, {
+            debitCategory: { name: "Loans Receivable", type: "asset" },
+            creditCategory: { name: "Cash", type: "asset" },
+            amount: oldPortion.principalPortion,
+            referenceType: "payment_reversal",
+            referenceId: input.paymentId,
+            description: `Reversal - principal repayment ${input.paymentId} edited: ${input.reason}`,
+            transactionDate: new Date(payment.paymentDate),
+            recordedBy: actorId,
+            creditDepositLocation: payment.depositLocation ?? undefined,
+            loanId: payment.loanId,
+          })
+        }
+
+        // 2. Update the payment row
+        const beforeValue = { ...payment }
+        const updates: {
+          updatedAt: Date
+          editReason: string
+          amount?: string
+          paymentDate?: Date
+        } = {
+          updatedAt: new Date(),
+          editReason: input.reason,
+        }
+        if (input.amount !== undefined) updates.amount = input.amount
+        if (input.paymentDate !== undefined)
+          updates.paymentDate = new Date(input.paymentDate)
+
+        await tx.update(payments).set(updates).where(eq(payments.id, input.paymentId))
+
+        // 3. Recompute allocation with new amount/date
         const monthlyRateDecimal = loan.interestRateOverride ?? loan.interestRate
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
         const loanType = loan.loanType ?? "perpetual"
@@ -416,15 +311,17 @@ export const editPayment = (
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
         const paymentIdx = activePayments.findIndex((p) => p.id === input.paymentId)
-        const principalBalanceBefore = paymentIdx === 0
-          ? loan.principalAmount
-          : activePayments[paymentIdx - 1].principalBalanceAfter
-
         const prevDate = paymentIdx === 0
           ? new Date(loan.startDate)
           : new Date(activePayments[paymentIdx - 1].paymentDate)
         const daysElapsed = daysBetween(prevDate, newPaymentDate)
         const paymentNumber = paymentIdx + 1
+
+        // Get principalBalanceBefore from ledger (after reversals)
+        const ledgerBalance = await getLoanBalanceFromLedger(payment.loanId)
+        const principalBalanceBefore = ledgerBalance.isGreaterThan(0)
+          ? ledgerBalance.toFixed(2)
+          : loan.principalAmount
 
         const allocation = allocatePayment({
           paymentAmount: newAmount,
@@ -438,6 +335,7 @@ export const editPayment = (
           paymentNumber,
         })
 
+        // M2: Reject overpayments that exceed total owed
         let totalOwed: BigNumber
         if (loanType === "fixed_rate") {
           const monthlyInterest = new BigNumber(loan.principalAmount).multipliedBy(new BigNumber(monthlyRateDecimal))
@@ -457,89 +355,46 @@ export const editPayment = (
           }
         }
 
-        const beforeValue = { ...payment }
-
-        const updates: {
-          updatedAt: Date
-          editReason: string
-          amount?: string
-          paymentDate?: Date
-        } = {
-          updatedAt: new Date(),
-          editReason: input.reason,
-        }
-        if (input.amount !== undefined) updates.amount = input.amount
-        if (input.paymentDate !== undefined)
-          updates.paymentDate = new Date(input.paymentDate)
-
-        await tx.update(payments).set(updates).where(eq(payments.id, input.paymentId))
-
-        const allActive = await tx
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
-
-        const paymentIndex = allActive.findIndex((p) => p.id === input.paymentId)
-
-        // Capture old interest and principal values for downstream payments before recalculation
-        const oldInterestMap = new Map<string, string>()
-        const oldPrincipalMap = new Map<string, string>()
-        if (paymentIndex !== -1) {
-          for (let i = paymentIndex + 1; i < allActive.length; i++) {
-            oldInterestMap.set(allActive[i].id, allActive[i].interestPortion)
-            oldPrincipalMap.set(allActive[i].id, allActive[i].principalPortion)
-          }
-          await recalculateFromPayment(tx, payment.loanId, paymentIndex, allActive)
-
-          // Reconcile journal entries for downstream payments whose interest/principal changed
-          const downstreamPayments = allActive.slice(paymentIndex + 1)
-          if (downstreamPayments.length > 0) {
-            await reconcileDownstreamJournals(
-              tx,
-              downstreamPayments,
-              oldInterestMap,
-              oldPrincipalMap,
-              input.paymentId,
-              actorId
-            )
-          }
+        // 4. Post new journals
+        if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+          await reverseInterestAccrual(tx, {
+            loanId: payment.loanId,
+            paymentDate: newPaymentDate.toISOString(),
+            actorId,
+          })
+          await autoPostInterestEarned(tx, {
+            amount: allocation.interestPortion,
+            loanId: payment.loanId,
+            paymentId: input.paymentId,
+            paymentDate: newPaymentDate.toISOString(),
+            actorId,
+            depositLocation: payment.depositLocation ?? undefined,
+          })
         }
 
-        const refreshed = await tx
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
-
-        // Ledger cross-check after recalculation
-        if (refreshed.length > 0) {
-          const chainBalance = refreshed[refreshed.length - 1].principalBalanceAfter
-          const editLedgerBalance = await getLoanBalanceFromLedger(payment.loanId)
-          if (editLedgerBalance.isGreaterThan(0)) {
-            const chainBN = new BigNumber(chainBalance)
-            if (!chainBN.isEqualTo(editLedgerBalance)) {
-              console.warn(
-                `[editPayment] Balance mismatch for loan ${payment.loanId}: ` +
-                `payments chain=${chainBN.toFixed(2)}, ledger=${editLedgerBalance.toFixed(2)}`
-              )
-            }
-          }
+        if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
+          await autoPostPrincipalRepayment(tx, {
+            amount: allocation.principalPortion,
+            loanId: payment.loanId,
+            paymentId: input.paymentId,
+            paymentDate: newPaymentDate.toISOString(),
+            actorId,
+            depositLocation: payment.depositLocation ?? undefined,
+          })
         }
 
-        if (refreshed.length > 0) {
-          const lastBalance = refreshed[refreshed.length - 1].principalBalanceAfter
-          if (new BigNumber(lastBalance).isZero()) {
-            await tx
-              .update(loans)
-              .set({ status: "fully_paid", updatedAt: new Date() })
-              .where(eq(loans.id, payment.loanId))
-          } else if (loan.status === "fully_paid") {
-            await tx
-              .update(loans)
-              .set({ status: "active", updatedAt: new Date() })
-              .where(eq(loans.id, payment.loanId))
-          }
+        // 5. Check fully-paid status via ledger
+        const postEditBalance = await getLoanBalanceFromLedger(payment.loanId)
+        if (postEditBalance.isZero()) {
+          await tx
+            .update(loans)
+            .set({ status: "fully_paid", updatedAt: new Date() })
+            .where(eq(loans.id, payment.loanId))
+        } else if (loan.status === "fully_paid") {
+          await tx
+            .update(loans)
+            .set({ status: "active", updatedAt: new Date() })
+            .where(eq(loans.id, payment.loanId))
         }
 
         const [updatedPayment] = await tx
@@ -555,63 +410,6 @@ export const editPayment = (
           beforeValue,
           afterValue: { ...updatedPayment, reason: input.reason },
         })
-
-        // Post reversing entry using the payment's own interestPortion (immune to repeated edits)
-        if (new BigNumber(beforeValue.interestPortion).isGreaterThan(0)) {
-          await postJournalEntry(tx, {
-            debitCategory: { name: "Interest Earned", type: "revenue" },
-            creditCategory: { name: "Cash", type: "asset" },
-            amount: beforeValue.interestPortion,
-            referenceType: "payment_reversal",
-            referenceId: input.paymentId,
-            description: `Reversal - payment ${input.paymentId} edited: ${input.reason}`,
-            transactionDate: new Date(beforeValue.paymentDate),
-            recordedBy: actorId,
-            creditDepositLocation: beforeValue.depositLocation ?? undefined,
-            loanId: payment.loanId,
-          })
-        }
-
-        // Reverse old principal repayment
-        if (new BigNumber(beforeValue.principalPortion).isGreaterThan(0)) {
-          await postJournalEntry(tx, {
-            debitCategory: { name: "Loans Receivable", type: "asset" },
-            creditCategory: { name: "Cash", type: "asset" },
-            amount: beforeValue.principalPortion,
-            referenceType: "payment_reversal",
-            referenceId: input.paymentId,
-            description: `Reversal - principal repayment ${input.paymentId} edited: ${input.reason}`,
-            transactionDate: new Date(beforeValue.paymentDate),
-            recordedBy: actorId,
-            creditDepositLocation: beforeValue.depositLocation ?? undefined,
-            loanId: payment.loanId,
-          })
-        }
-
-        const newInterestPortion = updatedPayment.interestPortion
-        if (new BigNumber(newInterestPortion).isGreaterThan(0)) {
-          await autoPostInterestEarned(tx, {
-            amount: newInterestPortion,
-            loanId: payment.loanId,
-            paymentId: input.paymentId,
-            paymentDate: updatedPayment.paymentDate.toISOString(),
-            actorId,
-            depositLocation: updatedPayment.depositLocation ?? undefined,
-          })
-        }
-
-        // Post new principal repayment
-        const newPrincipalPortion = updatedPayment.principalPortion
-        if (new BigNumber(newPrincipalPortion).isGreaterThan(0)) {
-          await autoPostPrincipalRepayment(tx, {
-            amount: newPrincipalPortion,
-            loanId: payment.loanId,
-            paymentId: input.paymentId,
-            paymentDate: updatedPayment.paymentDate.toISOString(),
-            actorId,
-            depositLocation: updatedPayment.depositLocation ?? undefined,
-          })
-        }
 
         return updatedPayment
       })
@@ -641,6 +439,11 @@ export const deletePayment = (
         const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
         if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
 
+        // 1. Get portions from ledger before soft-deleting
+        const portions = await getPaymentPortionsFromLedger([input.paymentId])
+        const portion = portions.get(input.paymentId)
+
+        // 2. Soft-delete the payment
         const now = new Date()
         const softDeletedPayment = {
           ...payment,
@@ -658,67 +461,6 @@ export const deletePayment = (
           })
           .where(eq(payments.id, input.paymentId))
 
-        const remainingActive = await tx
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
-
-        const deletedDate = new Date(payment.paymentDate).getTime()
-        const fromIndex = remainingActive.findIndex(
-          (p) => new Date(p.paymentDate).getTime() >= deletedDate
-        )
-
-        // Capture old interest and principal values for downstream payments before recalculation
-        const oldInterestMap = new Map<string, string>()
-        const oldPrincipalMap = new Map<string, string>()
-        if (fromIndex !== -1 && remainingActive.length > 0) {
-          for (let i = fromIndex; i < remainingActive.length; i++) {
-            oldInterestMap.set(remainingActive[i].id, remainingActive[i].interestPortion)
-            oldPrincipalMap.set(remainingActive[i].id, remainingActive[i].principalPortion)
-          }
-          await recalculateFromPayment(tx, payment.loanId, fromIndex, remainingActive)
-
-          // Reconcile journal entries for downstream payments whose interest/principal changed
-          const downstreamPayments = remainingActive.slice(fromIndex)
-          if (downstreamPayments.length > 0) {
-            await reconcileDownstreamJournals(
-              tx,
-              downstreamPayments,
-              oldInterestMap,
-              oldPrincipalMap,
-              input.paymentId,
-              actorId
-            )
-          }
-        }
-
-        const refreshed = await tx
-          .select()
-          .from(payments)
-          .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt)))
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
-
-        if (refreshed.length === 0) {
-          await tx
-            .update(loans)
-            .set({ status: "active", updatedAt: now })
-            .where(eq(loans.id, payment.loanId))
-        } else {
-          const lastBalance = refreshed[refreshed.length - 1].principalBalanceAfter
-          if (new BigNumber(lastBalance).isZero()) {
-            await tx
-              .update(loans)
-              .set({ status: "fully_paid", updatedAt: now })
-              .where(eq(loans.id, payment.loanId))
-          } else if (loan.status === "fully_paid") {
-            await tx
-              .update(loans)
-              .set({ status: "active", updatedAt: now })
-              .where(eq(loans.id, payment.loanId))
-          }
-        }
-
         await writeAuditLog(tx, {
           actorId,
           action: "payment.delete",
@@ -728,12 +470,12 @@ export const deletePayment = (
           afterValue: softDeletedPayment,
         })
 
-        // Post reversing entry using the payment's own interestPortion (immune to repeated edits)
-        if (new BigNumber(payment.interestPortion).isGreaterThan(0)) {
+        // 3. Reverse journals using ledger-derived portions
+        if (portion && new BigNumber(portion.interestPortion).isGreaterThan(0)) {
           await postJournalEntry(tx, {
             debitCategory: { name: "Interest Earned", type: "revenue" },
             creditCategory: { name: "Cash", type: "asset" },
-            amount: payment.interestPortion,
+            amount: portion.interestPortion,
             referenceType: "payment_reversal",
             referenceId: input.paymentId,
             description: `Reversal - payment ${input.paymentId} deleted: ${input.reason}`,
@@ -744,12 +486,11 @@ export const deletePayment = (
           })
         }
 
-        // Reverse principal repayment
-        if (new BigNumber(payment.principalPortion).isGreaterThan(0)) {
+        if (portion && new BigNumber(portion.principalPortion).isGreaterThan(0)) {
           await postJournalEntry(tx, {
             debitCategory: { name: "Loans Receivable", type: "asset" },
             creditCategory: { name: "Cash", type: "asset" },
-            amount: payment.principalPortion,
+            amount: portion.principalPortion,
             referenceType: "payment_reversal",
             referenceId: input.paymentId,
             description: `Reversal - principal repayment ${input.paymentId} deleted: ${input.reason}`,
@@ -758,6 +499,21 @@ export const deletePayment = (
             creditDepositLocation: payment.depositLocation ?? undefined,
             loanId: payment.loanId,
           })
+        }
+
+        // 4. Check loan status via ledger
+        const postDeleteBalance = await getLoanBalanceFromLedger(payment.loanId)
+        if (postDeleteBalance.isZero() && loan.status !== "fully_paid") {
+          // No balance remaining - shouldn't happen after delete but handle edge case
+          await tx
+            .update(loans)
+            .set({ status: "fully_paid", updatedAt: now })
+            .where(eq(loans.id, payment.loanId))
+        } else if (postDeleteBalance.isGreaterThan(0) && loan.status === "fully_paid") {
+          await tx
+            .update(loans)
+            .set({ status: "active", updatedAt: now })
+            .where(eq(loans.id, payment.loanId))
         }
 
         const [deletedRow] = await tx
@@ -801,9 +557,6 @@ export const listPayments = (
             customerName: customers.fullName,
             paymentDate: payments.paymentDate,
             amount: payments.amount,
-            interestPortion: payments.interestPortion,
-            principalPortion: payments.principalPortion,
-            principalBalanceAfter: payments.principalBalanceAfter,
             recordedBy: payments.recordedBy,
             depositLocation: payments.depositLocation,
             createdAt: payments.createdAt,

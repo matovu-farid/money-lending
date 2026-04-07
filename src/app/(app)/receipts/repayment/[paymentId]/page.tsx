@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PrintButton } from "@/app/(app)/receipts/disbursement/[loanId]/print-button"
 import { formatDate } from "@/lib/utils"
+import { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } from "@/services/transaction.service"
 
 export default async function RepaymentReceiptPage({
   params,
@@ -58,11 +59,16 @@ export default async function RepaymentReceiptPage({
     ? await db.select().from(customers).where(eq(customers.id, loan.customerId))
     : []
 
+  // Derive interest/principal portions from ledger
+  const portionsMap = await getPaymentPortionsFromLedger([paymentId])
+  const portions = portionsMap.get(paymentId) ?? { interestPortion: "0", principalPortion: "0" }
+  const ledgerBalance = loan ? await getLoanBalanceFromLedger(loan.id) : null
+  const balanceAfter = ledgerBalance?.toFixed(2) ?? loan?.principalAmount ?? "0"
+
   // RCPT-03 completeness check
   const missingFields: string[] = []
   if (!customer?.fullName) missingFields.push("Customer name")
   if (!payment?.amount) missingFields.push("Payment amount")
-  if (!payment?.interestPortion) missingFields.push("Interest allocation")
   if (!loan?.id) missingFields.push("Loan reference")
 
   const isBlocked = missingFields.length > 0
@@ -155,13 +161,13 @@ export default async function RepaymentReceiptPage({
                 <tr>
                   <td className="py-1 text-gray-500 align-top">Interest Portion</td>
                   <td className="py-1 text-right font-mono tabular-nums">
-                    {formatCurrency(payment.interestPortion)}
+                    {formatCurrency(portions.interestPortion)}
                   </td>
                 </tr>
                 <tr>
                   <td className="py-1 text-gray-500 align-top">Principal Portion</td>
                   <td className="py-1 text-right font-mono tabular-nums">
-                    {formatCurrency(payment.principalPortion)}
+                    {formatCurrency(portions.principalPortion)}
                   </td>
                 </tr>
               </tbody>
@@ -180,7 +186,7 @@ export default async function RepaymentReceiptPage({
                 <tr>
                   <td className="py-1 text-gray-500 align-top w-[40%]">Principal Balance</td>
                   <td className="py-1 text-right font-bold font-mono tabular-nums">
-                    {formatCurrency(payment.principalBalanceAfter)}
+                    {formatCurrency(balanceAfter)}
                   </td>
                 </tr>
               </tbody>

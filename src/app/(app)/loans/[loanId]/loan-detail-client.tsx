@@ -157,12 +157,8 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   const activePayments = payments
     .filter((p) => p.deletedAt === null)
     .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
-  // Prefer ledger-derived balance from server; fall back to payments-chain value
-  const paymentsChainBalance =
-    activePayments.length > 0
-      ? activePayments[activePayments.length - 1].principalBalanceAfter
-      : loan.principalAmount
-  const outstandingBalance = ledgerBalance ?? paymentsChainBalance
+  // Use ledger-derived balance from server; fall back to principalAmount
+  const outstandingBalance = ledgerBalance ?? loan.principalAmount
 
   const principalNum = parseFloat(loan.principalAmount)
   const balanceNum = parseFloat(outstandingBalance)
@@ -650,50 +646,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
                     <TableHead className="text-xs font-medium uppercase tracking-wider">Date</TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Amount</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">
-                      <span className="inline-flex items-center gap-1 justify-end">
-                        Interest
-                        <InfoPopover>
-                          <p className="font-semibold text-sm mb-1">Interest Portion</p>
-                          <p className="text-xs text-muted-foreground mb-2">
-                            The part of this payment that covers accrued interest. Interest is always paid first before any principal reduction.
-                          </p>
-                          <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                            Interest = Balance × (Rate ÷ 30) × Days Since Last Payment
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            Minimum 30 days of interest is charged, even for early payments.
-                          </p>
-                        </InfoPopover>
-                      </span>
-                    </TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">
-                      <span className="inline-flex items-center gap-1 justify-end">
-                        Principal
-                        <InfoPopover>
-                          <p className="font-semibold text-sm mb-1">Principal Portion</p>
-                          <p className="text-xs text-muted-foreground mb-2">
-                            The part of this payment that reduces the outstanding balance. Only the amount left after covering interest goes toward principal.
-                          </p>
-                          <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
-                            <p className="font-medium">Example:</p>
-                            <p>Payment: UGX 150,000 − Interest: UGX 100,000</p>
-                            <p>= UGX 50,000 applied to principal</p>
-                          </div>
-                        </InfoPopover>
-                      </span>
-                    </TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">
-                      <span className="inline-flex items-center gap-1 justify-end">
-                        Balance After
-                        <InfoPopover>
-                          <p className="font-semibold text-sm mb-1">Balance After Payment</p>
-                          <p className="text-xs text-muted-foreground mb-2">
-                            The remaining principal balance after this payment was applied. When this reaches zero, the loan is fully paid.
-                          </p>
-                        </InfoPopover>
-                      </span>
-                    </TableHead>
                     <TableHead className="text-xs font-medium uppercase tracking-wider">Recorded By</TableHead>
                     <TableHead className="w-12"></TableHead>
                   </TableRow>
@@ -710,15 +662,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                         </TableCell>
                         <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
                           {formatCurrency(payment.amount)}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm text-muted-foreground", cellClass)}>
-                          {formatCurrency(payment.interestPortion)}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm text-muted-foreground", cellClass)}>
-                          {formatCurrency(payment.principalPortion)}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm font-medium", cellClass)}>
-                          {formatCurrency(payment.principalBalanceAfter)}
                         </TableCell>
                         <TableCell className={cn("text-sm", cellClass)}>
                           <div className="flex items-center gap-1.5">

@@ -37,7 +37,7 @@ import { queryKeys } from "@/hooks/query-keys"
 import { FilterPanel } from "@/components/ui/filter-panel"
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
-  const headers = ["Date", "Customer", "Loan Ref", "Amount", "Interest", "Principal", "Balance After"]
+  const headers = ["Date", "Customer", "Loan Ref", "Amount"]
   const csvLines = [
     headers.join(","),
     ...rows.map((r) => [
@@ -45,9 +45,6 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
       `"${r.customerName}"`,
       `LOAN-${r.loanId.slice(0, 8).toUpperCase()}`,
       r.amount,
-      r.interestPortion,
-      r.principalPortion,
-      r.principalBalanceAfter,
     ].join(","))
   ]
   const blob = new Blob([csvLines.join("\n")], { type: "text/csv" })
@@ -446,63 +443,8 @@ export function PaymentsClient() {
       align: "right",
       render: (row) => <>UGX {formatNumberWithCommas(row.amount)}</>,
     },
-    {
-      key: "interestPortion",
-      header: (
-        <span className="inline-flex items-center gap-1">
-          Interest
-          <InfoPopover>
-            <p className="font-semibold text-sm mb-1">Interest Portion</p>
-            <p className="text-xs text-muted-foreground mb-2">
-              The part of this payment that covers accrued interest. Payments always cover interest first before reducing principal.
-            </p>
-            <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-              Interest = Balance × (Monthly Rate ÷ 30) × Days
-            </p>
-          </InfoPopover>
-        </span>
-      ),
-      align: "right",
-      hideInCard: true,
-      render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.interestPortion)}</span>,
-    },
-    {
-      key: "principalPortion",
-      header: (
-        <span className="inline-flex items-center gap-1">
-          Principal
-          <InfoPopover>
-            <p className="font-semibold text-sm mb-1">Principal Portion</p>
-            <p className="text-xs text-muted-foreground mb-2">
-              The amount left over after interest is covered. This reduces the borrower&apos;s outstanding balance.
-            </p>
-            <p className="text-xs text-muted-foreground">
-              If the payment is less than or equal to accrued interest, the principal portion will be zero.
-            </p>
-          </InfoPopover>
-        </span>
-      ),
-      align: "right",
-      hideInCard: true,
-      render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalPortion)}</span>,
-    },
-    {
-      key: "balanceAfter",
-      header: (
-        <span className="inline-flex items-center gap-1">
-          Balance After
-          <InfoPopover>
-            <p className="font-semibold text-sm mb-1">Balance After Payment</p>
-            <p className="text-xs text-muted-foreground mb-2">
-              The remaining principal balance on the loan after this payment was applied. When it reaches zero, the loan is fully paid.
-            </p>
-          </InfoPopover>
-        </span>
-      ),
-      cardLabel: "Balance",
-      align: "right",
-      render: (row) => <span className="text-muted-foreground">UGX {formatNumberWithCommas(row.principalBalanceAfter)}</span>,
-    },
+    // Interest/principal portions and balance are now derived from the ledger
+    // and will be re-added when read paths are updated (Tasks 11-15)
     ...((isAdmin || isSupervisor) ? [{
       key: "actions",
       header: "",

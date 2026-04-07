@@ -63,6 +63,11 @@ interface PaymentFormValues {
 
 interface ReceiptPaymentData extends Payment {
   depositLocationValue: string
+  allocation?: {
+    interestPortion: string
+    principalPortion: string
+    principalBalanceAfter: string
+  }
 }
 
 const AMOUNT_PRESETS = [
@@ -389,9 +394,9 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
             customerName={customerName}
             loanReference={loanReference}
             amountPaid={receiptData.payment.amount}
-            interestPortion={receiptData.payment.interestPortion}
-            principalPortion={receiptData.payment.principalPortion}
-            balanceAfter={receiptData.payment.principalBalanceAfter}
+            interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
+            principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
+            balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
             depositLocation={receiptData.payment.depositLocationValue}
             officerName={session?.user?.name ?? "Officer"}
           />

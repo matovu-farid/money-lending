@@ -22,7 +22,7 @@ import type { SettleWithCollateralInput, Loan } from "@/types"
  */
 export function computeAccruedInterest(
   loan: Loan,
-  activePayments: { interestPortion: string; paymentDate: Date }[],
+  activePayments: { paymentDate: Date }[],
   outstandingPrincipal: BigNumber
 ): BigNumber {
   const loanType = loan.loanType ?? "perpetual"

@@ -164,39 +164,6 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
                     <TableRow>
                       <TableHead>Date</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">
-                        <span className="inline-flex items-center gap-1 justify-end">
-                          Interest
-                          <InfoPopover>
-                            <p className="font-semibold text-sm mb-1">Interest Portion</p>
-                            <p className="text-xs text-muted-foreground">
-                              The part of the payment covering accrued interest. Interest is always deducted first.
-                            </p>
-                          </InfoPopover>
-                        </span>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <span className="inline-flex items-center gap-1 justify-end">
-                          Principal
-                          <InfoPopover>
-                            <p className="font-semibold text-sm mb-1">Principal Portion</p>
-                            <p className="text-xs text-muted-foreground">
-                              The remaining amount after interest that reduces the outstanding loan balance.
-                            </p>
-                          </InfoPopover>
-                        </span>
-                      </TableHead>
-                      <TableHead className="text-right">
-                        <span className="inline-flex items-center gap-1 justify-end">
-                          Balance After
-                          <InfoPopover>
-                            <p className="font-semibold text-sm mb-1">Balance After Payment</p>
-                            <p className="text-xs text-muted-foreground">
-                              Remaining principal after this payment. Reaches zero when the loan is fully paid.
-                            </p>
-                          </InfoPopover>
-                        </span>
-                      </TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -223,33 +190,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
                         >
                           {formatCurrency(payment.amount)}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-mono tabular-nums",
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
-                          {formatCurrency(payment.interestPortion)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-mono tabular-nums",
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
-                          {formatCurrency(payment.principalPortion)}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-mono tabular-nums",
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
-                          {formatCurrency(payment.principalBalanceAfter)}
-                        </TableCell>
+                        {/* Interest/principal portions now derived from ledger - to be re-added in Tasks 11-15 */}
                       </TableRow>
                     ))}
                   </TableBody>

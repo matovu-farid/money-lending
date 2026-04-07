@@ -26,6 +26,7 @@ vi.mock("@/services/transaction.service", () => {
     getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
     reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
+    getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
   }
 })
 
@@ -61,16 +62,15 @@ const mockPayment = {
   loanId: "loan-1",
   paymentDate: new Date("2026-03-22T00:00:00.000Z"),
   amount: "150000",
-  interestPortion: "50000.00",
-  principalPortion: "100000.00",
-  principalBalanceBefore: "500000",
-  principalBalanceAfter: "400000.00",
   recordedBy: "actor-1",
   editReason: null,
   deletedAt: null,
   deletedBy: null,
   depositLocation: "cash" as const,
   deleteReason: null,
+  markedWrong: false,
+  markedWrongReason: null,
+  markedWrongBy: null,
   createdAt: new Date("2026-03-22T00:00:00.000Z"),
   updatedAt: new Date("2026-03-22T00:00:00.000Z"),
 }
@@ -145,8 +145,13 @@ describe("Payment Service", () => {
 
     it("recordPayment: first payment on active loan keeps it active (no status transition unless fully paid)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      // Mock ledger to return non-zero balance (loan not fully paid)
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new BigNumber("500000")) // for principalBalanceBefore
+        .mockResolvedValueOnce(new BigNumber("400000")) // for postPaymentBalance check
 
-      const partialPayment = { ...mockPayment, principalBalanceAfter: "400000.00" }
+      const partialPayment = { ...mockPayment }
       let txSelectCount = 0
       const mockTx = {
         select: vi.fn().mockImplementation(() => {
@@ -208,10 +213,6 @@ describe("Payment Service", () => {
       const fullyPaidPayment = {
         ...mockPayment,
         amount: "110000",
-        interestPortion: "10000.00",
-        principalPortion: "100000.00",
-        principalBalanceBefore: "100000",
-        principalBalanceAfter: "0.00",
       }
       let txSelectCount = 0
       const mockTx = {
@@ -253,8 +254,8 @@ describe("Payment Service", () => {
         )
       )
 
-      // Verify the result reflects zero remaining balance
-      expect(result.principalBalanceAfter).toBe("0.00")
+      // Verify the allocation reflects zero remaining balance
+      expect(result.allocation.principalBalanceAfter).toBe("0.00")
 
       // Verify loan status was updated to "fully_paid"
       const setCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
@@ -466,8 +467,18 @@ describe("Payment Service", () => {
       }
     })
 
-    it("editPayment: triggers recalculation cascade and posts reversing entry (LOAN-07)", async () => {
+    it("editPayment: reverses old journals and posts new ones (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger, postJournalEntry } = await import("@/services/transaction.service")
+
+      // Mock ledger to return old portions for the payment being edited
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["pay-1", { interestPortion: "50000.00", principalPortion: "100000.00" }]])
+      )
+      // Mock ledger balance: after reversals (500000), then for fully-paid check (300000)
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new BigNumber("500000"))
+        .mockResolvedValueOnce(new BigNumber("300000"))
 
       const editedPayment = { ...mockPayment, amount: "200000", editReason: "Fix amount" }
 
@@ -479,34 +490,10 @@ describe("Payment Service", () => {
           return {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
-                if (call === 1) {
-                  // payment lookup (now inside tx)
-                  return Promise.resolve([{ ...mockPayment, deletedAt: null }])
-                }
-                if (call === 2) {
-                  // loan lookup (now inside tx)
-                  return Promise.resolve([mockLoan])
-                }
-                if (call === 3) {
-                  // activePayments for overpayment validation
-                  return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
-                }
-                if (call === 4) {
-                  // allActive payments for recalculation
-                  return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
-                }
-                if (call === 5) {
-                  // loan refetch in recalculateFromPayment
-                  return Promise.resolve([mockLoan])
-                }
-                if (call === 6) {
-                  // refreshed payments
-                  return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
-                }
-                if (call === 7) {
-                  // updatedPayment fetch
-                  return Promise.resolve([editedPayment])
-                }
+                if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }]) // payment lookup
+                if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
+                if (call === 3) return { orderBy: vi.fn().mockResolvedValue([editedPayment]) } // activePayments
+                if (call === 4) return Promise.resolve([editedPayment]) // updatedPayment fetch
                 return Promise.resolve([editedPayment])
               }),
             }),
@@ -528,12 +515,11 @@ describe("Payment Service", () => {
       )
 
       const { editPayment } = await import("@/services/payment.service")
-      const { postJournalEntry } = await import("@/services/transaction.service")
       const result = await Effect.runPromise(
         editPayment({ paymentId: "pay-1", amount: "200000", reason: "Fix amount" }, "actor-1")
       )
 
-      // Verify edit completed successfully (cascade is internal)
+      // Verify edit completed successfully
       expect(result).toBeDefined()
       expect(mockTx.update).toHaveBeenCalled()
 
@@ -547,102 +533,16 @@ describe("Payment Service", () => {
       expect(firstCallArgs.loanId).toBe("loan-1")
     })
 
-    it("editPayment: reconciles downstream journal entries when interest changes (JOURNAL-STALE)", async () => {
-      const { db: mockedDb } = await import("@/lib/db")
-      const { autoPostInterestEarned } = await import("@/services/transaction.service")
-
-      // Two payments: editing pay-1 causes pay-2's interest to change
-      const pay1 = { ...mockPayment, id: "pay-1", interestPortion: "50000.00" }
-      const pay2 = {
-        ...mockPayment,
-        id: "pay-2",
-        paymentDate: new Date("2026-04-22T00:00:00.000Z"),
-        interestPortion: "40000.00", // old value before recalculation
-        principalBalanceBefore: "400000.00",
-        principalBalanceAfter: "340000.00",
-      }
-      // After recalculation, pay-2's interest changes to 35000.00
-      const pay2Refreshed = { ...pay2, interestPortion: "35000.00" }
-
-      const editedPay1 = { ...pay1, amount: "200000", editReason: "Fix amount" }
-      let txSelectCount = 0
-      const mockTx = {
-        select: vi.fn().mockImplementation(() => {
-          txSelectCount++
-          const call = txSelectCount
-          return {
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockImplementation(() => {
-                if (call === 1) return Promise.resolve([{ ...pay1, deletedAt: null }]) // payment lookup
-                if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
-                if (call === 3) {
-                  // activePayments for overpayment validation
-                  return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2]) }
-                }
-                if (call === 4) {
-                  // allActive payments (pay1 + pay2 with OLD interest)
-                  return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2]) }
-                }
-                if (call === 5) return Promise.resolve([mockLoan]) // loan refetch in recalculateFromPayment
-                if (call === 6) {
-                  // reconcileDownstreamJournals: refresh pay-2 by id (NEW interest)
-                  return Promise.resolve([pay2Refreshed])
-                }
-                if (call === 7) {
-                  // refreshed payments for loan status check
-                  return { orderBy: vi.fn().mockResolvedValue([editedPay1, pay2Refreshed]) }
-                }
-                if (call === 8) return Promise.resolve([editedPay1]) // updatedPayment fetch
-                return Promise.resolve([editedPay1])
-              }),
-            }),
-          }
-        }),
-        update: vi.fn().mockReturnValue({
-          set: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue(undefined),
-          }),
-        }),
-        insert: vi.fn().mockReturnValue({
-          values: vi.fn().mockReturnValue({
-            returning: vi.fn().mockResolvedValue([]),
-          }),
-        }),
-      }
-      ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
-      )
-
-      const { editPayment } = await import("@/services/payment.service")
-      const result = await Effect.runPromise(
-        editPayment({ paymentId: "pay-1", amount: "200000", reason: "Fix amount" }, "actor-1")
-      )
-
-      expect(result).toBeDefined()
-
-      // Verify downstream reversal was posted via postJournalEntry for pay-2 (old interest 40000.00)
-      const { postJournalEntry } = await import("@/services/transaction.service")
-      const journalCalls = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls
-      const downstreamReversal = journalCalls.find(
-        (call: any) => call[1].referenceType === "payment_reversal" && call[1].referenceId === "pay-2"
-      )
-      expect(downstreamReversal).toBeDefined()
-      expect(downstreamReversal![1].amount).toBe("40000.00")
-      expect(downstreamReversal![1].description).toContain("downstream recalculation")
-      expect(downstreamReversal![1].loanId).toBe("loan-1")
-
-      // Verify autoPostInterestEarned was called for pay-2 with new interest
-      expect(autoPostInterestEarned).toHaveBeenCalledWith(
-        mockTx,
-        expect.objectContaining({
-          amount: "35000.00",
-          paymentId: "pay-2",
-        })
-      )
-    })
-
     it("deletePayment: sets deleted_at, deleted_by, delete_reason and posts reversing entry (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger, postJournalEntry } = await import("@/services/transaction.service")
+
+      // Mock ledger to return portions for the payment being deleted
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["pay-1", { interestPortion: "50000.00", principalPortion: "100000.00" }]])
+      )
+      // Mock ledger balance for status check (non-zero = still active)
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new BigNumber("500000"))
 
       const softDeletedResult = {
         ...mockPayment,
@@ -661,10 +561,6 @@ describe("Payment Service", () => {
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }]) // payment lookup
                 if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
-                if (call <= 4) {
-                  // remaining active + refresh (both empty after delete)
-                  return { orderBy: vi.fn().mockResolvedValue([]) }
-                }
                 // Final select for deleted row
                 return Promise.resolve([softDeletedResult])
               }),
@@ -700,7 +596,6 @@ describe("Payment Service", () => {
       expect(setArgs.deleteReason).toBe("Duplicate entry")
 
       // Verify reversing entry was posted via postJournalEntry
-      const { postJournalEntry } = await import("@/services/transaction.service")
       expect(postJournalEntry).toHaveBeenCalled()
       const firstCallArgs = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls[0][1]
       expect(firstCallArgs.amount).toBe("50000.00")
@@ -714,16 +609,16 @@ describe("Payment Service", () => {
       expect(result.deleteReason).toBe("Duplicate entry")
     })
 
-    it("deletePayment: triggers recalculation cascade for subsequent payments (LOAN-07)", async () => {
+    it("deletePayment: simplified - no recalculation cascade, just reversal (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/transaction.service")
 
-      // After deletion, remaining payment needs recalc
-      const remainingPayment = {
-        ...mockPayment,
-        id: "pay-2",
-        paymentDate: new Date("2026-04-22T00:00:00.000Z"),
-        amount: "100000",
-      }
+      // Mock ledger to return portions for the payment being deleted
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["pay-1", { interestPortion: "50000.00", principalPortion: "100000.00" }]])
+      )
+      // Mock ledger balance (non-zero = active)
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new BigNumber("500000"))
 
       const softDeletedResult = {
         ...mockPayment,
@@ -742,24 +637,7 @@ describe("Payment Service", () => {
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }]) // payment lookup
                 if (call === 2) return Promise.resolve([{ ...mockLoan, status: "active" }]) // loan lookup
-                if (call === 3) {
-                  // remaining active payments
-                  return { orderBy: vi.fn().mockResolvedValue([remainingPayment]) }
-                }
-                if (call === 4) {
-                  // loan refetch in recalculateFromPayment
-                  return Promise.resolve([mockLoan])
-                }
-                if (call === 5) {
-                  // reconcileDownstreamJournals: payment refresh by id
-                  return Promise.resolve([remainingPayment])
-                }
-                if (call === 6) {
-                  // refreshed payments for loan status check
-                  return { orderBy: vi.fn().mockResolvedValue([remainingPayment]) }
-                }
-                // Final select for deleted row
-                return Promise.resolve([softDeletedResult])
+                return Promise.resolve([softDeletedResult]) // final deleted row
               }),
             }),
           }
@@ -784,28 +662,26 @@ describe("Payment Service", () => {
         deletePayment({ paymentId: "pay-1", reason: "Correction" }, "actor-1")
       )
 
-      // Verify completed without error — cascade happened internally
+      // Verify completed without error
       expect(result).toBeDefined()
-      // update called multiple times: soft-delete + recalculation + loan status
-      expect(mockTx.update.mock.calls.length).toBeGreaterThanOrEqual(2)
+      // update called for soft-delete only (no recalculation cascade)
+      expect(mockTx.update).toHaveBeenCalled()
     })
 
-    it("deletePayment: skips recalculation when deleted payment is the last chronologically", async () => {
+    it("deletePayment: reverts fully_paid to active when balance becomes non-zero", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/transaction.service")
 
-      // The deleted payment is the latest — no subsequent payments exist
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["pay-last", { interestPortion: "50000.00", principalPortion: "100000.00" }]])
+      )
+      // After reversal, balance is non-zero — should revert from fully_paid to active
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(new BigNumber("100000"))
+
       const lastPayment = {
         ...mockPayment,
         id: "pay-last",
         paymentDate: new Date("2026-04-22T00:00:00.000Z"),
-        deletedAt: null,
-      }
-
-      // Earlier payment that should NOT be recalculated
-      const earlierPayment = {
-        ...mockPayment,
-        id: "pay-earlier",
-        paymentDate: new Date("2026-03-22T00:00:00.000Z"),
         deletedAt: null,
       }
 
@@ -825,17 +701,8 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return Promise.resolve([lastPayment]) // payment lookup
-                if (call === 2) return Promise.resolve([mockLoan]) // loan lookup
-                if (call === 3) {
-                  // remaining active payments (only the earlier one remains)
-                  return { orderBy: vi.fn().mockResolvedValue([earlierPayment]) }
-                }
-                if (call === 4) {
-                  // refreshed payments for status check
-                  return { orderBy: vi.fn().mockResolvedValue([earlierPayment]) }
-                }
-                // Final select for deleted row
-                return Promise.resolve([softDeletedResult])
+                if (call === 2) return Promise.resolve([{ ...mockLoan, status: "fully_paid" }]) // loan lookup
+                return Promise.resolve([softDeletedResult]) // final deleted row
               }),
             }),
           }
@@ -862,27 +729,18 @@ describe("Payment Service", () => {
 
       expect(result).toBeDefined()
 
-      // tx.update should be called for:
-      //   1. soft-delete of the payment
-      //   2. loan status update (refreshed check)
-      // But NOT for recalculation of earlier payments.
+      // Verify soft-delete happened
       const updateSetCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
-      // First call: soft-delete fields
       const softDeleteArgs = updateSetCalls[0].mock.calls[0][0]
       expect(softDeleteArgs.deletedAt).toBeDefined()
       expect(softDeleteArgs.deletedBy).toBe("actor-1")
 
-      // Verify reversing entry was posted via postJournalEntry
-      const { postJournalEntry } = await import("@/services/transaction.service")
-      expect(postJournalEntry).toHaveBeenCalled()
-      const firstCallArgs = (postJournalEntry as ReturnType<typeof vi.fn>).mock.calls[0][1]
-      expect(firstCallArgs.referenceType).toBe("payment_reversal")
-      expect(firstCallArgs.loanId).toBe("loan-1")
-
-      // No recalculation update should have happened for the earlier payment.
-      // txSelectCount should be 5: payment lookup + loan lookup + remaining active + refreshed + final deleted row fetch.
-      // If recalculation had run, there would be additional selects (loan refetch inside recalculateFromPayment).
-      expect(txSelectCount).toBe(5)
+      // Verify status reverted to active
+      // All update().set() calls go through the same mock, check all set call args
+      const setMock = mockTx.update.mock.results[0].value.set
+      const allSetArgs = setMock.mock.calls.map((c: any) => c[0])
+      const activeRevert = allSetArgs.find((args: any) => args?.status === "active")
+      expect(activeRevert).toBeDefined()
     })
 
     it("getPaymentsForLoan: returns only active payments (excludes soft-deleted)", async () => {

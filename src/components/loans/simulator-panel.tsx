@@ -22,6 +22,7 @@ interface SimulatorPanelProps {
   loan: Loan
   payments: Payment[]
   ledgerBalance: string | null
+  totalInterestPaid?: string
 }
 
 interface SimulatorResult {
@@ -33,7 +34,7 @@ interface SimulatorResult {
   afterUnpaidInterest: string
 }
 
-export function SimulatorPanel({ loan, payments, ledgerBalance }: SimulatorPanelProps) {
+export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPaid: totalInterestPaidProp }: SimulatorPanelProps) {
   const { control, watch } = useForm<{ amount: string }>({
     defaultValues: { amount: "" },
   })
@@ -49,8 +50,7 @@ export function SimulatorPanel({ loan, payments, ledgerBalance }: SimulatorPanel
     (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
   )
   const lastPayment = sortedPayments.at(-1)
-  const currentOutstanding = ledgerBalance
-    ?? (lastPayment ? lastPayment.principalBalanceAfter : loan.principalAmount)
+  const currentOutstanding = ledgerBalance ?? loan.principalAmount
 
   const now = new Date()
   const totalDaysElapsed = Math.floor(
@@ -65,10 +65,9 @@ export function SimulatorPanel({ loan, payments, ledgerBalance }: SimulatorPanel
     0
   )
 
-  const totalInterestPaid = sortedPayments.reduce(
-    (sum, p) => sum.plus(new BigNumber(p.interestPortion)),
-    new BigNumber(0)
-  )
+  const totalInterestPaid = totalInterestPaidProp
+    ? new BigNumber(totalInterestPaidProp)
+    : new BigNumber(0)
 
   const currentDaysOverdueBN = calculateDaysOverdue(
     totalInterestAccrued,

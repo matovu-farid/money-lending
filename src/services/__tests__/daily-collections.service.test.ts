@@ -21,8 +21,6 @@ const makePaymentRow = (overrides: Record<string, unknown> = {}) => ({
   loanId: "loan-1",
   customerName: "John Doe",
   amount: "150000.00",
-  interestPortion: "100000.00",
-  principalPortion: "50000.00",
   paymentDate: new Date("2026-03-23T09:00:00.000Z"),
   depositLocation: "cash",
   ...overrides,
@@ -79,15 +77,15 @@ const makePayment = (overrides: Record<string, unknown> = {}) => ({
   loanId: "loan-1",
   paymentDate: new Date("2026-02-01T00:00:00.000Z"),
   amount: "100000.00",
-  interestPortion: "100000.00",
-  principalPortion: "0.00",
-  principalBalanceBefore: "1000000.00",
-  principalBalanceAfter: "1000000.00",
   recordedBy: "actor-1",
+  depositLocation: "cash",
   editReason: null,
   deletedAt: null,
   deletedBy: null,
   deleteReason: null,
+  markedWrong: false,
+  markedWrongReason: null,
+  markedWrongBy: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   ...overrides,
@@ -228,11 +226,7 @@ describe("daily-collections.service", () => {
       // Payment covers most interest so overdue is low
       const recentPayment = makePayment({
         paymentDate: new Date("2026-03-18T00:00:00.000Z"),
-        // At 10%/month on 1M, daily rate ~= 3333.33, 82 days accrued ~= 273,333
-        // Pay 260,000 in interest to keep overdue < 30 days: (273333-260000)/3333 ~ 4 days
-        interestPortion: "260000.00",
         amount: "260000.00",
-        principalPortion: "0.00",
       })
 
       // Mock ledger to reflect the 260,000 interest paid

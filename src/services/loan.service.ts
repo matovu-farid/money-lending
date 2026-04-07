@@ -15,8 +15,9 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, postJournalEntry } from "./transaction.service"
-import { recalculateFromPayment, reconcileDownstreamJournals } from "./payment.service"
+import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, postJournalEntry, getPaymentPortionsFromLedger, autoPostInterestEarned, autoPostPrincipalRepayment } from "./transaction.service"
+import { allocatePayment } from "@/lib/interest/engine"
+import { daysBetween } from "@/lib/db/utils"
 import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
 
 const checkCustomerCompleteness = (customer: {
@@ -430,7 +431,7 @@ export const updateLoan = (
             })
           }
 
-          // Recalculate all existing payments from the start since principalBalanceBefore changed
+          // Recalculate all existing payments: reverse old journals, repost with new allocation
           const activePayments = await tx
             .select()
             .from(payments)
@@ -438,22 +439,95 @@ export const updateLoan = (
             .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
           if (activePayments.length > 0) {
-            const oldInterestMap = new Map<string, string>()
-            const oldPrincipalMap = new Map<string, string>()
+            // Fetch all payment portions from ledger
+            const paymentIds = activePayments.map((p) => p.id)
+            const oldPortions = await getPaymentPortionsFromLedger(paymentIds)
+
+            // Reverse all payment journals
             for (const p of activePayments) {
-              oldInterestMap.set(p.id, p.interestPortion)
-              oldPrincipalMap.set(p.id, p.principalPortion)
+              const portion = oldPortions.get(p.id)
+              if (!portion) continue
+
+              if (new BigNumber(portion.interestPortion).isGreaterThan(0)) {
+                await postJournalEntry(tx, {
+                  debitCategory: { name: "Interest Earned", type: "revenue" },
+                  creditCategory: { name: "Cash", type: "asset" },
+                  amount: portion.interestPortion,
+                  referenceType: "payment_reversal",
+                  referenceId: p.id,
+                  description: `Reversal - principal updated for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
+                  transactionDate: new Date(p.paymentDate),
+                  recordedBy: actorId,
+                  creditDepositLocation: p.depositLocation ?? undefined,
+                  loanId: input.loanId,
+                })
+              }
+
+              if (new BigNumber(portion.principalPortion).isGreaterThan(0)) {
+                await postJournalEntry(tx, {
+                  debitCategory: { name: "Loans Receivable", type: "asset" },
+                  creditCategory: { name: "Cash", type: "asset" },
+                  amount: portion.principalPortion,
+                  referenceType: "payment_reversal",
+                  referenceId: p.id,
+                  description: `Reversal - principal repayment updated for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
+                  transactionDate: new Date(p.paymentDate),
+                  recordedBy: actorId,
+                  creditDepositLocation: p.depositLocation ?? undefined,
+                  loanId: input.loanId,
+                })
+              }
             }
 
-            await recalculateFromPayment(tx, input.loanId, 0, activePayments)
-            await reconcileDownstreamJournals(
-              tx,
-              activePayments,
-              oldInterestMap,
-              oldPrincipalMap,
-              input.loanId,
-              actorId
-            )
+            // Repost with new allocations based on updated principal
+            const loanType = updatedLoan.loanType ?? "perpetual"
+            const monthlyRateDecimal = updatedLoan.interestRateOverride ?? updatedLoan.interestRate
+            const minInterestDays = updatedLoan.minPeriodOverride ?? updatedLoan.minInterestDays
+            let runningBalance = new BigNumber(input.principalAmount)
+
+            for (let i = 0; i < activePayments.length; i++) {
+              const p = activePayments[i]
+              const prevDate = i === 0
+                ? new Date(updatedLoan.startDate)
+                : new Date(activePayments[i - 1].paymentDate)
+              const daysElapsed = daysBetween(prevDate, new Date(p.paymentDate))
+
+              const allocation = allocatePayment({
+                paymentAmount: p.amount,
+                principalBalanceBefore: runningBalance.toFixed(2),
+                monthlyRateDecimal,
+                daysElapsed,
+                minInterestDays,
+                loanType,
+                originalPrincipal: input.principalAmount,
+                termMonths: updatedLoan.termMonths ?? undefined,
+                paymentNumber: i + 1,
+              })
+
+              if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+                await autoPostInterestEarned(tx, {
+                  amount: allocation.interestPortion,
+                  loanId: input.loanId,
+                  paymentId: p.id,
+                  paymentDate: p.paymentDate.toISOString(),
+                  actorId,
+                  depositLocation: p.depositLocation ?? undefined,
+                })
+              }
+
+              if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
+                await autoPostPrincipalRepayment(tx, {
+                  amount: allocation.principalPortion,
+                  loanId: input.loanId,
+                  paymentId: p.id,
+                  paymentDate: p.paymentDate.toISOString(),
+                  actorId,
+                  depositLocation: p.depositLocation ?? undefined,
+                })
+              }
+
+              runningBalance = runningBalance.minus(new BigNumber(allocation.principalPortion))
+            }
           }
         }
 
@@ -561,13 +635,19 @@ export const deleteLoan = (
         // Reverse interest/principal transactions for payments that were active at deletion time
         // (already-deleted payments had their journals reversed when they were individually deleted)
         const loanPayments = activePaymentIds
+        const paymentPortions = loanPayments.length > 0
+          ? await getPaymentPortionsFromLedger(loanPayments.map((p) => p.id))
+          : new Map()
 
         for (const p of loanPayments) {
-          if (new BigNumber(p.interestPortion).isGreaterThan(0)) {
+          const portion = paymentPortions.get(p.id)
+          if (!portion) continue
+
+          if (new BigNumber(portion.interestPortion).isGreaterThan(0)) {
             await postJournalEntry(tx, {
               debitCategory: { name: "Interest Earned", type: "revenue" },
               creditCategory: { name: "Cash", type: "asset" },
-              amount: p.interestPortion,
+              amount: portion.interestPortion,
               referenceType: "payment_reversal",
               referenceId: p.id,
               description: `Reversal - loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,
@@ -578,11 +658,11 @@ export const deleteLoan = (
             })
           }
 
-            if (new BigNumber(p.principalPortion).isGreaterThan(0)) {
+            if (new BigNumber(portion.principalPortion).isGreaterThan(0)) {
               await postJournalEntry(tx, {
                 debitCategory: { name: "Loans Receivable", type: "asset" },
                 creditCategory: { name: "Cash", type: "asset" },
-                amount: p.principalPortion,
+                amount: portion.principalPortion,
                 referenceType: "payment_reversal",
                 referenceId: p.id,
                 description: `Reversal - principal repayment for loan ${input.loanId.slice(0, 8).toUpperCase()} deleted: ${input.reason}`,

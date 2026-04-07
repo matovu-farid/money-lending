@@ -20,8 +20,6 @@ export const getDailyCollections = (
           loanId: payments.loanId,
           customerName: customers.fullName,
           amount: payments.amount,
-          interestPortion: payments.interestPortion,
-          principalPortion: payments.principalPortion,
           paymentDate: payments.paymentDate,
           depositLocation: payments.depositLocation,
         })
