@@ -85,3 +85,11 @@ export function getLastCompletedMonth(): string {
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
   return `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`
 }
+
+/**
+ * Get the YYYY-MM string for the current calendar month.
+ */
+export function getCurrentMonth(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+}

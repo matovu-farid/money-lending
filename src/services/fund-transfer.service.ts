@@ -4,8 +4,8 @@ import { fundTransfers } from "@/lib/db/schema/fund-transfers"
 import { desc } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostFundTransfer } from "./transaction.service"
-import type { CreateFundTransferInput, FundTransfer } from "@/types"
+import { autoPostFundTransfer, autoPostCapitalInjection } from "./transaction.service"
+import type { CreateFundTransferInput, CreateCapitalInjectionInput, FundTransfer } from "@/types"
 
 export const createFundTransfer = (
   input: CreateFundTransferInput,
@@ -39,6 +39,48 @@ export const createFundTransfer = (
           amount: input.amount,
           transferId: transfer.id,
           fromLocation: input.fromLocation,
+          toLocation: input.toLocation,
+          transactionDate: transfer.createdAt.toISOString(),
+          actorId,
+        })
+
+        return transfer
+      })
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+
+export const createCapitalInjection = (
+  input: CreateCapitalInjectionInput,
+  actorId: string
+): Effect.Effect<FundTransfer, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      return await db.transaction(async (tx) => {
+        const [transfer] = await tx
+          .insert(fundTransfers)
+          .values({
+            transferType: "capital_injection",
+            fromLocation: null,
+            toLocation: input.toLocation,
+            amount: input.amount,
+            transferredBy: actorId,
+            note: input.note?.trim() || null,
+          })
+          .returning()
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "capital_injection.create",
+          entityType: "fund_transfer",
+          entityId: transfer.id,
+          beforeValue: null,
+          afterValue: transfer,
+        })
+
+        await autoPostCapitalInjection(tx, {
+          amount: input.amount,
+          transferId: transfer.id,
           toLocation: input.toLocation,
           transactionDate: transfer.createdAt.toISOString(),
           actorId,

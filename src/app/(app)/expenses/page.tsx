@@ -5,7 +5,7 @@ import { ExpenseListClient } from "./ExpenseListClient"
 
 export default async function ExpensesPage() {
   const [transactionsExit, categoriesExit] = await Promise.all([
-    Effect.runPromiseExit(listTransactions({ type: "debit" }, 1, 50)),
+    Effect.runPromiseExit(listTransactions({ type: "debit", manualOnly: true }, 1, 50)),
     Effect.runPromiseExit(listCategories("expense")),
   ])
 

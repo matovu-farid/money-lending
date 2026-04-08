@@ -392,6 +392,7 @@ export interface TransactionLogFilters {
   categoryId?: string
   dateFrom?: string
   dateTo?: string
+  manualOnly?: boolean
 }
 
 // --- Phase 8: Quick-Record Workflow types ---
@@ -458,6 +459,12 @@ export type NewFundTransfer = InferInsertModel<typeof fundTransfers>
 
 export interface CreateFundTransferInput {
   fromLocation: DepositLocation
+  toLocation: DepositLocation
+  amount: string       // NUMERIC string
+  note?: string
+}
+
+export interface CreateCapitalInjectionInput {
   toLocation: DepositLocation
   amount: string       // NUMERIC string
   note?: string

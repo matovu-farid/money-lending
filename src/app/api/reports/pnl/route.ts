@@ -5,7 +5,7 @@ import { headers } from "next/headers"
 import { getPnlData } from "@/services/report.service"
 import { generatePnlPdf } from "@/services/export/pdf.service"
 import { generatePnlExcel } from "@/services/export/excel.service"
-import { getLastCompletedMonth } from "@/lib/utils"
+import { getCurrentMonth } from "@/lib/utils"
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -15,7 +15,7 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url)
   const format = searchParams.get("format") ?? "pdf"
-  const period = searchParams.get("period") ?? getLastCompletedMonth()
+  const period = searchParams.get("period") ?? getCurrentMonth()
 
   // Validate period to prevent CRLF injection in Content-Disposition header
   if (!/^\d{4}-\d{2}$/.test(period)) {

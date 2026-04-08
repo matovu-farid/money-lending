@@ -5,7 +5,7 @@ import { IncomeListClient } from "./IncomeListClient"
 
 export default async function IncomePage() {
   const [transactionsExit, categoriesExit] = await Promise.all([
-    Effect.runPromiseExit(listTransactions({ type: "credit" }, 1, 50)),
+    Effect.runPromiseExit(listTransactions({ type: "credit", manualOnly: true }, 1, 50)),
     Effect.runPromiseExit(listCategories("revenue")),
   ])
 

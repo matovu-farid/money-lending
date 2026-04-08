@@ -3,13 +3,13 @@
 import { useState, useTransition } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
-import { Loader2, ArrowRightLeft } from "lucide-react"
+import { Loader2, ArrowRightLeft, PlusCircle } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
-import { createFundTransferAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
+import { createFundTransferAction, createCapitalInjectionAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -50,6 +50,12 @@ interface TransferFormValues {
   note: string
 }
 
+interface InjectionFormValues {
+  toLocation: DepositLocation
+  amount: string
+  note: string
+}
+
 export default function FundTransfersPage() {
   const { data: session } = useSession()
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
@@ -58,6 +64,7 @@ export default function FundTransfersPage() {
 
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
   const { data: transfers = [], isLoading } = useQuery({
@@ -86,6 +93,34 @@ export default function FundTransfersPage() {
   })
 
   const fromLocation = watch("fromLocation")
+
+  const injectionForm = useForm<InjectionFormValues>({
+    defaultValues: {
+      toLocation: "cash",
+      amount: "",
+      note: "",
+    },
+  })
+
+  function onInjectionSubmit(data: InjectionFormValues) {
+    startTransition(async () => {
+      const result = await createCapitalInjectionAction({
+        toLocation: data.toLocation,
+        amount: data.amount.trim(),
+        note: data.note.trim() || undefined,
+      })
+
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+
+      toast.success("Capital injection recorded")
+      injectionForm.reset()
+      setInjectionDialogOpen(false)
+      await queryClient.invalidateQueries({ queryKey: queryKeys.fundTransfers.all })
+    })
+  }
 
   function onSubmit(data: TransferFormValues) {
     if (data.fromLocation === data.toLocation) {
@@ -157,6 +192,88 @@ export default function FundTransfersPage() {
             </p>
           }
         />
+        <div className="flex items-center gap-2">
+        <Dialog open={injectionDialogOpen} onOpenChange={setInjectionDialogOpen}>
+          <DialogTrigger
+            render={
+              <Button variant="outline">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Capital Injection
+              </Button>
+            }
+          />
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Record Capital Injection</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Bring money into the business from shareholders or owners.
+            </p>
+            <form onSubmit={injectionForm.handleSubmit(onInjectionSubmit)} className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="injectionToLocation">Deposit To</Label>
+                <Controller
+                  name="toLocation"
+                  control={injectionForm.control}
+                  rules={{ required: "Deposit location is required" }}
+                  render={({ field }) => (
+                    <Select value={field.value} onValueChange={field.onChange} disabled={isPending}>
+                      <SelectTrigger id="injectionToLocation">
+                        <SelectValue placeholder="Select location" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
+                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {injectionForm.formState.errors.toLocation && (
+                  <p className="text-sm text-destructive">{injectionForm.formState.errors.toLocation.message}</p>
+                )}
+              </div>
+
+              <MoneyInput
+                name="amount"
+                control={injectionForm.control}
+                label="Amount (UGX)"
+                required="Amount is required"
+                disabled={isPending}
+                id="injectionAmount"
+              />
+
+              <div className="space-y-1">
+                <Label htmlFor="injectionNote">Note (optional)</Label>
+                <Controller
+                  name="note"
+                  control={injectionForm.control}
+                  render={({ field }) => (
+                    <Textarea
+                      id="injectionNote"
+                      placeholder="e.g. Shareholder contribution..."
+                      disabled={isPending}
+                      maxLength={2500}
+                      value={field.value}
+                      onChange={field.onChange}
+                    />
+                  )}
+                />
+              </div>
+
+              <Button type="submit" disabled={isPending} className="w-full">
+                {isPending ? (
+                  <>
+                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                    Recording...
+                  </>
+                ) : (
+                  "Record Injection"
+                )}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger
             render={
@@ -262,6 +379,7 @@ export default function FundTransfersPage() {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       <Card>
@@ -279,6 +397,7 @@ export default function FundTransfersPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>From</TableHead>
                   <TableHead>To</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
@@ -286,13 +405,26 @@ export default function FundTransfersPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transfers.map((t) => (
+                {transfers.map((t) => {
+                  const isInjection = t.transferType === "capital_injection"
+                  return (
                   <TableRow key={t.id}>
                     <TableCell className="font-mono tabular-nums text-sm">
                       {formatDate(t.createdAt)}
                     </TableCell>
-                    <TableCell>{DEPOSIT_LOCATION_SHORT_LABELS[t.fromLocation as DepositLocation]}</TableCell>
-                    <TableCell>{DEPOSIT_LOCATION_SHORT_LABELS[t.toLocation as DepositLocation]}</TableCell>
+                    <TableCell>
+                      {isInjection ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          Capital In
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                          Transfer
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell>{t.fromLocation ? DEPOSIT_LOCATION_SHORT_LABELS[t.fromLocation as DepositLocation] : "-"}</TableCell>
+                    <TableCell>{t.toLocation ? DEPOSIT_LOCATION_SHORT_LABELS[t.toLocation as DepositLocation] : "-"}</TableCell>
                     <TableCell className="text-right font-mono tabular-nums">
                       {formatCurrency(t.amount)}
                     </TableCell>
@@ -300,7 +432,8 @@ export default function FundTransfersPage() {
                       {t.note || "-"}
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
               </TableBody>
             </Table>
           )}

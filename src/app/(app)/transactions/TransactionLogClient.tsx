@@ -165,8 +165,8 @@ export function TransactionLogClient({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="credit">Income</SelectItem>
-              <SelectItem value="debit">Expense</SelectItem>
+              <SelectItem value="credit">Credit (CR)</SelectItem>
+              <SelectItem value="debit">Debit (DR)</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -249,11 +249,11 @@ export function TransactionLogClient({
                     <TableCell>
                       {tx.type === "credit" ? (
                         <Badge className="text-green-600 border-green-200 bg-green-50">
-                          Income
+                          CR
                         </Badge>
                       ) : (
-                        <Badge className="text-destructive border-destructive/20 bg-destructive/5">
-                          Expense
+                        <Badge className="text-blue-600 border-blue-200 bg-blue-50">
+                          DR
                         </Badge>
                       )}
                     </TableCell>
@@ -262,7 +262,7 @@ export function TransactionLogClient({
                       {tx.description ?? "—"}
                     </TableCell>
                     <TableCell
-                      className={`text-right font-mono tabular-nums ${tx.type === "credit" ? "text-green-600" : "text-destructive"}`}
+                      className="text-right font-mono tabular-nums"
                     >
                       {formatCurrency(tx.amount)}
                     </TableCell>

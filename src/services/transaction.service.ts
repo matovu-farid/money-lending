@@ -233,6 +233,9 @@ export const listTransactions = (
           lte(transactions.transactionDate, new Date(filters.dateTo))
         )
       }
+      if (filters.manualOnly) {
+        conditions.push(isNull(transactions.referenceType))
+      }
 
       const whereClause =
         conditions.length > 0 ? and(...conditions) : undefined
@@ -528,6 +531,20 @@ export async function autoPostFundTransfer(
     description: `Fund transfer from ${params.fromLocation} to ${params.toLocation}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     debitDepositLocation: params.toLocation, creditDepositLocation: params.fromLocation,
+  })
+}
+
+export async function autoPostCapitalInjection(
+  tx: DrizzleTransaction,
+  params: { amount: string; transferId: string; toLocation: "cash" | "bank" | "strong_room"; transactionDate: string; actorId: string }
+): Promise<void> {
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Cash", type: "asset" },
+    creditCategory: { name: "Share Capital", type: "equity" },
+    amount: params.amount, referenceType: "capital_injection", referenceId: params.transferId,
+    description: `Capital injection to ${params.toLocation}`,
+    transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
+    debitDepositLocation: params.toLocation,
   })
 }
 
