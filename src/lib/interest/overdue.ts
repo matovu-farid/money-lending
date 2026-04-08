@@ -54,8 +54,8 @@ export function computeLoanOverdueInfo(params: {
     const daysOverdueBN = calculateDaysOverdue(totalInterestAccrued, totalInterestPaidBN, dailyInterestAmount)
 
     daysOverdue = Math.floor(daysOverdueBN.toNumber())
-    dailyRate = dailyInterestAmount.toFixed(2)
-    unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
+    dailyRate = dailyInterestAmount.toFixed(0)
+    unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(0)
   } else {
     // Term loans (fixed_rate, reducing_balance)
     const monthsElapsed = (now.getFullYear() - startDate.getFullYear()) * 12
@@ -69,21 +69,21 @@ export function computeLoanOverdueInfo(params: {
     const monthlyInterest = loanType === "fixed_rate"
       ? new BigNumber(principalAmount).multipliedBy(new BigNumber(baseRate))
       : new BigNumber(outstandingBalance).multipliedBy(new BigNumber(baseRate))
-    dailyRate = monthlyInterest.dividedBy(30).toFixed(2)
+    dailyRate = monthlyInterest.dividedBy(30).toFixed(0)
 
     const totalInterestPaidBN = new BigNumber(totalInterestPaid)
-    const schedule = calculateSchedule(
+    const { entries } = calculateSchedule(
       principalAmount,
       baseRate,
       termMonths!,
       loanType as "fixed_rate" | "reducing_balance"
     )
-    const expectedInterest = schedule
+    const expectedInterest = entries
       .slice(0, expectedPayments)
       .reduce((s: BigNumber, e: ScheduleEntry) => s.plus(new BigNumber(e.monthlyInterest)), new BigNumber(0))
     const unpaidInterestBN = expectedInterest.minus(totalInterestPaidBN)
 
-    unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(2)
+    unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(0)
   }
 
   const penaltyIsActive = isPenaltyActive(daysOverdue, penaltyWaived)

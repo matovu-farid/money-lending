@@ -66,7 +66,7 @@ export default function ActiveLoansClient({ data }: ActiveLoansClientProps) {
         )
         return (
           <span className="font-mono tabular-nums">
-            {formatCurrency(total.toFixed(2))}
+            {formatCurrency(total.toFixed(0))}
           </span>
         )
       },

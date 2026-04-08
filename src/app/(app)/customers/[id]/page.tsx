@@ -21,9 +21,9 @@ import type { Customer, Loan, CustomerStatus, PaymentPortionsMap } from "@/types
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CustomerFormFields, type CustomerFormValues } from "@/components/customers/customer-form-fields";
 import {
   Select,
   SelectContent,
@@ -54,13 +54,16 @@ import { PageHeader } from "@/components/ui/page-header";
 import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils";
 import { customerStatusVariant, customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/status";
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
+import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
+import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button";
 
 interface LoanWithOverdue {
   loan: Loan;
   daysOverdue: number;
 }
 
-function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
+
+function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
   const [expanded, setExpanded] = useState(false);
   const { data: payments, isLoading: loadingPayments } = useLoanPayments(
     item.loan.id,
@@ -80,6 +83,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
   });
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex items-start justify-between gap-4">
@@ -101,18 +105,29 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
               Issued {formatDate(item.loan.startDate)}
             </p>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={() => setExpanded((prev) => !prev)}
-            aria-label={expanded ? "Collapse" : "Expand"}
-          >
-            {expanded ? (
-              <ChevronUp className="h-4 w-4" />
-            ) : (
-              <ChevronDown className="h-4 w-4" />
-            )}
-          </Button>
+          <div className="flex items-center gap-1">
+            <DisbursementReceiptButton loanId={item.loan.id} />
+            <Link
+              href={`/receipts/disbursement/${item.loan.id}`}
+              target="_blank"
+              className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
+              aria-label="Full disbursement receipt"
+            >
+              <ChevronUp className="h-4 w-4 rotate-90" />
+            </Link>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setExpanded((prev) => !prev)}
+              aria-label={expanded ? "Collapse" : "Expand"}
+            >
+              {expanded ? (
+                <ChevronUp className="h-4 w-4" />
+              ) : (
+                <ChevronDown className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -147,6 +162,7 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead className="text-right">Interest</TableHead>
                       <TableHead className="text-right">Principal</TableHead>
+                      <TableHead className="w-10"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -191,6 +207,23 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
                         >
                           {formatCurrency(portionsData?.[payment.id]?.principalPortion ?? "0.00")}
                         </TableCell>
+                        <TableCell>
+                          {!payment.deletedAt && (
+                            <PaymentReceiptButton
+                              data={{
+                                paymentDate: payment.paymentDate,
+                                customerName,
+                                loanReference: `LOAN-${item.loan.id.slice(0, 8).toUpperCase()}`,
+                                amountPaid: payment.amount,
+                                interestPortion: portionsData?.[payment.id]?.interestPortion ?? "0.00",
+                                principalPortion: portionsData?.[payment.id]?.principalPortion ?? "0.00",
+                                balanceAfter: "0.00",
+                                depositLocation: payment.depositLocation,
+                                officerName: "Officer",
+                              }}
+                            />
+                          )}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -201,15 +234,11 @@ function CustomerLoanCard({ item }: { item: LoanWithOverdue }) {
         )}
       </CardContent>
     </Card>
+    </>
   );
 }
 
-interface EditFormValues {
-  fullName: string;
-  nin: string;
-  contact: string;
-  address: string;
-}
+type EditFormValues = CustomerFormValues;
 
 export default function CustomerProfilePage() {
   const params = useParams();
@@ -244,6 +273,7 @@ export default function CustomerProfilePage() {
     register,
     handleSubmit,
     reset,
+    setValue,
     formState: { errors },
   } = useForm<EditFormValues>();
   const [isEditPending, startEditTransition] = useTransition();
@@ -406,72 +436,13 @@ export default function CustomerProfilePage() {
         <CardContent>
           {editing ? (
             <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
-              <div className="space-y-1">
-                <Label htmlFor="edit-fullName">Full Name</Label>
-                <Input
-                  id="edit-fullName"
-                  {...register("fullName", {
-                    required: "Full name is required",
-                    minLength: {
-                      value: 2,
-                      message: "Full name must be at least 2 characters",
-                    },
-                  })}
-                  disabled={isEditPending}
-                />
-                {errors.fullName && (
-                  <p className="text-sm text-destructive">
-                    {errors.fullName.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="edit-nin">NIN (National ID Number)</Label>
-                <Input
-                  id="edit-nin"
-                  {...register("nin", {
-                    required: "NIN is required",
-                    validate: (v) =>
-                      v.trim() !== "" || "NIN is required",
-                  })}
-                  disabled={isEditPending}
-                />
-                {errors.nin && (
-                  <p className="text-sm text-destructive">
-                    {errors.nin.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="edit-contact">Contact</Label>
-                <Input
-                  id="edit-contact"
-                  {...register("contact", {
-                    required: "Contact is required",
-                  })}
-                  disabled={isEditPending}
-                />
-                {errors.contact && (
-                  <p className="text-sm text-destructive">
-                    {errors.contact.message}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="edit-address">Physical Address</Label>
-                <Input
-                  id="edit-address"
-                  {...register("address", {
-                    required: "Address is required",
-                  })}
-                  disabled={isEditPending}
-                />
-                {errors.address && (
-                  <p className="text-sm text-destructive">
-                    {errors.address.message}
-                  </p>
-                )}
-              </div>
+              <CustomerFormFields
+                register={register}
+                setValue={setValue}
+                errors={errors}
+                disabled={isEditPending}
+                idPrefix="edit"
+              />
               <div className="flex gap-3">
                 <Button type="submit" disabled={isEditPending}>
                   {isEditPending ? (
@@ -571,6 +542,7 @@ export default function CustomerProfilePage() {
               id="status-reason"
               value={statusReason}
               onChange={(e) => setStatusReason(e.target.value)}
+              maxLength={2500}
               placeholder="Provide a reason for this status change..."
               disabled={isStatusPending}
             />
@@ -617,7 +589,7 @@ export default function CustomerProfilePage() {
           </p>
         ) : (
           loanItems.map((item) => (
-            <CustomerLoanCard key={item.loan.id} item={item} />
+            <CustomerLoanCard key={item.loan.id} item={item} customerName={customer.fullName} />
           ))
         )}
       </div>

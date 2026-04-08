@@ -89,12 +89,12 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
   const totalCurrentAssets = new BigNumber(data.assets.cashBalance)
     .plus(data.assets.bankBalance)
     .plus(data.assets.strongRoomBalance)
-    .toFixed(2)
+    .toFixed(0)
 
   const totalLiabilitiesPlusEquity = new BigNumber(data.liabilities.totalCreditorBalances)
     .plus(data.liabilities.interestPayable ?? "0")
     .plus(data.equity.totalEquity)
-    .toFixed(2)
+    .toFixed(0)
 
   const isBalanced = new BigNumber(data.assets.totalAssets).isEqualTo(totalLiabilitiesPlusEquity)
 
@@ -267,7 +267,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                         new BigNumber(data.assets.totalLoansOutstanding)
                           .plus(data.assets.interestReceivable)
                           .plus(data.assets.seizedCollateralValue)
-                          .toFixed(2)
+                          .toFixed(0)
                       )}
                     </td>
                   </tr>
@@ -336,7 +336,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   <tr>
                     <td className="py-2 pl-2 font-semibold">Total Liabilities</td>
                     <td className="py-2 text-right font-mono tabular-nums font-semibold">
-                      {formatCurrency(new BigNumber(data.liabilities.totalCreditorBalances).plus(data.liabilities.interestPayable ?? "0").toFixed(2))}
+                      {formatCurrency(new BigNumber(data.liabilities.totalCreditorBalances).plus(data.liabilities.interestPayable ?? "0").toFixed(0))}
                     </td>
                   </tr>
 
@@ -414,7 +414,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
               {" "}&ne;{" "}
               Liabilities + Equity ({formatCurrency(totalLiabilitiesPlusEquity)}).
               Difference: {formatCurrency(
-                new BigNumber(data.assets.totalAssets).minus(totalLiabilitiesPlusEquity).toFixed(2)
+                new BigNumber(data.assets.totalAssets).minus(totalLiabilitiesPlusEquity).toFixed(0)
               )}
             </div>
           )}

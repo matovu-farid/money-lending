@@ -56,11 +56,14 @@ import {
 } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { PermissionInfo } from "@/components/ui/permission-info"
 import BigNumber from "bignumber.js"
 import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
 import { useLoanDetailStore } from "@/lib/stores/loan-detail"
 import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
+import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
+import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -179,7 +182,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           loan.interestRateOverride ?? loan.interestRate,
           loan.termMonths,
           loan.loanType as "fixed_rate" | "reducing_balance"
-        )
+        ).entries
       : [],
     [loan.principalAmount, loan.interestRateOverride, loan.interestRate, loan.termMonths, loan.loanType]
   )
@@ -196,7 +199,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       const principal = currentPortions[p.id]?.principalPortion ?? "0"
       balance = balance.minus(new BigNumber(principal))
       if (balance.isLessThan(0)) balance = new BigNumber(0)
-      map[p.id] = balance.toFixed(2)
+      map[p.id] = balance.toFixed(0)
     }
     return map
   }, [payments, currentPortions, loan.principalAmount])
@@ -435,6 +438,11 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 Settle with Collateral
               </Button>
             )}
+            <PermissionInfo
+              requiredRole="admin"
+              action="Edit or delete loan"
+              detail="Admins can edit or delete any loan. Loan officers and supervisors can only edit their own loan immediately after creation."
+            />
           </div>
         )}
       </div>
@@ -499,7 +507,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
               <p className="text-sm font-mono font-semibold text-destructive">
                 Effective: {formatRate(getEffectiveRate(loan, penaltyActive), 1)} / month
               </p>
-              {ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin && (
+              {ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin ? (
                 <div className="flex items-center gap-2 mt-2">
                   <Button
                     variant="outline"
@@ -561,6 +569,15 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                     </div>
                   )}
                 </div>
+              ) : (
+                <div className="mt-2">
+                  <PermissionInfo
+                    requiredRole="admin"
+                    action="Waive or adjust penalty"
+                    detail="Only admins can waive penalties or adjust the penalty multiplier rate."
+                    locked
+                  />
+                </div>
               )}
             </div>
           )}
@@ -570,10 +587,17 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
             </Badge>
           )}
           {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
-            <Button variant="outline" size="sm" className="mt-2" onClick={openRateChangeDialog}>
-              <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
-              Request Rate Change
-            </Button>
+            <div className="flex items-center gap-1.5 mt-2">
+              <Button variant="outline" size="sm" onClick={openRateChangeDialog}>
+                <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
+                Request Rate Change
+              </Button>
+              <PermissionInfo
+                requiredRole="loanOfficer"
+                action="Request rate change"
+                detail="Any loan officer can request a rate change. Rates ≥10% apply immediately. Rates 8-10% need supervisor approval. Rates below 8% need admin approval."
+              />
+            </div>
           )}
         </div>
         <div className="rounded-xl border border-border bg-card p-5">
@@ -668,13 +692,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         </div>
       )}
 
-      {/* Loan Description */}
-      {loan.description && (
-        <div className="rounded-xl border border-border bg-card p-5">
-          <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">Description</p>
-          <p className="text-sm">{loan.description}</p>
-        </div>
-      )}
 
       {/* Principal Balance Card */}
       <div className="rounded-xl border border-border bg-card p-6">
@@ -736,6 +753,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
               <Receipt className="h-4 w-4 mr-1.5" />
               Print Receipt
             </Link>
+            <DisbursementReceiptButton loanId={loan.id} />
           </div>
         </div>
       </div>
@@ -824,6 +842,20 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                                 <MoreHorizontal className="h-4 w-4" />
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
+                                <PaymentReceiptButton
+                                  variant="dropdown-item"
+                                  data={{
+                                    paymentDate: payment.paymentDate,
+                                    customerName: customerName ?? "—",
+                                    loanReference: loanRef,
+                                    amountPaid: payment.amount,
+                                    interestPortion: currentPortions[payment.id]?.interestPortion ?? "0.00",
+                                    principalPortion: currentPortions[payment.id]?.principalPortion ?? "0.00",
+                                    balanceAfter: runningBalanceMap[payment.id] ?? outstandingBalance,
+                                    depositLocation: payment.depositLocation,
+                                    officerName: userNameMap[payment.recordedBy] ?? "Officer",
+                                  }}
+                                />
                                 <DropdownMenuItem
                                   onClick={() => openEditDialog(payment)}
                                 >
@@ -856,7 +888,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           ledgerBalance={balanceData?.outstandingPrincipal ?? ledgerBalance}
           totalInterestPaid={Object.values(currentPortions).reduce(
             (sum, p) => sum.plus(p.interestPortion), new BigNumber(0)
-          ).toFixed(2)}
+          ).toFixed(0)}
         />
       )}
 
@@ -895,7 +927,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 onChange={(e) => setEditReason(e.target.value)}
                 placeholder="Explain what is being corrected and why"
                 disabled={isEditPending}
-                maxLength={500}
+                maxLength={2500}
               />
             </div>
           </div>
@@ -943,7 +975,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 onChange={(e) => setDeleteReason(e.target.value)}
                 placeholder="Explain why this payment is being deleted"
                 disabled={isDeletePending}
-                maxLength={500}
+                maxLength={2500}
               />
             </div>
           </div>
@@ -1020,7 +1052,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 onChange={(e) => setLoanEditReason(e.target.value)}
                 placeholder="Explain what is being corrected and why"
                 disabled={isLoanEditPending}
-                maxLength={500}
+                maxLength={2500}
               />
             </div>
           </div>
@@ -1067,7 +1099,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                 onChange={(e) => setLoanDeleteReason(e.target.value)}
                 placeholder="Explain why this loan is being deleted"
                 disabled={isLoanDeletePending}
-                maxLength={500}
+                maxLength={2500}
               />
             </div>
           </div>

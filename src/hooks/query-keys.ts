@@ -11,6 +11,7 @@ export const queryKeys = {
     detail: (id: string) => [...queryKeys.customers.all, id] as const,
     search: (params: CustomerSearchParams, page: number) =>
       [...queryKeys.customers.all, params, page] as const,
+    recent: () => [...queryKeys.customers.all, "recent"] as const,
   },
 
   loans: {

@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
         }
         const outstandingBalance =
           ledgerBalance !== undefined
-            ? ledgerBalance.toFixed(2)
+            ? ledgerBalance.toFixed(0)
             : loan.principalAmount
 
         const info = computeLoanOverdueInfo({

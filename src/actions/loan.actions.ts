@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
+import { user } from "@/lib/db/schema/auth"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { createLoan, listLoans, updateLoan, deleteLoan } from "@/services/loan.service"
 import {
@@ -35,6 +36,36 @@ export async function getCollateralNaturesAction(): Promise<string[]> {
     .orderBy(collateral.nature)
 
   return rows.map((r) => r.nature)
+}
+
+export async function getLoanReceiptDataAction(loanId: string) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
+  if (!loan) return { error: "Loan not found" }
+
+  const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
+    db.select().from(customers).where(eq(customers.id, loan.customerId)),
+    db.select().from(collateral).where(eq(collateral.loanId, loanId)),
+    db.select().from(user).where(eq(user.id, loan.issuedBy)),
+  ])
+
+  const rate = new BigNumber(loan.interestRate).multipliedBy(100)
+  return {
+    data: {
+      receiptNumber: `LOAN-${loanId.slice(0, 8).toUpperCase()}`,
+      date: loan.startDate.toISOString(),
+      customerName: customer?.fullName ?? "—",
+      customerNin: customer?.nin,
+      loanAmount: loan.principalAmount,
+      issuanceFee: loan.issuanceFee,
+      interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
+      collateralNature: collateralRecord?.nature ?? "—",
+      disbursementSource: loan.disbursementSource,
+      officerName: issuingUser?.name ?? "Officer",
+    },
+  }
 }
 
 export async function listLoansAction() {
@@ -88,15 +119,6 @@ export async function updateLoanAction(input: UpdateLoanInput) {
       return { error: "Issuance fee must be at least 50,000 UGX" }
     }
   }
-  if (input.description !== undefined && !input.description.trim()) {
-    return { error: "Loan description cannot be empty" }
-  }
-
-  // Trim description before passing to service
-  if (input.description !== undefined) {
-    input.description = input.description.trim()
-  }
-
   try {
     const data = await Effect.runPromise(updateLoan(input, session.user.id))
     revalidatePath("/loans")
@@ -179,8 +201,8 @@ export async function createLoanAction(input: CreateLoanInput) {
   if (parseFloat(input.issuanceFee) < 50000) {
     return { error: "Issuance fee must be at least 50,000 UGX" }
   }
-  if (!input.description?.trim()) {
-    return { error: "Loan description is required" }
+  if (!input.collateral?.description?.trim()) {
+    return { error: "Collateral description is required" }
   }
 
   const validLocations = ["cash", "bank", "strong_room"]
@@ -285,7 +307,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
         console.warn(`[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
       }
       const outstandingBalance = ledgerBalance !== undefined
-        ? ledgerBalance.toFixed(2)
+        ? ledgerBalance.toFixed(0)
         : loan.principalAmount
 
       const lastPayment = loanPayments.at(-1)
@@ -327,7 +349,6 @@ export async function getCustomerLoansWithOverdueAction(customerId: string) {
         customerId: loans.customerId,
         principalAmount: loans.principalAmount,
         issuanceFee: loans.issuanceFee,
-        description: loans.description,
         interestRate: loans.interestRate,
         minInterestDays: loans.minInterestDays,
         startDate: loans.startDate,

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { signUp } from "@/lib/auth-client"
+import { checkEmailExists } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -45,6 +46,8 @@ export default function RegisterPage() {
     defaultValues: { name: "", email: "", password: "", confirmPassword: "" },
   })
 
+  const isAlreadyRegistered = errors.root?.message === "already_registered"
+
   function onSubmit(data: RegisterFormValues) {
     if (data.password !== data.confirmPassword) {
       setError("confirmPassword", { message: "Passwords do not match." })
@@ -52,6 +55,12 @@ export default function RegisterPage() {
     }
 
     startTransition(async () => {
+      const exists = await checkEmailExists(data.email)
+      if (exists) {
+        setError("root", { message: "already_registered" })
+        return
+      }
+
       const result = await signUp.email({
         name: data.name.trim(),
         email: data.email,
@@ -85,6 +94,7 @@ export default function RegisterPage() {
               type="text"
               placeholder="John Doe"
               autoComplete="name"
+              maxLength={100}
               disabled={isPending}
               {...register("name", {
                 required: "Name is required",
@@ -103,6 +113,7 @@ export default function RegisterPage() {
               type="email"
               placeholder="you@example.com"
               autoComplete="email"
+              maxLength={254}
               disabled={isPending}
               {...register("email", { required: "Email is required" })}
             />
@@ -123,6 +134,7 @@ export default function RegisterPage() {
                 {...register("password", {
                   required: "Password is required",
                   minLength: { value: 8, message: "Password must be at least 8 characters" },
+                  maxLength: { value: 128, message: "Password is too long (max 128 characters)" },
                 })}
               />
               <button
@@ -177,9 +189,21 @@ export default function RegisterPage() {
           </div>
 
           {errors.root && (
-            <p className="text-sm text-destructive bg-destructive/10 rounded-md px-3 py-2">
-              {errors.root.message}
-            </p>
+            <div className="text-sm rounded-md px-3 py-2 bg-destructive/10 text-destructive">
+              {isAlreadyRegistered ? (
+                <p>
+                  An account with this email already exists.{" "}
+                  <Link
+                    href="/login"
+                    className="font-medium underline underline-offset-4 hover:text-destructive/80"
+                  >
+                    Sign in instead
+                  </Link>
+                </p>
+              ) : (
+                <p>{errors.root.message}</p>
+              )}
+            </div>
           )}
 
           <Button type="submit" className="w-full" disabled={isPending}>

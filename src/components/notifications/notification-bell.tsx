@@ -66,9 +66,7 @@ export function NotificationBell() {
       if (notification.referenceType === "loan" && notification.referenceId) {
         router.push(`/loans/${notification.referenceId}`)
       }
-      if (notification.referenceType === "conversation") {
-        router.push("/chat")
-      }
+      // Chat is now a floating widget — no navigation needed for conversation notifications
       setOpen(false)
     }
   }

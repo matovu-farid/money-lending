@@ -18,14 +18,12 @@ import {
   LogOut,
   ClipboardCheck,
   ArrowRightLeft,
-  MessageSquare,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import { signOut, useSession } from "@/lib/auth-client"
 import { queryKeys } from "@/hooks/query-keys"
 import { getDashboardAction } from "@/actions/dashboard.actions"
-import { getConversationsAction } from "@/actions/chat.actions"
 import { listPaymentsAction } from "@/actions/payment.actions"
 import { searchCustomersAction } from "@/actions/customer.actions"
 import { useSidebarStore } from "@/lib/stores/sidebar"
@@ -54,9 +52,8 @@ function getNavGroups(userRole: UserRole): NavGroup[] {
 
   const operationsItems: NavItem[] = [
     { label: "Customers", href: "/customers", icon: Users },
-    { label: "Payments", href: "/payments", icon: CreditCard },
     { label: "Loans", href: "/loans", icon: Banknote },
-    { label: "Chat", href: "/chat", icon: MessageSquare },
+    { label: "Payments", href: "/payments", icon: CreditCard },
   ]
   if (isSupervisorOrAbove) {
     operationsItems.push({ label: "Approvals", href: "/approvals", icon: ClipboardCheck })
@@ -119,25 +116,25 @@ export function Sidebar({ onClose }: SidebarProps) {
       if (href === "/dashboard") {
         queryClient.prefetchQuery({
           queryKey: queryKeys.dashboard.kpis(),
-          queryFn: () => getDashboardAction().then((r) => ("data" in r ? r.data : undefined)),
-          staleTime,
-        })
-      } else if (href === "/chat") {
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.chat.conversations(),
-          queryFn: () => getConversationsAction().then((r) => ("data" in r ? r.data : undefined)),
+          queryFn: () => getDashboardAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
           staleTime,
         })
       } else if (href === "/payments") {
         queryClient.prefetchQuery({
           queryKey: queryKeys.payments.list({}, 1),
-          queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => ("data" in r ? r.data : undefined)),
+          queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
           staleTime,
         })
       } else if (href === "/customers") {
         queryClient.prefetchQuery({
           queryKey: queryKeys.customers.search({}, 0),
-          queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => ("data" in r ? r.data : undefined)),
+          queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+          staleTime,
+        })
+      } else if (href === "/loans") {
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.customers.recent(),
+          queryFn: () => searchCustomersAction({ page: 0, pageSize: 3, sortByRecent: true }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data?.rows ?? [] }),
           staleTime,
         })
       }

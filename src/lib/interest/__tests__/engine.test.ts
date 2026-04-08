@@ -265,99 +265,131 @@ describe("allocatePayment", () => {
     expect(result.interestPortion).toBe("80000.00")
     expect(result.principalPortion).toBe("220000.00")
   })
+
+  // Test: interestAlreadyPaidInPeriod offsets interest owed for same-period payments
+  it("second payment in same period: interest already paid reduces interest owed", () => {
+    // 1M at 10%/month, 0 days elapsed, 30-day min → gross interest = 100,000
+    // First payment already paid 30,000 interest → remaining interest = 70,000
+    // Second payment of 100,000: 70,000 interest + 30,000 principal
+    const result = allocatePayment({
+      paymentAmount: "100000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 0,
+      minInterestDays: 30,
+      interestAlreadyPaidInPeriod: "30000",
+    })
+    expect(result.interestPortion).toBe("70000.00")
+    expect(result.principalPortion).toBe("30000.00")
+    expect(result.principalBalanceAfter).toBe("970000.00")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // Test: When interest is fully covered by prior payments, entire payment goes to principal
+  it("interest fully covered by prior payments: entire payment reduces principal", () => {
+    // 1M at 10%/month, 30 days → interest = 100,000
+    // Prior payments already covered 100,000 interest → remaining = 0
+    // Payment of 50,000 → all to principal
+    const result = allocatePayment({
+      paymentAmount: "50000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 30,
+      minInterestDays: 30,
+      interestAlreadyPaidInPeriod: "100000",
+    })
+    expect(result.interestPortion).toBe("0.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceAfter).toBe("950000.00")
+  })
 })
 
 describe("calculateSchedule", () => {
   // Fixed rate: 1M at 10%/month for 5 months
   it("fixed_rate: 1M at 10%/month for 5 months — constant interest each month", () => {
-    const schedule = calculateSchedule("1000000", "0.10", 5, "fixed_rate")
-    expect(schedule).toHaveLength(5)
+    const { entries } = calculateSchedule("1000000", "0.10", 5, "fixed_rate")
+    expect(entries).toHaveLength(5)
 
     // Each month: principal=200000, interest=100000 (on original 1M), installment=300000
     for (let i = 0; i < 5; i++) {
-      expect(schedule[i].month).toBe(i + 1)
-      expect(schedule[i].monthlyInterest).toBe("100000.00")
-      expect(schedule[i].monthlyInstallment).toBe("300000.00")
+      expect(entries[i].month).toBe(i + 1)
+      expect(entries[i].monthlyInterest).toBe("100000.00")
+      expect(entries[i].monthlyInstallment).toBe("300000.00")
     }
 
     // Balances decrease by 200k each month
-    expect(schedule[0].balanceAfter).toBe("800000.00")
-    expect(schedule[1].balanceAfter).toBe("600000.00")
-    expect(schedule[2].balanceAfter).toBe("400000.00")
-    expect(schedule[3].balanceAfter).toBe("200000.00")
-    expect(schedule[4].balanceAfter).toBe("0.00")
+    expect(entries[0].balanceAfter).toBe("800000.00")
+    expect(entries[1].balanceAfter).toBe("600000.00")
+    expect(entries[2].balanceAfter).toBe("400000.00")
+    expect(entries[3].balanceAfter).toBe("200000.00")
+    expect(entries[4].balanceAfter).toBe("0.00")
   })
 
   it("fixed_rate: total interest = 500k for 1M at 10% over 5 months", () => {
-    const schedule = calculateSchedule("1000000", "0.10", 5, "fixed_rate")
-    const totalInterest = schedule.reduce(
-      (sum, e) => sum.plus(e.monthlyInterest),
-      new BigNumber(0)
-    )
+    const { totalInterest } = calculateSchedule("1000000", "0.10", 5, "fixed_rate")
     expect(totalInterest.toFixed(2)).toBe("500000.00")
   })
 
   // Reducing balance: 1M at 10%/month for 5 months
   it("reducing_balance: 1M at 10%/month for 5 months — decreasing interest", () => {
-    const schedule = calculateSchedule("1000000", "0.10", 5, "reducing_balance")
-    expect(schedule).toHaveLength(5)
+    const { entries } = calculateSchedule("1000000", "0.10", 5, "reducing_balance")
+    expect(entries).toHaveLength(5)
 
     // Month 1: interest = 1000000 * 0.10 = 100000, principal = 200000, installment = 300000
-    expect(schedule[0].month).toBe(1)
-    expect(schedule[0].monthlyPrincipal).toBe("200000.00")
-    expect(schedule[0].monthlyInterest).toBe("100000.00")
-    expect(schedule[0].monthlyInstallment).toBe("300000.00")
-    expect(schedule[0].balanceAfter).toBe("800000.00")
+    expect(entries[0].month).toBe(1)
+    expect(entries[0].monthlyPrincipal).toBe("200000.00")
+    expect(entries[0].monthlyInterest).toBe("100000.00")
+    expect(entries[0].monthlyInstallment).toBe("300000.00")
+    expect(entries[0].balanceAfter).toBe("800000.00")
 
     // Month 2: interest = 800000 * 0.10 = 80000
-    expect(schedule[1].monthlyInterest).toBe("80000.00")
-    expect(schedule[1].monthlyInstallment).toBe("280000.00")
-    expect(schedule[1].balanceAfter).toBe("600000.00")
+    expect(entries[1].monthlyInterest).toBe("80000.00")
+    expect(entries[1].monthlyInstallment).toBe("280000.00")
+    expect(entries[1].balanceAfter).toBe("600000.00")
 
     // Month 3: interest = 600000 * 0.10 = 60000
-    expect(schedule[2].monthlyInterest).toBe("60000.00")
-    expect(schedule[2].monthlyInstallment).toBe("260000.00")
-    expect(schedule[2].balanceAfter).toBe("400000.00")
+    expect(entries[2].monthlyInterest).toBe("60000.00")
+    expect(entries[2].monthlyInstallment).toBe("260000.00")
+    expect(entries[2].balanceAfter).toBe("400000.00")
 
     // Month 4: interest = 400000 * 0.10 = 40000
-    expect(schedule[3].monthlyInterest).toBe("40000.00")
-    expect(schedule[3].monthlyInstallment).toBe("240000.00")
-    expect(schedule[3].balanceAfter).toBe("200000.00")
+    expect(entries[3].monthlyInterest).toBe("40000.00")
+    expect(entries[3].monthlyInstallment).toBe("240000.00")
+    expect(entries[3].balanceAfter).toBe("200000.00")
 
     // Month 5: interest = 200000 * 0.10 = 20000
-    expect(schedule[4].monthlyInterest).toBe("20000.00")
-    expect(schedule[4].monthlyInstallment).toBe("220000.00")
-    expect(schedule[4].balanceAfter).toBe("0.00")
+    expect(entries[4].monthlyInterest).toBe("20000.00")
+    expect(entries[4].monthlyInstallment).toBe("220000.00")
+    expect(entries[4].balanceAfter).toBe("0.00")
   })
 
   it("reducing_balance: total interest = 300k for 1M at 10% over 5 months", () => {
-    const schedule = calculateSchedule("1000000", "0.10", 5, "reducing_balance")
-    const totalInterest = schedule.reduce(
-      (sum, e) => sum.plus(e.monthlyInterest),
-      new BigNumber(0)
-    )
+    const { totalInterest } = calculateSchedule("1000000", "0.10", 5, "reducing_balance")
     expect(totalInterest.toFixed(2)).toBe("300000.00")
   })
 
-  it("last month principal absorbs rounding remainder", () => {
-    // 1M / 3 = 333333.33 repeating — last month should get the remainder
-    const schedule = calculateSchedule("1000000", "0.10", 3, "fixed_rate")
-    expect(schedule).toHaveLength(3)
-    // Month 1 and 2: 333333.33
-    expect(schedule[0].monthlyPrincipal).toBe("333333.33")
-    expect(schedule[1].monthlyPrincipal).toBe("333333.33")
-    // Month 3: remainder = 1000000 - 333333.33 - 333333.33 = 333333.34
-    expect(schedule[2].monthlyPrincipal).toBe("333333.34")
-    expect(schedule[2].balanceAfter).toBe("0.00")
+  it("last month balance reaches zero with repeating principal", () => {
+    // 1M / 3 = 333333.33... — full precision keeps balance exact
+    const { entries } = calculateSchedule("1000000", "0.10", 3, "fixed_rate")
+    expect(entries).toHaveLength(3)
+    expect(entries[0].monthlyPrincipal).toBe("333333.33")
+    expect(entries[1].monthlyPrincipal).toBe("333333.33")
+    expect(entries[2].monthlyPrincipal).toBe("333333.33")
+    expect(entries[2].balanceAfter).toBe("0.00")
   })
 
   it("single month term works correctly", () => {
-    const schedule = calculateSchedule("500000", "0.10", 1, "fixed_rate")
-    expect(schedule).toHaveLength(1)
-    expect(schedule[0].monthlyPrincipal).toBe("500000.00")
-    expect(schedule[0].monthlyInterest).toBe("50000.00")
-    expect(schedule[0].monthlyInstallment).toBe("550000.00")
-    expect(schedule[0].balanceAfter).toBe("0.00")
+    const { entries } = calculateSchedule("500000", "0.10", 1, "fixed_rate")
+    expect(entries).toHaveLength(1)
+    expect(entries[0].monthlyPrincipal).toBe("500000.00")
+    expect(entries[0].monthlyInterest).toBe("50000.00")
+    expect(entries[0].monthlyInstallment).toBe("550000.00")
+    expect(entries[0].balanceAfter).toBe("0.00")
+  })
+
+  it("reducing_balance: 10M at 10% over 6 months — totalInterest has no rounding error", () => {
+    const { totalInterest } = calculateSchedule("10000000", "0.10", 6, "reducing_balance")
+    expect(totalInterest.toFixed(2)).toBe("3500000.00")
   })
 })
 

@@ -779,8 +779,8 @@ export async function getPaymentPortionsFromLedger(
   const result = new Map<string, { interestPortion: string; principalPortion: string }>();
   for (const [paymentId, portions] of portionMap) {
     result.set(paymentId, {
-      interestPortion: portions.interest.toFixed(2),
-      principalPortion: portions.principal.toFixed(2),
+      interestPortion: portions.interest.toFixed(0),
+      principalPortion: portions.principal.toFixed(0),
     });
   }
   return result;
@@ -837,8 +837,8 @@ export async function getCreditorRepaymentPortionsFromLedger(
   const result = new Map<string, { interestPortion: string; principalPortion: string }>();
   for (const [repaymentId, portions] of portionMap) {
     result.set(repaymentId, {
-      interestPortion: portions.interest.toFixed(2),
-      principalPortion: portions.principal.toFixed(2),
+      interestPortion: portions.interest.toFixed(0),
+      principalPortion: portions.principal.toFixed(0),
     });
   }
   return result;

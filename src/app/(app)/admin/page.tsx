@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { PermissionInfo } from "@/components/ui/permission-info"
 import { PageHeader } from "@/components/ui/page-header"
 import { formatDate } from "@/lib/utils"
 
@@ -83,9 +84,12 @@ export default function AdminPage() {
 
   if (actorLevel < ROLE_LEVELS.admin) {
     return (
-      <div className="p-4 md:p-6">
-        <p className="text-destructive font-medium">Access denied.</p>
-        <p className="text-muted-foreground text-sm mt-1">
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="admin" action="Manage user roles" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
           You need Admin or Super Admin permissions to view this page.
         </p>
       </div>

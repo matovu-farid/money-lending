@@ -37,7 +37,7 @@ const baseLoanInput = {
   customerId: "cust-1",
   principalAmount: "500000.00",
   issuanceFee: "50000.00",
-  description: "Business expansion loan",
+
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: "2026-03-19T00:00:00.000Z",
@@ -50,7 +50,7 @@ const mockLoan = {
   customerId: "cust-1",
   principalAmount: "500000.00",
   issuanceFee: "50000.00",
-  description: "Business expansion loan",
+
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-03-19T00:00:00.000Z"),

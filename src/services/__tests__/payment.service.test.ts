@@ -45,7 +45,7 @@ const mockLoan = {
   customerId: "cust-1",
   principalAmount: "500000",
   issuanceFee: "0.00",
-  description: "Test loan",
+
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-02-20T00:00:00.000Z"),

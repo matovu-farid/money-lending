@@ -97,6 +97,7 @@ export default function NewCreditorPage() {
                   id="name"
                   type="text"
                   placeholder="e.g. John Investor"
+                  maxLength={100}
                   disabled={isPending}
                   {...register("name", { required: "Name is required", validate: v => v.trim() !== "" || "Name is required" })}
                 />
@@ -111,6 +112,7 @@ export default function NewCreditorPage() {
                   id="contact"
                   type="text"
                   placeholder="Phone number or email"
+                  maxLength={100}
                   disabled={isPending}
                   {...register("contact", { required: "Contact is required", validate: v => v.trim() !== "" || "Contact is required" })}
                 />
@@ -125,6 +127,7 @@ export default function NewCreditorPage() {
                   id="address"
                   type="text"
                   placeholder="e.g. Kampala, Uganda"
+                  maxLength={200}
                   disabled={isPending}
                   {...register("address", { required: "Address is required", validate: v => v.trim() !== "" || "Address is required" })}
                 />

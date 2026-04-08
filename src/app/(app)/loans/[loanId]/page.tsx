@@ -60,7 +60,7 @@ export default async function LoanDetailPage({
   let ledgerBalance: string | null = null
   try {
     const balance = await getLoanBalanceFromLedger(loanId)
-    ledgerBalance = balance.toFixed(2)
+    ledgerBalance = balance.toFixed(0)
   } catch {
     // Non-critical — client will fall back to payments-chain balance
   }
@@ -80,7 +80,7 @@ export default async function LoanDetailPage({
         startDate: new Date(loan.startDate),
         loanType: toLoanType(loan.loanType),
         termMonths: loan.termMonths,
-        totalInterestPaid: totalInterestPaid.toFixed(2),
+        totalInterestPaid: totalInterestPaid.toFixed(0),
         paymentCount: activePayments.length,
         outstandingBalance,
         penaltyWaived: loan.penaltyWaived,

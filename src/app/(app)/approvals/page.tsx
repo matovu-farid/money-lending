@@ -11,6 +11,7 @@ import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { PermissionInfo } from "@/components/ui/permission-info"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -100,9 +101,12 @@ export default function ApprovalsPage() {
 
   if (!isSupervisorOrAbove) {
     return (
-      <div className="p-4 md:p-6">
-        <p className="text-destructive font-medium">Access denied.</p>
-        <p className="text-muted-foreground text-sm mt-1">
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="supervisor" action="Review rate change approvals" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
           You need Supervisor or higher permissions to view approvals.
         </p>
       </div>
@@ -328,7 +332,7 @@ export default function ApprovalsPage() {
                   onChange={(e) => setReviewNote(e.target.value)}
                   placeholder={reviewAction === "approved" ? "Any additional notes..." : "Reason for rejection..."}
                   disabled={isPending}
-                  maxLength={500}
+                  maxLength={2500}
                 />
               </div>
             </div>

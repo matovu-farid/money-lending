@@ -3,6 +3,8 @@
 import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { Plus } from "lucide-react"
+import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { useLoans } from "@/hooks/use-loans"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
@@ -43,6 +45,7 @@ export default function LoansPage() {
 
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all")
   const [isExporting, setIsExporting] = useState(false)
+  const [pickerOpen, setPickerOpen] = useState(false)
 
   const handleExportExcel = useCallback(async () => {
     setIsExporting(true)
@@ -299,10 +302,11 @@ export default function LoansPage() {
         <div className="py-12 text-center">
           <h2 className="text-lg font-semibold">No loans yet.</h2>
           <p className="text-sm text-muted-foreground mt-2">
-            To issue a loan, go to a customer&apos;s profile and click &ldquo;Issue New Loan&rdquo;.
+            Issue your first loan by selecting a customer.
           </p>
-          <Button className="mt-4" onClick={() => router.push("/customers")}>
-            View Customers
+          <Button className="mt-4" onClick={() => setPickerOpen(true)}>
+            <Plus className="h-4 w-4 mr-1.5" />
+            Issue Loan
           </Button>
         </div>
       ) : (
@@ -418,6 +422,10 @@ export default function LoansPage() {
 
           {/* Actions Row */}
           <div className="flex items-center justify-end gap-2 print:hidden">
+            <Button size="sm" onClick={() => setPickerOpen(true)}>
+              <Plus className="h-4 w-4 mr-1.5" />
+              Issue Loan
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -460,6 +468,7 @@ export default function LoansPage() {
           )}
         </>
       )}
+      <CustomerPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} />
     </div>
   )
 }

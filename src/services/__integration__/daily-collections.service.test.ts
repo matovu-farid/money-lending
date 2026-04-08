@@ -29,7 +29,7 @@ function baseLoanInput(customerId: string, overrides: Record<string, unknown> = 
     customerId,
     principalAmount: "1000000.00",
     issuanceFee: "50000.00",
-    description: "Test loan",
+
     interestRate: "0.10",
     minInterestDays: 30,
     startDate: "2025-12-01T00:00:00.000Z",

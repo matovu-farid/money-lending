@@ -38,11 +38,11 @@ async function makeLoan(customerId: string) {
         customerId,
         principalAmount: "1000000.00",
         issuanceFee: "50000.00",
-        description: "Test loan",
+
         interestRate: "0.10",
         minInterestDays: 30,
         startDate: "2025-01-01",
-        collateral: { nature: "Land title" },
+        collateral: { nature: "Land title", description: "Test collateral" },
         disbursementSource: "cash",
       },
       "test-actor"

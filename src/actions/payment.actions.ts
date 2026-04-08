@@ -418,7 +418,7 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
           if (pp) runningBalance = runningBalance.minus(new BigNumber(pp.principalPortion))
         }
         if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0)
-        principalBalanceBefore = runningBalance.toFixed(2)
+        principalBalanceBefore = runningBalance.toFixed(0)
       }
       const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate))
       const paymentNumber = paymentIndex + 1

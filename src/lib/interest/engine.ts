@@ -66,19 +66,15 @@ export function calculateLoanSummary(
   }
 
   if ((loanType === "fixed_rate" || loanType === "reducing_balance") && termMonths) {
-    const schedule = calculateSchedule(principalAmount, monthlyRateDecimal, termMonths, loanType)
-    const totalInterest = schedule.reduce(
-      (sum: BigNumber, e: ScheduleEntry) => sum.plus(e.monthlyInterest),
-      new BigNumber(0)
-    )
+    const { entries, totalInterest } = calculateSchedule(principalAmount, monthlyRateDecimal, termMonths, loanType)
     const totalOwed = principal.plus(totalInterest)
 
     return {
       ...base,
-      schedule,
+      schedule: entries,
       totalInterest: formatAmount(totalInterest),
       totalOwed: formatAmount(totalOwed),
-      monthlyInstallment: schedule[0].monthlyInstallment,
+      monthlyInstallment: entries[0].monthlyInstallment,
     }
   }
 
@@ -116,7 +112,13 @@ export function calculateDaysOverdue(
  * Formats a BigNumber amount to 2 decimal places for display and storage.
  */
 export function formatAmount(amount: BigNumber): string {
-  return amount.toFixed(2)
+  return amount.toFixed(0)
+}
+
+/** Compute outstanding balance = principal + one period of interest */
+function computeOutstanding(principalAfter: string | BigNumber, monthlyRateDecimal: string): string {
+  const p = new BigNumber(principalAfter)
+  return formatAmount(p.plus(p.multipliedBy(monthlyRateDecimal)))
 }
 
 /**
@@ -128,6 +130,8 @@ export type PaymentAllocation = {
   principalPortion: string
   principalBalanceBefore: string
   principalBalanceAfter: string
+  /** Principal balance + one period of interest (total owed at next payment) */
+  outstandingBalanceAfter: string
   loanFullyPaid: boolean
 }
 
@@ -138,18 +142,37 @@ export type PaymentAllocation = {
  * Reducing balance: interest = currentBalance x monthlyRate (decreasing).
  * Monthly principal = principal / termMonths (last month absorbs rounding remainder).
  */
+/**
+ * Result from calculateSchedule: the per-month rows plus a full-precision total.
+ */
+export interface ScheduleResult {
+  entries: ScheduleEntry[]
+  totalInterest: BigNumber
+}
+
+/**
+ * Generates an amortization schedule for fixed_rate or reducing_balance loans.
+ *
+ * All arithmetic stays at full BigNumber precision throughout the loop.
+ * Values are only rounded to 2dp at the very end for display strings.
+ *
+ * Fixed rate: interest = originalPrincipal x monthlyRate each month (constant).
+ * Reducing balance: interest = currentBalance x monthlyRate (decreasing).
+ * Monthly principal = principal / termMonths (last month absorbs rounding remainder).
+ */
 export function calculateSchedule(
   principalAmount: string,
   monthlyRateDecimal: string,
   termMonths: number,
   loanType: "fixed_rate" | "reducing_balance"
-): ScheduleEntry[] {
+): ScheduleResult {
   const principal = new BigNumber(principalAmount)
   const rate = new BigNumber(monthlyRateDecimal)
-  const monthlyPrincipal = principal.dividedBy(termMonths).decimalPlaces(2, BigNumber.ROUND_DOWN)
+  const monthlyPrincipal = principal.dividedBy(termMonths)
 
-  const schedule: ScheduleEntry[] = []
+  const entries: ScheduleEntry[] = []
   let balance = principal
+  let totalInterest = new BigNumber(0)
 
   for (let month = 1; month <= termMonths; month++) {
     // Last month absorbs rounding remainder
@@ -160,10 +183,11 @@ export function calculateSchedule(
         ? principal.multipliedBy(rate)
         : balance.multipliedBy(rate)
 
+    totalInterest = totalInterest.plus(interest)
     const installment = thisPrincipal.plus(interest)
     balance = balance.minus(thisPrincipal)
 
-    schedule.push({
+    entries.push({
       month,
       monthlyPrincipal: formatAmount(thisPrincipal),
       monthlyInterest: formatAmount(interest),
@@ -172,7 +196,7 @@ export function calculateSchedule(
     })
   }
 
-  return schedule
+  return { entries, totalInterest }
 }
 
 /**
@@ -218,6 +242,7 @@ export function allocateFixedRatePayment(params: {
       principalPortion: "0.00",
       principalBalanceBefore,
       principalBalanceAfter: formatAmount(balance),
+      outstandingBalanceAfter: computeOutstanding(balance, monthlyRateDecimal),
       loanFullyPaid: false,
     }
   }
@@ -230,6 +255,7 @@ export function allocateFixedRatePayment(params: {
     principalPortion: formatAmount(principalPortion),
     principalBalanceBefore,
     principalBalanceAfter: formatAmount(principalBalanceAfter),
+    outstandingBalanceAfter: computeOutstanding(principalBalanceAfter, monthlyRateDecimal),
     loanFullyPaid: principalBalanceAfter.isZero(),
   }
 }
@@ -260,6 +286,7 @@ export function allocateReducingBalancePayment(params: {
       principalPortion: "0.00",
       principalBalanceBefore,
       principalBalanceAfter: formatAmount(balance),
+      outstandingBalanceAfter: computeOutstanding(balance, monthlyRateDecimal),
       loanFullyPaid: false,
     }
   }
@@ -272,6 +299,7 @@ export function allocateReducingBalancePayment(params: {
     principalPortion: formatAmount(principalPortion),
     principalBalanceBefore,
     principalBalanceAfter: formatAmount(principalBalanceAfter),
+    outstandingBalanceAfter: computeOutstanding(principalBalanceAfter, monthlyRateDecimal),
     loanFullyPaid: principalBalanceAfter.isZero(),
   }
 }
@@ -299,8 +327,10 @@ export function allocatePayment(params: {
   originalPrincipal?: string
   termMonths?: number
   paymentNumber?: number
+  /** Interest already collected from earlier payments within the same min-interest period */
+  interestAlreadyPaidInPeriod?: string
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays, loanType, originalPrincipal, termMonths, paymentNumber } = params
+  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays, loanType, originalPrincipal, termMonths, paymentNumber, interestAlreadyPaidInPeriod } = params
 
   // Dispatch to fixed_rate strategy
   if (loanType === "fixed_rate" && originalPrincipal && termMonths && paymentNumber) {
@@ -327,7 +357,10 @@ export function allocatePayment(params: {
 
   // Default: perpetual logic (existing behavior)
   const payment = new BigNumber(paymentAmount)
-  const interestOwed = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
+  const grossInterest = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
+  // Subtract interest already collected by earlier payments in the same min-interest period
+  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
+  const interestOwed = BigNumber.max(grossInterest.minus(alreadyPaid), 0)
 
   if (payment.isLessThanOrEqualTo(interestOwed)) {
     return {
@@ -335,6 +368,7 @@ export function allocatePayment(params: {
       principalPortion: "0.00",
       principalBalanceBefore,
       principalBalanceAfter: principalBalanceBefore,
+      outstandingBalanceAfter: computeOutstanding(principalBalanceBefore, monthlyRateDecimal),
       loanFullyPaid: false,
     }
   }
@@ -350,6 +384,7 @@ export function allocatePayment(params: {
     principalPortion: formatAmount(principalPortion),
     principalBalanceBefore,
     principalBalanceAfter: formatAmount(principalBalanceAfter),
+    outstandingBalanceAfter: computeOutstanding(principalBalanceAfter, monthlyRateDecimal),
     loanFullyPaid: principalBalanceAfter.isZero(),
   }
 }

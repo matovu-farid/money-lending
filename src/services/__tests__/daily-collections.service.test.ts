@@ -32,7 +32,7 @@ const makeLoan = (overrides: Record<string, unknown> = {}) => ({
   customerId: "cust-1",
   principalAmount: "1000000.00",
   issuanceFee: "0.00",
-  description: "Test loan",
+
   interestRate: "0.1000",
   minInterestDays: 30,
   startDate: new Date("2026-01-01T00:00:00.000Z"),

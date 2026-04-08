@@ -5,7 +5,6 @@ import { format } from "date-fns"
 import { useForm, Controller } from "react-hook-form"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import Link from "next/link"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -18,6 +17,10 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Spinner } from "@/components/ui/spinner"
 import { MoneyInput } from "@/components/ui/money-input"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
+import { generateReceiptNumber } from "@/lib/receipt-number"
+import { useSession } from "@/lib/auth-client"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { getRecentlyCollectedLoansAction, recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { queryKeys } from "@/hooks/query-keys"
@@ -29,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import type { ActiveLoanSearchResult, DepositLocation } from "@/types"
+import type { ActiveLoanSearchResult, DepositLocation, ReceiptPaymentData } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS, DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 
 interface QuickRecordDialogProps {
@@ -45,8 +48,9 @@ interface QuickRecordFormValues {
 
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
   const queryClient = useQueryClient()
+  const { data: session } = useSession()
   const [selectedLoan, setSelectedLoan] = useState<ActiveLoanSearchResult | null>(null)
-  const [successPaymentId, setSuccessPaymentId] = useState<string | null>(null)
+  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
   const [isPending, startTransition] = useTransition()
   const [confirmStep, setConfirmStep] = useState(false)
   const [pendingData, setPendingData] = useState<QuickRecordFormValues | null>(null)
@@ -98,7 +102,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       paymentDate: format(new Date(), "yyyy-MM-dd"),
       depositLocation: "cash",
     })
-    setSuccessPaymentId(null)
+    setReceiptData(null)
     setConfirmStep(false)
     setPendingData(null)
   }
@@ -151,7 +155,10 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
         return
       }
 
-      setSuccessPaymentId(result.data.id)
+      setReceiptData({
+        payment: { ...result.data, depositLocationValue: pendingData.depositLocation },
+        receiptNumber: generateReceiptNumber(),
+      })
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.recentLoans.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
@@ -168,35 +175,10 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     : ""
 
   return (
-    <DrawerDialog open={open} onOpenChange={handleOpenChange}>
+    <>
+    <DrawerDialog open={open && !receiptData} onOpenChange={handleOpenChange}>
       <DrawerDialogContent className="sm:max-w-[480px]">
-        {successPaymentId ? (
-          <>
-            <DialogHeader>
-              <DialogTitle>Payment Recorded</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
-              <p className="text-sm">
-                Payment of <span className="font-mono tabular-nums">UGX {formatNumberWithCommas(amount)}</span> recorded for {selectedLoan?.customerName}.
-              </p>
-              <Link
-                href={`/receipts/repayment/${successPaymentId}`}
-                target="_blank"
-                className="text-sm underline-offset-4 hover:underline"
-              >
-                View receipt
-              </Link>
-            </div>
-            <DialogFooter>
-              <Button variant="default" onClick={resetForm}>
-                Record another
-              </Button>
-              <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                Close
-              </Button>
-            </DialogFooter>
-          </>
-        ) : confirmStep && pendingData ? (
+        {confirmStep && pendingData ? (
           <>
             <DialogHeader>
               <DialogTitle>Confirm Payment</DialogTitle>
@@ -277,6 +259,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                     selectedLoan={selectedLoan}
                     onSelect={setSelectedLoan}
                     onClear={() => setSelectedLoan(null)}
+                    recentLoans={recentLoans}
                   />
                 </div>
 
@@ -389,5 +372,34 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
         )}
       </DrawerDialogContent>
     </DrawerDialog>
+
+    <PosReceiptModal
+      open={receiptData !== null}
+      onClose={() => {
+        setReceiptData(null)
+        onOpenChange(false)
+      }}
+      title="Payment Receipt"
+      autoActions
+    >
+      {receiptData && (
+        <PosReceiptRepayment
+          receiptNumber={receiptData.receiptNumber}
+          date={receiptData.payment.paymentDate instanceof Date
+            ? receiptData.payment.paymentDate.toISOString()
+            : String(receiptData.payment.paymentDate)}
+          customerName={selectedLoan?.customerName ?? ""}
+          loanReference={loanRef}
+          amountPaid={receiptData.payment.amount}
+          interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
+          principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
+          balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
+          outstandingBalance={receiptData.payment.allocation?.outstandingBalanceAfter}
+          depositLocation={receiptData.payment.depositLocationValue}
+          officerName={session?.user?.name ?? "Officer"}
+        />
+      )}
+    </PosReceiptModal>
+    </>
   )
 }

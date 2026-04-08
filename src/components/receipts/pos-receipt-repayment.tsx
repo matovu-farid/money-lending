@@ -11,6 +11,7 @@ interface PosReceiptRepaymentProps {
   interestPortion: string
   principalPortion: string
   balanceAfter: string
+  outstandingBalance?: string
   depositLocation?: string
   officerName: string
 }
@@ -24,6 +25,7 @@ export function PosReceiptRepayment({
   interestPortion,
   principalPortion,
   balanceAfter,
+  outstandingBalance,
   depositLocation,
   officerName,
 }: PosReceiptRepaymentProps) {
@@ -87,10 +89,18 @@ export function PosReceiptRepayment({
       {/* Separator */}
       <div className="border-t border-dashed border-black my-2" />
 
-      {/* Balance After */}
-      <div className="flex justify-between font-bold">
-        <span>Balance After:</span>
-        <span>{formatCurrency(balanceAfter)}</span>
+      {/* Balances */}
+      <div className="space-y-0.5">
+        {outstandingBalance && (
+          <div className="flex justify-between">
+            <span>Owed Before:</span>
+            <span>{formatCurrency(outstandingBalance)}</span>
+          </div>
+        )}
+        <div className="flex justify-between font-bold">
+          <span>Balance After:</span>
+          <span>{formatCurrency(balanceAfter)}</span>
+        </div>
       </div>
 
       {/* Separator */}

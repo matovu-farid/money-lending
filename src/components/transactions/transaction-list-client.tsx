@@ -420,6 +420,7 @@ export function TransactionListClient({
                   id={`${idPrefix}-notes`}
                   {...register("notes")}
                   placeholder="Add any notes..."
+                  maxLength={2500}
                   rows={3}
                 />
               </div>

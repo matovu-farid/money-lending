@@ -32,14 +32,17 @@ export async function createCustomerAction(input: CreateCustomerInput) {
     return { error: "Unauthorized" }
   }
 
-  if (!input.fullName?.trim()) {
-    return { error: "Full name is required" }
+  if (!input.fullName?.trim() || input.fullName.trim().split(/\s+/).length < 2) {
+    return { error: "Full name with first and last name is required" }
   }
-  if (!input.contact?.trim()) {
-    return { error: "Contact is required" }
+  if (!input.nin?.trim() || !/^[CA][MF]\d{8}[A-Z0-9]{4}$/.test(input.nin.trim().toUpperCase())) {
+    return { error: "Valid NIN is required (e.g. CM97027102X4CU)" }
   }
-  if (!input.address?.trim()) {
-    return { error: "Address is required" }
+  if (!input.contact?.trim() || !/^(07\d{8}|\+2567\d{8})$/.test(input.contact.trim().replace(/\s/g, ""))) {
+    return { error: "Valid Ugandan mobile number is required (e.g. 0771234567)" }
+  }
+  if (!input.address?.trim() || input.address.trim().length < 5) {
+    return { error: "Address is required (at least 5 characters)" }
   }
 
   try {
@@ -103,6 +106,7 @@ export async function searchCustomersAction(params: CustomerSearchParams) {
     const data = await Effect.runPromise(searchCustomers(params))
     return { data }
   } catch (error) {
+    console.error("[searchCustomersAction] error:", error)
     if (error instanceof DatabaseError) {
       return { error: "Database error" }
     }

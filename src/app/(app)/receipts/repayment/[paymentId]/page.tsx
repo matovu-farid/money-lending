@@ -63,7 +63,7 @@ export default async function RepaymentReceiptPage({
   const portionsMap = await getPaymentPortionsFromLedger([paymentId])
   const portions = portionsMap.get(paymentId) ?? { interestPortion: "0", principalPortion: "0" }
   const ledgerBalance = loan ? await getLoanBalanceFromLedger(loan.id) : null
-  const balanceAfter = ledgerBalance?.toFixed(2) ?? loan?.principalAmount ?? "0"
+  const balanceAfter = ledgerBalance?.toFixed(0) ?? loan?.principalAmount ?? "0"
 
   // RCPT-03 completeness check
   const missingFields: string[] = []
@@ -75,7 +75,7 @@ export default async function RepaymentReceiptPage({
 
   // Format helpers
   const formatCurrency = (value: string | number) =>
-    `UGX ${new Intl.NumberFormat("en-UG").format(Number(value))}`
+    `UGX ${new Intl.NumberFormat("en-UG", { maximumFractionDigits: 0 }).format(Number(value))}`
 
 
   const receiptNumber = `PAY-${paymentId.slice(0, 8).toUpperCase()}`

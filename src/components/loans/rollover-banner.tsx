@@ -19,7 +19,7 @@ export function RolloverBanner({
 }: RolloverBannerProps) {
   const totalCarryOver = new BigNumber(outstandingPrincipal)
     .plus(new BigNumber(accruedInterest))
-    .toFixed(2)
+    .toFixed(0)
 
   const loanRef = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
 

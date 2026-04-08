@@ -122,7 +122,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
           console.warn(`[getDashboardKPIs] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
         }
         const outstandingBalance = ledgerBalance !== undefined
-          ? ledgerBalance.toFixed(2)
+          ? ledgerBalance.toFixed(0)
           : loan.principalAmount
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
@@ -144,12 +144,12 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
       const activeBorrowers = new Set(activeLoans.map((l) => l.customerId)).size
 
       return {
-        loansOutstanding: loansOutstanding.toFixed(2),
-        repaymentsCollected: repaymentsCollected.toFixed(2),
-        interestEarned: interestEarned.toFixed(2),
+        loansOutstanding: loansOutstanding.toFixed(0),
+        repaymentsCollected: repaymentsCollected.toFixed(0),
+        interestEarned: interestEarned.toFixed(0),
         activeBorrowers,
         overdueCount,
-        capitalInSystem: capitalInSystem.toFixed(2),
+        capitalInSystem: capitalInSystem.toFixed(0),
       }
     },
     catch: (e) => new DatabaseError({ cause: e }),

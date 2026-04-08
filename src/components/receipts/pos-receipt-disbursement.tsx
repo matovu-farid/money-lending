@@ -9,10 +9,8 @@ interface PosReceiptDisbursementProps {
   customerNin?: string
   loanAmount: string
   issuanceFee?: string
-  description?: string
   interestRate: string
   collateralNature: string
-  collateralDescription?: string
   disbursementSource?: string
   officerName: string
 }
@@ -24,10 +22,8 @@ export function PosReceiptDisbursement({
   customerNin,
   loanAmount,
   issuanceFee,
-  description,
   interestRate,
   collateralNature,
-  collateralDescription,
   disbursementSource,
   officerName,
 }: PosReceiptDisbursementProps) {
@@ -82,17 +78,10 @@ export function PosReceiptDisbursement({
           <span>Interest Rate:</span>
           <span>{interestRate}</span>
         </div>
-        {description && (
-          <div>
-            <span>Purpose: {description}</span>
-          </div>
-        )}
         <div>
           <span>Collateral: {collateralNature}</span>
         </div>
-        {collateralDescription && (
-          <div className="pl-2 text-[10px]">{collateralDescription}</div>
-        )}
+
         {formattedSource && (
           <div className="flex justify-between">
             <span>Source:</span>

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useRef, useState } from "react"
+import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
@@ -19,11 +19,13 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
+import { InfoPopover } from "@/components/ui/info-popover"
 import { MoneyInput } from "@/components/ui/money-input"
 import { formatDate, formatCurrency } from "@/lib/utils"
 import { RolloverBanner } from "@/components/loans/rollover-banner"
 import { PageHeader } from "@/components/ui/page-header"
+import Link from "next/link"
 import BigNumber from "bignumber.js"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptDisbursement } from "@/components/receipts/pos-receipt-disbursement"
@@ -32,8 +34,8 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
+import { useNewLoanFormStore } from "@/lib/stores/new-loan-form"
 
 function todayISODate(): string {
   return new Date().toISOString().split("T")[0]
@@ -43,7 +45,6 @@ interface LoanFormValues {
   customerId: string
   principalAmount: string
   issuanceFee: string
-  description: string
   startDate: string
   interestRateDisplay: string
   disbursementSource: DepositLocation
@@ -57,10 +58,9 @@ interface ReceiptData {
   customerName: string
   loanAmount: string
   issuanceFee: string
-  description: string
   interestRate: string
   collateralNature: string
-  collateralDescription?: string
+  collateralDescription: string
   disbursementSource: string
   date: string
 }
@@ -73,10 +73,20 @@ function NewLoanPageInner() {
   const { data: session } = useSession()
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
-  const [step, setStep] = useState(1)
+  // Restore draft state from zustand store
+  const draft = useNewLoanFormStore()
+  // If a customerId is in the URL, it takes precedence over the saved draft
+  const initialCustomerId = prefilledCustomerId || draft.customerId
+
+  const [step, setStepRaw] = useState(draft.step)
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null)
-  const [loanType, setLoanType] = useState<LoanType>("perpetual")
-  const [termMonths, setTermMonths] = useState<string>("")
+  const [loanType, setLoanTypeRaw] = useState<LoanType>(draft.loanType)
+  const [termMonths, setTermMonthsRaw] = useState<string>(draft.termMonths)
+
+  // Wrap setters to sync to store
+  const setStep = (s: number) => { setStepRaw(s); draft.setField("step", s) }
+  const setLoanType = (t: LoanType) => { setLoanTypeRaw(t); draft.setField("loanType", t) }
+  const setTermMonths = (v: string) => { setTermMonthsRaw(v); draft.setField("termMonths", v) }
 
   const {
     register,
@@ -88,18 +98,35 @@ function NewLoanPageInner() {
     formState: { errors },
   } = useForm<LoanFormValues>({
     defaultValues: {
-      customerId: prefilledCustomerId,
-      principalAmount: "",
-      issuanceFee: "",
-      description: "",
-      startDate: todayISODate(),
-      interestRateDisplay: "10",
-      disbursementSource: "cash",
-      collateralNature: "",
-      collateralDescription: "",
+      customerId: initialCustomerId,
+      principalAmount: draft.principalAmount,
+      issuanceFee: draft.issuanceFee || "50000",
+      startDate: draft.startDate || todayISODate(),
+      interestRateDisplay: draft.interestRateDisplay || "10",
+      disbursementSource: draft.disbursementSource,
+      collateralNature: draft.collateralNature,
+      collateralDescription: draft.collateralDescription,
     },
     mode: "onTouched",
   })
+
+  // Sync form changes back to the store
+  useEffect(() => {
+    const subscription = watch((values) => {
+      draft.setFields({
+        customerId: values.customerId ?? "",
+        principalAmount: values.principalAmount ?? "",
+        issuanceFee: values.issuanceFee ?? "50000",
+        startDate: values.startDate ?? todayISODate(),
+        interestRateDisplay: values.interestRateDisplay ?? "10",
+        disbursementSource: values.disbursementSource ?? "cash",
+        collateralNature: values.collateralNature ?? "",
+        collateralDescription: values.collateralDescription ?? "",
+      })
+    })
+    return () => subscription.unsubscribe()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watch])
 
   // Watch values for computed fields and display
   const customerId = watch("customerId")
@@ -109,7 +136,6 @@ function NewLoanPageInner() {
   const collateralNature = watch("collateralNature")
   const collateralDescription = watch("collateralDescription")
   const issuanceFee = watch("issuanceFee")
-  const description = watch("description")
   const disbursementSource = watch("disbursementSource")
 
   // Collateral autocomplete state (UI-only, not form fields)
@@ -174,8 +200,8 @@ function NewLoanPageInner() {
       : null
 
   // Step-level validation fields
-  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "description", "startDate", "interestRateDisplay", "disbursementSource"]
-  const step2Fields: (keyof LoanFormValues)[] = ["collateralNature"]
+  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource"]
+  const step2Fields: (keyof LoanFormValues)[] = ["collateralNature", "collateralDescription"]
 
   async function handleStep1Next() {
     const valid = await trigger(step1Fields)
@@ -195,7 +221,7 @@ function NewLoanPageInner() {
   function onSubmit(data: LoanFormValues) {
     const collateral: CollateralInput = {
       nature: data.collateralNature,
-      description: data.collateralDescription.trim() || undefined,
+      description: data.collateralDescription.trim(),
     }
 
     const rolloverData = activeLoanData
@@ -211,7 +237,6 @@ function NewLoanPageInner() {
         customerId: data.customerId,
         principalAmount: data.principalAmount,
         issuanceFee: data.issuanceFee,
-        description: data.description.trim(),
         interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
         minInterestDays: 30,
         startDate: new Date(data.startDate).toISOString(),
@@ -230,13 +255,13 @@ function NewLoanPageInner() {
               customerName: customerName ?? "Customer",
               loanAmount: data.principalAmount,
               issuanceFee: data.issuanceFee,
-              description: data.description.trim(),
               interestRate: `${data.interestRateDisplay}%`,
               collateralNature: data.collateralNature,
-              collateralDescription: data.collateralDescription.trim() || undefined,
+              collateralDescription: data.collateralDescription.trim(),
               disbursementSource: data.disbursementSource,
               date: new Date(data.startDate).toISOString(),
             })
+            draft.clear()
           }
         },
       }
@@ -246,10 +271,11 @@ function NewLoanPageInner() {
   // Merge the react-hook-form register ref with our local ref for the collateral nature input
   const { ref: rhfNatureRef, ...collateralNatureRegistration } = register("collateralNature", {
     required: "Collateral nature is required",
+    maxLength: { value: 100, message: "Collateral nature is too long (max 100 characters)" },
   })
 
   return (
-    <div className="p-4 md:p-6 max-w-xl">
+    <div className={`p-4 md:p-6 ${step === 3 ? "max-w-2xl" : "max-w-xl"}`}>
       <PageHeader
         title="Issue New Loan"
         subtitle={`Step ${step} of 3`}
@@ -287,12 +313,9 @@ function NewLoanPageInner() {
         {/* Step 1: Loan Details */}
         {step === 1 && (
           <Card>
-            <CardHeader>
-              <CardTitle>Loan Details</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="pt-6 space-y-4">
               <div className="space-y-1">
-                <Label htmlFor="customerId">Customer</Label>
+                <Label htmlFor="customerId" className="font-semibold">Customer</Label>
                 {prefilledCustomerId && customerName ? (
                   <Input
                     id="customerId"
@@ -325,7 +348,25 @@ function NewLoanPageInner() {
               )}
 
               <div className="space-y-2">
-                <Label>Loan Type</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label className="font-semibold">Loan Type</Label>
+                  <InfoPopover>
+                    <div className="space-y-3 text-sm">
+                      <div>
+                        <p className="font-semibold">Perpetual</p>
+                        <p className="text-muted-foreground">No fixed end date. Interest accrues daily on the remaining balance (reducing balance). As the borrower pays, the balance drops and so does the daily interest. Minimum 30-day interest period applies.</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Fixed Rate</p>
+                        <p className="text-muted-foreground">A fixed repayment schedule over a set term. Monthly installments are equal (principal + interest). Total interest is calculated upfront.</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold">Reducing Balance</p>
+                        <p className="text-muted-foreground">Interest is calculated on the remaining principal each month. As principal is paid down, interest decreases. Monthly installments start higher and decrease over time.</p>
+                      </div>
+                    </div>
+                  </InfoPopover>
+                </div>
                 <div className="flex gap-4">
                   {[
                     { value: "perpetual" as const, label: "Perpetual" },
@@ -349,7 +390,7 @@ function NewLoanPageInner() {
 
               {loanType !== "perpetual" && (
                 <div className="space-y-2">
-                  <Label htmlFor="termMonths">Term (months)</Label>
+                  <Label htmlFor="termMonths" className="font-semibold">Term (months)</Label>
                   <Input
                     id="termMonths"
                     type="number"
@@ -365,8 +406,8 @@ function NewLoanPageInner() {
               <MoneyInput
                 name="principalAmount"
                 control={control}
-                label="Amount (UGX)"
-                required="Amount is required"
+                label="Principal Amount (UGX)"
+                required="Principal amount is required"
                 id="principalAmount"
               />
 
@@ -380,22 +421,7 @@ function NewLoanPageInner() {
               />
 
               <div className="space-y-1">
-                <Label htmlFor="description">Loan Description / Purpose</Label>
-                <textarea
-                  id="description"
-                  className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring min-h-[80px] resize-y"
-                  placeholder="Describe the purpose of this loan..."
-                  {...register("description", {
-                    required: "Loan description is required",
-                  })}
-                />
-                {errors.description && (
-                  <p className="text-sm text-destructive">{errors.description.message}</p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <Label htmlFor="startDate">Start Date</Label>
+                <Label htmlFor="startDate" className="font-semibold">Start Date</Label>
                 <Input
                   id="startDate"
                   type="date"
@@ -409,7 +435,30 @@ function NewLoanPageInner() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="interestRate">Interest Rate (% per month)</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="interestRate" className="font-semibold">Interest Rate (% per month)</Label>
+                  <InfoPopover>
+                    <p className="font-semibold text-sm mb-2">Interest Rate Permissions</p>
+                    <div className="text-xs text-muted-foreground space-y-2">
+                      <p>Any loan officer can set the initial rate when creating a loan.</p>
+                      <p className="font-medium text-foreground">Changing the rate after creation:</p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        <li><strong>10% or above</strong> — No approval needed, applies immediately.</li>
+                        <li><strong>8% to 9.9%</strong> — Requires <strong>Supervisor</strong> approval.</li>
+                        <li><strong>Below 8%</strong> — Requires <strong>Admin</strong> approval.</li>
+                      </ul>
+                      <p>If your role meets or exceeds the required approver role, the change applies immediately without waiting for approval.</p>
+                      <p className="pt-1">Need a different rate? Create the loan first, then use the <strong>Request Rate Change</strong> button on the loan detail page to submit a change for approval.</p>
+                      <Link
+                        href="/approvals"
+                        className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-primary hover:underline"
+                        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+                      >
+                        View pending approvals &rarr;
+                      </Link>
+                    </div>
+                  </InfoPopover>
+                </div>
                 <Input
                   id="interestRate"
                   type="number"
@@ -431,7 +480,7 @@ function NewLoanPageInner() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="disbursementSource">Disbursement Source</Label>
+                <Label htmlFor="disbursementSource" className="font-semibold">Disbursement Source</Label>
                 <Controller
                   name="disbursementSource"
                   control={control}
@@ -441,8 +490,8 @@ function NewLoanPageInner() {
                       value={field.value}
                       onValueChange={field.onChange}
                     >
-                      <SelectTrigger id="disbursementSource">
-                        <SelectValue placeholder="Select source" />
+                      <SelectTrigger id="disbursementSource" className="min-w-[10rem]">
+                        {DEPOSIT_LOCATION_OPTIONS.find((o) => o.value === field.value)?.label ?? "Select source"}
                       </SelectTrigger>
                       <SelectContent>
                         {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
@@ -467,12 +516,9 @@ function NewLoanPageInner() {
         {/* Step 2: Collateral */}
         {step === 2 && (
           <Card>
-            <CardHeader>
-              <CardTitle>Collateral</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="pt-6 space-y-4">
               <div className="space-y-1 relative">
-                <Label htmlFor="collateralNature">Nature</Label>
+                <Label htmlFor="collateralNature" className="font-semibold">Nature</Label>
                 <Input
                   id="collateralNature"
                   type="text"
@@ -552,13 +598,20 @@ function NewLoanPageInner() {
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="collateralDescription">Description (optional)</Label>
+                <Label htmlFor="collateralDescription" className="font-semibold">Description</Label>
                 <textarea
                   id="collateralDescription"
                   className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring min-h-[80px] resize-y"
-                  placeholder="Additional details about the collateral..."
-                  {...register("collateralDescription")}
+                  placeholder="Describe the collateral and any extra details about the loan..."
+                  maxLength={2500}
+                  {...register("collateralDescription", {
+                    required: "Collateral description is required",
+                    maxLength: { value: 2500, message: "Description is too long (max 2500 characters)" },
+                  })}
                 />
+                {errors.collateralDescription && (
+                  <p className="text-sm text-destructive">{errors.collateralDescription.message}</p>
+                )}
               </div>
 
               <div className="flex gap-3 pt-2">
@@ -574,68 +627,58 @@ function NewLoanPageInner() {
         {/* Step 3: Review & Confirm */}
         {step === 3 && (
           <Card>
-            <CardHeader>
-              <CardTitle>Review & Confirm</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
+            <CardContent className="pt-6 space-y-6">
               {/* Loan Summary */}
-              <div>
-                <h3 className="text-sm font-medium mb-3">Loan Details</h3>
-                <dl className="space-y-2 text-sm">
-                  {customerName && (
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Customer</dt>
-                      <dd className="font-medium">{customerName}</dd>
-                    </div>
-                  )}
+              <dl className="space-y-2 text-sm">
+                {customerName && (
                   <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Principal Amount</dt>
-                    <dd className="font-medium font-mono tabular-nums">{formatCurrency(principalAmount)}</dd>
+                    <dt className="text-muted-foreground">Customer</dt>
+                    <dd className="font-semibold">{customerName}</dd>
                   </div>
+                )}
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Principal Amount</dt>
+                  <dd className="font-semibold font-mono tabular-nums">{formatCurrency(principalAmount)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Issuance Fee</dt>
+                  <dd className="font-semibold font-mono tabular-nums">{formatCurrency(issuanceFee)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Start Date</dt>
+                  <dd className="font-semibold font-mono tabular-nums">{formatDate(startDate)}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Loan Type</dt>
+                  <dd className="font-semibold">{loanType === "fixed_rate" ? "Fixed Rate" : loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}</dd>
+                </div>
+                {loanType !== "perpetual" && (
                   <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Issuance Fee</dt>
-                    <dd className="font-medium font-mono tabular-nums">{formatCurrency(issuanceFee)}</dd>
+                    <dt className="text-muted-foreground">Term</dt>
+                    <dd className="font-semibold">{termMonths} months</dd>
                   </div>
+                )}
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Interest Rate</dt>
+                  <dd className="font-semibold font-mono tabular-nums">{interestRateDisplay}% per month</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Disbursement Source</dt>
+                  <dd className="font-semibold capitalize">
+                    {disbursementSource === "strong_room" ? "Strong Room" : disbursementSource.charAt(0).toUpperCase() + disbursementSource.slice(1)}
+                  </dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Collateral</dt>
+                  <dd className="font-semibold">{collateralNature}</dd>
+                </div>
+                {collateralDescription && (
                   <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Description</dt>
-                    <dd className="font-medium">{description}</dd>
+                    <dt className="text-muted-foreground">Collateral Description</dt>
+                    <dd className="font-semibold max-w-[250px] truncate" title={collateralDescription}>{collateralDescription}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Start Date</dt>
-                    <dd className="font-medium font-mono tabular-nums">{formatDate(startDate)}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Loan Type</dt>
-                    <dd className="font-medium">{loanType === "fixed_rate" ? "Fixed Rate" : loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}</dd>
-                  </div>
-                  {loanType !== "perpetual" && (
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Term</dt>
-                      <dd className="font-medium">{termMonths} months</dd>
-                    </div>
-                  )}
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Interest Rate</dt>
-                    <dd className="font-medium font-mono tabular-nums">{interestRateDisplay}% per month</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Disbursement Source</dt>
-                    <dd className="font-medium capitalize">
-                      {disbursementSource === "strong_room" ? "Strong Room" : disbursementSource.charAt(0).toUpperCase() + disbursementSource.slice(1)}
-                    </dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Collateral</dt>
-                    <dd className="font-medium">{collateralNature}</dd>
-                  </div>
-                  {collateralDescription && (
-                    <div className="flex justify-between">
-                      <dt className="text-muted-foreground">Collateral Description</dt>
-                      <dd className="font-medium">{collateralDescription}</dd>
-                    </div>
-                  )}
-                </dl>
-              </div>
+                )}
+              </dl>
 
               {/* Rollover Breakdown */}
               {activeLoanData && (
@@ -650,7 +693,7 @@ function NewLoanPageInner() {
                     <span>{formatCurrency(
                       new BigNumber(activeLoanData.outstandingPrincipal)
                         .plus(new BigNumber(activeLoanData.accruedInterest))
-                        .toFixed(2)
+                        .toFixed(0)
                     )}</span>
                   </div>
                   <div className="flex justify-between border-t pt-2 font-semibold">
@@ -659,7 +702,7 @@ function NewLoanPageInner() {
                       new BigNumber(principalAmount || "0")
                         .plus(new BigNumber(activeLoanData.outstandingPrincipal))
                         .plus(new BigNumber(activeLoanData.accruedInterest))
-                        .toFixed(2)
+                        .toFixed(0)
                     )}</span>
                   </div>
                 </div>
@@ -681,10 +724,65 @@ function NewLoanPageInner() {
                           <thead className="bg-muted/50 sticky top-0">
                             <tr>
                               <th className="px-3 py-2 text-left">Month</th>
-                              <th className="px-3 py-2 text-right">Principal</th>
-                              <th className="px-3 py-2 text-right">Interest</th>
-                              <th className="px-3 py-2 text-right">Installment</th>
-                              <th className="px-3 py-2 text-right">Balance</th>
+                              <th className="px-3 py-2 text-right">
+                                <span className="inline-flex items-center gap-1 justify-end">
+                                  Principal
+                                  <InfoPopover>
+                                    <div className="space-y-1 text-sm">
+                                      <p className="font-medium">Principal Portion</p>
+                                      <p>The portion of your payment that goes toward reducing the loan amount.</p>
+                                      <p className="font-mono text-xs bg-muted rounded px-2 py-1">Principal = Loan Amount / Term</p>
+                                      <p className="text-muted-foreground">This stays the same each month.</p>
+                                    </div>
+                                  </InfoPopover>
+                                </span>
+                              </th>
+                              <th className="px-3 py-2 text-right">
+                                <span className="inline-flex items-center gap-1 justify-end">
+                                  Interest
+                                  <InfoPopover>
+                                    {loanType === "reducing_balance" ? (
+                                      <div className="space-y-1 text-sm">
+                                        <p className="font-medium">Reducing Balance Interest</p>
+                                        <p>Calculated on the <span className="font-semibold">remaining balance</span>, not the original loan amount.</p>
+                                        <p className="font-mono text-xs bg-muted rounded px-2 py-1">Interest = Balance x Rate</p>
+                                        <p className="text-muted-foreground">As you pay down principal, interest decreases each month.</p>
+                                      </div>
+                                    ) : (
+                                      <div className="space-y-1 text-sm">
+                                        <p className="font-medium">Fixed Rate Interest</p>
+                                        <p>Calculated on the <span className="font-semibold">original principal</span> every month, regardless of payments made.</p>
+                                        <p className="font-mono text-xs bg-muted rounded px-2 py-1">Interest = Original Principal x Rate</p>
+                                        <p className="text-muted-foreground">The interest amount stays the same each month.</p>
+                                      </div>
+                                    )}
+                                  </InfoPopover>
+                                </span>
+                              </th>
+                              <th className="px-3 py-2 text-right">
+                                <span className="inline-flex items-center gap-1 justify-end">
+                                  Installment
+                                  <InfoPopover>
+                                    <div className="space-y-1 text-sm">
+                                      <p className="font-medium">Monthly Installment</p>
+                                      <p>The total amount due each month.</p>
+                                      <p className="font-mono text-xs bg-muted rounded px-2 py-1">Installment = Principal + Interest</p>
+                                    </div>
+                                  </InfoPopover>
+                                </span>
+                              </th>
+                              <th className="px-3 py-2 text-right">
+                                <span className="inline-flex items-center gap-1 justify-end">
+                                  Balance
+                                  <InfoPopover>
+                                    <div className="space-y-1 text-sm">
+                                      <p className="font-medium">Remaining Balance</p>
+                                      <p>The outstanding loan amount after this month&apos;s principal payment is applied.</p>
+                                      <p className="font-mono text-xs bg-muted rounded px-2 py-1">Balance = Previous Balance - Principal</p>
+                                    </div>
+                                  </InfoPopover>
+                                </span>
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -756,6 +854,7 @@ function NewLoanPageInner() {
           }
         }}
         title="Loan Disbursement Receipt"
+        autoActions
       >
         {receiptData && (
           <PosReceiptDisbursement
@@ -764,10 +863,8 @@ function NewLoanPageInner() {
             customerName={receiptData.customerName}
             loanAmount={receiptData.loanAmount}
             issuanceFee={receiptData.issuanceFee}
-            description={receiptData.description}
             interestRate={receiptData.interestRate}
             collateralNature={receiptData.collateralNature}
-            collateralDescription={receiptData.collateralDescription}
             disbursementSource={receiptData.disbursementSource}
             officerName={session?.user?.name ?? "Officer"}
           />

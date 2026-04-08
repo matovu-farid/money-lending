@@ -28,7 +28,6 @@ export function useCreateLoan() {
         customerContact: null,
         principalAmount: input.principalAmount,
         issuanceFee: input.issuanceFee,
-        description: input.description,
         interestRate: input.interestRate || "0.10",
         minInterestDays: input.minInterestDays || 30,
         interestRateOverride: input.interestRateOverride ?? null,
@@ -45,7 +44,7 @@ export function useCreateLoan() {
         penaltyWaivedAt: null,
         rolledOverFrom: input.rollover?.fromLoanId ?? null,
         rolloverAmount: input.rollover
-          ? (parseFloat(input.rollover.carriedPrincipal) + parseFloat(input.rollover.carriedInterest)).toFixed(2)
+          ? (parseFloat(input.rollover.carriedPrincipal) + parseFloat(input.rollover.carriedInterest)).toFixed(0)
           : null,
         deletedAt: null,
         createdAt: new Date(),

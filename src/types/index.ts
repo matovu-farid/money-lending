@@ -78,7 +78,7 @@ export interface UpdateCustomerInput {
 // --- Collateral input type ---
 export interface CollateralInput {
   nature: string
-  description?: string
+  description: string
 }
 
 // --- Loan input types ---
@@ -86,7 +86,6 @@ export interface CreateLoanInput {
   customerId: string
   principalAmount: string   // string for NUMERIC precision -- no float
   issuanceFee: string        // string NUMERIC, minimum "50000"
-  description: string        // required loan description/purpose
   interestRate: string      // string decimal e.g. "0.10" for 10%/month, defaults to "0.10"
   minInterestDays: number   // defaults to 30
   startDate: string         // ISO 8601 datetime string
@@ -105,7 +104,6 @@ export interface UpdateLoanInput {
   interestRate?: string       // decimal string e.g. "0.10"
   startDate?: string          // ISO 8601
   issuanceFee?: string        // NUMERIC string
-  description?: string        // loan description/purpose
   reason: string              // required for audit
 }
 
@@ -169,7 +167,10 @@ export interface PaymentWithCustomer {
   interestPortion: string
   principalPortion: string
   principalBalanceAfter: string
+  /** Principal balance + one period of interest (what borrower owes total) */
+  outstandingBalance: string
   recordedBy: string
+  recorderName: string
   depositLocation: DepositLocation
   createdAt: Date
 }
@@ -184,6 +185,7 @@ export interface CustomerSearchParams {
   status?: CustomerStatus[]
   loanStatus?: LoanStatus[]
   daysRemainingFilter?: "any" | "due_within_30" | "overdue_30_plus"
+  sortByRecent?: boolean
   page?: number
   pageSize?: number
 }
@@ -287,6 +289,17 @@ export type RateChangeStatus = "pending" | "approved" | "rejected"
 
 /** Ledger-derived payment allocation per payment ID */
 export type PaymentPortionsMap = Record<string, { interestPortion: string; principalPortion: string }>
+
+/** Shape returned by recordPaymentAction, extended with deposit location and allocation breakdown */
+export interface ReceiptPaymentData extends Payment {
+  depositLocationValue: string
+  allocation?: {
+    interestPortion: string
+    principalPortion: string
+    principalBalanceAfter: string
+    outstandingBalanceAfter: string
+  }
+}
 
 /** UI-facing transaction row shape (used by income/expense/transaction list pages) */
 export interface TransactionRow {

@@ -40,7 +40,7 @@ export function computeAccruedInterest(
         : new Date(activePayments[activePayments.length - 1].paymentDate)
     const daysElapsed = daysBetween(prevDate, now)
     const totalAccrued = calculateInterest(
-      outstandingPrincipal.toFixed(2),
+      outstandingPrincipal.toFixed(0),
       monthlyRateDecimal,
       daysElapsed,
       minInterestDays
@@ -67,7 +67,7 @@ export function computeAccruedInterest(
   if (loanType === "reducing_balance") {
     // Pro-rate monthly interest on outstanding principal by days elapsed
     return calculateInterest(
-      outstandingPrincipal.toFixed(2),
+      outstandingPrincipal.toFixed(0),
       monthlyRateDecimal,
       daysElapsed,
       minInterestDays
@@ -76,7 +76,7 @@ export function computeAccruedInterest(
 
   // Fallback: perpetual
   return calculateInterest(
-    outstandingPrincipal.toFixed(2),
+    outstandingPrincipal.toFixed(0),
     monthlyRateDecimal,
     daysElapsed,
     minInterestDays

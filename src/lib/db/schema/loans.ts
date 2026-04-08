@@ -21,7 +21,6 @@ export const loans = pgTable("loans", {
   customerId: uuid("customer_id").notNull().references(() => customers.id, { onDelete: "restrict" }),
   principalAmount: numeric("principal_amount", { precision: 15, scale: 2 }).notNull(),
   issuanceFee: numeric("issuance_fee", { precision: 15, scale: 2 }).notNull(),
-  description: text("description").notNull(),
   interestRate: numeric("interest_rate", { precision: 5, scale: 4 }).notNull(),
   minInterestDays: integer("min_interest_days").notNull().default(30),
   startDate: timestamp("start_date", { withTimezone: true }).notNull(),

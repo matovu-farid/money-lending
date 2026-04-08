@@ -78,6 +78,46 @@ describe("User Registration", () => {
     })
   })
 
+  it("shows helpful message when registering with an already-used email", () => {
+    const email = `dup-${Date.now()}@fidexa.org`
+    const password = "TestPass123!"
+
+    // Register a user
+    cy.visit("/register")
+    cy.get("#name").type("Original User")
+    cy.get("#email").type(email)
+    cy.get("#password").type(password)
+    cy.get("#confirmPassword").type(password)
+    cy.get("button[type=submit]").click()
+
+    cy.url({ timeout: 15000 }).should("satisfy", (url: string) =>
+      url.includes("/dashboard") || url.includes("/pending-approval")
+    )
+
+    // Sign out and try to register again with the same email
+    cy.clearCookies()
+    cy.visit("/register")
+
+    cy.get("#name").type("Duplicate User")
+    cy.get("#email").type(email)
+    cy.get("#password").type(password)
+    cy.get("#confirmPassword").type(password)
+    cy.get("button[type=submit]").click()
+
+    // Should stay on the register page with a helpful error
+    cy.url({ timeout: 10000 }).should("include", "/register")
+    cy.contains("An account with this email already exists.").should("be.visible")
+
+    // Should offer a link to sign in
+    cy.contains("a", "Sign in instead")
+      .should("be.visible")
+      .and("have.attr", "href", "/login")
+
+    // Click the link and verify it navigates to login
+    cy.contains("a", "Sign in instead").click()
+    cy.url({ timeout: 10000 }).should("include", "/login")
+  })
+
   context("at mobile viewport (390x844)", () => {
     beforeEach(() => {
       cy.viewport(390, 844)

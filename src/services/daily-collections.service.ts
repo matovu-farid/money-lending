@@ -53,7 +53,7 @@ export const getDailyCollections = (
           console.warn(`[getDailyCollections] No ledger entries for payment ${r.paymentId}`)
           return sum.plus(r.amount)
         }, new BigNumber(0))
-        .toFixed(2)
+        .toFixed(0)
 
       const enrichedRows: DailyCollectionRow[] = rows.map((r) => {
         const portion = portions.get(r.paymentId)
@@ -128,7 +128,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           console.warn(`[getLoansDueToday] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
         }
         const outstandingBalance = ledgerBalance !== undefined
-          ? ledgerBalance.toFixed(2)
+          ? ledgerBalance.toFixed(0)
           : loan.principalAmount
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,

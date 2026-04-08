@@ -35,7 +35,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { cn, formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
-import type { Payment, DepositLocation } from "@/types"
+import type { ReceiptPaymentData, DepositLocation } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS, DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 
 interface BalanceData {
@@ -60,15 +60,6 @@ interface PaymentFormValues {
   amount: string
   depositLocation: DepositLocation
   note: string
-}
-
-interface ReceiptPaymentData extends Payment {
-  depositLocationValue: string
-  allocation?: {
-    interestPortion: string
-    principalPortion: string
-    principalBalanceAfter: string
-  }
 }
 
 export function RecordPaymentForm({ loanId, customerName, loanReference, balanceData }: RecordPaymentFormProps) {
@@ -281,6 +272,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
                 id="note"
                 placeholder="Optional note"
                 disabled={isPending}
+                maxLength={2500}
                 {...register("note")}
               />
             </div>
@@ -370,6 +362,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
           router.push(`/loans/${loanId}`)
         }}
         title="Payment Receipt"
+        autoActions
       >
         {receiptData && (
           <PosReceiptRepayment
@@ -383,6 +376,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
             interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
             principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
             balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
+            outstandingBalance={receiptData.payment.allocation?.outstandingBalanceAfter}
             depositLocation={receiptData.payment.depositLocationValue}
             officerName={session?.user?.name ?? "Officer"}
           />

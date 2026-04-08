@@ -62,7 +62,7 @@ function MoneyInput<T extends FieldValues>({
   return (
     <div className={cn("space-y-1", className)}>
       {label && (
-        <label htmlFor={inputId} className="text-sm font-medium leading-none">
+        <label htmlFor={inputId} className="text-sm font-semibold leading-none">
           {label}
         </label>
       )}

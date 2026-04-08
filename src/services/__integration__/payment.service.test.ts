@@ -45,11 +45,11 @@ async function makeLoan(
         customerId,
         principalAmount: principal,
         issuanceFee: "50000.00",
-        description: "Test loan",
+
         interestRate: rate,
         minInterestDays: 30,
         startDate: "2025-01-01",
-        collateral: { nature: "Land title" },
+        collateral: { nature: "Land title", description: "Test collateral" },
         disbursementSource: "cash",
       },
       "test-actor"

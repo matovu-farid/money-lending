@@ -7,6 +7,7 @@ import { Loader2, ArrowRightLeft } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { ROLE_LEVELS, type UserRole } from "@/types"
+import { PermissionInfo } from "@/components/ui/permission-info"
 import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
 import { createFundTransferAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { queryKeys } from "@/hooks/query-keys"
@@ -122,9 +123,12 @@ export default function FundTransfersPage() {
 
   if (!isAdmin) {
     return (
-      <div className="p-4 md:p-6">
-        <p className="text-destructive font-medium">Access denied.</p>
-        <p className="text-muted-foreground text-sm mt-1">
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="admin" action="Access fund transfers" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
           You need Admin or higher permissions to view fund transfers.
         </p>
       </div>
@@ -237,6 +241,7 @@ export default function FundTransfersPage() {
                       id="transferNote"
                       placeholder="Reason for transfer..."
                       disabled={isPending}
+                      maxLength={2500}
                       value={field.value}
                       onChange={field.onChange}
                     />

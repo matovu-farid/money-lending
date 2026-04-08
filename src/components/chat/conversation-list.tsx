@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useConversations } from "@/hooks/use-conversations"
 import { ConversationItem } from "./conversation-item"
-import { NewConversationDialog } from "./new-conversation-dialog"
+import { NewConversationInline } from "./new-conversation-inline"
 import type { ConversationListItem } from "@/types"
 
 interface ConversationListProps {
@@ -43,6 +43,16 @@ export function ConversationList({
   function handleCreated(id: string) {
     onSelectConversation(id)
     setDialogOpen(false)
+  }
+
+  // Show inline new-conversation panel instead of a modal dialog
+  if (dialogOpen) {
+    return (
+      <NewConversationInline
+        onCreated={handleCreated}
+        onCancel={() => setDialogOpen(false)}
+      />
+    )
   }
 
   return (
@@ -107,12 +117,6 @@ export function ConversationList({
             />
           ))}
       </div>
-
-      <NewConversationDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onCreated={handleCreated}
-      />
     </div>
   )
 }

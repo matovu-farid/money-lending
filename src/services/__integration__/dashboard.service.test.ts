@@ -32,11 +32,11 @@ async function makeLoan(customerId: string, principal = "1000000.00", rate = "0.
         customerId,
         principalAmount: principal,
         issuanceFee: "50000.00",
-        description: "Test loan",
+
         interestRate: rate,
         minInterestDays: 30,
         startDate: "2025-01-01",
-        collateral: { nature: "Land title" },
+        collateral: { nature: "Land title", description: "Test collateral" },
         disbursementSource: "cash",
       },
       ACTOR_ID
@@ -156,11 +156,11 @@ describe(
               customerId: customer.id,
               principalAmount: "1000000.00",
               issuanceFee: "50000.00",
-              description: "Test loan",
+      
               interestRate: "0.10",
               minInterestDays: 30,
               startDate: sixtyDaysAgo.toISOString(),
-              collateral: { nature: "Land title" },
+              collateral: { nature: "Land title", description: "Test collateral" },
               disbursementSource: "cash",
             },
             ACTOR_ID

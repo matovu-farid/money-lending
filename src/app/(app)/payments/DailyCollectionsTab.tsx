@@ -64,7 +64,7 @@ export function DailyCollectionsTab() {
   const paymentCount = collections?.paymentCount ?? 0
   const avgPayment =
     paymentCount > 0
-      ? new BigNumber(totalCollected).dividedBy(paymentCount).toFixed(2)
+      ? new BigNumber(totalCollected).dividedBy(paymentCount).toFixed(0)
       : null
 
   const formattedDate = format(new Date(selectedDate + "T12:00:00"), "EEE, MMM d, yyyy")

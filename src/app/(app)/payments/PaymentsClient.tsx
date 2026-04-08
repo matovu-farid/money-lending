@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
+import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -23,7 +24,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { editPaymentAction, deletePaymentAction, markPaymentWrongAction, listPaymentsAction } from "@/actions/payment.actions"
+import { editPaymentAction, markPaymentWrongAction, listPaymentsAction } from "@/actions/payment.actions"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
@@ -39,13 +40,12 @@ import { FilterPanel } from "@/components/ui/filter-panel"
 import { downloadBlob } from "@/lib/download"
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
-  const headers = ["Date", "Customer", "Loan Ref", "Amount", "Interest", "Principal", "Balance"]
+  const headers = ["Date", "Customer", "Amount", "Interest", "Principal", "Principal Balance"]
   const csvLines = [
     headers.join(","),
     ...rows.map((r) => [
-      formatDate(r.paymentDate),
+      `"${formatDate(r.paymentDate)}"`,
       `"${r.customerName}"`,
-      `LOAN-${r.loanId.slice(0, 8).toUpperCase()}`,
       r.amount,
       r.interestPortion,
       r.principalPortion,
@@ -89,8 +89,6 @@ export function PaymentsClient() {
     quickRecordOpen, openQuickRecord, closeQuickRecord,
     editOpen, editTarget: selectedPayment, editAmount, editDate, editReason,
     openEdit: openEditSheet, closeEdit, setEditAmount, setEditDate, setEditReason,
-    deleteOpen, deleteTarget, deleteReason,
-    openDelete: openDeleteDialog, closeDelete, setDeleteReason,
     markWrongOpen, markWrongTarget, markWrongReason,
     openMarkWrong: openMarkWrongDialog, closeMarkWrong, setMarkWrongReason,
     filters, setFilter, clearFilters, setPage, initFilters,
@@ -124,58 +122,6 @@ export function PaymentsClient() {
       }
       toast.success("Payment updated")
       closeEdit()
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-    },
-  })
-
-  // Delete mutation with optimistic update
-  const deleteMutation = useMutation({
-    mutationFn: (input: { paymentId: string; reason: string }) =>
-      deletePaymentAction(input),
-    onMutate: async (input) => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
-
-      const previousPayments = queryClient.getQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
-        { queryKey: queryKeys.payments.all },
-      )
-
-      queryClient.setQueriesData<{ rows: PaymentWithCustomer[]; total: number }>(
-        { queryKey: queryKeys.payments.all },
-        (old) => {
-          if (!old) return old
-          return {
-            rows: old.rows.filter((p) => p.id !== input.paymentId),
-            total: old.total - 1,
-          }
-        },
-      )
-
-      return { previousPayments }
-    },
-    onError: (_err, _input, context) => {
-      if (context?.previousPayments) {
-        for (const [key, data] of context.previousPayments) {
-          queryClient.setQueryData(key, data)
-        }
-      }
-      toast.error("Failed to delete payment")
-    },
-    onSuccess: (result, _input, context) => {
-      if ("error" in result) {
-        if (context?.previousPayments) {
-          for (const [key, data] of context.previousPayments) {
-            queryClient.setQueryData(key, data)
-          }
-        }
-        toast.error("Failed to delete payment")
-        return
-      }
-      toast.success("Payment deleted")
-      closeDelete()
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
@@ -331,14 +277,6 @@ export function PaymentsClient() {
     })
   }
 
-  function handleDeleteSubmit() {
-    if (!deleteTarget) return
-    deleteMutation.mutate({
-      paymentId: deleteTarget.id,
-      reason: deleteReason,
-    })
-  }
-
   function handleMarkWrongSubmit() {
     if (!markWrongTarget) return
     markWrongMutation.mutate({
@@ -376,17 +314,7 @@ export function PaymentsClient() {
       header: "Date",
       render: (row) => <span className="font-mono tabular-nums">{formatDate(row.paymentDate)}</span>,
     },
-    {
-      key: "loanRef",
-      header: "Loan Ref",
-      cardLabel: "Loan",
-      render: (row) => (
-        <span className="text-xs font-mono tabular-nums">
-          LOAN-{row.loanId.slice(0, 8).toUpperCase()}
-        </span>
-      ),
-    },
-    {
+{
       key: "amount",
       header: "Amount",
       align: "right",
@@ -434,9 +362,9 @@ export function PaymentsClient() {
       key: "principalBalanceAfter",
       header: (
         <span className="inline-flex items-center gap-1">
-          Balance
+          Principal Balance
           <InfoPopover>
-            <p className="font-semibold text-sm mb-1">Balance After Payment</p>
+            <p className="font-semibold text-sm mb-1">Principal Balance</p>
             <p className="text-xs text-muted-foreground">
               The remaining principal balance on the loan after this payment was applied. When this reaches zero, the loan is fully paid.
             </p>
@@ -445,6 +373,27 @@ export function PaymentsClient() {
       ),
       align: "right",
       render: (row) => <>UGX {formatNumberWithCommas(row.principalBalanceAfter)}</>,
+    },
+    {
+      key: "receipt",
+      header: "",
+      hideInCard: true,
+      render: (row: PaymentWithCustomer) => (
+        <PaymentReceiptButton
+          data={{
+            paymentDate: row.paymentDate,
+            customerName: row.customerName,
+            loanReference: `LOAN-${row.loanId.slice(0, 8).toUpperCase()}`,
+            amountPaid: row.amount,
+            interestPortion: row.interestPortion,
+            principalPortion: row.principalPortion,
+            balanceAfter: row.principalBalanceAfter,
+            outstandingBalance: row.outstandingBalance,
+            depositLocation: row.depositLocation,
+            officerName: row.recorderName,
+          }}
+        />
+      ),
     },
     ...((isAdmin || isSupervisor) ? [{
       key: "actions",
@@ -460,17 +409,9 @@ export function PaymentsClient() {
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             {isAdmin && (
-              <>
-                <DropdownMenuItem onClick={() => openEditSheet(row)}>
-                  Edit
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  variant="destructive"
-                  onClick={() => openDeleteDialog(row)}
-                >
-                  Delete
-                </DropdownMenuItem>
-              </>
+              <DropdownMenuItem onClick={() => openEditSheet(row)}>
+                Edit
+              </DropdownMenuItem>
             )}
             {isSupervisor && (
               <DropdownMenuItem onClick={() => openMarkWrongDialog(row)}>
@@ -691,6 +632,7 @@ export function PaymentsClient() {
                 id="edit-payment-reason"
                 value={editReason}
                 onChange={(e) => setEditReason(e.target.value)}
+                maxLength={2500}
                 placeholder="Explain why this payment is being edited..."
                 required
               />
@@ -702,39 +644,6 @@ export function PaymentsClient() {
               disabled={editMutation.isPending || !editReason.trim()}
             >
               {editMutation.isPending ? "Saving..." : "Save changes"}
-            </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
-
-      {/* Delete Payment Dialog */}
-      <DrawerDialog open={deleteOpen} onOpenChange={(v) => { if (!v) closeDelete() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete payment?</DialogTitle>
-            <DialogDescription>
-              This payment and its cascade recalculations will be reversed. This cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="delete-payment-reason">Reason for deletion</Label>
-            <Textarea
-              id="delete-payment-reason"
-              value={deleteReason}
-              onChange={(e) => setDeleteReason(e.target.value)}
-              placeholder="Explain why this payment is being deleted..."
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={closeDelete}>
-              Keep payment
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={!deleteReason.trim() || deleteMutation.isPending}
-              onClick={handleDeleteSubmit}
-            >
-              {deleteMutation.isPending ? "Deleting..." : "Delete payment"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>
@@ -784,6 +693,7 @@ export function PaymentsClient() {
               id="mark-wrong-reason"
               value={markWrongReason}
               onChange={(e) => setMarkWrongReason(e.target.value)}
+              maxLength={2500}
               placeholder="Explain why this payment is wrong..."
             />
           </div>

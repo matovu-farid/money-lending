@@ -16,17 +16,9 @@ export function formatNumberWithCommas(value: string): string {
   const cleaned = value.replace(/[^0-9.]/g, "")
   if (!cleaned) return ""
 
-  let parts = cleaned.split(".")
-  if (parts.length > 2) {
-    // Multiple dots: keep only first dot, discard everything after second dot
-    parts = [parts[0], parts[1]]
-  }
-  // Format integer part with commas
-  const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",")
-  if (parts.length > 1) {
-    return `${intPart}.${parts[1]}`
-  }
-  return intPart
+  // UGX has no cents — strip any decimal part and format integer only
+  const intOnly = cleaned.split(".")[0]
+  return intOnly.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
 }
 
 /**

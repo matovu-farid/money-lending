@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
+import { user } from "@/lib/db/schema/auth"
 import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql, inArray } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
@@ -53,7 +54,7 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
     console.warn(`[getLoanBalanceSummary] No ledger entries for loan ${loanId}, using principalAmount as fallback`)
   }
   const outstandingPrincipal = hasLedgerEntries
-    ? ledgerBalance.toFixed(2)
+    ? ledgerBalance.toFixed(0)
     : loan.principalAmount
 
   const interestEarnedMap = await getInterestEarnedFromLedger([loanId])
@@ -76,7 +77,7 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
   })
 
   const accruedInterest = info.unpaidInterest
-  const totalBalance = new BigNumber(outstandingPrincipal).plus(new BigNumber(accruedInterest)).toFixed(2)
+  const totalBalance = new BigNumber(outstandingPrincipal).plus(new BigNumber(accruedInterest)).toFixed(0)
 
   return { outstandingPrincipal, accruedInterest, totalBalance, loanType }
 }
@@ -123,7 +124,7 @@ export const recordPayment = (
           console.warn(`[recordPayment] No ledger entries for loan ${input.loanId}, using principalAmount as fallback`)
         }
         const principalBalanceBefore = hasLedgerEntries
-          ? ledgerBalance.toFixed(2)
+          ? ledgerBalance.toFixed(0)
           : loan.principalAmount
 
         // Compute penalty status from overdue info
@@ -150,6 +151,27 @@ export const recordPayment = (
         const loanType = loan.loanType ?? "perpetual"
         const paymentNumber = activePayments.length + 1
 
+        // For perpetual loans: find interest already collected by payments in the
+        // same min-interest period so we don't double-charge the 30-day minimum.
+        let interestAlreadyPaidInPeriod = "0"
+        if (loanType === "perpetual" || !loanType) {
+          // Payments that share the same prevDate window (from prevDate onward)
+          const paymentsSincePrevDate = activePayments.filter(
+            (p) => new Date(p.paymentDate) >= prevDate
+          )
+          if (paymentsSincePrevDate.length > 0) {
+            const portionsMap = await getPaymentPortionsFromLedger(
+              paymentsSincePrevDate.map((p) => p.id),
+              tx
+            )
+            let sum = new BigNumber(0)
+            for (const [, portions] of portionsMap) {
+              sum = sum.plus(portions.interestPortion)
+            }
+            interestAlreadyPaidInPeriod = sum.toFixed(0)
+          }
+        }
+
         const allocation = allocatePayment({
           paymentAmount: input.amount,
           principalBalanceBefore,
@@ -160,6 +182,7 @@ export const recordPayment = (
           originalPrincipal: loan.principalAmount,
           termMonths: loan.termMonths ?? undefined,
           paymentNumber,
+          interestAlreadyPaidInPeriod,
         })
 
         // M2: Reject overpayments that exceed total owed
@@ -364,7 +387,7 @@ export const editPayment = (
             if (pp) runningBalance = runningBalance.minus(new BigNumber(pp.principalPortion))
           }
           if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0)
-          principalBalanceBefore = runningBalance.toFixed(2)
+          principalBalanceBefore = runningBalance.toFixed(0)
         }
 
         const allocation = allocatePayment({
@@ -602,12 +625,14 @@ export const listPayments = (
             paymentDate: payments.paymentDate,
             amount: payments.amount,
             recordedBy: payments.recordedBy,
+            recorderName: user.name,
             depositLocation: payments.depositLocation,
             createdAt: payments.createdAt,
           })
           .from(payments)
           .innerJoin(loans, eq(payments.loanId, loans.id))
           .innerJoin(customers, eq(loans.customerId, customers.id))
+          .leftJoin(user, eq(payments.recordedBy, user.id))
           .where(where)
           .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
           .limit(pageSize)
@@ -632,13 +657,18 @@ export const listPayments = (
       // For each loan on this page, fetch ALL its active payments' portions
       // to compute correct per-payment running balances
       const loanPrincipalMap = new Map<string, string>()
+      const loanRateMap = new Map<string, string>()
       const perPaymentBalance = new Map<string, string>()
+      const perPaymentBalanceBefore = new Map<string, string>()
 
       if (loanIds.length > 0) {
-        // Fetch loan principal amounts
-        const loanRows = await db.select({ id: loans.id, principalAmount: loans.principalAmount })
+        // Fetch loan principal amounts and interest rates
+        const loanRows = await db.select({ id: loans.id, principalAmount: loans.principalAmount, interestRate: loans.interestRate })
           .from(loans).where(inArray(loans.id, loanIds))
-        for (const l of loanRows) loanPrincipalMap.set(l.id, l.principalAmount)
+        for (const l of loanRows) {
+          loanPrincipalMap.set(l.id, l.principalAmount)
+          loanRateMap.set(l.id, l.interestRate)
+        }
 
         // For each loan, get all its active payments sorted by date to compute running balance
         for (const loanId of loanIds) {
@@ -650,21 +680,29 @@ export const listPayments = (
           const allPortions = allIds.length > 0 ? await getPaymentPortionsFromLedger(allIds) : new Map()
           let balance = new BigNumber(loanPrincipalMap.get(loanId) ?? "0")
           for (const p of loanPayments) {
+            perPaymentBalanceBefore.set(p.id, balance.toFixed(0))
             const pp = allPortions.get(p.id)
             if (pp) balance = balance.minus(new BigNumber(pp.principalPortion))
             if (balance.isLessThan(0)) balance = new BigNumber(0)
-            perPaymentBalance.set(p.id, balance.toFixed(2))
+            perPaymentBalance.set(p.id, balance.toFixed(0))
           }
         }
       }
 
       const enrichedRows: PaymentWithCustomer[] = rows.map((r) => {
         const portion = portions.get(r.id)
+        const principalAfter = perPaymentBalance.get(r.id) ?? "0.00"
+        const principalBefore = perPaymentBalanceBefore.get(r.id) ?? principalAfter
+        const rate = loanRateMap.get(r.loanId) ?? "0"
+        // Outstanding = what the borrower owed before this payment (principal + one period interest)
+        const periodInterestBefore = new BigNumber(principalBefore).multipliedBy(rate)
         return {
           ...r,
+          recorderName: r.recorderName ?? "Officer",
           interestPortion: portion?.interestPortion ?? "0.00",
           principalPortion: portion?.principalPortion ?? "0.00",
-          principalBalanceAfter: perPaymentBalance.get(r.id) ?? "0.00",
+          principalBalanceAfter: principalAfter,
+          outstandingBalance: new BigNumber(principalBefore).plus(periodInterestBefore).toFixed(0),
         } as PaymentWithCustomer
       })
 

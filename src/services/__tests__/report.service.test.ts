@@ -470,7 +470,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       id: "loan-a",
       principalAmount: "5000000",
       issuanceFee: "0.00",
-      description: "Test loan",
+
       status: "active",
       customerId: "cust-a",
       startDate: startDateA,
@@ -487,7 +487,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       id: "loan-b",
       principalAmount: "2000000",
       issuanceFee: "0.00",
-      description: "Test loan",
+
       status: "active",
       customerId: "cust-b",
       startDate: startDateB,

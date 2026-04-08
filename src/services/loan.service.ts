@@ -103,10 +103,9 @@ export const createLoan = (
               ? new BigNumber(input.principalAmount)
                   .plus(new BigNumber(input.rollover.carriedPrincipal))
                   .plus(new BigNumber(input.rollover.carriedInterest))
-                  .toFixed(2)
+                  .toFixed(0)
               : input.principalAmount,
             issuanceFee: input.issuanceFee,
-            description: input.description,
             interestRate: input.interestRate,
             minInterestDays: input.minInterestDays,
             startDate,
@@ -121,7 +120,7 @@ export const createLoan = (
             rolloverAmount: input.rollover
               ? new BigNumber(input.rollover.carriedPrincipal)
                   .plus(new BigNumber(input.rollover.carriedInterest))
-                  .toFixed(2)
+                  .toFixed(0)
               : null,
           })
           .returning()
@@ -131,7 +130,7 @@ export const createLoan = (
           .values({
             loanId: loan.id,
             nature: input.collateral.nature,
-            description: input.collateral.description ?? null,
+            description: input.collateral.description,
           })
           .returning()
 
@@ -199,7 +198,7 @@ export const createLoan = (
               freshAmount: input.principalAmount,
               rolloverAmount: new BigNumber(input.rollover.carriedPrincipal)
                 .plus(new BigNumber(input.rollover.carriedInterest))
-                .toFixed(2),
+                .toFixed(0),
             }),
           },
         })
@@ -268,7 +267,6 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           customerId: loans.customerId,
           principalAmount: loans.principalAmount,
           issuanceFee: loans.issuanceFee,
-          description: loans.description,
           interestRate: loans.interestRate,
           minInterestDays: loans.minInterestDays,
           startDate: loans.startDate,
@@ -328,10 +326,6 @@ export const updateLoan = (
       if (input.issuanceFee !== undefined) {
         setObj.issuanceFee = input.issuanceFee
       }
-      if (input.description !== undefined) {
-        setObj.description = input.description
-      }
-
       return await db.transaction(async (tx) => {
         const [updatedLoan] = await tx
           .update(loans)
@@ -500,7 +494,7 @@ export const updateLoan = (
 
               const allocation = allocatePayment({
                 paymentAmount: p.amount,
-                principalBalanceBefore: runningBalance.toFixed(2),
+                principalBalanceBefore: runningBalance.toFixed(0),
                 monthlyRateDecimal,
                 daysElapsed,
                 minInterestDays,

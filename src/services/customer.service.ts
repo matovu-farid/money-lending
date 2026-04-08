@@ -4,7 +4,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { eq, ilike, inArray, and, count, isNull } from "drizzle-orm"
+import { eq, ilike, inArray, and, count, isNull, desc } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
@@ -148,7 +148,7 @@ export const searchCustomers = (
               console.warn(`[searchCustomers] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
             }
             const outstandingBalance = ledgerBalance !== undefined
-              ? ledgerBalance.toFixed(2)
+              ? ledgerBalance.toFixed(0)
               : loan.principalAmount
 
             const info = computeLoanOverdueInfo({
@@ -177,7 +177,7 @@ export const searchCustomers = (
         }
 
         const total = filteredRows.length
-        const paginatedRows = filteredRows.slice((page - 1) * pageSize, page * pageSize)
+        const paginatedRows = filteredRows.slice(page * pageSize, (page + 1) * pageSize)
 
         return { rows: paginatedRows, total }
       }
@@ -187,13 +187,15 @@ export const searchCustomers = (
         .from(customers)
         .where(whereClause)
 
+      const orderCol = params.sortByRecent ? desc(customers.createdAt) : customers.fullName
+
       const rows = await db
         .select()
         .from(customers)
         .where(whereClause)
         .limit(pageSize)
-        .offset((page - 1) * pageSize)
-        .orderBy(customers.fullName)
+        .offset(page * pageSize)
+        .orderBy(orderCol)
 
       return { rows, total }
     },

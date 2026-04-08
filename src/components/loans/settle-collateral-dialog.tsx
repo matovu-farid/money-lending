@@ -40,7 +40,7 @@ export function SettleCollateralDialog({
 
   const totalWriteOff = (
     parseFloat(outstandingPrincipal) + parseFloat(accruedInterest)
-  ).toFixed(2)
+  ).toFixed(0)
 
   function handleSubmit() {
     if (!reason.trim()) {
@@ -114,6 +114,7 @@ export function SettleCollateralDialog({
               id="settle-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
+              maxLength={2500}
               placeholder="Why is this loan being settled with collateral?"
               rows={3}
             />

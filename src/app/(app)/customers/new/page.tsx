@@ -5,22 +5,10 @@ import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { useCreateCustomer } from "@/hooks/use-create-customer"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
-
-function autoCapitalize(value: string): string {
-  return value.replace(/\b\w/g, (c) => c.toUpperCase())
-}
-
-interface CustomerFormValues {
-  fullName: string
-  nin: string
-  contact: string
-  address: string
-}
+import { CustomerFormFields, type CustomerFormValues } from "@/components/customers/customer-form-fields"
 
 export default function NewCustomerPage() {
   const { register, handleSubmit, setValue, formState: { errors } } = useForm<CustomerFormValues>({
@@ -52,72 +40,12 @@ export default function NewCustomerPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="fullName">Full Name</Label>
-              <Input
-                id="fullName"
-                type="text"
-                placeholder="e.g. John Doe"
-                disabled={mutation.isPending}
-                {...register("fullName", {
-                  required: "Full name is required",
-                  validate: v => v.trim() !== "" || "Full name is required",
-                  onChange: (e) => setValue("fullName", autoCapitalize(e.target.value)),
-                })}
-              />
-              {errors.fullName && (
-                <p className="text-sm text-destructive">{errors.fullName.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="nin">NIN (National ID Number)</Label>
-              <Input
-                id="nin"
-                type="text"
-                placeholder="e.g. CM12345678ABCDE"
-                disabled={mutation.isPending}
-                {...register("nin", {
-                  required: "NIN is required",
-                  validate: v => v.trim() !== "" || "NIN is required",
-                })}
-              />
-              {errors.nin && (
-                <p className="text-sm text-destructive">{errors.nin.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="contact">Contact</Label>
-              <Input
-                id="contact"
-                type="text"
-                placeholder="Phone number or email"
-                disabled={mutation.isPending}
-                {...register("contact", { required: "Contact is required", validate: v => v.trim() !== "" || "Contact is required" })}
-              />
-              {errors.contact && (
-                <p className="text-sm text-destructive">{errors.contact.message}</p>
-              )}
-            </div>
-
-            <div className="space-y-1">
-              <Label htmlFor="address">Physical Address</Label>
-              <Input
-                id="address"
-                type="text"
-                placeholder="e.g. Kampala, Uganda"
-                disabled={mutation.isPending}
-                {...register("address", {
-                  required: "Address is required",
-                  validate: v => v.trim() !== "" || "Address is required",
-                  onChange: (e) => setValue("address", autoCapitalize(e.target.value)),
-                })}
-              />
-              {errors.address && (
-                <p className="text-sm text-destructive">{errors.address.message}</p>
-              )}
-            </div>
+            <CustomerFormFields
+              register={register}
+              setValue={setValue}
+              errors={errors}
+              disabled={mutation.isPending}
+            />
 
             <div className="flex gap-3 pt-2">
               <Button type="submit" disabled={mutation.isPending}>

@@ -50,7 +50,7 @@ export default async function DisbursementReceiptPage({
 
   // Format helpers
   const formatCurrency = (value: string | number) =>
-    `UGX ${new Intl.NumberFormat("en-UG").format(Number(value))}`
+    `UGX ${new Intl.NumberFormat("en-UG", { maximumFractionDigits: 0 }).format(Number(value))}`
 
 
   const receiptNumber = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
@@ -148,12 +148,6 @@ export default async function DisbursementReceiptPage({
                     {formatCurrency(loan.issuanceFee)}
                   </td>
                 </tr>
-                {loan.description && (
-                  <tr>
-                    <td className="py-1 text-gray-500 align-top">Description</td>
-                    <td className="py-1 text-right">{loan.description}</td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
@@ -174,7 +168,7 @@ export default async function DisbursementReceiptPage({
                 {collateralRecord?.description && (
                   <tr>
                     <td className="py-1 text-gray-500 align-top">Description</td>
-                    <td className="py-1 text-right">{collateralRecord.description}</td>
+                    <td className="py-1 text-right max-w-[300px] truncate">{collateralRecord.description}</td>
                   </tr>
                 )}
               </tbody>

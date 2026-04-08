@@ -1,35 +1,53 @@
 "use client"
 
 import { useState } from "react"
-import { Search, X } from "lucide-react"
+import { Clock, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useSearchActiveLoans } from "@/hooks/use-search-active-loans"
 import { formatNumberWithCommas } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
 
+interface RecentLoan {
+  loanId: string
+  customerName: string
+}
+
 interface LoanSearchComboboxProps {
   selectedLoan: ActiveLoanSearchResult | null
   onSelect: (loan: ActiveLoanSearchResult) => void
   onClear: () => void
+  recentLoans?: RecentLoan[]
 }
 
-export function LoanSearchCombobox({ selectedLoan, onSelect, onClear }: LoanSearchComboboxProps) {
+export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoans = [] }: LoanSearchComboboxProps) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
   // sideOffset value maintained for spec compliance
   const sideOffset = 4
 
+  const isSearchMode = query.trim().length >= 2
   const { data: results = [], isLoading: isSearching } = useSearchActiveLoans(query)
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value
     setQuery(value)
-    setOpen(value.trim().length >= 2)
+    setOpen(true)
   }
 
   function handleSelect(loan: ActiveLoanSearchResult) {
     onSelect(loan)
+    setOpen(false)
+    setQuery("")
+  }
+
+  function handleRecentSelect(loan: RecentLoan) {
+    onSelect({
+      loanId: loan.loanId,
+      customerId: "",
+      customerName: loan.customerName,
+      principalAmount: "0",
+    })
     setOpen(false)
     setQuery("")
   }
@@ -61,6 +79,8 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear }: LoanSear
     )
   }
 
+  const showRecent = !isSearchMode && recentLoans.length > 0
+
   return (
     <div className="relative w-full">
       <Input
@@ -73,9 +93,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear }: LoanSear
           // Delay close so click on result registers first
           setTimeout(() => setOpen(false), 150)
         }}
-        onFocus={() => {
-          if (query.trim().length >= 2) setOpen(true)
-        }}
+        onFocus={() => setOpen(true)}
       />
       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none">
         <Search className="h-4 w-4" />
@@ -88,11 +106,33 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear }: LoanSear
           style={{ top: `calc(100% + ${sideOffset}px)` }}
           onMouseDown={(e) => e.preventDefault()}
         >
-          {isSearching ? (
+          {showRecent ? (
+            <>
+              <p className="px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground flex items-center gap-1.5">
+                <Clock className="h-3 w-3" />
+                Recent loans
+              </p>
+              <ul className="py-1">
+                {recentLoans.slice(0, 3).map((loan) => (
+                  <li key={loan.loanId}>
+                    <button
+                      type="button"
+                      className="w-full text-left px-3 py-2 hover:bg-muted transition-colors"
+                      onClick={() => handleRecentSelect(loan)}
+                    >
+                      <div className="text-sm">
+                        {loan.customerName}&nbsp;&nbsp;·&nbsp;&nbsp;LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : isSearching ? (
             <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
               <Spinner>Searching...</Spinner>
             </div>
-          ) : query.trim().length < 2 ? (
+          ) : !isSearchMode ? (
             <p className="py-4 px-3 text-sm text-muted-foreground">
               Type at least 2 characters to search
             </p>
