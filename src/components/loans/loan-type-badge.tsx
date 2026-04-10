@@ -3,9 +3,12 @@
  * Used in the loans list page and customer loan cards.
  */
 
+import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
+
 const LOAN_TYPE_STYLES: Record<string, string> = {
-  fixed_rate: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
-  reducing_balance: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  fixed_rate: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-800",
+  reducing_balance: "bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-800",
 }
 
 const LOAN_TYPE_LABELS: Record<string, string> = {
@@ -15,12 +18,14 @@ const LOAN_TYPE_LABELS: Record<string, string> = {
 
 export function LoanTypeBadge({ loanType }: { loanType: string }) {
   return (
-    <span
-      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
-        LOAN_TYPE_STYLES[loanType] ?? "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-      }`}
+    <Badge
+      variant="outline"
+      className={cn(
+        "rounded-full",
+        LOAN_TYPE_STYLES[loanType] ?? "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-900 dark:text-gray-200 dark:border-gray-800"
+      )}
     >
       {LOAN_TYPE_LABELS[loanType] ?? "Perpetual"}
-    </span>
+    </Badge>
   )
 }
