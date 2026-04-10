@@ -11,6 +11,7 @@ import { PermissionInfo } from "@/components/ui/permission-info"
 import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
 import { createFundTransferAction, createCapitalInjectionAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { queryKeys } from "@/hooks/query-keys"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -414,13 +415,13 @@ export default function FundTransfersPage() {
                     </TableCell>
                     <TableCell>
                       {isInjection ? (
-                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                        <Badge variant="outline" className="rounded-full bg-emerald-50 text-emerald-700 border-emerald-200">
                           Capital In
-                        </span>
+                        </Badge>
                       ) : (
-                        <span className="inline-flex items-center rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                        <Badge variant="outline" className="rounded-full bg-blue-50 text-blue-700 border-blue-200">
                           Transfer
-                        </span>
+                        </Badge>
                       )}
                     </TableCell>
                     <TableCell>{t.fromLocation ? DEPOSIT_LOCATION_SHORT_LABELS[t.fromLocation as DepositLocation] : "-"}</TableCell>

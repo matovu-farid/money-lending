@@ -8,6 +8,7 @@ import { CustomerPickerDialog } from "@/components/customers/customer-picker-dia
 import { useLoans } from "@/hooks/use-loans"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { LoanListEntry } from "@/types"
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
@@ -249,9 +250,9 @@ export default function LoansPage() {
           <div className="flex items-center gap-1.5">
             <OverdueBadge daysOverdue={e.daysOverdue} />
             {isPenaltyActive(e.daysOverdue, e.penaltyWaived) && (
-              <span className="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium bg-destructive/10 text-destructive border border-destructive/20">
+              <Badge variant="destructive" className="rounded-full text-[10px] px-1.5">
                 Penalty
-              </span>
+              </Badge>
             )}
           </div>
         ) : (

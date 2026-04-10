@@ -4,6 +4,7 @@ import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Bell } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Popover,
@@ -102,9 +103,9 @@ export function NotificationBell() {
           )}
         />
         {unreadCount > 0 && (
-          <span className="bg-red-600 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center absolute -top-1 -right-1">
+          <Badge variant="destructive" className="absolute -top-1 -right-1 rounded-full h-5 w-5 justify-center px-0 bg-red-600 text-white">
             {displayCount}
-          </span>
+          </Badge>
         )}
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">

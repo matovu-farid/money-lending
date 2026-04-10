@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { Filter, ChevronDown } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 
 interface FilterPanelProps {
@@ -26,9 +27,9 @@ export function FilterPanel({ children, label = "Filters", activeCount = 0 }: Fi
         <Filter size={16} />
         {label}
         {activeCount > 0 && (
-          <span className="inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground text-xs min-w-5 h-5 px-1">
+          <Badge className="rounded-full min-w-5 justify-center px-1">
             {activeCount}
-          </span>
+          </Badge>
         )}
         <ChevronDown className={cn("h-4 w-4 transition-transform duration-150 ease-out", open && "rotate-180")} />
       </button>

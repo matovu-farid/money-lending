@@ -6,6 +6,7 @@ import { useSession } from "@/lib/auth-client"
 import { useConversations } from "@/hooks/use-conversations"
 import { ConversationList } from "./conversation-list"
 import { MessageThread } from "./message-thread"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { UserRole, ConversationListItem } from "@/types"
@@ -106,9 +107,9 @@ export function ChatWidget() {
           <>
             <MessageSquare className="h-5 w-5" />
             {totalUnread > 0 && (
-              <span className="absolute -top-1 -right-1 h-5 min-w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center px-1">
+              <Badge variant="destructive" className="absolute -top-1 -right-1 rounded-full min-w-5 justify-center px-1 bg-destructive text-destructive-foreground">
                 {totalUnread > 99 ? "99+" : totalUnread}
-              </span>
+              </Badge>
             )}
           </>
         )}

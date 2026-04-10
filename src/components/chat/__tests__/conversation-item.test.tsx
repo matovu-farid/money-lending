@@ -9,6 +9,7 @@ function makeConversation(overrides: Partial<ConversationListItem> = {}): Conver
   return {
     id: "conv-1",
     name: null,
+    isGroup: false,
     participants: [
       { id: "user-1", name: "Alice" },
       { id: "user-2", name: "Bob" },
