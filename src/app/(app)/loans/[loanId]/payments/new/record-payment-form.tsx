@@ -75,8 +75,6 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
     register,
     handleSubmit,
     control,
-    setValue,
-    watch,
     formState: { errors },
   } = useForm<PaymentFormValues>({
     defaultValues: {
@@ -86,12 +84,6 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
       note: "",
     },
   })
-
-  const currentAmount = watch("amount")
-
-  function handlePresetClick(value: string) {
-    setValue("amount", value, { shouldValidate: true })
-  }
 
   function onFormSubmit(data: PaymentFormValues) {
     // Show confirmation dialog instead of submitting directly
@@ -219,24 +211,8 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
               required="Amount must be a valid number (e.g. 150000 or 150000.50)"
               disabled={isPending}
               id="amount"
+              presets={AMOUNT_PRESETS}
             />
-
-            {/* Quick amount presets */}
-            <div className="flex flex-wrap gap-2">
-              {AMOUNT_PRESETS.map((preset) => (
-                <Button
-                  key={preset.value}
-                  type="button"
-                  variant={currentAmount === preset.value ? "default" : "outline"}
-                  size="sm"
-                  className="rounded-full text-xs px-3 h-7"
-                  disabled={isPending}
-                  onClick={() => handlePresetClick(preset.value)}
-                >
-                  {preset.label}
-                </Button>
-              ))}
-            </div>
 
             <div className="space-y-1">
               <Label htmlFor="depositLocation">Deposit Location</Label>

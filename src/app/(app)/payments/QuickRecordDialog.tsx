@@ -58,10 +58,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   const {
     register,
     handleSubmit,
-    watch,
     reset,
     control,
-    setValue,
     formState: { errors },
   } = useForm<QuickRecordFormValues>({
     defaultValues: {
@@ -70,8 +68,6 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       depositLocation: "cash",
     },
   })
-
-  const amount = watch("amount")
 
   const { data: recentLoans = [] } = useQuery({
     queryKey: queryKeys.recentLoans.list(),
@@ -122,10 +118,6 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       principalAmount: "0",
     }
     setSelectedLoan(activeLoan)
-  }
-
-  function handlePresetClick(value: string) {
-    setValue("amount", value, { shouldValidate: true })
   }
 
   function onFormSubmit(data: QuickRecordFormValues) {
@@ -290,26 +282,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   required="Amount is required"
                   disabled={!selectedLoan}
                   id="quick-record-amount"
+                  presets={selectedLoan ? AMOUNT_PRESETS : undefined}
                 />
-
-                {/* Quick amount presets */}
-                {selectedLoan && (
-                  <div className="flex flex-wrap gap-2">
-                    {AMOUNT_PRESETS.map((preset) => (
-                      <Button
-                        key={preset.value}
-                        type="button"
-                        variant={amount === preset.value ? "default" : "outline"}
-                        size="sm"
-                        className="rounded-full text-xs px-3 h-7"
-                        disabled={!selectedLoan}
-                        onClick={() => handlePresetClick(preset.value)}
-                      >
-                        {preset.label}
-                      </Button>
-                    ))}
-                  </div>
-                )}
 
                 {/* Deposit location */}
                 <div className="space-y-1.5">
