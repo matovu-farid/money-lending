@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { MoneyInput } from "@/components/ui/money-input"
 import { formatDate, formatCurrency } from "@/lib/utils"
@@ -682,30 +683,33 @@ function NewLoanPageInner() {
 
               {/* Rollover Breakdown */}
               {activeLoanData && (
-                <div className="rounded-lg border p-3 space-y-2 text-sm">
-                  <p className="font-medium">Rollover Breakdown</p>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Fresh Disbursement</span>
-                    <span>{formatCurrency(principalAmount)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Rolled Over Amount</span>
-                    <span>{formatCurrency(
-                      new BigNumber(activeLoanData.outstandingPrincipal)
-                        .plus(new BigNumber(activeLoanData.accruedInterest))
-                        .toFixed(0)
-                    )}</span>
-                  </div>
-                  <div className="flex justify-between border-t pt-2 font-semibold">
-                    <span>Total New Principal</span>
-                    <span>{formatCurrency(
-                      new BigNumber(principalAmount || "0")
-                        .plus(new BigNumber(activeLoanData.outstandingPrincipal))
-                        .plus(new BigNumber(activeLoanData.accruedInterest))
-                        .toFixed(0)
-                    )}</span>
-                  </div>
-                </div>
+                <Card>
+                  <CardContent className="p-3 space-y-2 text-sm">
+                    <p className="font-medium">Rollover Breakdown</p>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Fresh Disbursement</span>
+                      <span>{formatCurrency(principalAmount)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Rolled Over Amount</span>
+                      <span>{formatCurrency(
+                        new BigNumber(activeLoanData.outstandingPrincipal)
+                          .plus(new BigNumber(activeLoanData.accruedInterest))
+                          .toFixed(0)
+                      )}</span>
+                    </div>
+                    <Separator className="my-2" />
+                    <div className="flex justify-between font-semibold">
+                      <span>Total New Principal</span>
+                      <span>{formatCurrency(
+                        new BigNumber(principalAmount || "0")
+                          .plus(new BigNumber(activeLoanData.outstandingPrincipal))
+                          .plus(new BigNumber(activeLoanData.accruedInterest))
+                          .toFixed(0)
+                      )}</span>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
 
               {/* Interest Calculation Preview */}

@@ -281,36 +281,38 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
           </DialogHeader>
           {pendingData && (
             <div className="space-y-3 py-2">
-              <div className="rounded-lg border p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Customer</span>
-                  <span className="font-medium">{customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Loan Reference</span>
-                  <span className="font-mono">{loanReference}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="font-mono tabular-nums font-semibold">
-                    UGX {formatNumberWithCommas(pendingData.amount)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Deposit Location</span>
-                  <span>{DEPOSIT_LOCATION_SHORT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Payment Date</span>
-                  <span>{formatDate(pendingData.paymentDate)}</span>
-                </div>
-                {pendingData.note.trim() && (
+              <Card>
+                <CardContent className="p-4 space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Note</span>
-                    <span className="text-right max-w-[60%]">{pendingData.note.trim()}</span>
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-medium">{customerName}</span>
                   </div>
-                )}
-              </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Loan Reference</span>
+                    <span className="font-mono">{loanReference}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="font-mono tabular-nums font-semibold">
+                      UGX {formatNumberWithCommas(pendingData.amount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Deposit Location</span>
+                    <span>{DEPOSIT_LOCATION_SHORT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Payment Date</span>
+                    <span>{formatDate(pendingData.paymentDate)}</span>
+                  </div>
+                  {pendingData.note.trim() && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Note</span>
+                      <span className="text-right max-w-[60%]">{pendingData.note.trim()}</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
           <DialogFooter>

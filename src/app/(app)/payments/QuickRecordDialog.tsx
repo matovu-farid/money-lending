@@ -5,6 +5,7 @@ import { format } from "date-fns"
 import { useForm, Controller } from "react-hook-form"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import { Card, CardContent } from "@/components/ui/card"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -180,30 +181,32 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">
-              <div className="rounded-lg border p-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Customer</span>
-                  <span className="font-medium">{selectedLoan?.customerName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Loan Reference</span>
-                  <span className="font-mono">{loanRef}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Amount</span>
-                  <span className="font-mono tabular-nums font-semibold">
-                    UGX {formatNumberWithCommas(pendingData.amount)}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Deposit Location</span>
-                  <span>{DEPOSIT_LOCATION_SHORT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Payment Date</span>
-                  <span>{formatDate(pendingData.paymentDate)}</span>
-                </div>
-              </div>
+              <Card>
+                <CardContent className="p-4 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Customer</span>
+                    <span className="font-medium">{selectedLoan?.customerName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Loan Reference</span>
+                    <span className="font-mono">{loanRef}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Amount</span>
+                    <span className="font-mono tabular-nums font-semibold">
+                      UGX {formatNumberWithCommas(pendingData.amount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Deposit Location</span>
+                    <span>{DEPOSIT_LOCATION_SHORT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Payment Date</span>
+                    <span>{formatDate(pendingData.paymentDate)}</span>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setConfirmStep(false)}>

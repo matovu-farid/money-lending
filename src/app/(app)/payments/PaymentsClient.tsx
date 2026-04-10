@@ -8,6 +8,7 @@ import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -672,20 +673,22 @@ export function PaymentsClient() {
             </DialogDescription>
           </DialogHeader>
           {markWrongTarget && (
-            <div className="rounded-lg border p-3 text-sm space-y-1 mb-2">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Customer</span>
-                <span className="font-medium">{markWrongTarget.customerName}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Amount</span>
-                <span className="font-mono tabular-nums">UGX {formatNumberWithCommas(markWrongTarget.amount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Date</span>
-                <span>{formatDate(markWrongTarget.paymentDate)}</span>
-              </div>
-            </div>
+            <Card className="mb-2">
+              <CardContent className="p-3 text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Customer</span>
+                  <span className="font-medium">{markWrongTarget.customerName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Amount</span>
+                  <span className="font-mono tabular-nums">UGX {formatNumberWithCommas(markWrongTarget.amount)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Date</span>
+                  <span>{formatDate(markWrongTarget.paymentDate)}</span>
+                </div>
+              </CardContent>
+            </Card>
           )}
           <div className="space-y-1.5">
             <Label htmlFor="mark-wrong-reason">Reason</Label>
