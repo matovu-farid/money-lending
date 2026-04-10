@@ -9,6 +9,8 @@ import { settleWithCollateralAction } from "@/actions/settlement.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
@@ -85,28 +87,33 @@ export function SettleCollateralDialog({
             This will seize the collateral and close the loan. The full outstanding balance will be written off.
           </p>
 
-          <div className="rounded-lg border p-3 space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Outstanding Principal</span>
-              <span className="font-medium">{formatCurrency(outstandingPrincipal)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Accrued Interest</span>
-              <span className="font-medium">{formatCurrency(accruedInterest)}</span>
-            </div>
-            <div className="flex justify-between border-t pt-2 font-semibold">
-              <span>Total Written Off</span>
-              <span>{formatCurrency(totalWriteOff)}</span>
-            </div>
-          </div>
+          <Card>
+            <CardContent className="p-3 space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Outstanding Principal</span>
+                <span className="font-medium">{formatCurrency(outstandingPrincipal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Accrued Interest</span>
+                <span className="font-medium">{formatCurrency(accruedInterest)}</span>
+              </div>
+              <Separator className="my-2" />
+              <div className="flex justify-between font-semibold">
+                <span>Total Written Off</span>
+                <span>{formatCurrency(totalWriteOff)}</span>
+              </div>
+            </CardContent>
+          </Card>
 
-          <div className="rounded-lg border p-3 space-y-1 text-sm">
-            <p className="font-medium">Collateral to Seize</p>
-            <p className="text-muted-foreground">{collateralNature}</p>
-            {collateralDescription && (
-              <p className="text-muted-foreground text-xs">{collateralDescription}</p>
-            )}
-          </div>
+          <Card>
+            <CardContent className="p-3 space-y-1 text-sm">
+              <p className="font-medium">Collateral to Seize</p>
+              <p className="text-muted-foreground">{collateralNature}</p>
+              {collateralDescription && (
+                <p className="text-muted-foreground text-xs">{collateralDescription}</p>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="space-y-2">
             <Label htmlFor="settle-reason">Reason for Settlement</Label>

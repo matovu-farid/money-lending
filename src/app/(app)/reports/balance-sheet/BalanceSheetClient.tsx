@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
 import {
   Select,
   SelectContent,
@@ -115,22 +116,12 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
           </SelectContent>
         </Select>
 
-        <button
-          type="button"
-          onClick={() => handleDownload("pdf")}
-          disabled={downloading}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
-        >
+        <Button variant="outline" size="sm" onClick={() => handleDownload("pdf")} disabled={downloading}>
           {downloading ? "Exporting..." : "Export PDF"}
-        </button>
-        <button
-          type="button"
-          onClick={() => handleDownload("excel")}
-          disabled={downloading}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:pointer-events-none"
-        >
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleDownload("excel")} disabled={downloading}>
           {downloading ? "Exporting..." : "Export Excel"}
-        </button>
+        </Button>
       </div>
 
       {/* Report Card */}

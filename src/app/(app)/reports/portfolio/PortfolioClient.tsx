@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import { Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -44,26 +46,14 @@ export function PortfolioClient({
     <div className="space-y-4">
       {/* Toolbar */}
       <div className="flex items-center gap-2">
-        <button
-          onClick={() => handleDownload("pdf", exportPdfHref)}
-          disabled={downloading !== null}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {downloading === "pdf" ? (
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          ) : null}
+        <Button variant="outline" size="sm" onClick={() => handleDownload("pdf", exportPdfHref)} disabled={downloading !== null}>
+          {downloading === "pdf" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Export PDF
-        </button>
-        <button
-          onClick={() => handleDownload("excel", exportExcelHref)}
-          disabled={downloading !== null}
-          className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-input bg-transparent px-3 text-sm hover:bg-accent disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {downloading === "excel" ? (
-            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          ) : null}
+        </Button>
+        <Button variant="outline" size="sm" onClick={() => handleDownload("excel", exportExcelHref)} disabled={downloading !== null}>
+          {downloading === "excel" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           Export Excel
-        </button>
+        </Button>
       </div>
 
       {/* Table */}
