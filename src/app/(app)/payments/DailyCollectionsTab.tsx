@@ -85,9 +85,9 @@ export function DailyCollectionsTab() {
         <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
           <PopoverTrigger
             render={
-              <button
-                type="button"
-                className="inline-flex min-w-[180px] items-center justify-start gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-normal text-left hover:bg-accent hover:text-accent-foreground"
+              <Button
+                variant="outline"
+                className="min-w-[180px] justify-start gap-2 font-normal"
               />
             }
           >
