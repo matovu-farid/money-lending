@@ -1,6 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
+import { Badge } from "@/components/ui/badge"
 import type { ConversationListItem } from "@/types"
 
 interface ConversationItemProps {
@@ -86,9 +87,9 @@ export function ConversationItem({
 
       {/* Unread badge */}
       {conversation.unreadCount > 0 && (
-        <div className="h-5 min-w-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center px-1 shrink-0">
+        <Badge className="rounded-full min-w-5 justify-center px-1 shrink-0">
           {conversation.unreadCount > 99 ? "99+" : conversation.unreadCount}
-        </div>
+        </Badge>
       )}
     </button>
   )
