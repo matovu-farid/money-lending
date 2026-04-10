@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { MoneyInput } from "@/components/ui/money-input"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
@@ -266,7 +267,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                       <span className="text-muted-foreground">Accrued Interest</span>
                       <span className="font-mono tabular-nums">{formatCurrency(balanceData.accruedInterest)}</span>
                     </div>
-                    <div className="border-t my-1" />
+                    <Separator className="my-1" />
                     <div className="flex justify-between font-semibold">
                       <span>Total Owed</span>
                       <span className="font-mono tabular-nums">{formatCurrency(balanceData.totalBalance)}</span>

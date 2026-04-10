@@ -14,6 +14,7 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
+import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -148,7 +149,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
             <span className="text-sm text-muted-foreground">Loan Ref</span>
             <span className="font-mono text-sm">{loanReference}</span>
           </div>
-          <div className="border-t my-2" />
+          <Separator className="my-2" />
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Outstanding Principal</span>
             <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.outstandingPrincipal)}</span>
@@ -157,7 +158,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
             <span className="text-sm text-muted-foreground">Accrued Interest</span>
             <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.accruedInterest)}</span>
           </div>
-          <div className="border-t my-2" />
+          <Separator className="my-2" />
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Total Balance Owed</span>
             <span className="font-mono tabular-nums font-bold text-lg">{formatCurrency(balanceData.totalBalance)}</span>
