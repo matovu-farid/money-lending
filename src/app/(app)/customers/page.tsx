@@ -2,10 +2,15 @@
 
 import { useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { useCustomers } from "@/hooks/use-customers"
+import { getCustomerAction } from "@/actions/customer.actions"
+import { getCustomerLoansWithOverdueAction } from "@/actions/loan.actions"
+import { queryKeys } from "@/hooks/query-keys"
+import { unwrapAction } from "@/hooks/query-utils"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
-import type { CustomerSearchParams } from "@/types"
+import type { CustomerSearchParams, Customer } from "@/types"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -18,6 +23,7 @@ const PAGE_SIZE = 20
 
 export default function CustomersPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useState<CustomerSearchParams>({})
 
@@ -34,6 +40,32 @@ export default function CustomersPage() {
     setPage(0)
     setSearchParams({})
   }, [])
+
+  const handlePrefetch = useCallback((customerId: string) => {
+    if (customerId.startsWith("optimistic-")) return
+    router.prefetch(`/customers/${customerId}`)
+    const staleTime = 30_000
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.customers.detail(customerId),
+      queryFn: async () => {
+        const result = await getCustomerAction(customerId)
+        return unwrapAction(result as { data: Customer } | { error: string })
+      },
+      staleTime,
+    })
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.loans.byCustomer(customerId),
+      queryFn: async () => {
+        const result = await getCustomerLoansWithOverdueAction(customerId)
+        if (!("data" in result) || !result.data) return []
+        return result.data.map((item) => ({
+          loan: item,
+          daysOverdue: item.daysOverdue,
+        }))
+      },
+      staleTime,
+    })
+  }, [queryClient])
 
   if (error) {
     return (
@@ -130,6 +162,8 @@ export default function CustomersPage() {
               onClick: c.id.startsWith("optimistic-")
                 ? undefined
                 : () => router.push(`/customers/${c.id}`),
+              onMouseEnter: () => handlePrefetch(c.id),
+              onFocus: () => handlePrefetch(c.id),
             })}
           />
 

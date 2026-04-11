@@ -13,35 +13,8 @@ import {
   CardContent,
 } from "@/components/ui/card"
 import type { RetainedEarningsData } from "@/types"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, getMonthOptions, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
-
-function getMonthOptions(): { value: string; label: string }[] {
-  const options: { value: string; label: string }[] = []
-  const now = new Date()
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    const label = d.toLocaleDateString("en-UG", {
-      month: "long",
-      year: "numeric",
-    })
-    options.push({ value, label })
-  }
-  return options
-}
-
-function formatPeriodDate(period: string, position: "start" | "end"): string {
-  const [year, month] = period.split("-").map(Number)
-  const date = position === "start"
-    ? new Date(year, month - 1, 1)
-    : new Date(year, month, 0)
-  return date.toLocaleDateString("en-UG", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })
-}
 
 interface RetainedEarningsClientProps {
   data: RetainedEarningsData

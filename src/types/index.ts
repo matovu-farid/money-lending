@@ -96,6 +96,7 @@ export interface CreateLoanInput {
   interestRateOverride?: string | null  // admin-only override
   minPeriodOverride?: number | null     // admin-only override
   rollover?: RolloverData
+  backdateNote?: string                 // required when start date is before today
 }
 
 export interface UpdateLoanInput {

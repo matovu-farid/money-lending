@@ -4,11 +4,10 @@ import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "./query-keys"
 import { unwrapAction } from "./query-utils"
 import { getDashboardAction } from "@/actions/dashboard.actions"
-import type { DashboardKPIs, ActivityFeedItem } from "@/types"
+import type { DashboardKPIs } from "@/types"
 
 export interface DashboardData {
   kpis: DashboardKPIs
-  activity: ActivityFeedItem[]
 }
 
 export function useDashboard() {

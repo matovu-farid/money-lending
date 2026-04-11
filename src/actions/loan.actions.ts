@@ -1,8 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired } from "@/lib/action-utils"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"
@@ -24,11 +23,26 @@ import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { getLocationBalances } from "@/services/report.service"
 import { formatAmount } from "@/lib/interest/engine"
 
+export async function getLocationBalancesAction(): Promise<
+  { data: Record<"cash" | "bank" | "strong_room", string> } | { error: string }
+> {
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
+
+  try {
+    const data = await Effect.runPromise(getLocationBalances())
+    return { data }
+  } catch {
+    return { error: "Failed to fetch balances" }
+  }
+}
+
 export async function getCollateralNaturesAction(): Promise<string[]> {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return []
+  const session = await getSession()
+  if (!session) return []
 
   const rows = await db
     .selectDistinct({ nature: collateral.nature })
@@ -38,9 +52,47 @@ export async function getCollateralNaturesAction(): Promise<string[]> {
   return rows.map((r) => r.nature)
 }
 
+export async function getLoanPaymentContextAction(loanId: string) {
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
+
+  const [row] = await db
+    .select({
+      id: loans.id,
+      customerName: customers.fullName,
+    })
+    .from(loans)
+    .innerJoin(customers, eq(loans.customerId, customers.id))
+    .where(eq(loans.id, loanId))
+
+  if (!row) return { error: "Loan not found" }
+
+  return {
+    data: {
+      loanId: row.id,
+      customerName: row.customerName,
+      loanReference: `LOAN-${row.id.slice(0, 8).toUpperCase()}`,
+    },
+  }
+}
+
+export async function getLoanCollateralAction(loanId: string): Promise<
+  { data: { nature: string; description: string | null } | null } | { error: string }
+> {
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
+
+  const [record] = await db.select({
+    nature: collateral.nature,
+    description: collateral.description,
+  }).from(collateral).where(eq(collateral.loanId, loanId))
+
+  return { data: record ?? null }
+}
+
 export async function getLoanReceiptDataAction(loanId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
   if (!loan) return { error: "Loan not found" }
@@ -52,25 +104,32 @@ export async function getLoanReceiptDataAction(loanId: string) {
   ])
 
   const rate = new BigNumber(loan.interestRate).multipliedBy(100)
+  const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
   return {
     data: {
       receiptNumber: `LOAN-${loanId.slice(0, 8).toUpperCase()}`,
       date: loan.startDate.toISOString(),
       customerName: customer?.fullName ?? "—",
       customerNin: customer?.nin,
-      loanAmount: loan.principalAmount,
+      loanAmount: isRollover
+        ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
+        : loan.principalAmount,
       issuanceFee: loan.issuanceFee,
       interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
       collateralNature: collateralRecord?.nature ?? "—",
       disbursementSource: loan.disbursementSource,
       officerName: issuingUser?.name ?? "Officer",
+      ...(isRollover ? {
+        rolloverAmount: loan.rolloverAmount!,
+        totalNewPrincipal: loan.principalAmount,
+      } : {}),
     },
   }
 }
 
 export async function listLoansAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -83,21 +142,19 @@ export async function listLoansAction() {
 }
 
 export async function getCurrentUserRoleAction(): Promise<UserRole> {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return "unassigned" as UserRole
+  const session = await getSession()
+  if (!session) return "unassigned" as UserRole
   return (session.user.role ?? "unassigned") as UserRole
 }
 
 export async function updateLoanAction(input: UpdateLoanInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Forbidden" }
-  }
+  const forbidden = requireRole(session, "admin")
+  if (forbidden) return { error: forbidden }
 
   if (!input.loanId?.trim()) {
     return { error: "Loan ID is required" }
@@ -105,11 +162,9 @@ export async function updateLoanAction(input: UpdateLoanInput) {
   if (!input.reason?.trim()) {
     return { error: "Reason is required" }
   }
-  if (input.principalAmount !== undefined && !/^\d+(\.\d{1,2})?$/.test(input.principalAmount)) {
-    return { error: "Principal must be a valid decimal number" }
-  }
-  if (input.principalAmount !== undefined && parseFloat(input.principalAmount) <= 0) {
-    return { error: "Principal must be greater than zero" }
+  if (input.principalAmount !== undefined) {
+    const err = validatePositiveDecimal(input.principalAmount, "Principal")
+    if (err) return { error: err }
   }
   if (input.issuanceFee !== undefined) {
     if (!/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
@@ -133,15 +188,13 @@ export async function updateLoanAction(input: UpdateLoanInput) {
 }
 
 export async function deleteLoanAction(input: DeleteLoanInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Forbidden" }
-  }
+  const forbidden = requireRole(session, "admin")
+  if (forbidden) return { error: forbidden }
 
   if (!input.loanId?.trim()) {
     return { error: "Loan ID is required" }
@@ -163,12 +216,12 @@ export async function deleteLoanAction(input: DeleteLoanInput) {
 }
 
 export async function createLoanAction(input: CreateLoanInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) {
     return { error: "Forbidden" }
   }
@@ -183,23 +236,49 @@ export async function createLoanAction(input: CreateLoanInput) {
   if (!input.customerId?.trim()) {
     return { error: "Customer ID is required" }
   }
-  if (!input.principalAmount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.principalAmount)) {
-    return { error: "Principal must be a valid decimal number" }
-  }
-  if (parseFloat(input.principalAmount) <= 0) {
-    return { error: "Principal must be greater than zero" }
-  }
+  const principalErr = validatePositiveDecimal(input.principalAmount, "Principal")
+  if (principalErr) return { error: principalErr }
   if (!input.startDate?.trim()) {
     return { error: "Start date is required" }
+  }
+
+  // Backdate validation: compare start date to today (date-only, ignoring time)
+  const startDateObj = new Date(input.startDate)
+  const todayStart = new Date()
+  todayStart.setHours(0, 0, 0, 0)
+  const startDateNorm = new Date(startDateObj)
+  startDateNorm.setHours(0, 0, 0, 0)
+
+  if (startDateNorm.getTime() > todayStart.getTime()) {
+    return { error: "Start date cannot be in the future" }
+  }
+
+  const daysDiff = Math.round((todayStart.getTime() - startDateNorm.getTime()) / (1000 * 60 * 60 * 24))
+  const isBackdated = daysDiff > 0
+
+  if (isBackdated) {
+    if (daysDiff > 3 && ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+      return { error: `Backdating beyond 3 days requires supervisor permission. You selected ${daysDiff} days ago.` }
+    }
+    if (!input.backdateNote?.trim()) {
+      return { error: "A note is required when backdating a loan to explain the reason" }
+    }
   }
   if (!input.collateral?.nature?.trim()) {
     return { error: "Collateral nature is required" }
   }
-  if (!input.issuanceFee?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
-    return { error: "Issuance fee must be a valid decimal number" }
-  }
-  if (parseFloat(input.issuanceFee) < 50000) {
-    return { error: "Issuance fee must be at least 50,000 UGX" }
+  const isRollover = !!input.rollover
+  if (isRollover) {
+    // Rollovers allow zero issuance fee (already paid on original loan)
+    if (!input.issuanceFee?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
+      return { error: "Issuance fee must be a valid decimal number" }
+    }
+  } else {
+    const feeErr = validatePositiveDecimal(input.issuanceFee, "Issuance fee")
+    if (feeErr) return { error: feeErr }
+    if (parseFloat(input.issuanceFee) < 50000) {
+      return { error: "Issuance fee must be at least 50,000 UGX" }
+    }
   }
   if (!input.collateral?.description?.trim()) {
     return { error: "Collateral description is required" }
@@ -208,6 +287,23 @@ export async function createLoanAction(input: CreateLoanInput) {
   const validLocations = ["cash", "bank", "strong_room"]
   if (!input.disbursementSource || !validLocations.includes(input.disbursementSource)) {
     return { error: "Disbursement source is required (cash, bank, or strong_room)" }
+  }
+
+  // Check sufficient funds at disbursement source
+  // For rollovers, principalAmount is already the fresh cash portion (carried amounts are separate)
+  const freshAmount = new BigNumber(input.principalAmount)
+
+  if (input.disbursementSource !== "cash" && freshAmount.isGreaterThan(0)) {
+    try {
+      const balances = await Effect.runPromise(getLocationBalances())
+      const available = new BigNumber(balances[input.disbursementSource as keyof typeof balances])
+      if (available.isLessThan(freshAmount)) {
+        const loc = input.disbursementSource === "strong_room" ? "Strong Room" : input.disbursementSource === "bank" ? "Bank" : "Cash on Hand"
+        return { error: `Insufficient funds in ${loc}. Available: ${formatAmount(available)}, required: ${formatAmount(freshAmount)}` }
+      }
+    } catch {
+      return { error: "Unable to verify fund balances. Please try again." }
+    }
   }
 
   // Validate loanType
@@ -339,8 +435,8 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
 }
 
 export async function getCustomerLoansWithOverdueAction(customerId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const customerLoans = await db
@@ -365,6 +461,10 @@ export async function getCustomerLoansWithOverdueAction(customerId: string) {
         penaltyWaivedAt: loans.penaltyWaivedAt,
         rolledOverFrom: loans.rolledOverFrom,
         rolloverAmount: loans.rolloverAmount,
+        backdatedFrom: loans.backdatedFrom,
+        backdatedBy: loans.backdatedBy,
+        backdatedAt: loans.backdatedAt,
+        backdateNote: loans.backdateNote,
         createdAt: loans.createdAt,
         updatedAt: loans.updatedAt,
         deletedAt: loans.deletedAt,
@@ -382,8 +482,8 @@ export async function getCustomerLoansWithOverdueAction(customerId: string) {
 }
 
 export async function listLoansWithOverdueAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const allLoans = await Effect.runPromise(listLoans())
@@ -394,8 +494,8 @@ export async function listLoansWithOverdueAction() {
 }
 
 export async function exportLoansExcelAction(filter?: "all" | "critical" | "at-risk" | "early") {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const allLoans = await Effect.runPromise(listLoans())
@@ -425,8 +525,8 @@ export async function exportLoansExcelAction(filter?: "all" | "critical" | "at-r
 }
 
 export async function listActiveLoansWithOverdueAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const allLoans = await Effect.runPromise(listLoans())
@@ -438,13 +538,11 @@ export async function listActiveLoansWithOverdueAction() {
 }
 
 export async function waivePenaltyAction(loanId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
-  const role = session.user.role as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Only admins can waive penalties" }
-  }
+  const forbidden = requireRole(session, "admin", "Only admins can waive penalties")
+  if (forbidden) return { error: forbidden }
 
   try {
     const [loan] = await db
@@ -469,13 +567,11 @@ export async function waivePenaltyAction(loanId: string) {
 }
 
 export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
-  const role = session.user.role as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Only admins can adjust penalty rates" }
-  }
+  const forbidden = requireRole(session, "admin", "Only admins can adjust penalty rates")
+  if (forbidden) return { error: forbidden }
 
   const value = parseFloat(multiplier)
   if (isNaN(value) || value < 0 || value >= 1) {

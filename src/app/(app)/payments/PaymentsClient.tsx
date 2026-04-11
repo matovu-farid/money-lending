@@ -179,45 +179,19 @@ export function PaymentsClient() {
   const total = data?.total ?? 0
 
   // Sync filter state with URL after debounce
-  const applyFilters = useCallback(
-    (
-      newCustomerName: string,
-      newDateFrom: string,
-      newDateTo: string,
-      newAmountMin: string,
-      newAmountMax: string
-    ) => {
+  const syncFiltersToUrl = useCallback(
+    (updated: Record<string, string>) => {
       const params = new URLSearchParams(searchParams.toString())
-      if (newCustomerName) params.set("customerName", newCustomerName)
-      else params.delete("customerName")
-      if (newDateFrom) params.set("dateFrom", newDateFrom)
-      else params.delete("dateFrom")
-      if (newDateTo) params.set("dateTo", newDateTo)
-      else params.delete("dateTo")
-      if (newAmountMin) params.set("amountMin", newAmountMin)
-      else params.delete("amountMin")
-      if (newAmountMax) params.set("amountMax", newAmountMax)
-      else params.delete("amountMax")
+      const keys = ["customerName", "dateFrom", "dateTo", "amountMin", "amountMax"] as const
+      for (const key of keys) {
+        const val = updated[key] ?? ""
+        if (val) params.set(key, val)
+        else params.delete(key)
+      }
       params.delete("page")
       router.push(`/payments?${params.toString()}`)
     },
     [router, searchParams]
-  )
-
-  const scheduleApply = useCallback(
-    (
-      newCustomerName: string,
-      newDateFrom: string,
-      newDateTo: string,
-      newAmountMin: string,
-      newAmountMax: string
-    ) => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current)
-      debounceTimer.current = setTimeout(() => {
-        applyFilters(newCustomerName, newDateFrom, newDateTo, newAmountMin, newAmountMax)
-      }, 300)
-    },
-    [applyFilters]
   )
 
   useEffect(() => {
@@ -226,34 +200,11 @@ export function PaymentsClient() {
     }
   }, [])
 
-  function handleCustomerNameChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value
-    setFilter("customerName", v)
-    scheduleApply(v, dateFrom, dateTo, amountMin, amountMax)
-  }
-
-  function handleDateFromChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value
-    setFilter("dateFrom", v)
-    scheduleApply(customerName, v, dateTo, amountMin, amountMax)
-  }
-
-  function handleDateToChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value
-    setFilter("dateTo", v)
-    scheduleApply(customerName, dateFrom, v, amountMin, amountMax)
-  }
-
-  function handleAmountMinChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value
-    setFilter("amountMin", v)
-    scheduleApply(customerName, dateFrom, dateTo, v, amountMax)
-  }
-
-  function handleAmountMaxChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const v = e.target.value
-    setFilter("amountMax", v)
-    scheduleApply(customerName, dateFrom, dateTo, amountMin, v)
+  function handleFilterChange(key: "customerName" | "dateFrom" | "dateTo" | "amountMin" | "amountMax", value: string) {
+    setFilter(key, value)
+    const updated = { customerName, dateFrom, dateTo, amountMin, amountMax, [key]: value }
+    if (debounceTimer.current) clearTimeout(debounceTimer.current)
+    debounceTimer.current = setTimeout(() => syncFiltersToUrl(updated), 300)
   }
 
   function handleClearFilters() {
@@ -461,7 +412,7 @@ export function PaymentsClient() {
             <Input
               placeholder="Search by customer name..."
               value={customerName}
-              onChange={handleCustomerNameChange}
+              onChange={(e) => handleFilterChange("customerName", e.target.value)}
               className="w-[220px]"
             />
           </div>
@@ -471,7 +422,7 @@ export function PaymentsClient() {
               type="date"
               className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
               value={dateFrom}
-              onChange={handleDateFromChange}
+              onChange={(e) => handleFilterChange("dateFrom", e.target.value)}
             />
           </div>
           <div>
@@ -480,7 +431,7 @@ export function PaymentsClient() {
               type="date"
               className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
               value={dateTo}
-              onChange={handleDateToChange}
+              onChange={(e) => handleFilterChange("dateTo", e.target.value)}
             />
           </div>
           <div>
@@ -490,7 +441,7 @@ export function PaymentsClient() {
               inputMode="numeric"
               className="w-[120px]"
               value={amountMin}
-              onChange={handleAmountMinChange}
+              onChange={(e) => handleFilterChange("amountMin", e.target.value)}
               placeholder="0"
             />
           </div>
@@ -501,7 +452,7 @@ export function PaymentsClient() {
               inputMode="numeric"
               className="w-[120px]"
               value={amountMax}
-              onChange={handleAmountMaxChange}
+              onChange={(e) => handleFilterChange("amountMax", e.target.value)}
               placeholder="Any"
             />
           </div>

@@ -1,8 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession } from "@/lib/action-utils"
 import {
   getNotifications,
   getUnreadCount,
@@ -11,8 +10,8 @@ import {
 } from "@/services/notification.service"
 
 export async function getNotificationsAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const data = await Effect.runPromise(getNotifications(session.user.id))
@@ -23,8 +22,8 @@ export async function getNotificationsAction() {
 }
 
 export async function getUnreadCountAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const count = await Effect.runPromise(getUnreadCount(session.user.id))
@@ -35,8 +34,8 @@ export async function getUnreadCountAction() {
 }
 
 export async function markAsReadAction(notificationId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     await Effect.runPromise(markAsRead(notificationId, session.user.id))
@@ -47,8 +46,8 @@ export async function markAsReadAction(notificationId: string) {
 }
 
 export async function markAllAsReadAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     await Effect.runPromise(markAllAsRead(session.user.id))

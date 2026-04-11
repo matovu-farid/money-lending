@@ -1,14 +1,19 @@
 "use client"
 
-import { useState } from "react"
-import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { useInfiniteQuery } from "@tanstack/react-query"
+import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
 import { useDashboard } from "@/hooks/use-dashboard"
+import { getRecentActivityAction } from "@/actions/dashboard.actions"
+import { queryKeys } from "@/hooks/query-keys"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import type { ActivityFeedItem } from "@/types"
 import { formatDate, formatCurrency, formatRelativeTime } from "@/lib/utils"
+
+const PAGE_SIZE = 5
 
 function activityIcon(type: ActivityFeedItem["type"]) {
   if (type === "loan_issued") return <Landmark className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -47,9 +52,48 @@ function formatDetailValue(key: string, value: string | number | null | undefine
 export default function DashboardPage() {
   const { data, isLoading: loading, error: queryError } = useDashboard()
   const kpis = data?.kpis ?? null
-  const activity = data?.activity ?? []
   const error = queryError?.message ?? null
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  const {
+    data: activityData,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading: activityLoading,
+  } = useInfiniteQuery({
+    queryKey: queryKeys.dashboard.activity(),
+    queryFn: async ({ pageParam }) => {
+      const result = await getRecentActivityAction(pageParam, PAGE_SIZE)
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+    initialPageParam: 1,
+    getNextPageParam: (lastPage, allPages) => {
+      const fetched = allPages.length * PAGE_SIZE
+      return fetched < lastPage.total ? allPages.length + 1 : undefined
+    },
+  })
+
+  const activity = activityData?.pages.flatMap((p) => p.items) ?? []
+
+  // Intersection observer for infinite scroll + eager prefetch
+  const sentinelRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
+          fetchNextPage()
+        }
+      },
+      { rootMargin: "100px" },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
 
   return (
     <div className="space-y-8">
@@ -145,18 +189,18 @@ export default function DashboardPage() {
           }
         />
         <KpiCard
-          label="Capital in System"
+          label="Cash Available"
           value={formatCurrency(kpis?.capitalInSystem ?? "0")}
           icon={Landmark}
           loading={loading}
           labelExtra={
             <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Capital in System</p>
+              <p className="font-semibold text-sm mb-1">Cash Available</p>
               <p className="text-xs text-muted-foreground mb-2">
-                Total outstanding balance owed to creditors (investors). This is the net amount of creditor investments minus repayments made back to them.
+                Total cash balance across all locations (cash on hand, bank, and strong room). This is the money available for new loan disbursements.
               </p>
               <p className="text-xs text-muted-foreground">
-                Represents the external funding currently deployed in the lending business.
+                Increases when payments are received and decreases when loans are disbursed or expenses are recorded.
               </p>
             </InfoPopover>
           }
@@ -168,8 +212,8 @@ export default function DashboardPage() {
         <CardHeader>
           <CardTitle className="text-xl font-semibold">Recent Activity</CardTitle>
         </CardHeader>
-        <CardContent className="p-0">
-          {loading ? (
+        <CardContent className="p-0 max-h-[420px] overflow-y-auto">
+          {activityLoading ? (
             <div className="space-y-0">
               {[1, 2, 3].map((i) => (
                 <div key={i} className="flex items-center gap-3 px-6 py-4 border-b">
@@ -233,6 +277,21 @@ export default function DashboardPage() {
                   </div>
                 )
               })}
+
+              {/* Sentinel for infinite scroll — triggers fetch 200px before visible */}
+              <div ref={sentinelRef} className="h-1" />
+
+              {isFetchingNextPage && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                </div>
+              )}
+
+              {!hasNextPage && activity.length > 0 && (
+                <p className="text-xs text-muted-foreground text-center py-3">
+                  No more activity
+                </p>
+              )}
             </div>
           )}
         </CardContent>

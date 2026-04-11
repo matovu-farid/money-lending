@@ -9,6 +9,8 @@ import {
   updateCreditor,
   addInvestment,
   recordCreditorRepayment,
+  listCreditors,
+  getSystemCapital,
 } from "@/services/creditor.service"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type {
@@ -17,6 +19,30 @@ import type {
   AddInvestmentInput,
   RecordCreditorRepaymentInput,
 } from "@/types"
+
+export async function listCreditorsAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const data = await Effect.runPromise(listCreditors())
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function getSystemCapitalAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const data = await Effect.runPromise(getSystemCapital())
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
 
 export async function createCreditorAction(input: CreateCreditorInput) {
   const session = await auth.api.getSession({ headers: await headers() })

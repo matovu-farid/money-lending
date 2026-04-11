@@ -1,23 +1,24 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
-import { ChevronDown, ChevronUp, Loader2 } from "lucide-react";
+import { Banknote, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import {
   updateCustomerAction,
   changeCustomerStatusAction,
 } from "@/actions/customer.actions";
-import { getCustomerLoansWithOverdueAction } from "@/actions/loan.actions";
-import { getPaymentPortionsAction } from "@/actions/payment.actions";
+import { getCustomerLoansWithOverdueAction, getLoanPaymentContextAction } from "@/actions/loan.actions";
+import { getPaymentPortionsAction, getLoanBalanceAction } from "@/actions/payment.actions";
 import { useCustomer } from "@/hooks/use-customer";
 import { useLoanPayments } from "@/hooks/use-payments";
 import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import type { Customer, Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -252,7 +253,7 @@ export default function CustomerProfilePage() {
     isError: notFound,
   } = useCustomer(customerId);
 
-  const { data: loanItems = [], isLoading: loansLoading } = useQuery<
+  const { data: rawLoanItems, isLoading: loansLoading } = useQuery<
     LoanWithOverdue[]
   >({
     queryKey: queryKeys.loans.byCustomer(customerId),
@@ -265,6 +266,7 @@ export default function CustomerProfilePage() {
       }));
     },
   });
+  const loanItems = Array.isArray(rawLoanItems) ? rawLoanItems : [];
 
   const loading = customerLoading || loansLoading;
 
@@ -284,6 +286,22 @@ export default function CustomerProfilePage() {
   );
   const [statusReason, setStatusReason] = useState("");
   const [isStatusPending, startStatusTransition] = useTransition();
+
+  const activeLoan = loanItems.find((item) => item.loan.status === "active");
+
+  useEffect(() => {
+    if (!activeLoan) return;
+    const loanId = activeLoan.loan.id;
+    router.prefetch(`/loans/${loanId}/payments/new`);
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.loans.paymentContext(loanId),
+      queryFn: () => getLoanPaymentContextAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
+    });
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.loans.balance(loanId),
+      queryFn: () => getLoanBalanceAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
+    });
+  }, [activeLoan, router, queryClient]);
 
   function handleEditStart() {
     if (!customer) return;
@@ -414,6 +432,15 @@ export default function CustomerProfilePage() {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
       <PageHeader title={customer.fullName} subtitle="Customer profile">
+        {activeLoan && (
+          <Link
+            href={`/loans/${activeLoan.loan.id}/payments/new`}
+            className={cn(buttonVariants({ variant: "outline" }))}
+          >
+            <Banknote className="h-4 w-4 mr-1.5" />
+            Record Payment
+          </Link>
+        )}
         <Link
           href={`/loans/new?customerId=${customerId}`}
           className={cn(buttonVariants())}
@@ -422,70 +449,79 @@ export default function CustomerProfilePage() {
         </Link>
       </PageHeader>
 
-      <Card>
-        <CardHeader>
+      <Accordion type="single" collapsible defaultValue={editing ? "basic-info" : undefined} value={editing ? "basic-info" : undefined}>
+        <AccordionItem value="basic-info" className="border rounded-lg px-4">
           <div className="flex items-center justify-between">
-            <CardTitle>Basic Information</CardTitle>
+            <AccordionTrigger className="flex-1 text-base font-semibold">
+              Basic Information
+            </AccordionTrigger>
             {!editing && (
-              <Button variant="outline" size="sm" onClick={handleEditStart}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditStart();
+                }}
+              >
                 Edit
               </Button>
             )}
           </div>
-        </CardHeader>
-        <CardContent>
-          {editing ? (
-            <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4">
-              <CustomerFormFields
-                register={register}
-                setValue={setValue}
-                errors={errors}
-                disabled={isEditPending}
-                idPrefix="edit"
-              />
-              <div className="flex gap-3">
-                <Button type="submit" disabled={isEditPending}>
-                  {isEditPending ? (
-                    <>
-                      <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                      Saving...
-                    </>
-                  ) : (
-                    "Save"
-                  )}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleEditCancel}
+          <AccordionContent>
+            {editing ? (
+              <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4 pt-2">
+                <CustomerFormFields
+                  register={register}
+                  setValue={setValue}
+                  errors={errors}
                   disabled={isEditPending}
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
-          ) : (
-            <dl className="space-y-3 text-sm">
-              <div>
-                <dt className="text-muted-foreground">Full Name</dt>
-                <dd className="font-medium">{customer.fullName}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">NIN (National ID Number)</dt>
-                <dd className="font-medium">{customer.nin}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Contact</dt>
-                <dd className="font-medium">{customer.contact}</dd>
-              </div>
-              <div>
-                <dt className="text-muted-foreground">Physical Address</dt>
-                <dd className="font-medium">{customer.address}</dd>
-              </div>
-            </dl>
-          )}
-        </CardContent>
-      </Card>
+                  idPrefix="edit"
+                />
+                <div className="flex gap-3">
+                  <Button type="submit" disabled={isEditPending}>
+                    {isEditPending ? (
+                      <>
+                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        Saving...
+                      </>
+                    ) : (
+                      "Save"
+                    )}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleEditCancel}
+                    disabled={isEditPending}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <dl className="space-y-3 text-sm pt-2">
+                <div>
+                  <dt className="text-muted-foreground">Full Name</dt>
+                  <dd className="font-medium">{customer.fullName}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">NIN (National ID Number)</dt>
+                  <dd className="font-medium">{customer.nin}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Contact</dt>
+                  <dd className="font-medium">{customer.contact}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground">Physical Address</dt>
+                  <dd className="font-medium">{customer.address}</dd>
+                </div>
+              </dl>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
 
       <Card>
         <CardHeader>
@@ -496,7 +532,7 @@ export default function CustomerProfilePage() {
               <div className="text-xs text-muted-foreground space-y-1.5">
                 <p><strong>Active</strong> — Customer can receive new loans and make payments.</p>
                 <p><strong>Blacklisted</strong> — Customer is blocked from receiving new loans. Existing active loans continue to accrue interest and accept payments.</p>
-                <p><strong>Inactive</strong> — Customer is no longer active but not blacklisted. Typically used for customers who have fully paid all loans.</p>
+
               </div>
             </InfoPopover>
           </CardTitle>
@@ -509,7 +545,7 @@ export default function CustomerProfilePage() {
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="blacklisted">Blacklisted</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
+
             </SelectContent>
           </Select>
         </CardContent>

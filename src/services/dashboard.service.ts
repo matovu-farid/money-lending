@@ -36,7 +36,6 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
             "Loans Receivable",
             "Interest Earned",
             "Cash",
-            "Creditor Investment",
           ])
         )
         .groupBy(
@@ -51,8 +50,8 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
       let interestEarnedDr = new BigNumber(0)
       let cashDrFromPayments = new BigNumber(0)
       let cashCrFromPayments = new BigNumber(0)
-      let creditorInvestmentDr = new BigNumber(0)
-      let creditorInvestmentCr = new BigNumber(0)
+      let cashDrTotal = new BigNumber(0)
+      let cashCrTotal = new BigNumber(0)
 
       for (const row of ledgerRows) {
         const amount = new BigNumber(row.total)
@@ -65,14 +64,13 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
           if (isDebit) interestEarnedDr = interestEarnedDr.plus(amount)
           else interestEarnedCr = interestEarnedCr.plus(amount)
         } else if (row.categoryName === "Cash") {
-          // Only count cash movements from payment activity
+          if (isDebit) cashDrTotal = cashDrTotal.plus(amount)
+          else cashCrTotal = cashCrTotal.plus(amount)
+          // Also track payment-specific cash for repayments KPI
           if (row.referenceType === "payment" || row.referenceType === "payment_reversal") {
             if (isDebit) cashDrFromPayments = cashDrFromPayments.plus(amount)
             else cashCrFromPayments = cashCrFromPayments.plus(amount)
           }
-        } else if (row.categoryName === "Creditor Investment") {
-          if (isDebit) creditorInvestmentDr = creditorInvestmentDr.plus(amount)
-          else creditorInvestmentCr = creditorInvestmentCr.plus(amount)
         }
       }
 
@@ -82,8 +80,8 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
       const interestEarned = interestEarnedCr.minus(interestEarnedDr)
       // Net cash received from borrower payments (debits minus reversal credits)
       const repaymentsCollected = cashDrFromPayments.minus(cashCrFromPayments)
-      // Liability: CR adds, DR subtracts
-      const capitalInSystem = creditorInvestmentCr.minus(creditorInvestmentDr)
+      // Asset: DR adds, CR subtracts — total cash across all locations
+      const capitalInSystem = cashDrTotal.minus(cashCrTotal)
 
       // Overdue count — needs per-loan payment data for interest accrual math
       const activeLoans = await db
@@ -161,20 +159,30 @@ const formatAmount = (amount: string | number | undefined): string => {
   return n.toLocaleString("en-US")
 }
 
-export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseError> =>
+export const getRecentActivity = (
+  page = 1,
+  pageSize = 10,
+): Effect.Effect<{ items: ActivityFeedItem[]; total: number }, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
+      const [countResult] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(auditLog)
+        .where(inArray(auditLog.entityType, ["loan", "payment"]))
+      const total = Number(countResult?.count ?? 0)
+
       const recentEntries = await db
         .select()
         .from(auditLog)
         .where(inArray(auditLog.entityType, ["loan", "payment"]))
         .orderBy(desc(auditLog.occurredAt))
-        .limit(10)
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
 
       // Pre-fetch customer names for all loan.create entries to avoid N+1
       const customerIdsToFetch = new Set<string>()
       for (const entry of recentEntries) {
-        if (entry.entityType === "loan" && entry.action === "loan.create") {
+        if (entry.entityType === "loan" && (entry.action === "loan.create" || entry.action === "loan.rollover")) {
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
           if (afterVal.customerId) customerIdsToFetch.add(afterVal.customerId)
         }
@@ -226,6 +234,41 @@ export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseE
             interestPortion: afterVal.interestPortion,
             principalPortion: afterVal.principalPortion,
           }
+        } else if (entry.entityType === "loan" && entry.action === "loan.rollover") {
+          type = "loan_issued"
+          const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
+          const amount = formatAmount(afterVal.principalAmount)
+          customerId = afterVal.customerId as string | undefined
+          loanId = entry.entityId
+          const customerName = customerId ? customerNameMap.get(customerId) : undefined
+          description = customerName
+            ? `Loan rolled over for ${customerName} — UGX ${amount}`
+            : `Loan rolled over — UGX ${amount}`
+          detail = { amount: afterVal.principalAmount }
+        } else if (entry.entityType === "loan" && entry.action === "loan.update") {
+          type = "loan_issued"
+          loanId = entry.entityId
+          description = "Loan details updated"
+        } else if (entry.entityType === "loan" && entry.action === "loan.delete") {
+          type = "loan_issued"
+          loanId = entry.entityId
+          description = "Loan deleted"
+        } else if (entry.entityType === "loan" && entry.action === "loan.rate_change.immediate") {
+          type = "loan_issued"
+          loanId = entry.entityId
+          description = "Loan rate changed"
+        } else if (entry.entityType === "loan" && entry.action === "loan.rate_change.approved") {
+          type = "loan_issued"
+          loanId = entry.entityId
+          description = "Loan rate change approved"
+        } else if (entry.entityType === "loan" && entry.action === "loan.rate_change.rejected") {
+          type = "loan_issued"
+          loanId = entry.entityId
+          description = "Loan rate change rejected"
+        } else if (entry.entityType === "loan" && entry.action === "loan.settle_with_collateral") {
+          type = "loan_issued"
+          loanId = entry.entityId
+          description = "Loan settled with collateral"
         } else if (entry.entityType === "payment" && entry.action === "payment.delete") {
           type = "payment_received"
           description = "Payment deleted"
@@ -247,7 +290,7 @@ export const getRecentActivity = (): Effect.Effect<ActivityFeedItem[], DatabaseE
         })
       }
 
-      return items
+      return { items, total }
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })

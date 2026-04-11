@@ -13,6 +13,8 @@ interface PosReceiptDisbursementProps {
   collateralNature: string
   disbursementSource?: string
   officerName: string
+  rolloverAmount?: string
+  totalNewPrincipal?: string
 }
 
 export function PosReceiptDisbursement({
@@ -26,12 +28,16 @@ export function PosReceiptDisbursement({
   collateralNature,
   disbursementSource,
   officerName,
+  rolloverAmount,
+  totalNewPrincipal,
 }: PosReceiptDisbursementProps) {
   const formattedSource = disbursementSource
     ? disbursementSource === "strong_room"
       ? "Strong Room"
       : disbursementSource.charAt(0).toUpperCase() + disbursementSource.slice(1)
     : undefined
+
+  const isRollover = !!rolloverAmount && !!totalNewPrincipal
 
   return (
     <div className="pos-receipt max-w-[300px] mx-auto font-mono text-[11px] leading-tight bg-white text-black p-4">
@@ -44,11 +50,9 @@ export function PosReceiptDisbursement({
       {/* Separator */}
       <div className="border-t border-dashed border-black my-2" />
 
-      {/* Receipt # and Date */}
-      <div className="flex justify-between">
-        <span>{receiptNumber}</span>
-        <span>{formatDate(date)}</span>
-      </div>
+      {/* Receipt # and Date on separate lines */}
+      <div>{receiptNumber}</div>
+      <div>{formatDate(date)}</div>
 
       {/* Separator */}
       <div className="border-t border-dashed border-black my-2" />
@@ -64,15 +68,35 @@ export function PosReceiptDisbursement({
 
       {/* Loan Details */}
       <div className="space-y-0.5">
-        <div className="flex justify-between">
-          <span>Amount:</span>
-          <span>{formatCurrency(loanAmount)}</span>
-        </div>
-        {issuanceFee && (
-          <div className="flex justify-between">
-            <span>Issuance Fee:</span>
-            <span>{formatCurrency(issuanceFee)}</span>
-          </div>
+        {isRollover ? (
+          <>
+            <div className="flex justify-between">
+              <span>Fresh Disbursement:</span>
+              <span>{formatCurrency(loanAmount)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Rolled Over:</span>
+              <span>{formatCurrency(rolloverAmount)}</span>
+            </div>
+            <div className="border-t border-dotted border-black my-1" />
+            <div className="flex justify-between font-bold">
+              <span>New Principal:</span>
+              <span>{formatCurrency(totalNewPrincipal)}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="flex justify-between">
+              <span>Amount:</span>
+              <span>{formatCurrency(loanAmount)}</span>
+            </div>
+            {issuanceFee && parseFloat(issuanceFee) > 0 && (
+              <div className="flex justify-between">
+                <span>Issuance Fee:</span>
+                <span>{formatCurrency(issuanceFee)}</span>
+              </div>
+            )}
+          </>
         )}
         <div className="flex justify-between">
           <span>Interest Rate:</span>

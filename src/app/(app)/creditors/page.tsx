@@ -1,5 +1,6 @@
-import { Effect, Exit } from "effect"
-import { listCreditors, getSystemCapital } from "@/services/creditor.service"
+"use client"
+
+import { useQuery } from "@tanstack/react-query"
 import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"
@@ -7,6 +8,8 @@ import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
+import { queryKeys } from "@/hooks/query-keys"
+import { listCreditorsAction, getSystemCapitalAction } from "./actions"
 
 const defaultCapital = {
   totalInvested: "0.00",
@@ -15,14 +18,40 @@ const defaultCapital = {
   totalOutstanding: "0.00",
 }
 
-export default async function CreditorsPage() {
-  const [creditorsExit, capitalExit] = await Promise.all([
-    Effect.runPromiseExit(listCreditors()),
-    Effect.runPromiseExit(getSystemCapital()),
-  ])
+export default function CreditorsPage() {
+  const { data: creditors = [], isLoading: creditorsLoading } = useQuery({
+    queryKey: queryKeys.creditors.all,
+    queryFn: async () => {
+      const result = await listCreditorsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
 
-  const creditors = Exit.isSuccess(creditorsExit) ? creditorsExit.value : []
-  const capital = Exit.isSuccess(capitalExit) ? capitalExit.value : defaultCapital
+  const { data: capital = defaultCapital, isLoading: capitalLoading } = useQuery({
+    queryKey: queryKeys.creditors.capital(),
+    queryFn: async () => {
+      const result = await getSystemCapitalAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
+
+  const isLoading = creditorsLoading || capitalLoading
+
+  if (isLoading) {
+    return (
+      <div className="p-4 md:p-6 space-y-6">
+        <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-lg bg-muted-foreground/10 animate-pulse" />
+          ))}
+        </div>
+        <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+      </div>
+    )
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">

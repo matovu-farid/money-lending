@@ -4,10 +4,34 @@ import { Effect } from "effect"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { revalidatePath } from "next/cache"
-import { recordExpense, deleteTransaction } from "@/services/transaction.service"
-import { createCategory, deleteCategory } from "@/services/category.service"
+import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
+import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { CreateTransactionInput, CreateCategoryInput } from "@/types"
+
+export async function listExpenseTransactionsAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const result = await Effect.runPromise(listTransactions({ type: "debit", manualOnly: true }, 1, 50))
+    return { data: result }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
+
+export async function listExpenseCategoriesAction() {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) return { error: "Unauthorized" }
+
+  try {
+    const data = await Effect.runPromise(listCategories("expense"))
+    return { data }
+  } catch {
+    return { error: "Internal server error" }
+  }
+}
 
 export async function recordExpenseAction(input: CreateTransactionInput) {
   const session = await auth.api.getSession({ headers: await headers() })

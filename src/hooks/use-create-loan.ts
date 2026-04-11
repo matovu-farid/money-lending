@@ -46,6 +46,10 @@ export function useCreateLoan() {
         rolloverAmount: input.rollover
           ? (parseFloat(input.rollover.carriedPrincipal) + parseFloat(input.rollover.carriedInterest)).toFixed(0)
           : null,
+        backdatedFrom: null,
+        backdatedBy: null,
+        backdatedAt: null,
+        backdateNote: null,
         deletedAt: null,
         createdAt: new Date(),
         updatedAt: new Date(),

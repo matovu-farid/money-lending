@@ -1,8 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession, getUserRole, requireRole } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
@@ -33,12 +32,12 @@ function getRequiredApproverRole(requestedRateDecimal: string): UserRole | null 
 }
 
 export async function requestRateChangeAction(input: CreateRateChangeRequestInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) {
     return { error: "Forbidden" }
   }
@@ -138,12 +137,12 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
 }
 
 export async function listAllRequestsAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
     return { error: "Forbidden" }
   }
@@ -157,8 +156,8 @@ export async function listAllRequestsAction() {
 }
 
 export async function listRequestsForLoanAction(loanId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -175,12 +174,12 @@ export async function listRequestsForLoanAction(loanId: string) {
 }
 
 export async function reviewRateChangeRequestAction(input: ReviewRateChangeRequestInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
     return { error: "Forbidden" }
   }
@@ -233,12 +232,12 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
 }
 
 export async function countPendingRequestsAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
     return { data: 0 }
   }

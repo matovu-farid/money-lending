@@ -4,13 +4,13 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import { useForm, Controller } from "react-hook-form"
-import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { recordPaymentAction } from "@/actions/payment.actions"
+import { recordPaymentAction, getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { useSession } from "@/lib/auth-client"
 import { generateReceiptNumber } from "@/lib/receipt-number"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog"
 import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { cn, formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils"
+import { formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
@@ -128,12 +128,14 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
   return (
     <div className="p-4 md:p-6 max-w-xl">
       <div className="mb-4">
-        <Link
-          href={`/loans/${loanId}`}
-          className={cn(buttonVariants({ variant: "outline" }), "mb-4 inline-flex")}
+        <Button
+          variant="outline"
+          className="mb-4"
+          onClick={() => router.back()}
         >
-          Back to Loan
-        </Link>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back
+        </Button>
       </div>
 
       <h1 className="text-2xl font-semibold mb-6">Record Payment</h1>
@@ -338,6 +340,19 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
         open={receiptData !== null}
         onClose={() => {
           setReceiptData(null)
+          // Invalidate stale data so loan detail page loads with fresh data
+          queryClient.invalidateQueries({ queryKey: queryKeys.payments.byLoan(loanId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
+          queryClient.invalidateQueries({ queryKey: queryKeys.payments.portions(loanId) })
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.payments.byLoan(loanId),
+            queryFn: () => getPaymentsByLoanAction(loanId),
+          })
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.loans.balance(loanId),
+            queryFn: () => getLoanBalanceAction(loanId),
+          })
+          router.prefetch(`/loans/${loanId}`)
           router.push(`/loans/${loanId}`)
         }}
         title="Payment Receipt"

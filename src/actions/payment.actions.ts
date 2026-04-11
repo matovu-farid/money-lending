@@ -1,8 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
@@ -20,20 +19,16 @@ import BigNumber from "bignumber.js"
 import { daysBetween } from "@/lib/db/utils"
 
 export async function recordPaymentAction(input: RecordPaymentInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
   if (!input.loanId?.trim()) {
     return { error: "Loan ID is required" }
   }
-  if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount)) {
-    return { error: "Amount must be a valid decimal number (e.g. 150000 or 150000.00)" }
-  }
-  if (parseFloat(input.amount) <= 0) {
-    return { error: "Amount must be greater than zero" }
-  }
+  const amountErr = validatePositiveDecimal(input.amount, "Amount")
+  if (amountErr) return { error: amountErr }
   if (!input.paymentDate?.trim() || isNaN(Date.parse(input.paymentDate))) {
     return { error: "Payment date must be a valid date" }
   }
@@ -64,8 +59,8 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
 }
 
 export async function editPaymentAction(input: EditPaymentInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -77,7 +72,7 @@ export async function editPaymentAction(input: EditPaymentInput) {
   }
 
   // Permission check: must be own payment or admin+
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
     const [payment] = await db
       .select()
@@ -115,8 +110,8 @@ export async function editPaymentAction(input: EditPaymentInput) {
 }
 
 export async function deletePaymentAction(input: DeletePaymentInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -128,7 +123,7 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
   }
 
   // Permission check: must be own payment or admin+
-  const role = (session.user.role ?? "unassigned") as UserRole
+  const role = getUserRole(session)
   if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
     const [payment] = await db
       .select()
@@ -166,8 +161,8 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
 }
 
 export async function listPaymentsAction(input: ListPaymentsInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -180,8 +175,8 @@ export async function listPaymentsAction(input: ListPaymentsInput) {
 }
 
 export async function getPaymentsByLoanAction(loanId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -202,8 +197,8 @@ export async function getPaymentsByLoanAction(loanId: string) {
 }
 
 export async function searchActiveLoansAction(query: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -221,8 +216,8 @@ export async function searchActiveLoansAction(query: string) {
 }
 
 export async function getRecentlyCollectedLoansAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -235,8 +230,8 @@ export async function getRecentlyCollectedLoansAction() {
 }
 
 export async function getLoanBalanceAction(loanId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -253,16 +248,14 @@ export async function getLoanBalanceAction(loanId: string) {
 }
 
 export async function markPaymentWrongAction(paymentId: string, reason: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
   // Permission check: supervisor+ only
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
-    return { error: "Only supervisors and above can mark payments as wrong" }
-  }
+  const forbidden = requireRole(session, "supervisor", "Only supervisors and above can mark payments as wrong")
+  if (forbidden) return { error: forbidden }
 
   if (!paymentId?.trim()) {
     return { error: "Payment ID is required" }
@@ -352,15 +345,13 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
 }
 
 export async function unmarkPaymentWrongAction(paymentId: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
-    return { error: "Only supervisors and above can unmark payments" }
-  }
+  const forbidden = requireRole(session, "supervisor", "Only supervisors and above can unmark payments")
+  if (forbidden) return { error: forbidden }
 
   if (!paymentId?.trim()) {
     return { error: "Payment ID is required" }
@@ -488,8 +479,8 @@ export async function unmarkPaymentWrongAction(paymentId: string) {
 }
 
 export async function getPaymentPortionsAction(paymentIds: string[]) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 

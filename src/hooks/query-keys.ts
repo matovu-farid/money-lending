@@ -4,6 +4,7 @@ export const queryKeys = {
   dashboard: {
     all: ["dashboard"] as const,
     kpis: () => [...queryKeys.dashboard.all, "kpis"] as const,
+    activity: () => [...queryKeys.dashboard.all, "activity"] as const,
   },
 
   customers: {
@@ -18,6 +19,7 @@ export const queryKeys = {
     all: ["loans"] as const,
     detail: (id: string) => [...queryKeys.loans.all, id] as const,
     balance: (id: string) => [...queryKeys.loans.detail(id), "balance"] as const,
+    paymentContext: (id: string) => [...queryKeys.loans.detail(id), "paymentContext"] as const,
     byCustomer: (customerId: string) =>
       [...queryKeys.loans.all, "byCustomer", customerId] as const,
     searchActive: (query: string) =>
@@ -70,11 +72,13 @@ export const queryKeys = {
     all: ["expenses"] as const,
     list: (params: Record<string, unknown>, page: number) =>
       [...queryKeys.expenses.all, params, page] as const,
+    categories: () => [...queryKeys.expenses.all, "categories"] as const,
   },
 
   creditors: {
     all: ["creditors"] as const,
     detail: (id: string) => [...queryKeys.creditors.all, id] as const,
+    capital: () => [...queryKeys.creditors.all, "capital"] as const,
   },
 
   rateChangeRequests: {

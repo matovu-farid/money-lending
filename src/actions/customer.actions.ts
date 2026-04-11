@@ -1,19 +1,15 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession, requireRole } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
 import { CustomerNotFound, DatabaseError } from "@/lib/errors"
-import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput, CustomerStatus } from "@/types"
 
 export async function listCustomersAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
-    return { error: "Unauthorized" }
-  }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const data = await Effect.runPromise(listCustomers())
@@ -27,10 +23,8 @@ export async function listCustomersAction() {
 }
 
 export async function createCustomerAction(input: CreateCustomerInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
-    return { error: "Unauthorized" }
-  }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   if (!input.fullName?.trim() || input.fullName.trim().split(/\s+/).length < 2) {
     return { error: "Full name with first and last name is required" }
@@ -58,10 +52,8 @@ export async function createCustomerAction(input: CreateCustomerInput) {
 }
 
 export async function getCustomerAction(id: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
-    return { error: "Unauthorized" }
-  }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const data = await Effect.runPromise(getCustomer(id))
@@ -78,10 +70,8 @@ export async function updateCustomerAction(
   id: string,
   input: UpdateCustomerInput
 ) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
-    return { error: "Unauthorized" }
-  }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const data = await Effect.runPromise(updateCustomer(id, input))
@@ -97,10 +87,8 @@ export async function updateCustomerAction(
 }
 
 export async function searchCustomersAction(params: CustomerSearchParams) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
-    return { error: "Unauthorized" }
-  }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
   try {
     const data = await Effect.runPromise(searchCustomers(params))
@@ -115,15 +103,11 @@ export async function searchCustomersAction(params: CustomerSearchParams) {
 }
 
 export async function changeCustomerStatusAction(input: ChangeStatusInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
-    return { error: "Unauthorized" }
-  }
+  const session = await getSession()
+  if (!session) return { error: "Unauthorized" }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Forbidden" }
-  }
+  const forbidden = requireRole(session, "admin")
+  if (forbidden) return { error: forbidden }
 
   if (!input.customerId?.trim()) {
     return { error: "Customer ID is required" }

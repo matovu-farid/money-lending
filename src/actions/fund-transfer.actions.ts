@@ -1,23 +1,19 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession, requireRole, validatePositiveDecimal } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { createFundTransfer, createCapitalInjection, listFundTransfers } from "@/services/fund-transfer.service"
-import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
 
 export async function createFundTransferAction(input: CreateFundTransferInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Forbidden: admin access required" }
-  }
+  const forbidden = requireRole(session, "admin", "Forbidden: admin access required")
+  if (forbidden) return { error: forbidden }
 
   const validLocations = ["cash", "bank", "strong_room"]
   if (!input.fromLocation || !validLocations.includes(input.fromLocation)) {
@@ -29,12 +25,8 @@ export async function createFundTransferAction(input: CreateFundTransferInput) {
   if (input.fromLocation === input.toLocation) {
     return { error: "Source and destination must be different" }
   }
-  if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount)) {
-    return { error: "Amount must be a valid decimal number" }
-  }
-  if (parseFloat(input.amount) <= 0) {
-    return { error: "Amount must be greater than zero" }
-  }
+  const amountErr = validatePositiveDecimal(input.amount, "Amount")
+  if (amountErr) return { error: amountErr }
 
   try {
     const data = await Effect.runPromise(createFundTransfer(input, session.user.id))
@@ -47,26 +39,20 @@ export async function createFundTransferAction(input: CreateFundTransferInput) {
 }
 
 export async function createCapitalInjectionAction(input: CreateCapitalInjectionInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Forbidden: admin access required" }
-  }
+  const forbidden = requireRole(session, "admin", "Forbidden: admin access required")
+  if (forbidden) return { error: forbidden }
 
   const validLocations = ["cash", "bank", "strong_room"]
   if (!input.toLocation || !validLocations.includes(input.toLocation)) {
     return { error: "Invalid deposit location" }
   }
-  if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount)) {
-    return { error: "Amount must be a valid decimal number" }
-  }
-  if (parseFloat(input.amount) <= 0) {
-    return { error: "Amount must be greater than zero" }
-  }
+  const amountErr = validatePositiveDecimal(input.amount, "Amount")
+  if (amountErr) return { error: amountErr }
 
   try {
     const data = await Effect.runPromise(createCapitalInjection(input, session.user.id))
@@ -79,15 +65,13 @@ export async function createCapitalInjectionAction(input: CreateCapitalInjection
 }
 
 export async function listFundTransfersAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
-    return { error: "Forbidden: admin access required" }
-  }
+  const forbidden = requireRole(session, "admin", "Forbidden: admin access required")
+  if (forbidden) return { error: forbidden }
 
   try {
     const data = await Effect.runPromise(listFundTransfers())

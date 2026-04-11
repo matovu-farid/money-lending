@@ -2,13 +2,14 @@
 
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
+import { getSession } from "@/lib/action-utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 
 const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "supervisor", "admin", "superAdmin"]
 
 export async function assignRole(input: { userId: string; role: UserRole }) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 

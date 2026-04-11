@@ -1,40 +1,59 @@
-import { notFound } from "next/navigation"
-import { db } from "@/lib/db"
-import { loans } from "@/lib/db/schema/loans"
-import { customers } from "@/lib/db/schema/customers"
-import { eq } from "drizzle-orm"
-import { getLoanBalanceSummary } from "@/services/payment.service"
+"use client"
+
+import { useParams } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
+import { getLoanPaymentContextAction } from "@/actions/loan.actions"
+import { getLoanBalanceAction } from "@/actions/payment.actions"
+import { queryKeys } from "@/hooks/query-keys"
 import { RecordPaymentForm } from "./record-payment-form"
 
-export default async function RecordPaymentPage({
-  params,
-}: {
-  params: Promise<{ loanId: string }>
-}) {
-  const { loanId } = await params
+export default function RecordPaymentPage() {
+  const { loanId } = useParams<{ loanId: string }>()
 
-  const [row] = await db
-    .select({
-      id: loans.id,
-      principalAmount: loans.principalAmount,
-      customerName: customers.fullName,
-      loanType: loans.loanType,
-      termMonths: loans.termMonths,
-    })
-    .from(loans)
-    .innerJoin(customers, eq(loans.customerId, customers.id))
-    .where(eq(loans.id, loanId))
+  const { data: context, isLoading: contextLoading } = useQuery({
+    queryKey: queryKeys.loans.paymentContext(loanId),
+    queryFn: async () => {
+      const result = await getLoanPaymentContextAction(loanId)
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
 
-  if (!row) notFound()
+  const { data: balanceData, isLoading: balanceLoading } = useQuery({
+    queryKey: queryKeys.loans.balance(loanId),
+    queryFn: async () => {
+      const result = await getLoanBalanceAction(loanId)
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+  })
 
-  const balanceData = await getLoanBalanceSummary(loanId)
-  const loanReference = row.id.slice(0, 8).toUpperCase()
+  if (contextLoading || balanceLoading) {
+    return (
+      <div className="p-4 md:p-6 max-w-xl">
+        <div className="space-y-4">
+          <div className="h-9 w-24 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="h-40 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+          <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!context || !balanceData) {
+    return (
+      <div className="p-4 md:p-6">
+        <p className="text-destructive">Loan not found.</p>
+      </div>
+    )
+  }
 
   return (
     <RecordPaymentForm
       loanId={loanId}
-      customerName={row.customerName}
-      loanReference={loanReference}
+      customerName={context.customerName}
+      loanReference={context.loanReference}
       balanceData={balanceData}
     />
   )

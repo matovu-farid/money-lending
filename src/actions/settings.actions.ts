@@ -2,9 +2,7 @@
 
 import { db } from "@/lib/db"
 import { systemSettings } from "@/lib/db/schema/settings"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import { getSession, requireRole } from "@/lib/action-utils"
 
 const VALID_SETTING_KEYS = ["default_interest_rate", "default_min_interest_days"] as const
 type SettingKey = (typeof VALID_SETTING_KEYS)[number]
@@ -15,8 +13,8 @@ interface UpdateSettingInput {
 }
 
 export async function getSettingsAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -29,15 +27,13 @@ export async function getSettingsAction() {
 }
 
 export async function updateSettingAction(input: UpdateSettingInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.superAdmin) {
-    return { error: "Only Super Admin can edit system settings" }
-  }
+  const forbidden = requireRole(session, "superAdmin", "Only Super Admin can edit system settings")
+  if (forbidden) return { error: forbidden }
 
   if (!VALID_SETTING_KEYS.includes(input.key as SettingKey)) {
     return { error: "Invalid setting key. Must be one of: " + VALID_SETTING_KEYS.join(", ") }

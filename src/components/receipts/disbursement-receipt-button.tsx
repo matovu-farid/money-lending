@@ -19,6 +19,8 @@ interface DisbursementReceiptData {
   collateralNature: string
   disbursementSource: string
   officerName: string
+  rolloverAmount?: string
+  totalNewPrincipal?: string
 }
 
 interface DisbursementReceiptButtonProps {
@@ -78,6 +80,8 @@ export function DisbursementReceiptButton({
             collateralNature={receiptData.collateralNature}
             disbursementSource={receiptData.disbursementSource}
             officerName={receiptData.officerName}
+            rolloverAmount={receiptData.rolloverAmount}
+            totalNewPrincipal={receiptData.totalNewPrincipal}
           />
         )}
       </PosReceiptModal>

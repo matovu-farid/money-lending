@@ -1,8 +1,8 @@
 "use client"
 
-import { useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   LayoutDashboard,
@@ -26,6 +26,11 @@ import { queryKeys } from "@/hooks/query-keys"
 import { getDashboardAction } from "@/actions/dashboard.actions"
 import { listPaymentsAction } from "@/actions/payment.actions"
 import { searchCustomersAction } from "@/actions/customer.actions"
+import { listLoansWithOverdueAction } from "@/actions/loan.actions"
+import { listAllRequestsAction } from "@/actions/rate-change-request.actions"
+import { listFundTransfersAction } from "@/actions/fund-transfer.actions"
+import { listCreditorsAction, getSystemCapitalAction } from "@/app/(app)/creditors/actions"
+import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "@/app/(app)/expenses/actions"
 import { useSidebarStore } from "@/lib/stores/sidebar"
 import { Button } from "@/components/ui/button"
 import {
@@ -100,6 +105,7 @@ interface SidebarProps {
 export function Sidebar({ onClose }: SidebarProps) {
   const { collapsed, toggle } = useSidebarStore()
   const pathname = usePathname()
+  const router = useRouter()
   const { data: session } = useSession()
   const queryClient = useQueryClient()
   const prefetchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
@@ -108,10 +114,86 @@ export function Sidebar({ onClose }: SidebarProps) {
   const userRole = (user?.role ?? "unassigned") as UserRole
   const userLevel = ROLE_LEVELS[userRole] ?? 0
 
+  // Eagerly prefetch operations pages (route + data) on mount
+  useEffect(() => {
+    const staleTime = 30_000
+    router.prefetch("/dashboard")
+    router.prefetch("/customers")
+    router.prefetch("/loans")
+    router.prefetch("/payments")
+
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.dashboard.kpis(),
+      queryFn: () => getDashboardAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+      staleTime,
+    })
+
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.customers.search({}, 0),
+      queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+      staleTime,
+    })
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.loans.all,
+      queryFn: () => listLoansWithOverdueAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+      staleTime,
+    })
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.payments.list({}, 1),
+      queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+      staleTime,
+    })
+
+    // Lower-priority pages: prefetch after a delay so high-priority ones finish first
+    const delayedTimer = setTimeout(() => {
+      router.prefetch("/creditors")
+      router.prefetch("/expenses")
+      router.prefetch("/fund-transfers")
+
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.fundTransfers.all,
+        queryFn: () => listFundTransfersAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      })
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.creditors.all,
+        queryFn: () => listCreditorsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      })
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.creditors.capital(),
+        queryFn: () => getSystemCapitalAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      })
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.expenses.list({}, 1),
+        queryFn: () => listExpenseTransactionsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      })
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.expenses.categories(),
+        queryFn: () => listExpenseCategoriesAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      })
+
+      if (userLevel >= ROLE_LEVELS.supervisor) {
+        router.prefetch("/approvals")
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.rateChangeRequests.pending(),
+          queryFn: () => listAllRequestsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+          staleTime,
+        })
+      }
+    }, 3000)
+
+    return () => clearTimeout(delayedTimer)
+  }, [router, queryClient, userLevel])
+
   // Prefetch TanStack Query data on hover with 100ms delay to avoid needless fetches
   const handlePrefetch = useCallback((href: string) => {
     clearTimeout(prefetchTimerRef.current)
     prefetchTimerRef.current = setTimeout(() => {
+      router.prefetch(href)
       const staleTime = 30_000
       if (href === "/dashboard") {
         queryClient.prefetchQuery({
@@ -139,7 +221,7 @@ export function Sidebar({ onClose }: SidebarProps) {
         })
       }
     }, 100)
-  }, [queryClient])
+  }, [queryClient, router])
 
   const cancelPrefetch = useCallback(() => {
     clearTimeout(prefetchTimerRef.current)

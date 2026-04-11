@@ -3,10 +3,10 @@
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { useForm, Controller } from "react-hook-form"
+import { useForm } from "react-hook-form"
 import { Loader2 } from "lucide-react"
 import { getCustomerAction } from "@/actions/customer.actions"
-import { getCollateralNaturesAction } from "@/actions/loan.actions"
+import { getCollateralNaturesAction, getCustomerLoansWithOverdueAction, getLoanCollateralAction, getLocationBalancesAction } from "@/actions/loan.actions"
 import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
 import { useCreateLoan } from "@/hooks/use-create-loan"
 import { useSession } from "@/lib/auth-client"
@@ -14,7 +14,6 @@ import { queryKeys } from "@/hooks/query-keys"
 import { calculateLoanSummary } from "@/lib/interest"
 import { generateReceiptNumber } from "@/lib/receipt-number"
 import type { CollateralInput, LoanType, DepositLocation } from "@/types"
-import { DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -24,18 +23,13 @@ import { Separator } from "@/components/ui/separator"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { MoneyInput } from "@/components/ui/money-input"
 import { formatDate, formatCurrency } from "@/lib/utils"
+import { DisbursementSourceSelect } from "@/components/loans/disbursement-source-select"
 import { RolloverBanner } from "@/components/loans/rollover-banner"
 import { PageHeader } from "@/components/ui/page-header"
 import Link from "next/link"
 import BigNumber from "bignumber.js"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptDisbursement } from "@/components/receipts/pos-receipt-disbursement"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-} from "@/components/ui/select"
 import { useNewLoanFormStore } from "@/lib/stores/new-loan-form"
 
 function todayISODate(): string {
@@ -51,6 +45,7 @@ interface LoanFormValues {
   disbursementSource: DepositLocation
   collateralNature: string
   collateralDescription: string
+  backdateNote: string
 }
 
 interface ReceiptData {
@@ -64,6 +59,8 @@ interface ReceiptData {
   collateralDescription: string
   disbursementSource: string
   date: string
+  rolloverAmount?: string
+  totalNewPrincipal?: string
 }
 
 function NewLoanPageInner() {
@@ -74,15 +71,17 @@ function NewLoanPageInner() {
   const { data: session } = useSession()
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
-  // Restore draft state from zustand store
+  // Restore draft state from zustand store.
+  // Read the snapshot once for initialisation — all subsequent writes go through setters.
   const draft = useNewLoanFormStore()
-  // If a customerId is in the URL, it takes precedence over the saved draft
-  const initialCustomerId = prefilledCustomerId || draft.customerId
+  const draftSnapshot = useRef(draft).current          // captured on first render only
+  const resumingDraft = !prefilledCustomerId && !!draftSnapshot.customerId
+  const initialCustomerId = prefilledCustomerId || draftSnapshot.customerId
 
-  const [step, setStepRaw] = useState(draft.step)
+  const [step, setStepRaw] = useState(resumingDraft ? draftSnapshot.step : 1)
   const [receiptData, setReceiptData] = useState<ReceiptData | null>(null)
-  const [loanType, setLoanTypeRaw] = useState<LoanType>(draft.loanType)
-  const [termMonths, setTermMonthsRaw] = useState<string>(draft.termMonths)
+  const [loanType, setLoanTypeRaw] = useState<LoanType>(resumingDraft ? draftSnapshot.loanType : "perpetual")
+  const [termMonths, setTermMonthsRaw] = useState<string>(resumingDraft ? draftSnapshot.termMonths : "")
 
   // Wrap setters to sync to store
   const setStep = (s: number) => { setStepRaw(s); draft.setField("step", s) }
@@ -100,16 +99,23 @@ function NewLoanPageInner() {
   } = useForm<LoanFormValues>({
     defaultValues: {
       customerId: initialCustomerId,
-      principalAmount: draft.principalAmount,
-      issuanceFee: draft.issuanceFee || "50000",
-      startDate: draft.startDate || todayISODate(),
-      interestRateDisplay: draft.interestRateDisplay || "10",
-      disbursementSource: draft.disbursementSource,
-      collateralNature: draft.collateralNature,
-      collateralDescription: draft.collateralDescription,
+      principalAmount: resumingDraft ? draftSnapshot.principalAmount : "",
+      issuanceFee: resumingDraft ? (draftSnapshot.issuanceFee || "50000") : "50000",
+      startDate: resumingDraft ? (draftSnapshot.startDate || todayISODate()) : todayISODate(),
+      interestRateDisplay: resumingDraft ? (draftSnapshot.interestRateDisplay || "10") : "10",
+      disbursementSource: resumingDraft ? draftSnapshot.disbursementSource : "cash",
+      collateralNature: resumingDraft ? draftSnapshot.collateralNature : "",
+      collateralDescription: resumingDraft ? draftSnapshot.collateralDescription : "",
+      backdateNote: "",
     },
     mode: "onTouched",
   })
+
+  // On mount: clear stale draft so the watch subscription below starts clean
+  useEffect(() => {
+    if (!resumingDraft) draft.clear()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // runs once on mount
 
   // Sync form changes back to the store
   useEffect(() => {
@@ -138,6 +144,7 @@ function NewLoanPageInner() {
   const collateralDescription = watch("collateralDescription")
   const issuanceFee = watch("issuanceFee")
   const disbursementSource = watch("disbursementSource")
+  const backdateNote = watch("backdateNote")
 
   // Collateral autocomplete state (UI-only, not form fields)
   const [showNatureSuggestions, setShowNatureSuggestions] = useState(false)
@@ -151,6 +158,16 @@ function NewLoanPageInner() {
   const { data: knownNatures = [] } = useQuery({
     queryKey: ["collateral-natures"],
     queryFn: getCollateralNaturesAction,
+  })
+
+  // Fetch current balances per deposit location
+  const { data: locationBalances } = useQuery({
+    queryKey: ["location-balances"],
+    queryFn: async () => {
+      const result = await getLocationBalancesAction()
+      if ("error" in result) return null
+      return result.data
+    },
   })
 
   const filteredNatures = collateralNature.trim()
@@ -188,11 +205,70 @@ function NewLoanPageInner() {
     enabled: !!customerId && customerId.length > 0,
   })
 
+  // Fetch collateral from the active loan for pre-filling
+  const activeLoanId = activeLoanData?.loan.id
+  const { data: activeLoanCollateral } = useQuery({
+    queryKey: ["active-loan-collateral", activeLoanId],
+    queryFn: async () => {
+      const result = await getLoanCollateralAction(activeLoanId!)
+      if ("error" in result || !result.data) return null
+      return result.data
+    },
+    enabled: !!activeLoanId,
+  })
+
+  // Pre-fill form from the active loan when detected (rollover scenario).
+  // Guard: only apply if the active loan belongs to the current customerId in the form.
+  const prefillAppliedRef = useRef<string | null>(null)
+  const collateralPrefillRef = useRef<string | null>(null)
+  const prevCustomerRef = useRef(customerId)
+  // Reset prefill guards when customer changes so a new active loan can re-trigger prefill
+  if (prevCustomerRef.current !== customerId) {
+    prevCustomerRef.current = customerId
+    prefillAppliedRef.current = null
+    collateralPrefillRef.current = null
+  }
+  useEffect(() => {
+    if (!activeLoanData || prefillAppliedRef.current === activeLoanData.loan.id) return
+    // Stale guard — don't apply data from a different customer's loan
+    if (activeLoanData.loan.customerId !== customerId) return
+    prefillAppliedRef.current = activeLoanData.loan.id
+    const oldLoan = activeLoanData.loan
+    const ratePercent = new BigNumber(oldLoan.interestRateOverride ?? oldLoan.interestRate).multipliedBy(100).toFixed(1).replace(/\.0$/, "")
+    setValue("interestRateDisplay", ratePercent)
+    setValue("issuanceFee", "0", { shouldValidate: false })
+    const oldLoanType = (oldLoan.loanType ?? "perpetual") as LoanType
+    setLoanType(oldLoanType)
+    if (oldLoan.termMonths) setTermMonths(String(oldLoan.termMonths))
+  }, [activeLoanData, customerId, setValue, setLoanType, setTermMonths])
+
+  // Pre-fill collateral from the active loan.
+  // Same stale guard — only apply when the collateral query matches the current active loan.
+  useEffect(() => {
+    if (!activeLoanCollateral || !activeLoanId || collateralPrefillRef.current === activeLoanId) return
+    // Ensure the active loan still belongs to the current customer
+    if (activeLoanData?.loan.customerId !== customerId) return
+    collateralPrefillRef.current = activeLoanId
+    setValue("collateralNature", activeLoanCollateral.nature)
+    if (activeLoanCollateral.description) {
+      setValue("collateralDescription", activeLoanCollateral.description)
+    }
+  }, [activeLoanCollateral, activeLoanId, activeLoanData, customerId, setValue])
+
   // Interest preview (computed on render when at step 3)
+  // For rollovers, use total new principal (fresh + carried amounts)
+  const effectivePrincipal =
+    activeLoanData && principalAmount
+      ? new BigNumber(principalAmount)
+          .plus(new BigNumber(activeLoanData.outstandingPrincipal))
+          .plus(new BigNumber(activeLoanData.accruedInterest))
+          .toFixed(0)
+      : principalAmount
+
   const loanSummary =
-    step === 3 && principalAmount && interestRateDisplay
+    step === 3 && effectivePrincipal && interestRateDisplay
       ? calculateLoanSummary(
-          principalAmount,
+          effectivePrincipal,
           (parseFloat(interestRateDisplay) / 100).toFixed(10),
           loanType === "perpetual" ? 30 : undefined,
           loanType !== "perpetual" ? loanType : undefined,
@@ -201,7 +277,7 @@ function NewLoanPageInner() {
       : null
 
   // Step-level validation fields
-  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource"]
+  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource", "backdateNote"]
   const step2Fields: (keyof LoanFormValues)[] = ["collateralNature", "collateralDescription"]
 
   async function handleStep1Next() {
@@ -237,7 +313,7 @@ function NewLoanPageInner() {
       {
         customerId: data.customerId,
         principalAmount: data.principalAmount,
-        issuanceFee: data.issuanceFee,
+        issuanceFee: rolloverData ? "0" : data.issuanceFee,
         interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
         minInterestDays: 30,
         startDate: new Date(data.startDate).toISOString(),
@@ -246,6 +322,7 @@ function NewLoanPageInner() {
         loanType,
         termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined,
         rollover: rolloverData,
+        backdateNote: data.backdateNote?.trim() || undefined,
       },
       {
         onSuccess: (result) => {
@@ -255,12 +332,21 @@ function NewLoanPageInner() {
               customerId: data.customerId,
               customerName: customerName ?? "Customer",
               loanAmount: data.principalAmount,
-              issuanceFee: data.issuanceFee,
+              issuanceFee: rolloverData ? "0" : data.issuanceFee,
               interestRate: `${data.interestRateDisplay}%`,
               collateralNature: data.collateralNature,
               collateralDescription: data.collateralDescription.trim(),
               disbursementSource: data.disbursementSource,
               date: new Date(data.startDate).toISOString(),
+              ...(rolloverData ? {
+                rolloverAmount: new BigNumber(rolloverData.carriedPrincipal)
+                  .plus(new BigNumber(rolloverData.carriedInterest))
+                  .toFixed(0),
+                totalNewPrincipal: new BigNumber(data.principalAmount)
+                  .plus(new BigNumber(rolloverData.carriedPrincipal))
+                  .plus(new BigNumber(rolloverData.carriedInterest))
+                  .toFixed(0),
+              } : {}),
             })
             draft.clear()
           }
@@ -374,7 +460,7 @@ function NewLoanPageInner() {
                     { value: "fixed_rate" as const, label: "Fixed Rate" },
                     { value: "reducing_balance" as const, label: "Reducing Balance" },
                   ].map((option) => (
-                    <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                    <label key={option.value} className={`flex items-center gap-2 ${activeLoanData ? "opacity-50" : "cursor-pointer"}`}>
                       <input
                         type="radio"
                         name="loanType"
@@ -382,6 +468,7 @@ function NewLoanPageInner() {
                         checked={loanType === option.value}
                         onChange={(e) => setLoanType(e.target.value as LoanType)}
                         className="accent-primary"
+                        disabled={!!activeLoanData}
                       />
                       <span className="text-sm">{option.label}</span>
                     </label>
@@ -412,27 +499,90 @@ function NewLoanPageInner() {
                 id="principalAmount"
               />
 
-              <MoneyInput
-                name="issuanceFee"
-                control={control}
-                label="Issuance Fee (UGX)"
-                required="Issuance fee is required"
-                id="issuanceFee"
-                min={50000}
-              />
+              {!activeLoanData && (
+                <MoneyInput
+                  name="issuanceFee"
+                  control={control}
+                  label="Issuance Fee (UGX)"
+                  required="Issuance fee is required"
+                  id="issuanceFee"
+                  min={50000}
+                />
+              )}
 
               <div className="space-y-1">
-                <Label htmlFor="startDate" className="font-semibold">Start Date</Label>
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="startDate" className="font-semibold">Start Date</Label>
+                  <InfoPopover>
+                    <p className="font-semibold text-sm mb-1">Backdating Loans</p>
+                    <div className="text-xs text-muted-foreground space-y-1.5">
+                      <p>You can set the start date to a past date if the loan was issued earlier but is being entered into the system now.</p>
+                      <p><strong>1-3 days ago</strong> — Any loan officer can backdate. A note explaining the reason is required.</p>
+                      <p><strong>More than 3 days ago</strong> — Requires <strong>Supervisor</strong> or above. A note is required.</p>
+                      <p>All backdated loans are clearly marked with who backdated them and when.</p>
+                    </div>
+                  </InfoPopover>
+                </div>
                 <Input
                   id="startDate"
                   type="date"
+                  max={todayISODate()}
                   {...register("startDate", {
                     required: "Start date is required",
+                    validate: (v) => {
+                      const selected = new Date(v)
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      selected.setHours(0, 0, 0, 0)
+                      if (selected.getTime() > today.getTime()) return "Start date cannot be in the future"
+                      return true
+                    },
                   })}
                 />
                 {errors.startDate && (
                   <p className="text-sm text-destructive">{errors.startDate.message}</p>
                 )}
+                {(() => {
+                  if (!startDate) return null
+                  const selected = new Date(startDate)
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  selected.setHours(0, 0, 0, 0)
+                  const days = Math.round((today.getTime() - selected.getTime()) / (1000 * 60 * 60 * 24))
+                  if (days <= 0) return null
+                  return (
+                    <div className="space-y-2 mt-2">
+                      <p className="text-sm text-amber-600 font-medium">
+                        This loan will be backdated by {days} day{days > 1 ? "s" : ""}.
+                        {days > 3 && " Supervisor permission required."}
+                      </p>
+                      <div className="space-y-1">
+                        <Label htmlFor="backdateNote" className="font-semibold text-sm">Backdate Reason</Label>
+                        <textarea
+                          id="backdateNote"
+                          className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring min-h-[60px] resize-y"
+                          placeholder="Explain why this loan is being backdated..."
+                          maxLength={500}
+                          {...register("backdateNote", {
+                            validate: (v) => {
+                              if (!startDate) return true
+                              const sel = new Date(startDate)
+                              const tod = new Date()
+                              sel.setHours(0, 0, 0, 0)
+                              tod.setHours(0, 0, 0, 0)
+                              const d = Math.round((tod.getTime() - sel.getTime()) / (1000 * 60 * 60 * 24))
+                              if (d > 0 && !v?.trim()) return "A note is required when backdating a loan"
+                              return true
+                            },
+                          })}
+                        />
+                        {errors.backdateNote && (
+                          <p className="text-sm text-destructive">{errors.backdateNote.message}</p>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
 
               <div className="space-y-1">
@@ -480,32 +630,12 @@ function NewLoanPageInner() {
                 )}
               </div>
 
-              <div className="space-y-1">
-                <Label htmlFor="disbursementSource" className="font-semibold">Disbursement Source</Label>
-                <Controller
-                  name="disbursementSource"
-                  control={control}
-                  rules={{ required: "Disbursement source is required" }}
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <SelectTrigger id="disbursementSource" className="min-w-[10rem]">
-                        {DEPOSIT_LOCATION_OPTIONS.find((o) => o.value === field.value)?.label ?? "Select source"}
-                      </SelectTrigger>
-                      <SelectContent>
-                        {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {errors.disbursementSource && (
-                  <p className="text-sm text-destructive">{errors.disbursementSource.message}</p>
-                )}
-              </div>
+              <DisbursementSourceSelect
+                name="disbursementSource"
+                control={control}
+                locationBalances={locationBalances}
+                amount={principalAmount}
+              />
 
               <div className="flex gap-3 pt-2">
                 <Button type="button" onClick={handleStep1Next}>Next</Button>
@@ -641,23 +771,43 @@ function NewLoanPageInner() {
                   <dt className="text-muted-foreground">Principal Amount</dt>
                   <dd className="font-semibold font-mono tabular-nums">{formatCurrency(principalAmount)}</dd>
                 </div>
-                <div className="flex justify-between">
-                  <dt className="text-muted-foreground">Issuance Fee</dt>
-                  <dd className="font-semibold font-mono tabular-nums">{formatCurrency(issuanceFee)}</dd>
-                </div>
+                {!activeLoanData && (
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Issuance Fee</dt>
+                    <dd className="font-semibold font-mono tabular-nums">{formatCurrency(issuanceFee)}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Start Date</dt>
                   <dd className="font-semibold font-mono tabular-nums">{formatDate(startDate)}</dd>
                 </div>
+                {backdateNote && (
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">Backdated by</dt>
+                    <dd className="font-semibold text-amber-700">{session?.user?.name ?? "Officer"}</dd>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Loan Type</dt>
                   <dd className="font-semibold">{loanType === "fixed_rate" ? "Fixed Rate" : loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}</dd>
                 </div>
                 {loanType !== "perpetual" && (
-                  <div className="flex justify-between">
-                    <dt className="text-muted-foreground">Term</dt>
-                    <dd className="font-semibold">{termMonths} months</dd>
-                  </div>
+                  <>
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Term</dt>
+                      <dd className="font-semibold">{termMonths} months</dd>
+                    </div>
+                    <div className="flex justify-between">
+                      <dt className="text-muted-foreground">Maturity Date</dt>
+                      <dd className="font-semibold font-mono tabular-nums">
+                        {(() => {
+                          const d = new Date(startDate)
+                          d.setMonth(d.getMonth() + parseInt(termMonths, 10))
+                          return formatDate(d.toISOString().split("T")[0])
+                        })()}
+                      </dd>
+                    </div>
+                  </>
                 )}
                 <div className="flex justify-between">
                   <dt className="text-muted-foreground">Interest Rate</dt>
@@ -854,6 +1004,17 @@ function NewLoanPageInner() {
           const customerId = receiptData?.customerId
           setReceiptData(null)
           if (customerId) {
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.customers.detail(customerId),
+              queryFn: () => getCustomerAction(customerId),
+              staleTime: 30_000,
+            })
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.loans.byCustomer(customerId),
+              queryFn: () => getCustomerLoansWithOverdueAction(customerId),
+              staleTime: 30_000,
+            })
+            router.prefetch(`/customers/${customerId}`)
             router.push(`/customers/${customerId}`)
           }
         }}
@@ -871,6 +1032,8 @@ function NewLoanPageInner() {
             collateralNature={receiptData.collateralNature}
             disbursementSource={receiptData.disbursementSource}
             officerName={session?.user?.name ?? "Officer"}
+            rolloverAmount={receiptData.rolloverAmount}
+            totalNewPrincipal={receiptData.totalNewPrincipal}
           />
         )}
       </PosReceiptModal>

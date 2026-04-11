@@ -1,16 +1,15 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { getSession } from "@/lib/action-utils"
 import {
   getDailyCollections,
   getLoansDueToday,
 } from "@/services/daily-collections.service"
 
 export async function getDailyCollectionsAction(date: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 
@@ -27,8 +26,8 @@ export async function getDailyCollectionsAction(date: string) {
 }
 
 export async function getLoansDueTodayAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  const session = await getSession()
+  if (!session) {
     return { error: "Unauthorized" }
   }
 

@@ -20,7 +20,7 @@ import {
   ShieldAlert,
 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
-import { updateLoanAction, deleteLoanAction, waivePenaltyAction, adjustPenaltyMultiplierAction } from "@/actions/loan.actions"
+import { updateLoanAction, deleteLoanAction, waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction } from "@/actions/loan.actions"
 import { getEffectiveRate, isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
@@ -148,6 +148,15 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     enabled: loan.status === "active",
   })
 
+  // Prefetch record-payment data so the page loads instantly
+  useEffect(() => {
+    if (loan.status !== "active") return;
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.loans.paymentContext(loan.id),
+      queryFn: () => getLoanPaymentContextAction(loan.id).then((r) => ("error" in r ? undefined : r.data)),
+    });
+  }, [loan.id, loan.status, queryClient]);
+
   const pendingRateRequest = rateChangeRequests.find((r: RateChangeRequest) => r.status === "pending")
 
   // Initialize penalty multiplier on mount and reset on unmount
@@ -204,33 +213,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     return map
   }, [payments, currentPortions, loan.principalAmount])
 
-  function openEditDialog(payment: Payment) {
-    openPaymentEdit(payment)
-  }
-
-  function closeEditDialog() {
-    closePaymentEdit()
-  }
-
-  function openDeleteDialog(payment: Payment) {
-    openPaymentDelete(payment)
-  }
-
-  function closeDeleteDialog() {
-    closePaymentDelete()
-  }
-
-  function closeLoanEditDialog() {
-    closeLoanEdit()
-  }
-
-  function openLoanDeleteDialog() {
-    openLoanDelete()
-  }
-
-  function closeLoanDeleteDialog() {
-    closeLoanDelete()
-  }
 
   function handleEditSubmit() {
     if (!editingPayment) return
@@ -251,7 +233,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       }
 
       toast.success("Payment updated")
-      closeEditDialog()
+      closePaymentEdit()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
@@ -278,7 +260,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       }
 
       toast.success("Payment deleted")
-      closeDeleteDialog()
+      closePaymentDelete()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
@@ -307,7 +289,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       }
 
       toast.success("Loan updated")
-      closeLoanEditDialog()
+      closeLoanEdit()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
@@ -328,7 +310,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       }
 
       toast.success("Loan deleted")
-      closeLoanDeleteDialog()
+      closeLoanDelete()
 
       queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
@@ -336,13 +318,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     })
   }
 
-  function openRateChangeDialog() {
-    openRateChange(loan.interestRate)
-  }
-
-  function closeRateChangeDialog() {
-    closeRateChange()
-  }
 
   function handleRateChangeSubmit() {
     startRateChangeTransition(async () => {
@@ -368,7 +343,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.pending() })
       }
 
-      closeRateChangeDialog()
+      closeRateChange()
     })
   }
 
@@ -423,7 +398,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
               Edit
             </Button>
-            <Button variant="outline" size="sm" onClick={openLoanDeleteDialog} className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30">
+            <Button variant="outline" size="sm" onClick={openLoanDelete} className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30">
               <Trash2 className="h-3.5 w-3.5 mr-1.5" />
               Delete
             </Button>
@@ -588,7 +563,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           )}
           {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
             <div className="flex items-center gap-1.5 mt-2">
-              <Button variant="outline" size="sm" onClick={openRateChangeDialog}>
+              <Button variant="outline" size="sm" onClick={() => openRateChange(loan.interestRate)}>
                 <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
                 Request Rate Change
               </Button>
@@ -604,10 +579,27 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <div className="flex items-center gap-2 text-muted-foreground mb-2">
             <Calendar className="h-4 w-4" />
             <span className="text-xs font-medium uppercase tracking-wider">Start Date</span>
+            {loan.backdatedFrom && (
+              <InfoPopover>
+                <p className="font-semibold text-sm mb-1">Backdated Loan</p>
+                <div className="text-xs text-muted-foreground space-y-1.5">
+                  <p>This loan was entered into the system on <strong>{formatDate(loan.backdatedFrom)}</strong> but backdated to <strong>{formatDate(loan.startDate)}</strong>.</p>
+                  {loan.backdatedBy && userNameMap[loan.backdatedBy] && (
+                    <p>Backdated by: <strong>{userNameMap[loan.backdatedBy]}</strong></p>
+                  )}
+                  {loan.backdateNote && (
+                    <p>Reason: {loan.backdateNote}</p>
+                  )}
+                </div>
+              </InfoPopover>
+            )}
           </div>
           <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
             {formatDate(loan.startDate)}
           </p>
+          {loan.backdatedFrom && (
+            <p className="text-xs text-amber-600 mt-1">Backdated (entered {formatDate(loan.backdatedFrom)})</p>
+          )}
         </div>
         <div className="rounded-xl border border-border bg-card p-5">
           <div className="flex items-center gap-2 text-muted-foreground mb-2">
@@ -857,12 +849,12 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
                                   }}
                                 />
                                 <DropdownMenuItem
-                                  onClick={() => openEditDialog(payment)}
+                                  onClick={() => openPaymentEdit(payment)}
                                 >
                                   Edit Payment
                                 </DropdownMenuItem>
                                 <DropdownMenuItem
-                                  onClick={() => openDeleteDialog(payment)}
+                                  onClick={() => openPaymentDelete(payment)}
                                   variant="destructive"
                                 >
                                   Delete Payment
@@ -893,7 +885,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       )}
 
       {/* Edit Payment Dialog */}
-      <DrawerDialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closeEditDialog() }}>
+      <DrawerDialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closePaymentEdit() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Edit Payment</DialogTitle>
@@ -934,7 +926,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={closeEditDialog}
+              onClick={closePaymentEdit}
               disabled={isEditPending}
             >
               Discard Changes
@@ -957,7 +949,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </DrawerDialog>
 
       {/* Delete Payment Dialog */}
-      <DrawerDialog open={deletingPayment !== null} onOpenChange={(open) => { if (!open) closeDeleteDialog() }}>
+      <DrawerDialog open={deletingPayment !== null} onOpenChange={(open) => { if (!open) closePaymentDelete() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete payment?</DialogTitle>
@@ -982,7 +974,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={closeDeleteDialog}
+              onClick={closePaymentDelete}
               disabled={isDeletePending}
             >
               Keep Payment
@@ -1006,7 +998,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </DrawerDialog>
 
       {/* Edit Loan Dialog */}
-      <DrawerDialog open={editingLoan} onOpenChange={(open) => { if (!open) closeLoanEditDialog() }}>
+      <DrawerDialog open={editingLoan} onOpenChange={(open) => { if (!open) closeLoanEdit() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Edit Loan</DialogTitle>
@@ -1059,7 +1051,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={closeLoanEditDialog}
+              onClick={closeLoanEdit}
               disabled={isLoanEditPending}
             >
               Discard Changes
@@ -1082,7 +1074,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </DrawerDialog>
 
       {/* Delete Loan Dialog */}
-      <DrawerDialog open={deletingLoan} onOpenChange={(open) => { if (!open) closeLoanDeleteDialog() }}>
+      <DrawerDialog open={deletingLoan} onOpenChange={(open) => { if (!open) closeLoanDelete() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Delete loan?</DialogTitle>
@@ -1106,7 +1098,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={closeLoanDeleteDialog}
+              onClick={closeLoanDelete}
               disabled={isLoanDeletePending}
             >
               Keep Loan
@@ -1130,7 +1122,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </DrawerDialog>
 
       {/* Rate Change Request Dialog */}
-      <DrawerDialog open={requestingRateChange} onOpenChange={(open) => { if (!open) closeRateChangeDialog() }}>
+      <DrawerDialog open={requestingRateChange} onOpenChange={(open) => { if (!open) closeRateChange() }}>
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>Request Interest Rate Change</DialogTitle>
@@ -1169,7 +1161,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={closeRateChangeDialog}
+              onClick={closeRateChange}
               disabled={isRateChangePending}
             >
               Cancel

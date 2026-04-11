@@ -93,3 +93,31 @@ export function getCurrentMonth(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 }
+
+/**
+ * Generate month options for report period selectors.
+ * Returns the last `count` months as { value: "YYYY-MM", label: "Month Year" } pairs.
+ */
+export function getMonthOptions(count = 12): { value: string; label: string }[] {
+  const options: { value: string; label: string }[] = []
+  const now = new Date()
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    const label = d.toLocaleDateString("en-UG", { month: "long", year: "numeric" })
+    options.push({ value, label })
+  }
+  return options
+}
+
+/**
+ * Format a "YYYY-MM" period string as a human-readable date.
+ * position "start" → first day of the month, "end" → last day of the month.
+ */
+export function formatPeriodDate(period: string, position: "start" | "end"): string {
+  const [year, month] = period.split("-").map(Number)
+  const date = position === "start"
+    ? new Date(year, month - 1, 1)
+    : new Date(year, month, 0)
+  return date.toLocaleDateString("en-UG", { month: "long", day: "numeric", year: "numeric" })
+}

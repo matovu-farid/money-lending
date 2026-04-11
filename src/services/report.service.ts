@@ -178,6 +178,55 @@ export const getRetainedEarningsData = (
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
+/**
+ * Get current cash balances per deposit location from the ledger.
+ * Returns { cash, bank, strong_room } as formatted decimal strings.
+ */
+export const getLocationBalances = (): Effect.Effect<
+  Record<"cash" | "bank" | "strong_room", string>,
+  DatabaseError
+> =>
+  Effect.tryPromise({
+    try: async () => {
+      const rows = await db
+        .select({
+          txType: transactions.type,
+          depositLocation: transactions.depositLocation,
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id)
+        )
+        .where(eq(transactionCategories.name, "Cash"))
+        .groupBy(transactions.type, transactions.depositLocation)
+
+      const balances = {
+        cash: new BigNumber(0),
+        bank: new BigNumber(0),
+        strong_room: new BigNumber(0),
+      }
+
+      for (const row of rows) {
+        const amount = new BigNumber(row.total)
+        const loc = (row.depositLocation ?? "cash") as keyof typeof balances
+        if (balances[loc] !== undefined) {
+          balances[loc] = row.txType === "debit"
+            ? balances[loc].plus(amount)
+            : balances[loc].minus(amount)
+        }
+      }
+
+      return {
+        cash: formatAmount(balances.cash),
+        bank: formatAmount(balances.bank),
+        strong_room: formatAmount(balances.strong_room),
+      }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+
 export const getBalanceSheetData = (
   asOf: string
 ): Effect.Effect<BalanceSheetData, DatabaseError> =>

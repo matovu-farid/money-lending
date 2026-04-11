@@ -2,9 +2,9 @@
 
 import { useState, useCallback, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useQuery } from "@tanstack/react-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Search, Loader2 } from "lucide-react"
-import { searchCustomersAction } from "@/actions/customer.actions"
+import { searchCustomersAction, getCustomerAction } from "@/actions/customer.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import { Input } from "@/components/ui/input"
@@ -17,6 +17,7 @@ interface CustomerPickerDialogProps {
 
 export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialogProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [query, setQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Customer[]>([])
   const [searching, setSearching] = useState(false)
@@ -71,6 +72,12 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
   }, [])
 
   function handleSelect(customer: Customer) {
+    router.prefetch(`/loans/new?customerId=${customer.id}`)
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.customers.detail(customer.id),
+      queryFn: () => getCustomerAction(customer.id),
+      staleTime: 30_000,
+    })
     onOpenChange(false)
     router.push(`/loans/new?customerId=${customer.id}`)
   }

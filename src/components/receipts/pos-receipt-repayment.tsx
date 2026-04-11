@@ -47,9 +47,9 @@ export function PosReceiptRepayment({
       <div className="border-t border-dashed border-black my-2" />
 
       {/* Receipt # and Date */}
-      <div className="flex justify-between">
-        <span>{receiptNumber}</span>
-        <span>{formatDate(date)}</span>
+      <div>
+        <div>{receiptNumber}</div>
+        <div>{formatDate(date)}</div>
       </div>
 
       {/* Separator */}

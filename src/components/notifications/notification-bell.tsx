@@ -16,6 +16,8 @@ import {
   markAsReadAction,
   markAllAsReadAction,
 } from "@/actions/notification.actions"
+import { getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
+import { listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useNotificationUnreadCount } from "@/hooks/use-notifications"
 import { queryKeys } from "@/hooks/query-keys"
 import type { Notification } from "@/types"
@@ -65,7 +67,24 @@ export function NotificationBell() {
 
       // Navigate to the relevant detail page based on reference type
       if (notification.referenceType === "loan" && notification.referenceId) {
-        router.push(`/loans/${notification.referenceId}`)
+        const loanId = notification.referenceId
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.payments.byLoan(loanId),
+          queryFn: () => getPaymentsByLoanAction(loanId),
+          staleTime: 30_000,
+        })
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.loans.balance(loanId),
+          queryFn: () => getLoanBalanceAction(loanId),
+          staleTime: 30_000,
+        })
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
+          queryFn: () => listRequestsForLoanAction(loanId),
+          staleTime: 30_000,
+        })
+        router.prefetch(`/loans/${loanId}`)
+        router.push(`/loans/${loanId}`)
       }
       // Chat is now a floating widget — no navigation needed for conversation notifications
       setOpen(false)

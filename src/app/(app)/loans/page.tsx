@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
+import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
 import { Plus } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
@@ -14,6 +15,9 @@ import type { LoanListEntry } from "@/types"
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { exportLoansExcelAction } from "@/actions/loan.actions"
+import { getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
+import { listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
+import { queryKeys } from "@/hooks/query-keys"
 import { toast } from "sonner"
 import { Download } from "lucide-react"
 import { downloadBase64 } from "@/lib/download"
@@ -39,6 +43,7 @@ function criticalityRank(entry: LoanListEntry): number {
 
 export default function LoansPage() {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const { data, isLoading, error: queryError, dataUpdatedAt } = useLoans()
   const entries = data ?? []
   const error = queryError?.message ?? null
@@ -120,6 +125,26 @@ export default function LoansPage() {
         return sortedEntries
     }
   }, [activeFilter, critical, atRisk, early, sortedEntries])
+
+  const handlePrefetch = useCallback((loanId: string) => {
+    router.prefetch(`/loans/${loanId}`)
+    const staleTime = 30_000
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.payments.byLoan(loanId),
+      queryFn: () => getPaymentsByLoanAction(loanId),
+      staleTime,
+    })
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.loans.balance(loanId),
+      queryFn: () => getLoanBalanceAction(loanId),
+      staleTime,
+    })
+    queryClient.prefetchQuery({
+      queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
+      queryFn: () => listRequestsForLoanAction(loanId),
+      staleTime,
+    })
+  }, [queryClient])
 
   const columns: Column<LoanListEntry>[] = [
     {
@@ -462,6 +487,8 @@ export default function LoansPage() {
                 "data-testid": "data-row",
                 className: "cursor-pointer hover:bg-muted/50",
                 onClick: () => router.push(`/loans/${e.id}`),
+                onMouseEnter: () => handlePrefetch(e.id),
+                onFocus: () => handlePrefetch(e.id),
                 role: "button",
                 "aria-label": `View loan for ${e.customerName}`,
               })}

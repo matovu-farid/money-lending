@@ -16,34 +16,9 @@ import {
   CardContent,
 } from "@/components/ui/card"
 import type { PnlData } from "@/types"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, getMonthOptions, formatPeriodDate } from "@/lib/utils"
 import { downloadFromUrl } from "@/lib/download"
 import { InfoPopover } from "@/components/ui/info-popover"
-
-function getMonthOptions(): { value: string; label: string }[] {
-  const options: { value: string; label: string }[] = []
-  const now = new Date()
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    const label = d.toLocaleDateString("en-UG", {
-      month: "long",
-      year: "numeric",
-    })
-    options.push({ value, label })
-  }
-  return options
-}
-
-function formatPeriodEnded(period: string): string {
-  const [year, month] = period.split("-").map(Number)
-  const lastDay = new Date(year, month, 0)
-  return lastDay.toLocaleDateString("en-UG", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })
-}
 
 interface PnlClientProps {
   data: PnlData
@@ -115,7 +90,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
               <p className="text-base font-semibold">Sovereign Ledger</p>
               <p className="text-sm font-medium">Income Statement</p>
               <p className="text-sm text-muted-foreground">
-                For the Month Ended {formatPeriodEnded(period)}
+                For the Month Ended {formatPeriodDate(period, "end")}
               </p>
             </div>
 

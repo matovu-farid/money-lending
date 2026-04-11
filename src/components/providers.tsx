@@ -27,7 +27,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <PersistQueryClientProvider
       client={queryClient}
-      persistOptions={{ persister, maxAge: 5 * 60 * 1000, buster: "v2-ledger" }}
+      persistOptions={{ persister, maxAge: 5 * 60 * 1000, buster: "v3-prefetch" }}
     >
       {children}
       {process.env.NODE_ENV === "development" && <ReactQueryDevtools initialIsOpen={false} />}

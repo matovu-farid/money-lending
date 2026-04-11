@@ -17,33 +17,9 @@ import {
 } from "@/components/ui/card"
 import BigNumber from "bignumber.js"
 import type { BalanceSheetData } from "@/types"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, getMonthOptions, formatPeriodDate } from "@/lib/utils"
+import { downloadFromUrl } from "@/lib/download"
 import { InfoPopover } from "@/components/ui/info-popover"
-
-function getMonthOptions(): { value: string; label: string }[] {
-  const options: { value: string; label: string }[] = []
-  const now = new Date()
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-    const label = d.toLocaleDateString("en-UG", {
-      month: "long",
-      year: "numeric",
-    })
-    options.push({ value, label })
-  }
-  return options
-}
-
-function formatAsOfDate(period: string): string {
-  const [year, month] = period.split("-").map(Number)
-  const lastDay = new Date(year, month, 0)
-  return lastDay.toLocaleDateString("en-UG", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  })
-}
 
 interface BalanceSheetClientProps {
   data: BalanceSheetData
@@ -65,21 +41,9 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
     if (downloading) return
     setDownloading(true)
     const href = `/api/reports/balance-sheet?format=${format}&period=${period}`
+    const filename = format === "pdf" ? `balance-sheet-${period}.pdf` : `balance-sheet-${period}.xlsx`
     try {
-      const response = await fetch(href)
-      if (!response.ok) throw new Error("Download failed")
-      const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download =
-        format === "pdf"
-          ? `balance-sheet-${period}.pdf`
-          : `balance-sheet-${period}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+      await downloadFromUrl(href, filename)
     } catch {
       toast.error("Export failed. Please try again.")
     } finally {
@@ -132,7 +96,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
             <p className="text-base font-semibold">Sovereign Ledger</p>
             <p className="text-sm font-medium">Balance Sheet</p>
             <p className="text-sm text-muted-foreground">
-              As at {formatAsOfDate(period)}
+              As at {formatPeriodDate(period, "end")}
             </p>
           </div>
 
