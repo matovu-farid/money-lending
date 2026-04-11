@@ -155,8 +155,10 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
 
 const formatAmount = (amount: string | number | undefined): string => {
   if (amount === undefined || amount === null) return "?"
-  const n = typeof amount === "string" ? parseFloat(amount) : amount
-  return n.toLocaleString("en-US")
+  const str = String(typeof amount === "number" ? amount : parseFloat(amount))
+  const [int, dec] = str.split(".")
+  const withCommas = int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")
+  return dec ? `${withCommas}.${dec}` : withCommas
 }
 
 export const getRecentActivity = (
@@ -182,9 +184,12 @@ export const getRecentActivity = (
       // Pre-fetch customer names for all loan.create entries to avoid N+1
       const customerIdsToFetch = new Set<string>()
       for (const entry of recentEntries) {
-        if (entry.entityType === "loan" && (entry.action === "loan.create" || entry.action === "loan.rollover")) {
+        if (entry.entityType === "loan" && entry.action === "loan.create") {
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
           if (afterVal.customerId) customerIdsToFetch.add(afterVal.customerId)
+        } else if (entry.entityType === "loan" && entry.action === "loan.rollover") {
+          const beforeVal = entry.beforeValue ? JSON.parse(entry.beforeValue) : {}
+          if (beforeVal.customerId) customerIdsToFetch.add(beforeVal.customerId)
         }
       }
       const customerNameMap = new Map<string, string>()
@@ -236,15 +241,17 @@ export const getRecentActivity = (
           }
         } else if (entry.entityType === "loan" && entry.action === "loan.rollover") {
           type = "loan_issued"
+          const beforeVal = entry.beforeValue ? JSON.parse(entry.beforeValue) : {}
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
-          const amount = formatAmount(afterVal.principalAmount)
-          customerId = afterVal.customerId as string | undefined
+          customerId = beforeVal.customerId as string | undefined
           loanId = entry.entityId
           const customerName = customerId ? customerNameMap.get(customerId) : undefined
+          const carriedTotal = new BigNumber(afterVal.carriedPrincipal ?? "0").plus(new BigNumber(afterVal.carriedInterest ?? "0"))
+          const amount = formatAmount(carriedTotal.toFixed(0))
           description = customerName
             ? `Loan rolled over for ${customerName} — UGX ${amount}`
             : `Loan rolled over — UGX ${amount}`
-          detail = { amount: afterVal.principalAmount }
+          detail = { amount: carriedTotal.toFixed(0) }
         } else if (entry.entityType === "loan" && entry.action === "loan.update") {
           type = "loan_issued"
           loanId = entry.entityId
