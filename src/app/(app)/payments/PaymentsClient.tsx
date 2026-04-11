@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -259,7 +260,15 @@ export function PaymentsClient() {
       key: "customerName",
       header: "Customer",
       primary: true,
-      render: (row) => row.customerName,
+      render: (row) => (
+        <Link
+          href={`/customers/${row.customerId}`}
+          className="font-medium hover:underline"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {row.customerName}
+        </Link>
+      ),
     },
     {
       key: "paymentDate",
