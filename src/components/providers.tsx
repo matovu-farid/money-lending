@@ -2,9 +2,19 @@
 
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client"
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister"
-import { QueryClient } from "@tanstack/react-query"
-import { ReactQueryDevtools } from "@tanstack/react-query-devtools"
+import { QueryClient, useIsRestoring } from "@tanstack/react-query"
 import { useState } from "react"
+import dynamic from "next/dynamic"
+
+const ReactQueryDevtools = dynamic(
+  () => import("@tanstack/react-query-devtools").then((mod) => mod.ReactQueryDevtools),
+  { ssr: false },
+)
+
+function PersistGate({ children }: { children: React.ReactNode }) {
+  const isRestoring = useIsRestoring()
+  return isRestoring ? null : children
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -29,7 +39,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       client={queryClient}
       persistOptions={{ persister, maxAge: 5 * 60 * 1000, buster: "v3-prefetch" }}
     >
-      {children}
+      <PersistGate>{children}</PersistGate>
       {process.env.NODE_ENV === "development" && <ReactQueryDevtools initialIsOpen={false} />}
     </PersistQueryClientProvider>
   )

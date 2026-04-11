@@ -18,6 +18,8 @@ export function InfoPopover({ children, className }: InfoPopoverProps) {
   return (
     <Popover>
       <PopoverTrigger
+        render={<span role="button" tabIndex={0} />}
+        nativeButton={false}
         className="inline-flex items-center justify-center cursor-help text-muted-foreground hover:text-foreground transition-colors"
         aria-label="More information"
         onClick={(e) => e.stopPropagation()}
