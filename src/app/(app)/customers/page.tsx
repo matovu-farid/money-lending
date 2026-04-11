@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
@@ -67,6 +67,59 @@ export default function CustomersPage() {
     })
   }, [queryClient])
 
+  // Sequentially prefetch each customer's detail + loans, one at a time
+  const prefetchAbort = useRef<AbortController | null>(null)
+  const customerIds = customers
+    .filter((c) => !c.id.startsWith("optimistic-"))
+    .map((c) => c.id)
+    .join(",")
+  useEffect(() => {
+    if (!customerIds) return
+
+    prefetchAbort.current?.abort()
+    const controller = new AbortController()
+    prefetchAbort.current = controller
+
+    const ids = customerIds.split(",")
+    const staleTime = 30_000
+    ;(async () => {
+      for (const id of ids) {
+        if (controller.signal.aborted) return
+        // Skip if already cached and fresh
+        const cached = queryClient.getQueryData(queryKeys.customers.detail(id))
+        if (cached) continue
+
+        try {
+          await queryClient.prefetchQuery({
+            queryKey: queryKeys.customers.detail(id),
+            queryFn: async () => {
+              const result = await getCustomerAction(id)
+              return unwrapAction(result as { data: Customer } | { error: string })
+            },
+            staleTime,
+          })
+          if (controller.signal.aborted) return
+          await queryClient.prefetchQuery({
+            queryKey: queryKeys.loans.byCustomer(id),
+            queryFn: async () => {
+              const result = await getCustomerLoansWithOverdueAction(id)
+              if (!("data" in result) || !result.data) return []
+              return result.data.map((item) => ({
+                loan: item,
+                daysOverdue: item.daysOverdue,
+              }))
+            },
+            staleTime,
+          })
+        } catch {
+          // Prefetch failures are non-critical, continue to next
+        }
+      }
+    })()
+
+    return () => controller.abort()
+  }, [customerIds, queryClient])
+
   if (error) {
     return (
       <div className="p-4 md:p-6">
@@ -119,7 +172,7 @@ export default function CustomersPage() {
                 key: "fullName",
                 header: "Name",
                 primary: true,
-                render: (c) => <span className="font-medium">{c.fullName}</span>,
+                render: (c) => <span className="font-medium group-hover/row:underline">{c.fullName}</span>,
               },
               {
                 key: "contact",
@@ -158,7 +211,7 @@ export default function CustomersPage() {
               "data-testid": "data-row",
               className: c.id.startsWith("optimistic-")
                 ? "opacity-50 cursor-default"
-                : "cursor-pointer",
+                : "cursor-pointer group/row",
               onClick: c.id.startsWith("optimistic-")
                 ? undefined
                 : () => router.push(`/customers/${c.id}`),

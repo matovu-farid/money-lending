@@ -13,8 +13,6 @@ import {
   Receipt,
   BarChart3,
   Shield,
-  ChevronLeft,
-  ChevronRight,
   LogOut,
   ClipboardCheck,
   ArrowRightLeft,
@@ -78,7 +76,7 @@ function getNavGroups(userRole: UserRole): NavGroup[] {
       label: "Capital",
       items: [
         { label: "Creditors", href: "/creditors", icon: Landmark },
-        { label: "Expenses & Income", href: "/expenses", icon: Receipt },
+        { label: "Expenses", href: "/expenses", icon: Receipt },
         { label: "Fund Transfers", href: "/fund-transfers", icon: ArrowRightLeft },
       ],
     },
@@ -103,7 +101,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({ onClose }: SidebarProps) {
-  const { collapsed, toggle } = useSidebarStore()
+  const { collapsed } = useSidebarStore()
   const pathname = usePathname()
   const router = useRouter()
   const { data: session } = useSession()
@@ -260,23 +258,6 @@ export function Sidebar({ onClose }: SidebarProps) {
           collapsed ? "w-[60px]" : "w-[240px]"
         )}
       >
-        {/* Collapse toggle */}
-        <div className="flex items-center justify-end px-2 py-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-sidebar-foreground hover:bg-sidebar-accent"
-            onClick={toggle}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-
         {/* Navigation */}
         <nav aria-label="Main navigation" data-testid="sidebar-nav" className="flex-1 overflow-y-auto py-3 space-y-4">
           {filteredNavGroups.map((group, groupIndex) => (

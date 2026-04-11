@@ -71,7 +71,7 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
     expanded,
   );
 
-  const activePaymentIds = payments?.filter((p) => p.deletedAt === null).map((p) => p.id) ?? [];
+  const activePaymentIds = (Array.isArray(payments) ? payments : []).filter((p) => p.deletedAt === null).map((p) => p.id);
   const { data: portionsData } = useQuery<PaymentPortionsMap>({
     queryKey: [...queryKeys.payments.portions(item.loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
@@ -268,8 +268,6 @@ export default function CustomerProfilePage() {
   });
   const loanItems = Array.isArray(rawLoanItems) ? rawLoanItems : [];
 
-  const loading = customerLoading || loansLoading;
-
   const [editing, setEditing] = useState(false);
   const {
     register,
@@ -401,19 +399,52 @@ export default function CustomerProfilePage() {
     setStatusReason("");
   }
 
-  if (loading) {
+  if (customerLoading) {
     return (
-      <div className="p-4 md:p-6">
+      <div className="p-4 md:p-6 space-y-6 max-w-2xl">
+        {/* Page header skeleton */}
+        <div className="flex items-center justify-between">
+          <div className="space-y-1.5">
+            <div className="h-7 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+            <div className="h-4 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+          </div>
+          <div className="flex gap-2">
+            <div className="h-9 w-32 rounded-md bg-muted-foreground/10 animate-pulse" />
+            <div className="h-9 w-32 rounded-md bg-muted-foreground/10 animate-pulse" />
+          </div>
+        </div>
+        {/* Basic info accordion skeleton */}
+        <div className="border rounded-lg px-4 py-3 space-y-3">
+          <div className="h-5 w-36 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="space-y-2">
+            <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
+            <div className="h-4 w-40 rounded bg-muted-foreground/10 animate-pulse" />
+            <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
+            <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+          </div>
+        </div>
+        {/* Status card skeleton */}
+        <div className="border rounded-lg p-6 space-y-2">
+          <div className="h-5 w-16 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="h-9 w-[200px] rounded-md bg-muted-foreground/10 animate-pulse" />
+        </div>
+        {/* Loan history skeleton */}
         <div className="space-y-4">
-          <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
-          <div className="h-32 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
-          <div className="h-24 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+          <div className="h-6 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="border rounded-lg p-6 space-y-3">
+            <div className="flex justify-between">
+              <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-5 w-16 rounded-full bg-muted-foreground/10 animate-pulse" />
+            </div>
+            <div className="h-8 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+            <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
+          </div>
         </div>
       </div>
     );
   }
 
-  if (notFound || !customer) {
+  if (notFound) {
     return (
       <div className="p-4 md:p-6 space-y-4">
         <p className="text-destructive">Customer not found.</p>
@@ -422,6 +453,11 @@ export default function CustomerProfilePage() {
         </Button>
       </div>
     );
+  }
+
+  if (!customer) {
+    // Initial render before query starts (prevents hydration mismatch)
+    return null;
   }
 
   const isBlacklisted = pendingStatus === "blacklisted";
@@ -449,6 +485,7 @@ export default function CustomerProfilePage() {
         </Link>
       </PageHeader>
 
+      {/* @ts-expect-error -- Accordion value type mismatch with radix/shadcn generics */}
       <Accordion type="single" collapsible defaultValue={editing ? "basic-info" : undefined} value={editing ? "basic-info" : undefined}>
         <AccordionItem value="basic-info" className="border rounded-lg px-4">
           <div className="flex items-center justify-between">
@@ -619,7 +656,20 @@ export default function CustomerProfilePage() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Loan History</h2>
 
-        {loanItems.length === 0 ? (
+        {loansLoading ? (
+          <div className="space-y-4">
+            {[1, 2].map((i) => (
+              <div key={i} className="border rounded-lg p-6 space-y-3">
+                <div className="flex justify-between">
+                  <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+                  <div className="h-5 w-16 rounded-full bg-muted-foreground/10 animate-pulse" />
+                </div>
+                <div className="h-8 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+                <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
+              </div>
+            ))}
+          </div>
+        ) : loanItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No loans on record for this customer.
           </p>
