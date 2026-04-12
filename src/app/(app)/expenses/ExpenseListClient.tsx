@@ -5,7 +5,7 @@ import {
   recordExpenseAction,
   deleteExpenseAction,
   createExpenseCategoryAction,
-} from "./actions"
+} from "@/actions/expense.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import type { TransactionRow, CategoryRow } from "@/types"
 

@@ -9,7 +9,7 @@ import { formatCurrency } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { queryKeys } from "@/hooks/query-keys"
-import { listCreditorsAction, getSystemCapitalAction } from "./actions"
+import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
 
 const defaultCapital = {
   totalInvested: "0.00",

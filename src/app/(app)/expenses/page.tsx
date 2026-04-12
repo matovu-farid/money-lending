@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { queryKeys } from "@/hooks/query-keys"
-import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "./actions"
+import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "@/actions/expense.actions"
 
 export default function ExpensesPage() {
   const { data: transactionsResult, isLoading: transactionsLoading } = useQuery({

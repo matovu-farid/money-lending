@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
-import { addInvestmentAction } from "@/app/(app)/creditors/actions"
+import { addInvestmentAction } from "@/actions/creditor.actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
