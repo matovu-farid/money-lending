@@ -135,7 +135,8 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     });
   }, [loan.id, loan.status, queryClient]);
 
-  const pendingRateRequest = rateChangeRequests.find((r: RateChangeRequest) => r.status === "pending")
+  const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
+  const pendingRateRequest = rateChangeList.find((r: RateChangeRequest) => r.status === "pending")
 
   // Initialize penalty multiplier on mount and reset on unmount
   useEffect(() => {
