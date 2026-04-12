@@ -12,7 +12,7 @@ import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { getCreditorRepaymentPortionsFromLedger } from "@/services/transaction.service"
+import { getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 
 interface Props {
   params: Promise<{ id: string }>

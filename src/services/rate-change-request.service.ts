@@ -7,7 +7,7 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostRateChangeAdjustment } from "./transaction.service"
+import { autoPostRateChangeAdjustment } from "./auto-post.service"
 import type { CreateRateChangeRequestInput, ReviewRateChangeRequestInput, RateChangeRequest } from "@/types"
 
 export interface RateChangeRequestWithLoan extends RateChangeRequest {

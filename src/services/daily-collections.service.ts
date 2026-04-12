@@ -8,7 +8,7 @@ import { sql, eq, and, isNull, asc, inArray } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { getPaymentPortionsFromLedger } from "@/services/transaction.service"
+import { getPaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { toLoanType, type DailyCollectionsSummary, type DailyCollectionRow, type LoanDueToday } from "@/types"
 
 export const getDailyCollections = (

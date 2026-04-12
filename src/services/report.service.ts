@@ -21,7 +21,7 @@ import { DatabaseError } from "@/lib/errors"
 import { formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
-import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./transaction.service"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./ledger-queries.service"
 import { toLoanType, type PnlData, type BalanceSheetData, type PortfolioEntry, type RetainedEarningsData } from "@/types"
 
 export const getPnlData = (

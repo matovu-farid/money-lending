@@ -10,7 +10,9 @@ import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { autoPostInterestEarned, autoPostPrincipalRepayment, postJournalEntry, getLoanBalanceFromLedger, getLoanBalancesFromLedger, reverseInterestAccrual, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./transaction.service"
+import { postJournalEntry, reverseInterestAccrual } from "./transaction.service"
+import { autoPostInterestEarned, autoPostPrincipalRepayment } from "./auto-post.service"
+import { getLoanBalanceFromLedger, getLoanBalancesFromLedger, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./ledger-queries.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
 import {

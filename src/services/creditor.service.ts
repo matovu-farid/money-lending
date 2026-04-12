@@ -10,7 +10,9 @@ import {
   InvestmentNotFound,
 } from "@/lib/errors";
 import { writeAuditLog } from "./audit.service";
-import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid, getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger, reverseCreditorInterestAccrual } from "@/services/transaction.service";
+import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/auto-post.service";
+import { getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger } from "@/services/ledger-queries.service";
+import { reverseCreditorInterestAccrual } from "@/services/transaction.service";
 import {
   allocatePayment,
   formatAmount,

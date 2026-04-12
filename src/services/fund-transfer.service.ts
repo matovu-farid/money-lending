@@ -4,7 +4,7 @@ import { fundTransfers } from "@/lib/db/schema/fund-transfers"
 import { desc } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostFundTransfer, autoPostCapitalInjection } from "./transaction.service"
+import { autoPostFundTransfer, autoPostCapitalInjection } from "./auto-post.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput, FundTransfer } from "@/types"
 
 export const createFundTransfer = (

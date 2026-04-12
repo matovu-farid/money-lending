@@ -17,7 +17,9 @@ import {
   ValidationError,
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
-import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, postJournalEntry, getPaymentPortionsFromLedger, autoPostInterestEarned, autoPostPrincipalRepayment, autoPostCapitalInjection } from "./transaction.service"
+import { postJournalEntry } from "./transaction.service"
+import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, autoPostInterestEarned, autoPostPrincipalRepayment, autoPostCapitalInjection } from "./auto-post.service"
+import { getPaymentPortionsFromLedger } from "./ledger-queries.service"
 import { fundTransfers } from "@/lib/db/schema"
 import { allocatePayment } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"

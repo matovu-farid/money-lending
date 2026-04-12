@@ -11,7 +11,9 @@ import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"
-import { postJournalEntry, autoPostPrincipalRecovery, getLoanBalancesFromLedger, reverseInterestAccrual } from "@/services/transaction.service"
+import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
+import { autoPostPrincipalRecovery } from "@/services/auto-post.service"
+import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service"
 import type { SettleWithCollateralInput, Loan } from "@/types"
 
 /**

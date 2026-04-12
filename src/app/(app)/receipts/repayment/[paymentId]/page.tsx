@@ -7,7 +7,7 @@ import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PrintButton } from "@/app/(app)/receipts/disbursement/[loanId]/print-button"
 import { formatDate } from "@/lib/utils"
-import { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } from "@/services/transaction.service"
+import { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } from "@/services/ledger-queries.service"
 
 export default async function RepaymentReceiptPage({
   params,
