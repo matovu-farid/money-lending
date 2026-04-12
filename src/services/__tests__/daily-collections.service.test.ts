@@ -11,7 +11,7 @@ vi.mock("drizzle-orm", async () => {
   return actual
 })
 
-vi.mock("@/services/transaction.service", () => ({
+vi.mock("@/services/ledger-queries.service", () => ({
   getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
   getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
   getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
@@ -136,7 +136,7 @@ describe("daily-collections.service", () => {
       const result = await Effect.runPromise(getDailyCollections("2026-03-23"))
 
       expect(result.date).toBe("2026-03-23")
-      expect(result.totalCollected).toBe("300000.00")
+      expect(result.totalCollected).toBe("300000")
       expect(result.paymentCount).toBe(2)
       expect(result.rows).toHaveLength(2)
     })
@@ -154,7 +154,7 @@ describe("daily-collections.service", () => {
       const result = await Effect.runPromise(getDailyCollections("2026-01-01"))
 
       expect(result.date).toBe("2026-01-01")
-      expect(result.totalCollected).toBe("0.00")
+      expect(result.totalCollected).toBe("0")
       expect(result.paymentCount).toBe(0)
       expect(result.rows).toEqual([])
     })
@@ -175,7 +175,7 @@ describe("daily-collections.service", () => {
       const result = await Effect.runPromise(getDailyCollections("2026-03-23"))
 
       // BigNumber precision: 150000.50 + 250000.75 = 400001.25 exactly
-      expect(result.totalCollected).toBe("400001.25")
+      expect(result.totalCollected).toBe("400001")
     })
   })
 
@@ -231,7 +231,7 @@ describe("daily-collections.service", () => {
       })
 
       // Mock ledger to reflect the 260,000 interest paid
-      const { getInterestEarnedFromLedger } = await import("@/services/transaction.service")
+      const { getInterestEarnedFromLedger } = await import("@/services/ledger-queries.service")
       ;(getInterestEarnedFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
         new Map([["loan-1", new BigNumber("260000.00")]])
       )

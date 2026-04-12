@@ -47,19 +47,19 @@ describe("Interest Engine", () => {
   // Test 6: calculateLoanSummary for Review step — returns daily interest, total interest at min period, total owed at min period
   it("calculateLoanSummary: returns correct fields for Review step — no termDays or dueDate", () => {
     const result = calculateLoanSummary("500000", "0.10", 30)
-    expect(result.dailyInterest).toBe("1666.67")
-    expect(result.totalInterestAtMinPeriod).toBe("50000.00")
-    expect(result.totalOwedAtMinPeriod).toBe("550000.00")
+    expect(result.dailyInterest).toBe("1667")
+    expect(result.totalInterestAtMinPeriod).toBe("50000")
+    expect(result.totalOwedAtMinPeriod).toBe("550000")
     expect(result.minInterestDays).toBe(30)
     // Critical: must NOT have termDays or dueDate
     expect("termDays" in result).toBe(false)
     expect("dueDate" in result).toBe(false)
   })
 
-  // Test 7: formatAmount — BigNumber(50000) returns "50000.00"
-  it("formatAmount: BigNumber(50000) returns '50000.00'", () => {
+  // Test 7: formatAmount — BigNumber(50000) returns "50000"
+  it("formatAmount: BigNumber(50000) returns '50000'", () => {
     const result = formatAmount(new BigNumber("50000"))
-    expect(result).toBe("50000.00")
+    expect(result).toBe("50000")
   })
 
   // Test 8: No native float arithmetic in engine (advisory)
@@ -113,7 +113,7 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("50000.00")
+    expect(result.interestPortion).toBe("50000")
     expect(result.principalPortion).toBe("0.00")
     expect(result.principalBalanceBefore).toBe("1000000")
     expect(result.principalBalanceAfter).toBe("1000000")
@@ -130,10 +130,10 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("50000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("50000")
     expect(result.principalBalanceBefore).toBe("1000000")
-    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.principalBalanceAfter).toBe("950000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -147,10 +147,10 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("1000000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("1000000")
     expect(result.principalBalanceBefore).toBe("1000000")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 
@@ -164,9 +164,9 @@ describe("allocatePayment", () => {
       daysElapsed: 15,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("50000.00")
-    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("50000")
+    expect(result.principalBalanceAfter).toBe("950000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -179,7 +179,7 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("1.00")
+    expect(result.interestPortion).toBe("1")
     expect(result.principalPortion).toBe("0.00")
     expect(result.principalBalanceBefore).toBe("1000000")
     expect(result.principalBalanceAfter).toBe("1000000")
@@ -196,9 +196,9 @@ describe("allocatePayment", () => {
       daysElapsed: 20,
       minInterestDays: 45,
     })
-    expect(result.interestPortion).toBe("150000.00")
-    expect(result.principalPortion).toBe("50000.00")
-    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.interestPortion).toBe("150000")
+    expect(result.principalPortion).toBe("50000")
+    expect(result.principalBalanceAfter).toBe("950000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -211,8 +211,8 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("50000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("50000")
   })
 
   // Test 8: allocatePayment with loanType="perpetual" uses perpetual logic
@@ -225,8 +225,8 @@ describe("allocatePayment", () => {
       minInterestDays: 30,
       loanType: "perpetual",
     })
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("50000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("50000")
   })
 
   // Test 9: allocatePayment dispatches to fixed_rate
@@ -244,8 +244,8 @@ describe("allocatePayment", () => {
     })
     // fixed rate: interest = 1000000 * 0.10 = 100000
     // principal portion = 300000 - 100000 = 200000
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("200000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("200000")
   })
 
   // Test 10: allocatePayment dispatches to reducing_balance
@@ -262,8 +262,8 @@ describe("allocatePayment", () => {
     })
     // reducing balance: interest = 800000 * 0.10 = 80000
     // principal portion = 300000 - 80000 = 220000
-    expect(result.interestPortion).toBe("80000.00")
-    expect(result.principalPortion).toBe("220000.00")
+    expect(result.interestPortion).toBe("80000")
+    expect(result.principalPortion).toBe("220000")
   })
 
   // Test: interestAlreadyPaidInPeriod offsets interest owed for same-period payments
@@ -279,9 +279,9 @@ describe("allocatePayment", () => {
       minInterestDays: 30,
       interestAlreadyPaidInPeriod: "30000",
     })
-    expect(result.interestPortion).toBe("70000.00")
-    expect(result.principalPortion).toBe("30000.00")
-    expect(result.principalBalanceAfter).toBe("970000.00")
+    expect(result.interestPortion).toBe("70000")
+    expect(result.principalPortion).toBe("30000")
+    expect(result.principalBalanceAfter).toBe("970000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -298,9 +298,9 @@ describe("allocatePayment", () => {
       minInterestDays: 30,
       interestAlreadyPaidInPeriod: "100000",
     })
-    expect(result.interestPortion).toBe("0.00")
-    expect(result.principalPortion).toBe("50000.00")
-    expect(result.principalBalanceAfter).toBe("950000.00")
+    expect(result.interestPortion).toBe("0")
+    expect(result.principalPortion).toBe("50000")
+    expect(result.principalBalanceAfter).toBe("950000")
   })
 })
 
@@ -313,16 +313,16 @@ describe("calculateSchedule", () => {
     // Each month: principal=200000, interest=100000 (on original 1M), installment=300000
     for (let i = 0; i < 5; i++) {
       expect(entries[i].month).toBe(i + 1)
-      expect(entries[i].monthlyInterest).toBe("100000.00")
-      expect(entries[i].monthlyInstallment).toBe("300000.00")
+      expect(entries[i].monthlyInterest).toBe("100000")
+      expect(entries[i].monthlyInstallment).toBe("300000")
     }
 
     // Balances decrease by 200k each month
-    expect(entries[0].balanceAfter).toBe("800000.00")
-    expect(entries[1].balanceAfter).toBe("600000.00")
-    expect(entries[2].balanceAfter).toBe("400000.00")
-    expect(entries[3].balanceAfter).toBe("200000.00")
-    expect(entries[4].balanceAfter).toBe("0.00")
+    expect(entries[0].balanceAfter).toBe("800000")
+    expect(entries[1].balanceAfter).toBe("600000")
+    expect(entries[2].balanceAfter).toBe("400000")
+    expect(entries[3].balanceAfter).toBe("200000")
+    expect(entries[4].balanceAfter).toBe("0")
   })
 
   it("fixed_rate: total interest = 500k for 1M at 10% over 5 months", () => {
@@ -337,30 +337,30 @@ describe("calculateSchedule", () => {
 
     // Month 1: interest = 1000000 * 0.10 = 100000, principal = 200000, installment = 300000
     expect(entries[0].month).toBe(1)
-    expect(entries[0].monthlyPrincipal).toBe("200000.00")
-    expect(entries[0].monthlyInterest).toBe("100000.00")
-    expect(entries[0].monthlyInstallment).toBe("300000.00")
-    expect(entries[0].balanceAfter).toBe("800000.00")
+    expect(entries[0].monthlyPrincipal).toBe("200000")
+    expect(entries[0].monthlyInterest).toBe("100000")
+    expect(entries[0].monthlyInstallment).toBe("300000")
+    expect(entries[0].balanceAfter).toBe("800000")
 
     // Month 2: interest = 800000 * 0.10 = 80000
-    expect(entries[1].monthlyInterest).toBe("80000.00")
-    expect(entries[1].monthlyInstallment).toBe("280000.00")
-    expect(entries[1].balanceAfter).toBe("600000.00")
+    expect(entries[1].monthlyInterest).toBe("80000")
+    expect(entries[1].monthlyInstallment).toBe("280000")
+    expect(entries[1].balanceAfter).toBe("600000")
 
     // Month 3: interest = 600000 * 0.10 = 60000
-    expect(entries[2].monthlyInterest).toBe("60000.00")
-    expect(entries[2].monthlyInstallment).toBe("260000.00")
-    expect(entries[2].balanceAfter).toBe("400000.00")
+    expect(entries[2].monthlyInterest).toBe("60000")
+    expect(entries[2].monthlyInstallment).toBe("260000")
+    expect(entries[2].balanceAfter).toBe("400000")
 
     // Month 4: interest = 400000 * 0.10 = 40000
-    expect(entries[3].monthlyInterest).toBe("40000.00")
-    expect(entries[3].monthlyInstallment).toBe("240000.00")
-    expect(entries[3].balanceAfter).toBe("200000.00")
+    expect(entries[3].monthlyInterest).toBe("40000")
+    expect(entries[3].monthlyInstallment).toBe("240000")
+    expect(entries[3].balanceAfter).toBe("200000")
 
     // Month 5: interest = 200000 * 0.10 = 20000
-    expect(entries[4].monthlyInterest).toBe("20000.00")
-    expect(entries[4].monthlyInstallment).toBe("220000.00")
-    expect(entries[4].balanceAfter).toBe("0.00")
+    expect(entries[4].monthlyInterest).toBe("20000")
+    expect(entries[4].monthlyInstallment).toBe("220000")
+    expect(entries[4].balanceAfter).toBe("0")
   })
 
   it("reducing_balance: total interest = 300k for 1M at 10% over 5 months", () => {
@@ -372,19 +372,19 @@ describe("calculateSchedule", () => {
     // 1M / 3 = 333333.33... — full precision keeps balance exact
     const { entries } = calculateSchedule("1000000", "0.10", 3, "fixed_rate")
     expect(entries).toHaveLength(3)
-    expect(entries[0].monthlyPrincipal).toBe("333333.33")
-    expect(entries[1].monthlyPrincipal).toBe("333333.33")
-    expect(entries[2].monthlyPrincipal).toBe("333333.33")
-    expect(entries[2].balanceAfter).toBe("0.00")
+    expect(entries[0].monthlyPrincipal).toBe("333333")
+    expect(entries[1].monthlyPrincipal).toBe("333333")
+    expect(entries[2].monthlyPrincipal).toBe("333333")
+    expect(entries[2].balanceAfter).toBe("0")
   })
 
   it("single month term works correctly", () => {
     const { entries } = calculateSchedule("500000", "0.10", 1, "fixed_rate")
     expect(entries).toHaveLength(1)
-    expect(entries[0].monthlyPrincipal).toBe("500000.00")
-    expect(entries[0].monthlyInterest).toBe("50000.00")
-    expect(entries[0].monthlyInstallment).toBe("550000.00")
-    expect(entries[0].balanceAfter).toBe("0.00")
+    expect(entries[0].monthlyPrincipal).toBe("500000")
+    expect(entries[0].monthlyInterest).toBe("50000")
+    expect(entries[0].monthlyInstallment).toBe("550000")
+    expect(entries[0].balanceAfter).toBe("0")
   })
 
   it("reducing_balance: 10M at 10% over 6 months — totalInterest has no rounding error", () => {
@@ -405,9 +405,9 @@ describe("allocateFixedRatePayment", () => {
       paymentNumber: 1,
     })
     // interest = 1000000 * 0.10 = 100000
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("200000.00")
-    expect(result.principalBalanceAfter).toBe("800000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("200000")
+    expect(result.principalBalanceAfter).toBe("800000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -421,9 +421,9 @@ describe("allocateFixedRatePayment", () => {
       termMonths: 5,
       paymentNumber: 1,
     })
-    expect(result.interestPortion).toBe("50000.00")
+    expect(result.interestPortion).toBe("50000")
     expect(result.principalPortion).toBe("0.00")
-    expect(result.principalBalanceAfter).toBe("1000000.00")
+    expect(result.principalBalanceAfter).toBe("1000000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -442,9 +442,9 @@ describe("allocateFixedRatePayment", () => {
       termMonths: 5,
       paymentNumber: 1,
     })
-    expect(result.interestPortion).toBe("500000.00")
-    expect(result.principalPortion).toBe("1000000.00")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.interestPortion).toBe("500000")
+    expect(result.principalPortion).toBe("1000000")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 
@@ -463,9 +463,9 @@ describe("allocateFixedRatePayment", () => {
       termMonths: 5,
       paymentNumber: 3,
     })
-    expect(result.interestPortion).toBe("300000.00")
-    expect(result.principalPortion).toBe("600000.00")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.interestPortion).toBe("300000")
+    expect(result.principalPortion).toBe("600000")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 
@@ -479,9 +479,9 @@ describe("allocateFixedRatePayment", () => {
       termMonths: 5,
       paymentNumber: 1,
     })
-    expect(result.interestPortion).toBe("100000.00")
+    expect(result.interestPortion).toBe("100000")
     expect(result.principalPortion).toBe("0.00")
-    expect(result.principalBalanceAfter).toBe("1000000.00")
+    expect(result.principalBalanceAfter).toBe("1000000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -499,9 +499,9 @@ describe("allocateFixedRatePayment", () => {
       paymentNumber: 7,
     })
     // Interest = 100k (1 month), principal = 200k (remainder)
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("200000.00")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("200000")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 
@@ -519,8 +519,8 @@ describe("allocateFixedRatePayment", () => {
       paymentNumber: 1,
     })
     // Should charge only 1 month interest, not 5 months
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("200001.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("200001")
     expect(result.loanFullyPaid).toBe(false)
   })
 })
@@ -536,9 +536,9 @@ describe("allocateReducingBalancePayment", () => {
       termMonths: 5,
     })
     // interest = 1000000 * 0.10 = 100000
-    expect(result.interestPortion).toBe("100000.00")
-    expect(result.principalPortion).toBe("200000.00")
-    expect(result.principalBalanceAfter).toBe("800000.00")
+    expect(result.interestPortion).toBe("100000")
+    expect(result.principalPortion).toBe("200000")
+    expect(result.principalBalanceAfter).toBe("800000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -552,9 +552,9 @@ describe("allocateReducingBalancePayment", () => {
       termMonths: 5,
     })
     // interest = 800000 * 0.10 = 80000
-    expect(result.interestPortion).toBe("80000.00")
-    expect(result.principalPortion).toBe("200000.00")
-    expect(result.principalBalanceAfter).toBe("600000.00")
+    expect(result.interestPortion).toBe("80000")
+    expect(result.principalPortion).toBe("200000")
+    expect(result.principalBalanceAfter).toBe("600000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -567,9 +567,9 @@ describe("allocateReducingBalancePayment", () => {
       monthlyRateDecimal: "0.10",
       termMonths: 5,
     })
-    expect(result.interestPortion).toBe("50000.00")
+    expect(result.interestPortion).toBe("50000")
     expect(result.principalPortion).toBe("0.00")
-    expect(result.principalBalanceAfter).toBe("1000000.00")
+    expect(result.principalBalanceAfter).toBe("1000000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -584,9 +584,9 @@ describe("allocateReducingBalancePayment", () => {
       monthlyRateDecimal: "0.10",
       termMonths: 5,
     })
-    expect(result.interestPortion).toBe("80000.00")
-    expect(result.principalPortion).toBe("800000.00")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.interestPortion).toBe("80000")
+    expect(result.principalPortion).toBe("800000")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 
@@ -599,9 +599,9 @@ describe("allocateReducingBalancePayment", () => {
       monthlyRateDecimal: "0.10",
       termMonths: 5,
     })
-    expect(result.interestPortion).toBe("80000.00")
-    expect(result.principalPortion).toBe("800000.00")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.interestPortion).toBe("80000")
+    expect(result.principalPortion).toBe("800000")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 })
@@ -610,32 +610,32 @@ describe("calculateLoanSummary — extended", () => {
   // Perpetual summary (existing behavior, backward compatible)
   it("perpetual summary unchanged when no loanType", () => {
     const result = calculateLoanSummary("500000", "0.10", 30)
-    expect(result.dailyInterest).toBe("1666.67")
-    expect(result.totalInterestAtMinPeriod).toBe("50000.00")
-    expect(result.totalOwedAtMinPeriod).toBe("550000.00")
+    expect(result.dailyInterest).toBe("1667")
+    expect(result.totalInterestAtMinPeriod).toBe("50000")
+    expect(result.totalOwedAtMinPeriod).toBe("550000")
   })
 
   it("perpetual summary unchanged when loanType='perpetual'", () => {
     const result = calculateLoanSummary("500000", "0.10", 30, "perpetual")
-    expect(result.dailyInterest).toBe("1666.67")
+    expect(result.dailyInterest).toBe("1667")
   })
 
   // Fixed rate summary
   it("fixed_rate summary includes schedule, totalInterest, totalOwed, monthlyInstallment", () => {
     const result = calculateLoanSummary("1000000", "0.10", 30, "fixed_rate", 5)
     expect(result.schedule).toHaveLength(5)
-    expect(result.totalInterest).toBe("500000.00")
-    expect(result.totalOwed).toBe("1500000.00")
-    expect(result.monthlyInstallment).toBe("300000.00")
+    expect(result.totalInterest).toBe("500000")
+    expect(result.totalOwed).toBe("1500000")
+    expect(result.monthlyInstallment).toBe("300000")
   })
 
   // Reducing balance summary
   it("reducing_balance summary includes schedule, totalInterest, totalOwed, monthlyInstallment", () => {
     const result = calculateLoanSummary("1000000", "0.10", 30, "reducing_balance", 5)
     expect(result.schedule).toHaveLength(5)
-    expect(result.totalInterest).toBe("300000.00")
-    expect(result.totalOwed).toBe("1300000.00")
+    expect(result.totalInterest).toBe("300000")
+    expect(result.totalOwed).toBe("1300000")
     // First month installment
-    expect(result.monthlyInstallment).toBe("300000.00")
+    expect(result.monthlyInstallment).toBe("300000")
   })
 })

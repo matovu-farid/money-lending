@@ -12,11 +12,18 @@ vi.mock("@/services/audit.service", () => ({
 
 vi.mock("@/services/transaction.service", () => ({
   postJournalEntry: vi.fn().mockResolvedValue("mock-journal-group-id"),
+}))
+
+vi.mock("@/services/auto-post.service", () => ({
   autoPostPrincipalDisbursement: vi.fn().mockResolvedValue(undefined),
   autoPostRolloverPrincipalTransfer: vi.fn().mockResolvedValue(undefined),
-  getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
   autoPostInterestEarned: vi.fn().mockResolvedValue(undefined),
   autoPostPrincipalRepayment: vi.fn().mockResolvedValue(undefined),
+  autoPostCapitalInjection: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("@/services/ledger-queries.service", () => ({
+  getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
 vi.mock("drizzle-orm", async () => {
@@ -147,9 +154,19 @@ describe("Loan Service", () => {
               // loan insert
               return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockLoan]) }) }
             } else {
-              // collateral insert
+              // collateral insert (or fundTransfers)
               return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
             }
+          }),
+          // Cash balance check: returns empty (zero balance) to trigger auto-inject
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              innerJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  groupBy: vi.fn().mockResolvedValue([]),
+                }),
+              }),
+            }),
           }),
         }
         return callback(mockTx)
@@ -199,6 +216,15 @@ describe("Loan Service", () => {
             } else {
               return { values: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockCollateral]) }) }
             }
+          }),
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              innerJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  groupBy: vi.fn().mockResolvedValue([]),
+                }),
+              }),
+            }),
           }),
         }
         capturedTx = mockTx
@@ -279,7 +305,8 @@ describe("Loan Service", () => {
   it("deleteLoan: creates reversing entries and soft-deletes payments/loans", async () => {
     const { db: mockedDb } = await import("@/lib/db")
     const { writeAuditLog } = await import("@/services/audit.service")
-    const { postJournalEntry, getPaymentPortionsFromLedger } = await import("@/services/transaction.service")
+    const { postJournalEntry } = await import("@/services/transaction.service")
+    const { getPaymentPortionsFromLedger } = await import("@/services/ledger-queries.service")
 
     // Mock ledger to return portions for the payment
     ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -672,7 +699,7 @@ describe("Loan Service", () => {
 
   it("calls autoPostRolloverPrincipalTransfer when rolling over with carried principal", async () => {
     const { db: mockedDb } = await import("@/lib/db")
-    const { autoPostRolloverPrincipalTransfer } = await import("@/services/transaction.service")
+    const { autoPostRolloverPrincipalTransfer } = await import("@/services/auto-post.service")
 
     const existingLoan = {
       id: "old-loan-1",
@@ -727,6 +754,11 @@ describe("Loan Service", () => {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockResolvedValue([]),
+              innerJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  groupBy: vi.fn().mockResolvedValue([]),
+                }),
+              }),
             }),
           }),
         }
@@ -756,5 +788,290 @@ describe("Loan Service", () => {
         actorId: "actor-1",
       })
     )
+  })
+
+  // ── createLoan: blacklisted customer guard ──────────────────────────
+
+  it("createLoan: rejects blacklisted customer with ValidationError", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    const blacklistedCustomer = { ...baseCustomer, status: "blacklisted" }
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([blacklistedCustomer]),
+      }),
+    } as any)
+
+    const { createLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(createLoan(baseLoanInput, "actor-1"))
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("ValidationError")
+      expect(error.message).toContain("blacklisted")
+    }
+  })
+
+  // ── createLoan: active loan constraint ────────────────────────────
+
+  it("createLoan: rejects when customer has active loan and no rollover specified", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    const existingActiveLoan = {
+      id: "existing-loan-1",
+      customerId: "cust-1",
+      status: "active",
+    }
+
+    let dbSelectCallCount = 0
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      dbSelectCallCount++
+      if (dbSelectCallCount === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([baseCustomer]),
+          }),
+        }
+      }
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([existingActiveLoan]),
+        }),
+      }
+    })
+
+    const { createLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(createLoan(baseLoanInput, "actor-1"))
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("ValidationError")
+      expect(error.message).toContain("active loan")
+    }
+  })
+
+  // ── createLoan: rollover with no active loan ──────────────────────
+
+  it("createLoan: rejects rollover when customer has no active loan", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    let dbSelectCallCount = 0
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      dbSelectCallCount++
+      if (dbSelectCallCount === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([baseCustomer]),
+          }),
+        }
+      }
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([]), // no active loan
+        }),
+      }
+    })
+
+    const rolloverInput = {
+      ...baseLoanInput,
+      rollover: {
+        fromLoanId: "nonexistent-loan",
+        carriedPrincipal: "100000",
+        carriedInterest: "50000",
+      },
+    }
+
+    const { createLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(createLoan(rolloverInput, "actor-1"))
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("ValidationError")
+      expect(error.message).toContain("no active loan")
+    }
+  })
+
+  // ── createLoan: rollover loan ID mismatch ─────────────────────────
+
+  it("createLoan: rejects rollover when fromLoanId does not match active loan", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    const existingActiveLoan = {
+      id: "actual-active-loan",
+      customerId: "cust-1",
+      status: "active",
+    }
+
+    let dbSelectCallCount = 0
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      dbSelectCallCount++
+      if (dbSelectCallCount === 1) {
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([baseCustomer]),
+          }),
+        }
+      }
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([existingActiveLoan]),
+        }),
+      }
+    })
+
+    const rolloverInput = {
+      ...baseLoanInput,
+      rollover: {
+        fromLoanId: "wrong-loan-id",
+        carriedPrincipal: "100000",
+        carriedInterest: "50000",
+      },
+    }
+
+    const { createLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(createLoan(rolloverInput, "actor-1"))
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("ValidationError")
+      expect(error.message).toContain("does not match")
+    }
+  })
+
+  // ── createLoan: customer not found ────────────────────────────────
+
+  it("createLoan: returns CustomerNotFound when customer does not exist", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    const { createLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(createLoan(baseLoanInput, "actor-1"))
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("CustomerNotFound")
+    }
+  })
+
+  // ── getLoan: returns loan when found ───────────────────────────────
+
+  it("getLoan: returns loan when it exists and is not soft-deleted", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([mockLoan]),
+      }),
+    } as any)
+
+    const { getLoan } = await import("@/services/loan.service")
+    const result = await Effect.runPromise(getLoan("loan-1"))
+
+    expect(result.id).toBe("loan-1")
+    expect(result.principalAmount).toBe("500000.00")
+  })
+
+  // ── updateLoan: LoanNotFound ──────────────────────────────────────
+
+  it("updateLoan: returns LoanNotFound when loan does not exist", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    const { updateLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(
+      updateLoan({ loanId: "nonexistent", principalAmount: "600000", reason: "Test" }, "actor-1")
+    )
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("LoanNotFound")
+    }
+  })
+
+  // ── deleteLoan: LoanNotFound ──────────────────────────────────────
+
+  it("deleteLoan: returns LoanNotFound when loan does not exist", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    const { deleteLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(
+      deleteLoan({ loanId: "nonexistent", reason: "Test" }, "actor-1")
+    )
+
+    expect(exit._tag).toBe("Failure")
+    if (exit._tag === "Failure") {
+      const error = (exit.cause as any).error ?? (exit.cause as any)
+      expect(error._tag).toBe("LoanNotFound")
+    }
+  })
+
+  // ── listLoans ─────────────────────────────────────────────────────
+
+  it("listLoans: returns loans joined with customer data", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    const loanWithCustomer = {
+      ...mockLoan,
+      customerName: "John Doe",
+      customerContact: "+256700000000",
+    }
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([loanWithCustomer]),
+          }),
+        }),
+      }),
+    } as any)
+
+    const { listLoans } = await import("@/services/loan.service")
+    const result = await Effect.runPromise(listLoans())
+
+    expect(result).toHaveLength(1)
+    expect(result[0].customerName).toBe("John Doe")
+  })
+
+  it("listLoans: wraps DB errors in DatabaseError", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockRejectedValue(new Error("connection refused")),
+          }),
+        }),
+      }),
+    } as any)
+
+    const { listLoans } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(listLoans())
+
+    expect(Exit.isFailure(exit)).toBe(true)
   })
 })

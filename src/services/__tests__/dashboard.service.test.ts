@@ -11,7 +11,7 @@ vi.mock("drizzle-orm", async () => {
   return actual
 })
 
-vi.mock("@/services/transaction.service", () => ({
+vi.mock("@/services/ledger-queries.service", () => ({
   getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
   getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
@@ -75,12 +75,12 @@ describe("Dashboard Service — Unit", () => {
       const result = await Effect.runPromise(getDashboardKPIs())
 
       expect(result).toEqual({
-        loansOutstanding: "0.00",
-        repaymentsCollected: "0.00",
-        interestEarned: "0.00",
+        loansOutstanding: "0",
+        repaymentsCollected: "0",
+        interestEarned: "0",
         activeBorrowers: 0,
         overdueCount: 0,
-        capitalInSystem: "0.00",
+        capitalInSystem: "0",
       })
     })
 
@@ -107,13 +107,13 @@ describe("Dashboard Service — Unit", () => {
       const result = await Effect.runPromise(getDashboardKPIs())
 
       // Loans Receivable: 1,000,000 DR - 200,000 CR = 800,000
-      expect(result.loansOutstanding).toBe("800000.00")
+      expect(result.loansOutstanding).toBe("800000")
       // Interest Earned: 100,000 CR - 0 DR = 100,000
-      expect(result.interestEarned).toBe("100000.00")
+      expect(result.interestEarned).toBe("100000")
       // Cash from payments: 300,000 DR - 0 CR = 300,000 (issuance fee excluded)
-      expect(result.repaymentsCollected).toBe("300000.00")
-      // Creditor Investment: 5,000,000 CR - 0 DR = 5,000,000
-      expect(result.capitalInSystem).toBe("5000000.00")
+      expect(result.repaymentsCollected).toBe("300000")
+      // capitalInSystem = total Cash DR - total Cash CR = (300000 + 50000) - 0 = 350000
+      expect(result.capitalInSystem).toBe("350000")
     })
 
     it("handles payment reversals correctly in ledger totals", async () => {
@@ -140,11 +140,11 @@ describe("Dashboard Service — Unit", () => {
       const result = await Effect.runPromise(getDashboardKPIs())
 
       // Net cash from payments: 100k DR - 100k CR = 0
-      expect(result.repaymentsCollected).toBe("0.00")
+      expect(result.repaymentsCollected).toBe("0")
       // Net interest: 50k CR - 50k DR = 0
-      expect(result.interestEarned).toBe("0.00")
+      expect(result.interestEarned).toBe("0")
       // Loans Receivable: 500k DR only (reversal restores balance)
-      expect(result.loansOutstanding).toBe("500000.00")
+      expect(result.loansOutstanding).toBe("500000")
     })
 
     it("counts overdueCount for loans >30 days old with no interest payments", async () => {
@@ -169,6 +169,8 @@ describe("Dashboard Service — Unit", () => {
         status: "active",
         loanType: "perpetual",
         termMonths: null,
+        penaltyWaived: false,
+        deletedAt: null,
       }
 
       let selectCallCount = 0
@@ -193,11 +195,13 @@ describe("Dashboard Service — Unit", () => {
           id: "loan-1", customerId: "cust-1", principalAmount: "500000.00",
           interestRate: "0.1000", startDate: new Date("2026-03-01"),
           interestRateOverride: null, status: "active", loanType: "perpetual", termMonths: null,
+          penaltyWaived: false, deletedAt: null,
         },
         {
           id: "loan-2", customerId: "cust-1", principalAmount: "300000.00",
           interestRate: "0.1000", startDate: new Date("2026-03-01"),
           interestRateOverride: null, status: "active", loanType: "perpetual", termMonths: null,
+          penaltyWaived: false, deletedAt: null,
         },
       ]
 
@@ -220,20 +224,35 @@ describe("Dashboard Service — Unit", () => {
     it("returns empty array when no audit entries exist", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
-      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([]),
+      let selectCallCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          // count query
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 0 }]),
+            }),
+          }
+        }
+        // audit log query
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockResolvedValue([]),
+                }),
+              }),
             }),
           }),
-        }),
+        }
       })
 
       const { getRecentActivity } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getRecentActivity())
 
-      expect(result).toEqual([])
+      expect(result.items).toEqual([])
     })
 
     it("maps loan.create audit entry to loan_issued activity", async () => {
@@ -259,12 +278,22 @@ describe("Dashboard Service — Unit", () => {
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
+          // count query
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 1 }]),
+            }),
+          }
+        }
+        if (selectCallCount === 2) {
           // Audit log query
           return {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
                 orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue([auditEntry]),
+                  limit: vi.fn().mockReturnValue({
+                    offset: vi.fn().mockResolvedValue([auditEntry]),
+                  }),
                 }),
               }),
             }),
@@ -281,14 +310,14 @@ describe("Dashboard Service — Unit", () => {
       const { getRecentActivity } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getRecentActivity())
 
-      expect(result).toHaveLength(1)
-      expect(result[0].type).toBe("loan_issued")
-      expect(result[0].description).toContain("John Doe")
-      expect(result[0].description).toContain("500,000")
-      expect(result[0].loanId).toBe("loan-1")
-      expect(result[0].customerId).toBe("cust-1")
-      expect(result[0].detail?.amount).toBe("500000")
-      expect(result[0].detail?.collateral).toBe("Land Title")
+      expect(result.items).toHaveLength(1)
+      expect(result.items[0].type).toBe("loan_issued")
+      expect(result.items[0].description).toContain("John Doe")
+      expect(result.items[0].description).toContain("500,000")
+      expect(result.items[0].loanId).toBe("loan-1")
+      expect(result.items[0].customerId).toBe("cust-1")
+      expect(result.items[0].detail?.amount).toBe("500000")
+      expect(result.items[0].detail?.collateral).toBe("Land Title")
     })
 
     it("maps payment.create audit entry to payment_received activity", async () => {
@@ -310,25 +339,38 @@ describe("Dashboard Service — Unit", () => {
         occurredAt: new Date("2026-03-23T11:00:00Z"),
       }
 
-      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue([auditEntry]),
+      let selectCallCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 1 }]),
+            }),
+          }
+        }
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockResolvedValue([auditEntry]),
+                }),
+              }),
             }),
           }),
-        }),
+        }
       })
 
       const { getRecentActivity } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getRecentActivity())
 
-      expect(result).toHaveLength(1)
-      expect(result[0].type).toBe("payment_received")
-      expect(result[0].description).toContain("100,000")
-      expect(result[0].loanId).toBe("loan-1")
-      expect(result[0].detail?.interestPortion).toBe("50000")
-      expect(result[0].detail?.principalPortion).toBe("50000")
+      expect(result.items).toHaveLength(1)
+      expect(result.items[0].type).toBe("payment_received")
+      expect(result.items[0].description).toContain("100,000")
+      expect(result.items[0].loanId).toBe("loan-1")
+      expect(result.items[0].detail?.interestPortion).toBe("50000")
+      expect(result.items[0].detail?.principalPortion).toBe("50000")
     })
 
     it("handles payment.delete and payment.update entries", async () => {
@@ -347,22 +389,35 @@ describe("Dashboard Service — Unit", () => {
         },
       ]
 
-      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockReturnValue({
-              limit: vi.fn().mockResolvedValue(entries),
+      let selectCallCount = 0
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue([{ count: 2 }]),
+            }),
+          }
+        }
+        return {
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockReturnValue({
+                limit: vi.fn().mockReturnValue({
+                  offset: vi.fn().mockResolvedValue(entries),
+                }),
+              }),
             }),
           }),
-        }),
+        }
       })
 
       const { getRecentActivity } = await import("@/services/dashboard.service")
       const result = await Effect.runPromise(getRecentActivity())
 
-      expect(result).toHaveLength(2)
-      expect(result[0].description).toBe("Payment deleted")
-      expect(result[1].description).toBe("Payment updated")
+      expect(result.items).toHaveLength(2)
+      expect(result.items[0].description).toBe("Payment deleted")
+      expect(result.items[1].description).toBe("Payment updated")
     })
   })
 })

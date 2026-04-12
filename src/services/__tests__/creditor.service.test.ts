@@ -59,7 +59,7 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("500000.00")
+    expect(result.interestPortion).toBe("500000")
     expect(result.principalPortion).toBe("0.00")
     expect(result.principalBalanceBefore).toBe("10000000")
     expect(result.principalBalanceAfter).toBe("10000000")
@@ -67,7 +67,8 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
 
   it("1,500,000 payment against ~1,000,000 interest: ~1M to interest, remainder to principal (CRED-04)", () => {
     // 10M at 10%/month, 30 days elapsed: interest ≈ 999,999.99 (BigNumber DECIMAL_PLACES=10 precision)
-    // Payment of 1,500,000: 999,999.99 to interest, 500,000.01 to principal
+    // With formatAmount using toFixed(0) and ROUND_HALF_UP: 999999.99 rounds to 1000000
+    // Payment of 1,500,000: 999999.99 to interest, 500000.01 to principal
     const result = allocatePayment({
       paymentAmount: "1500000",
       principalBalanceBefore: "10000000",
@@ -75,15 +76,16 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("999999.99")
-    expect(result.principalPortion).toBe("500000.01")
-    expect(result.principalBalanceAfter).toBe("9499999.99")
+    expect(result.interestPortion).toBe("1000000")
+    expect(result.principalPortion).toBe("500000")
+    expect(result.principalBalanceAfter).toBe("9500000")
     expect(result.loanFullyPaid).toBe(false)
   })
 
   it("payment larger than interest + principal: principalBalance reaches zero (fully repaid)", () => {
-    // 100K principal at 10%/month, 30 days: interest = 10,000
-    // Payment of 200,000: more than enough to cover 10K interest + 100K principal
+    // 100K principal at 10%/month, 30 days: interest ≈ 9999.9999
+    // With toFixed(0): interest rounds to 10000
+    // Payment of 200,000: more than enough to cover interest + principal
     const result = allocatePayment({
       paymentAmount: "200000",
       principalBalanceBefore: "100000",
@@ -91,8 +93,8 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("10000.00")
-    expect(result.principalBalanceAfter).toBe("0.00")
+    expect(result.interestPortion).toBe("10000")
+    expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
   })
 })
@@ -162,19 +164,25 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock("@/services/transaction.service", () => {
+vi.mock("@/services/auto-post.service", () => ({
+  autoPostInterestExpense: vi.fn().mockResolvedValue(undefined),
+  autoPostCreditorInvestment: vi.fn().mockResolvedValue(undefined),
+  autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("@/services/ledger-queries.service", () => {
   const BigNumber = require("bignumber.js").default
   return {
-    autoPostInterestExpense: vi.fn().mockResolvedValue(undefined),
-    autoPostCreditorInvestment: vi.fn().mockResolvedValue(undefined),
-    autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
     getCreditorBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
     getInterestPayableFromLedger: vi.fn().mockResolvedValue(new Map()),
     getCreditorTotalInvestedFromLedger: vi.fn().mockResolvedValue(new BigNumber(0)),
     getCreditorTotalRepaidFromLedger: vi.fn().mockResolvedValue(new BigNumber(0)),
-    reverseCreditorInterestAccrual: vi.fn().mockResolvedValue(undefined),
   }
 })
+
+vi.mock("@/services/transaction.service", () => ({
+  reverseCreditorInterestAccrual: vi.fn().mockResolvedValue(undefined),
+}))
 
 describe("Creditor Service — DB operations (requires test DB)", () => {
   let mockedDb: any
@@ -199,11 +207,11 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedDb = dbMod.db as any
     const auditMod = await import("@/services/audit.service")
     mockedWriteAuditLog = auditMod.writeAuditLog as any
-    const txMod = await import("@/services/transaction.service")
-    mockedGetCreditorBalancesFromLedger = txMod.getCreditorBalancesFromLedger as any
-    mockedGetInterestPayableFromLedger = txMod.getInterestPayableFromLedger as any
-    mockedGetCreditorTotalInvestedFromLedger = txMod.getCreditorTotalInvestedFromLedger as any
-    mockedGetCreditorTotalRepaidFromLedger = txMod.getCreditorTotalRepaidFromLedger as any
+    const ledgerMod = await import("@/services/ledger-queries.service")
+    mockedGetCreditorBalancesFromLedger = ledgerMod.getCreditorBalancesFromLedger as any
+    mockedGetInterestPayableFromLedger = ledgerMod.getInterestPayableFromLedger as any
+    mockedGetCreditorTotalInvestedFromLedger = ledgerMod.getCreditorTotalInvestedFromLedger as any
+    mockedGetCreditorTotalRepaidFromLedger = ledgerMod.getCreditorTotalRepaidFromLedger as any
     const svc = await import("@/services/creditor.service")
     createCreditor = svc.createCreditor
     updateCreditor = svc.updateCreditor
@@ -557,10 +565,10 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
-    expect(result.totalInvested).toBe("10000000.00")
+    expect(result.totalInvested).toBe("10000000")
     // Interest now comes from ledger
     expect(parseFloat(result.interestAccrued)).toBeCloseTo(1000000, -2)
-    expect(result.repaymentsMade).toBe("0.00")
+    expect(result.repaymentsMade).toBe("0")
   })
 
   it("getCreditorDashboard: after 500K repayment on 1M interest, shows remaining interest (CRED-05)", async () => {
@@ -608,7 +616,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
-    expect(result.repaymentsMade).toBe("500000.00")
+    expect(result.repaymentsMade).toBe("500000")
     // Interest now from ledger
     expect(parseFloat(result.interestAccrued)).toBeCloseTo(1000000, -2)
     // Outstanding = principal (10M) + interestAccrued (~1M) ≈ 11M
@@ -616,6 +624,63 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   })
 
   // ── getSystemCapital ─────────────────────────────────────────────────
+
+  // ── addInvestment: CreditorNotFound ──────────────────────────────────
+
+  it("addInvestment: returns CreditorNotFound when creditor does not exist", async () => {
+    setupDbSelect([]) // no creditor found
+
+    const exit = await Effect.runPromiseExit(
+      addInvestment(
+        { creditorId: "bad-id", amount: "10000000", interestRateMonthly: "0.10", investmentDate: "2026-01-01T00:00:00.000Z" },
+        "actor-1",
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
+
+  // ── recordCreditorRepayment: InvestmentNotFound ───────────────────
+
+  it("recordCreditorRepayment: returns InvestmentNotFound when investment does not exist", async () => {
+    const txMock = makeTxMock({
+      selectResults: [[]], // investment not found
+    })
+    setupTransaction(txMock)
+
+    const exit = await Effect.runPromiseExit(
+      recordCreditorRepayment(
+        { investmentId: "bad-inv-id", amount: "1500000", repaymentDate: "2026-01-31T00:00:00.000Z" },
+        "actor-1",
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
+
+  // ── updateCreditor: CreditorNotFound ──────────────────────────────
+
+  it("updateCreditor: returns CreditorNotFound for unknown ID", async () => {
+    setupDbSelect([]) // creditor not found
+
+    const exit = await Effect.runPromiseExit(
+      updateCreditor("bad-id", { name: "New Name" }, "actor-1"),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
+
+  // ── getCreditorDashboard: CreditorNotFound ────────────────────────
+
+  it("getCreditorDashboard: returns CreditorNotFound for unknown ID", async () => {
+    setupDbSelectChain([
+      [], // creditor not found
+    ])
+
+    const exit = await Effect.runPromiseExit(getCreditorDashboard("bad-id"))
+
+    expect(Exit.isFailure(exit)).toBe(true)
+  })
 
   it("getSystemCapital: aggregates totalInvested, totalInterestAccrued, totalRepaymentsMade across all creditors (CRED-06)", async () => {
     const BigNumber = require("bignumber.js").default
@@ -670,8 +735,8 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     const result = await Effect.runPromise(getSystemCapital()) as any
 
     // Total invested = 10M + 5M = 15M
-    expect(result.totalInvested).toBe("15000000.00")
-    expect(result.totalRepaymentsMade).toBe("0.00")
+    expect(result.totalInvested).toBe("15000000")
+    expect(result.totalRepaymentsMade).toBe("0")
     // Interest accrued on both investments from ledger
     expect(parseFloat(result.totalInterestAccrued)).toBeGreaterThan(0)
     // totalOutstanding = totalPrincipal + totalInterestAccrued > 15M

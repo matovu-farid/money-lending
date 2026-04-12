@@ -34,8 +34,8 @@ describe("formatNumberWithCommas", () => {
     expect(formatNumberWithCommas("1000000")).toBe("1,000,000")
   })
 
-  it("handles numbers with decimals", () => {
-    expect(formatNumberWithCommas("1234567.89")).toBe("1,234,567.89")
+  it("handles numbers with decimals (UGX: integer only)", () => {
+    expect(formatNumberWithCommas("1234567.89")).toBe("1,234,567")
   })
 
   it("strips non-numeric characters except dots", () => {
@@ -54,8 +54,9 @@ describe("formatNumberWithCommas", () => {
     expect(formatNumberWithCommas("999")).toBe("999")
   })
 
-  it("handles value that is just a dot", () => {
-    expect(formatNumberWithCommas(".5")).toBe(".5")
+  it("handles value that is just a dot (UGX: strips decimal)", () => {
+    // UGX has no cents — ".5" → cleaned "." → integer part "" → empty
+    expect(formatNumberWithCommas(".5")).toBe("")
   })
 
   it("handles leading zeros", () => {

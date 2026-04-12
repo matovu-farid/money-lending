@@ -17,15 +17,21 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock("@/services/transaction.service", () => {
+vi.mock("@/services/transaction.service", () => ({
+  postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+}))
+
+vi.mock("@/services/auto-post.service", () => ({
+  autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+}))
+
+vi.mock("@/services/ledger-queries.service", () => {
   const BigNumber = require("bignumber.js").default
   return {
-    autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
-    autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
-    postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
     getLoanBalancesFromLedger: vi.fn((_loanIds: string[]) => Promise.resolve(new Map())),
-    reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
     getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
     getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
   }
@@ -146,7 +152,7 @@ describe("Payment Service", () => {
 
     it("recordPayment: first payment on active loan keeps it active (no status transition unless fully paid)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/ledger-queries.service")
       // Mock ledger to return non-zero balance (loan not fully paid)
       ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce(new Map([["loan-1", new BigNumber("500000")]])) // for principalBalanceBefore
@@ -205,7 +211,7 @@ describe("Payment Service", () => {
 
     it("recordPayment: transitions loan status to fully_paid when balance reaches zero (LOAN-08)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/ledger-queries.service")
 
       // Mock ledger to return actual balance (ledger path, not fallback)
       ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>)
@@ -265,7 +271,7 @@ describe("Payment Service", () => {
       )
 
       // Verify the allocation reflects zero remaining balance
-      expect(result.allocation.principalBalanceAfter).toBe("0.00")
+      expect(result.allocation.principalBalanceAfter).toBe("0")
 
       // Verify loan status was updated to "fully_paid"
       const setCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
@@ -479,7 +485,8 @@ describe("Payment Service", () => {
 
     it("editPayment: reverses old journals and posts new ones (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger, postJournalEntry } = await import("@/services/transaction.service")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
+      const { postJournalEntry } = await import("@/services/transaction.service")
 
       // Mock ledger to return old portions for the payment being edited
       ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -545,7 +552,8 @@ describe("Payment Service", () => {
 
     it("deletePayment: sets deleted_at, deleted_by, delete_reason and posts reversing entry (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger, postJournalEntry } = await import("@/services/transaction.service")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
+      const { postJournalEntry } = await import("@/services/transaction.service")
 
       // Mock ledger to return portions for the payment being deleted
       ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -621,7 +629,7 @@ describe("Payment Service", () => {
 
     it("deletePayment: simplified - no recalculation cascade, just reversal (LOAN-07)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
 
       // Mock ledger to return portions for the payment being deleted
       ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -680,7 +688,7 @@ describe("Payment Service", () => {
 
     it("deletePayment: reverts fully_paid to active when balance becomes non-zero", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
 
       ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
         new Map([["pay-last", { interestPortion: "50000.00", principalPortion: "100000.00" }]])
@@ -839,7 +847,7 @@ describe("Payment Service", () => {
     it("uses ledger balance when available", async () => {
       const { db: mockedDb } = await import("@/lib/db")
       const BigNumber = require("bignumber.js").default
-      const { getLoanBalancesFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalancesFromLedger } = await import("@/services/ledger-queries.service")
 
       // Mock ledger to return 400000 for loan-1
       ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
@@ -863,7 +871,7 @@ describe("Payment Service", () => {
       const { getLoanBalanceSummary } = await import("@/services/payment.service")
       const result = await getLoanBalanceSummary("loan-1")
 
-      expect(result.outstandingPrincipal).toBe("400000.00")
+      expect(result.outstandingPrincipal).toBe("400000")
       expect(result.loanType).toBe("perpetual")
     })
 
@@ -915,7 +923,7 @@ describe("Payment Service", () => {
     it("computes reducing_balance interest from outstanding principal", async () => {
       const { db: mockedDb } = await import("@/lib/db")
       const BigNumber = require("bignumber.js").default
-      const { getLoanBalanceFromLedger } = await import("@/services/transaction.service")
+      const { getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
       const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
       const reducingLoan = { ...mockLoan, loanType: "reducing_balance", termMonths: 12 }
 

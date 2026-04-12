@@ -11,7 +11,7 @@ vi.mock("@/services/creditor.service", () => ({
   getSystemCapital: vi.fn(),
 }))
 
-vi.mock("@/services/transaction.service", () => ({
+vi.mock("@/services/ledger-queries.service", () => ({
   getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
   getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
@@ -357,21 +357,21 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     const result = await Effect.runPromise(getPnlData("2026-02"))
 
     expect(result.period).toBe("2026-02")
-    expect(result.totalIncome).toBe("1500000.00")
-    expect(result.totalExpenses).toBe("500000.00")
-    expect(result.netProfit).toBe("1000000.00")
+    expect(result.totalIncome).toBe("1500000")
+    expect(result.totalExpenses).toBe("500000")
+    expect(result.netProfit).toBe("1000000")
     expect(result.income).toHaveLength(2)
     expect(result.expenses).toHaveLength(2)
     expect(result.income).toEqual(
       expect.arrayContaining([
-        { category: "Interest Earned", amount: "500000.00" },
-        { category: "Share Capital", amount: "1000000.00" },
+        { category: "Interest Earned", amount: "500000" },
+        { category: "Share Capital", amount: "1000000" },
       ])
     )
     expect(result.expenses).toEqual(
       expect.arrayContaining([
-        { category: "Rent", amount: "200000.00" },
-        { category: "Salaries", amount: "300000.00" },
+        { category: "Rent", amount: "200000" },
+        { category: "Salaries", amount: "300000" },
       ])
     )
   })
@@ -419,23 +419,23 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     const result = await Effect.runPromise(getBalanceSheetData("2026-02"))
 
     expect(result.asOf).toBe("2026-02")
-    expect(result.assets.totalLoansOutstanding).toBe("5000000.00")
-    expect(result.assets.interestReceivable).toBe("0.00")
-    expect(result.assets.cashBalance).toBe("0.00")
-    expect(result.assets.bankBalance).toBe("0.00")
-    expect(result.assets.strongRoomBalance).toBe("0.00")
-    expect(result.assets.totalAssets).toBe("5000000.00")
-    expect(result.liabilities.totalCreditorBalances).toBe("3000000.00")
-    expect(result.equity.shareCapital).toBe("1000000.00")
+    expect(result.assets.totalLoansOutstanding).toBe("5000000")
+    expect(result.assets.interestReceivable).toBe("0")
+    expect(result.assets.cashBalance).toBe("0")
+    expect(result.assets.bankBalance).toBe("0")
+    expect(result.assets.strongRoomBalance).toBe("0")
+    expect(result.assets.totalAssets).toBe("5000000")
+    expect(result.liabilities.totalCreditorBalances).toBe("3000000")
+    expect(result.equity.shareCapital).toBe("1000000")
     // retainedEarnings = totalRevenue(2500000) - totalExpenses(500000) = 2000000
-    expect(result.equity.retainedEarnings).toBe("2000000.00")
-    expect(result.equity.totalEquity).toBe("3000000.00")
+    expect(result.equity.retainedEarnings).toBe("2000000")
+    expect(result.equity.totalEquity).toBe("3000000")
   })
 
   it("getPortfolioData: returns active loans sorted by daysOverdue descending", async () => {
     const { getPortfolioData } = await import("@/services/report.service")
     const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
-    const { getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/transaction.service")
+    const { getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/ledger-queries.service")
     const BigNumber = require("bignumber.js").default
 
     const now = new Date()

@@ -742,8 +742,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     expect(result.size).toBe(1)
     const portions = result.get("pay-1")
     expect(portions).toBeDefined()
-    expect(portions!.interestPortion).toBe("5000.00")
-    expect(portions!.principalPortion).toBe("45000.00")
+    expect(portions!.interestPortion).toBe("5000")
+    expect(portions!.principalPortion).toBe("45000")
   })
 
   it("getPaymentPortionsFromLedger: handles multiple payments in a single query", async () => {
@@ -757,10 +757,10 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1", "pay-2"])
 
     expect(result.size).toBe(2)
-    expect(result.get("pay-1")!.interestPortion).toBe("3000.00")
-    expect(result.get("pay-1")!.principalPortion).toBe("27000.00")
-    expect(result.get("pay-2")!.interestPortion).toBe("2500.00")
-    expect(result.get("pay-2")!.principalPortion).toBe("22500.00")
+    expect(result.get("pay-1")!.interestPortion).toBe("3000")
+    expect(result.get("pay-1")!.principalPortion).toBe("27000")
+    expect(result.get("pay-2")!.interestPortion).toBe("2500")
+    expect(result.get("pay-2")!.principalPortion).toBe("22500")
   })
 
   it("getPaymentPortionsFromLedger: subtracts DR entries for Interest Earned (reversal)", async () => {
@@ -773,8 +773,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1"])
 
     const portions = result.get("pay-1")
-    expect(portions!.interestPortion).toBe("0.00")
-    expect(portions!.principalPortion).toBe("45000.00")
+    expect(portions!.interestPortion).toBe("0")
+    expect(portions!.principalPortion).toBe("45000")
   })
 
   it("getPaymentPortionsFromLedger: subtracts DR entries for Loans Receivable (disbursement row)", async () => {
@@ -787,8 +787,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1"])
 
     const portions = result.get("pay-1")
-    expect(portions!.principalPortion).toBe("40000.00")
-    expect(portions!.interestPortion).toBe("0.00")
+    expect(portions!.principalPortion).toBe("40000")
+    expect(portions!.interestPortion).toBe("0")
   })
 
   it("getPaymentPortionsFromLedger: returns string values with 2 decimal places", async () => {
@@ -800,8 +800,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1"])
 
     const portions = result.get("pay-1")
-    expect(portions!.interestPortion).toBe("1000.00")
-    expect(portions!.principalPortion).toBe("9000.00")
+    expect(portions!.interestPortion).toBe("1000")
+    expect(portions!.principalPortion).toBe("9000")
   })
 
   it("getPaymentPortionsFromLedger: skips rows with null referenceId", async () => {
@@ -834,8 +834,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     expect(result.size).toBe(1)
     const portions = result.get("rep-1")
     expect(portions).toBeDefined()
-    expect(portions!.interestPortion).toBe("5000.00")
-    expect(portions!.principalPortion).toBe("45000.00")
+    expect(portions!.interestPortion).toBe("5000")
+    expect(portions!.principalPortion).toBe("45000")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: handles multiple repayments in a single query", async () => {
@@ -849,10 +849,10 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1", "rep-2"])
 
     expect(result.size).toBe(2)
-    expect(result.get("rep-1")!.interestPortion).toBe("3000.00")
-    expect(result.get("rep-1")!.principalPortion).toBe("27000.00")
-    expect(result.get("rep-2")!.interestPortion).toBe("2500.00")
-    expect(result.get("rep-2")!.principalPortion).toBe("22500.00")
+    expect(result.get("rep-1")!.interestPortion).toBe("3000")
+    expect(result.get("rep-1")!.principalPortion).toBe("27000")
+    expect(result.get("rep-2")!.interestPortion).toBe("2500")
+    expect(result.get("rep-2")!.principalPortion).toBe("22500")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: subtracts CR entries for Interest Payments (reversal)", async () => {
@@ -865,8 +865,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     const portions = result.get("rep-1")
-    expect(portions!.interestPortion).toBe("0.00")
-    expect(portions!.principalPortion).toBe("45000.00")
+    expect(portions!.interestPortion).toBe("0")
+    expect(portions!.principalPortion).toBe("45000")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: subtracts CR entries for Creditor Investment", async () => {
@@ -878,8 +878,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     const portions = result.get("rep-1")
-    expect(portions!.principalPortion).toBe("40000.00")
-    expect(portions!.interestPortion).toBe("0.00")
+    expect(portions!.principalPortion).toBe("40000")
+    expect(portions!.interestPortion).toBe("0")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: returns string values with 2 decimal places", async () => {
@@ -891,8 +891,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     const portions = result.get("rep-1")
-    expect(portions!.interestPortion).toBe("1000.00")
-    expect(portions!.principalPortion).toBe("9000.00")
+    expect(portions!.interestPortion).toBe("1000")
+    expect(portions!.principalPortion).toBe("9000")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: skips rows with null referenceId", async () => {
@@ -903,5 +903,137 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     expect(result.size).toBe(0)
+  })
+
+  // ── deleteTransaction: non-owner non-admin guard ──────────────────
+
+  it("deleteTransaction: blocks non-owner non-admin from deleting a manual transaction", async () => {
+    const otherUserTransaction = {
+      ...mockTransaction,
+      recordedBy: "other-user",
+    }
+    setupDbSelect([otherUserTransaction])
+
+    const exit = await Effect.runPromiseExit(
+      deleteTransaction("txn-1", "actor-1", "loan_officer")
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.failureOption(exit.cause)
+      expect(error._tag).toBe("Some")
+      if (error._tag === "Some") {
+        expect((error.value as any)._tag).toBe("TransactionNotFound")
+      }
+    }
+    expect(mockedDb.transaction).not.toHaveBeenCalled()
+  })
+
+  it("deleteTransaction: allows admin to delete another user's manual transaction", async () => {
+    const otherUserTransaction = {
+      ...mockTransaction,
+      recordedBy: "other-user",
+    }
+    setupDbSelect([otherUserTransaction])
+
+    const txMock: any = {
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+
+    await Effect.runPromise(deleteTransaction("txn-1", "actor-1", "admin"))
+
+    expect(mockedDb.transaction).toHaveBeenCalledOnce()
+    expect(txMock.delete).toHaveBeenCalledOnce()
+  })
+
+  it("deleteTransaction: allows superAdmin to delete another user's manual transaction", async () => {
+    const otherUserTransaction = {
+      ...mockTransaction,
+      recordedBy: "other-user",
+    }
+    setupDbSelect([otherUserTransaction])
+
+    const txMock: any = {
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+
+    await Effect.runPromise(deleteTransaction("txn-1", "actor-1", "superAdmin"))
+
+    expect(mockedDb.transaction).toHaveBeenCalledOnce()
+  })
+
+  it("deleteTransaction: blocks all system reference types", async () => {
+    const systemRefTypes = [
+      "payment", "payment_reversal",
+      "creditor_repayment", "creditor_investment",
+      "loan", "loan_reversal", "loan_repost",
+      "rollover", "collateral_settlement", "fund_transfer",
+      "interest_accrual",
+    ]
+
+    for (const refType of systemRefTypes) {
+      vi.clearAllMocks()
+      const systemTxn = {
+        ...mockTransaction,
+        id: `txn-${refType}`,
+        referenceType: refType,
+        referenceId: "ref-1",
+      }
+      setupDbSelect([systemTxn])
+
+      const exit = await Effect.runPromiseExit(
+        deleteTransaction(`txn-${refType}`, "actor-1", "superAdmin")
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(mockedDb.transaction).not.toHaveBeenCalled()
+    }
+  })
+
+  it("deleteTransaction: deletes both journal pair entries when journalGroupId exists", async () => {
+    const journalTxn = {
+      ...mockTransaction,
+      journalGroupId: "journal-group-1",
+    }
+    setupDbSelect([journalTxn])
+
+    const txMock: any = {
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+
+    await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
+
+    expect(txMock.delete).toHaveBeenCalledOnce()
+    // The where() call should use journalGroupId for pair deletion
+    expect(mockedWriteAuditLog).toHaveBeenCalledOnce()
+  })
+
+  it("deleteTransaction: deletes single entry when no journalGroupId", async () => {
+    const legacyTxn = {
+      ...mockTransaction,
+      journalGroupId: null,
+    }
+    setupDbSelect([legacyTxn])
+
+    const txMock: any = {
+      delete: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue(undefined),
+      }),
+    }
+    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+
+    await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
+
+    expect(txMock.delete).toHaveBeenCalledOnce()
+    expect(mockedWriteAuditLog).toHaveBeenCalledOnce()
   })
 })
