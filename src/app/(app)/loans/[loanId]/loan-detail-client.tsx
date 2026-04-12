@@ -29,14 +29,18 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import BigNumber from "bignumber.js"
-import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils"
+import { cn, formatDate, formatCurrency, formatRate, shortId } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
 import { useLoanDetailStore } from "@/lib/stores/loan-detail"
 import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button"
 import { LoanInfoCards } from "./loan-info-cards"
 import { PaymentTable } from "./payment-table"
-import { LoanDialogs } from "./loan-dialogs"
+import { EditPaymentDialog } from "./edit-payment-dialog"
+import { DeletePaymentDialog } from "./delete-payment-dialog"
+import { EditLoanDialog } from "./edit-loan-dialog"
+import { DeleteLoanDialog } from "./delete-loan-dialog"
+import { RateChangeDialog } from "./rate-change-dialog"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -59,7 +63,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
   // Use TanStack Query for payments so subsequent navigations are cached
-  const { data: payments = initialPayments } = useLoanPayments(loan.id, true, initialPayments)
+  const { data: payments = initialPayments ?? [] } = useLoanPayments(loan.id, true, initialPayments)
 
   // Client-side query for payment portions — refreshes when payments change
   const activePaymentIds = payments.filter((p) => p.deletedAt === null && !p.markedWrong).map((p) => p.id)
@@ -346,7 +350,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     })
   }
 
-  const loanRef = `LOAN-${loan.id.slice(0, 8).toUpperCase()}`
+  const loanRef = `LOAN-${shortId(loan.id).toUpperCase()}`
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-6xl mx-auto">
@@ -576,49 +580,57 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       )}
 
       {/* Dialogs */}
-      <LoanDialogs
+      <EditPaymentDialog
+        open={editingPayment !== null}
+        amount={editAmount}
+        date={editDate}
+        reason={editReason}
+        isPending={isEditPending}
+        onAmountChange={setEditAmount}
+        onDateChange={setEditDate}
+        onReasonChange={setEditReason}
+        onSubmit={handleEditSubmit}
+        onClose={closePaymentEdit}
+      />
+      <DeletePaymentDialog
+        open={deletingPayment !== null}
+        reason={deleteReason}
+        isPending={isDeletePending}
+        onReasonChange={setDeleteReason}
+        onSubmit={handleDeleteSubmit}
+        onClose={closePaymentDelete}
+      />
+      <EditLoanDialog
+        open={editingLoan}
+        principal={loanPrincipal}
+        interestRate={loanInterestRate}
+        startDate={loanStartDate}
+        reason={loanEditReason}
+        isPending={isLoanEditPending}
+        onPrincipalChange={setLoanPrincipal}
+        onInterestRateChange={setLoanInterestRate}
+        onStartDateChange={setLoanStartDate}
+        onReasonChange={setLoanEditReason}
+        onSubmit={handleLoanEditSubmit}
+        onClose={closeLoanEdit}
+      />
+      <DeleteLoanDialog
+        open={deletingLoan}
+        reason={loanDeleteReason}
+        isPending={isLoanDeletePending}
+        onReasonChange={setLoanDeleteReason}
+        onSubmit={handleLoanDeleteSubmit}
+        onClose={closeLoanDelete}
+      />
+      <RateChangeDialog
+        open={requestingRateChange}
         loan={loan}
         userRole={userRole}
-        editingPayment={editingPayment !== null}
-        editAmount={editAmount}
-        editDate={editDate}
-        editReason={editReason}
-        isEditPending={isEditPending}
-        onEditAmountChange={setEditAmount}
-        onEditDateChange={setEditDate}
-        onEditReasonChange={setEditReason}
-        onEditSubmit={handleEditSubmit}
-        onEditClose={closePaymentEdit}
-        deletingPayment={deletingPayment !== null}
-        deleteReason={deleteReason}
-        isDeletePending={isDeletePending}
-        onDeleteReasonChange={setDeleteReason}
-        onDeleteSubmit={handleDeleteSubmit}
-        onDeleteClose={closePaymentDelete}
-        editingLoan={editingLoan}
-        loanPrincipal={loanPrincipal}
-        loanInterestRate={loanInterestRate}
-        loanStartDate={loanStartDate}
-        loanEditReason={loanEditReason}
-        isLoanEditPending={isLoanEditPending}
-        onLoanPrincipalChange={setLoanPrincipal}
-        onLoanInterestRateChange={setLoanInterestRate}
-        onLoanStartDateChange={setLoanStartDate}
-        onLoanEditReasonChange={setLoanEditReason}
-        onLoanEditSubmit={handleLoanEditSubmit}
-        onLoanEditClose={closeLoanEdit}
-        deletingLoan={deletingLoan}
-        loanDeleteReason={loanDeleteReason}
-        isLoanDeletePending={isLoanDeletePending}
-        onLoanDeleteReasonChange={setLoanDeleteReason}
-        onLoanDeleteSubmit={handleLoanDeleteSubmit}
-        onLoanDeleteClose={closeLoanDelete}
-        requestingRateChange={requestingRateChange}
         newRate={newRate}
-        isRateChangePending={isRateChangePending}
+        isPending={isRateChangePending}
         onNewRateChange={setNewRate}
-        onRateChangeSubmit={handleRateChangeSubmit}
-        onRateChangeClose={closeRateChange}
+        onSubmit={handleRateChangeSubmit}
+        onClose={closeRateChange}
       />
 
       {balanceData && collateralNature && (

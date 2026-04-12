@@ -4,7 +4,7 @@ import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
-import { Plus } from "lucide-react"
+import { Plus, ChevronRight } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { useLoans } from "@/hooks/use-loans"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
@@ -299,6 +299,12 @@ export default function LoansPage() {
           {e.lastPaymentDate ? formatDate(e.lastPaymentDate) : "No payments"}
         </span>
       ),
+    },
+    {
+      key: "chevron",
+      header: "",
+      hideInCard: true,
+      render: () => <ChevronRight className="h-4 w-4 text-muted-foreground" />,
     },
   ]
 
