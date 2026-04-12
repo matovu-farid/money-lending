@@ -1,25 +1,14 @@
 "use client"
 
-import { useState } from "react"
-import { toast } from "sonner"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Card,
   CardContent,
 } from "@/components/ui/card"
 import BigNumber from "bignumber.js"
 import type { BalanceSheetData } from "@/types"
-import { formatCurrency, getMonthOptions, formatPeriodDate } from "@/lib/utils"
-import { downloadFromUrl } from "@/lib/download"
+import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { ReportToolbar } from "@/components/reports/report-toolbar"
 
 interface BalanceSheetClientProps {
   data: BalanceSheetData
@@ -27,30 +16,6 @@ interface BalanceSheetClientProps {
 }
 
 export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
-  const router = useRouter()
-  const monthOptions = getMonthOptions()
-  const [downloading, setDownloading] = useState(false)
-
-  function handlePeriodChange(value: string | null) {
-    if (value !== null) {
-      router.push(`/reports/balance-sheet?period=${value}`)
-    }
-  }
-
-  async function handleDownload(format: "pdf" | "excel") {
-    if (downloading) return
-    setDownloading(true)
-    const href = `/api/reports/balance-sheet?format=${format}&period=${period}`
-    const filename = format === "pdf" ? `balance-sheet-${period}.pdf` : `balance-sheet-${period}.xlsx`
-    try {
-      await downloadFromUrl(href, filename)
-    } catch {
-      toast.error("Export failed. Please try again.")
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   const totalCurrentAssets = new BigNumber(data.assets.cashBalance)
     .plus(data.assets.bankBalance)
     .plus(data.assets.strongRoomBalance)
@@ -66,27 +31,12 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={period} onValueChange={handlePeriodChange}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Select period" />
-          </SelectTrigger>
-          <SelectContent>
-            {monthOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Button variant="outline" size="sm" onClick={() => handleDownload("pdf")} disabled={downloading}>
-          {downloading ? "Exporting..." : "Export PDF"}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => handleDownload("excel")} disabled={downloading}>
-          {downloading ? "Exporting..." : "Export Excel"}
-        </Button>
-      </div>
+      <ReportToolbar
+        period={period}
+        basePath="/reports/balance-sheet"
+        exportHref={(fmt, p) => `/api/reports/balance-sheet?format=${fmt}&period=${p}`}
+        exportFilename={(fmt, p) => `balance-sheet-${p}.${fmt === "pdf" ? "pdf" : "xlsx"}`}
+      />
 
       {/* Report Card */}
       <Card>

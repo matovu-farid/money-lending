@@ -1,24 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { toast } from "sonner"
-import { useRouter } from "next/navigation"
-import { Button } from "@/components/ui/button"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Card,
   CardContent,
 } from "@/components/ui/card"
 import type { PnlData } from "@/types"
-import { formatCurrency, getMonthOptions, formatPeriodDate } from "@/lib/utils"
-import { downloadFromUrl } from "@/lib/download"
+import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { ReportToolbar } from "@/components/reports/report-toolbar"
 
 interface PnlClientProps {
   data: PnlData
@@ -26,56 +15,17 @@ interface PnlClientProps {
 }
 
 export function PnlClient({ data, period }: PnlClientProps) {
-  const router = useRouter()
-  const monthOptions = getMonthOptions()
-  const [downloading, setDownloading] = useState(false)
-
-  function handlePeriodChange(value: string | null) {
-    if (value !== null) {
-      router.push(`/reports/pnl?period=${value}`)
-    }
-  }
-
-  async function handleDownload(format: "pdf" | "excel") {
-    if (downloading) return
-    setDownloading(true)
-    const href = `/api/reports/pnl?format=${format}&period=${period}`
-    const filename = format === "pdf" ? `pnl-${period}.pdf` : `pnl-${period}.xlsx`
-    try {
-      await downloadFromUrl(href, filename)
-    } catch {
-      toast.error("Export failed. Please try again.")
-    } finally {
-      setDownloading(false)
-    }
-  }
-
   const hasData = data.income.length > 0 || data.expenses.length > 0
 
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={period} onValueChange={handlePeriodChange}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Select period" />
-          </SelectTrigger>
-          <SelectContent>
-            {monthOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Button variant="outline" size="sm" onClick={() => handleDownload("pdf")} disabled={downloading}>
-          {downloading ? "Exporting..." : "Export PDF"}
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => handleDownload("excel")} disabled={downloading}>
-          {downloading ? "Exporting..." : "Export Excel"}
-        </Button>
-      </div>
+      <ReportToolbar
+        period={period}
+        basePath="/reports/pnl"
+        exportHref={(fmt, p) => `/api/reports/pnl?format=${fmt}&period=${p}`}
+        exportFilename={(fmt, p) => `pnl-${p}.${fmt === "pdf" ? "pdf" : "xlsx"}`}
+      />
 
       {/* Report Card */}
       {!hasData ? (

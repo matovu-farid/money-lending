@@ -1,20 +1,13 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   Card,
   CardContent,
 } from "@/components/ui/card"
 import type { RetainedEarningsData } from "@/types"
-import { formatCurrency, getMonthOptions, formatPeriodDate } from "@/lib/utils"
+import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { ReportToolbar } from "@/components/reports/report-toolbar"
 
 interface RetainedEarningsClientProps {
   data: RetainedEarningsData
@@ -22,32 +15,14 @@ interface RetainedEarningsClientProps {
 }
 
 export function RetainedEarningsClient({ data, period }: RetainedEarningsClientProps) {
-  const router = useRouter()
-  const monthOptions = getMonthOptions()
-
-  function handlePeriodChange(value: string | null) {
-    if (value !== null) {
-      router.push(`/reports/retained-earnings?period=${value}`)
-    }
-  }
-
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-3">
-        <Select value={period} onValueChange={handlePeriodChange}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Select period" />
-          </SelectTrigger>
-          <SelectContent>
-            {monthOptions.map((opt) => (
-              <SelectItem key={opt.value} value={opt.value}>
-                {opt.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
+      <ReportToolbar
+        period={period}
+        basePath="/reports/retained-earnings"
+        exportFormats={[]}
+      />
 
       {/* Report Card */}
       <Card>

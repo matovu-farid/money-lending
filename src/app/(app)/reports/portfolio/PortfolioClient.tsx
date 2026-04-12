@@ -1,9 +1,6 @@
 "use client"
 
-import { useState } from "react"
-import { Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -14,7 +11,7 @@ import {
 } from "@/components/ui/table"
 import type { PortfolioEntry } from "@/types"
 import { formatCurrency } from "@/lib/utils"
-import { downloadFromUrl } from "@/lib/download"
+import { ReportToolbar } from "@/components/reports/report-toolbar"
 
 interface PortfolioClientProps {
   data: PortfolioEntry[]
@@ -27,34 +24,15 @@ export function PortfolioClient({
   exportPdfHref,
   exportExcelHref,
 }: PortfolioClientProps) {
-  const [downloading, setDownloading] = useState<"pdf" | "excel" | null>(null)
-
-  async function handleDownload(format: "pdf" | "excel", href: string) {
-    setDownloading(format)
-    const filename = format === "pdf" ? "portfolio-report.pdf" : "portfolio-report.xlsx"
-    try {
-      await downloadFromUrl(href, filename)
-    } catch {
-      const { toast } = await import("sonner")
-      toast.error("Export failed. Please try again.")
-    } finally {
-      setDownloading(null)
-    }
-  }
-
   return (
     <div className="space-y-4">
       {/* Toolbar */}
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => handleDownload("pdf", exportPdfHref)} disabled={downloading !== null}>
-          {downloading === "pdf" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Export PDF
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => handleDownload("excel", exportExcelHref)} disabled={downloading !== null}>
-          {downloading === "excel" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Export Excel
-        </Button>
-      </div>
+      <ReportToolbar
+        basePath="/reports/portfolio"
+        showPeriodSelector={false}
+        exportHref={(fmt) => fmt === "pdf" ? exportPdfHref : exportExcelHref}
+        exportFilename={(fmt) => `portfolio-report.${fmt === "pdf" ? "pdf" : "xlsx"}`}
+      />
 
       {/* Table */}
       {data.length === 0 ? (
