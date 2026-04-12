@@ -63,7 +63,8 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
   // Use TanStack Query for payments so subsequent navigations are cached
-  const { data: payments = initialPayments ?? [] } = useLoanPayments(loan.id, true, initialPayments)
+  const { data: rawPayments } = useLoanPayments(loan.id, true, initialPayments)
+  const payments = Array.isArray(rawPayments) ? rawPayments : (Array.isArray(initialPayments) ? initialPayments : [])
 
   // Client-side query for payment portions — refreshes when payments change
   const activePaymentIds = payments.filter((p) => p.deletedAt === null && !p.markedWrong).map((p) => p.id)
