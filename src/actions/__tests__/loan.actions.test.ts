@@ -183,7 +183,7 @@ describe("Loan Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetLocationBalances.mockReturnValue(Effect.fail(new Error("boom")) as any)
       const result = await getLocationBalancesAction()
-      expect(result).toEqual({ error: "Failed to fetch balances" })
+      expect(result).toEqual({ error: "Internal server error" })
     })
   })
 

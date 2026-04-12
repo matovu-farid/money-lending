@@ -1,40 +1,27 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession } from "@/lib/action-utils"
+import { withAction } from "@/lib/with-action"
 import {
   getDailyCollections,
   getLoansDueToday,
 } from "@/services/daily-collections.service"
 
-export async function getDailyCollectionsAction(date: string) {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
+export const getDailyCollectionsAction = withAction<string, any>({
+  action: async (_session, date) => {
+    if (!date?.trim() || isNaN(Date.parse(date))) {
+      return { error: "Invalid date" }
+    }
 
-  if (!date?.trim() || isNaN(Date.parse(date))) {
-    return { error: "Invalid date" }
-  }
+    try {
+      const data = await Effect.runPromise(getDailyCollections(date))
+      return { data }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
 
-  try {
-    const data = await Effect.runPromise(getDailyCollections(date))
-    return { data }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function getLoansDueTodayAction() {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
-
-  try {
-    const data = await Effect.runPromise(getLoansDueToday())
-    return { data }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+export const getLoansDueTodayAction = withAction({
+  effect: () => getLoansDueToday(),
+})

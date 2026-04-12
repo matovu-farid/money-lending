@@ -1,7 +1,6 @@
 "use server"
 
-import { Effect } from "effect"
-import { getSession } from "@/lib/action-utils"
+import { withAction } from "@/lib/with-action"
 import {
   getNotifications,
   getUnreadCount,
@@ -9,50 +8,18 @@ import {
   markAllAsRead,
 } from "@/services/notification.service"
 
-export async function getNotificationsAction() {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+export const getNotificationsAction = withAction({
+  effect: (session) => getNotifications(session.user.id),
+})
 
-  try {
-    const data = await Effect.runPromise(getNotifications(session.user.id))
-    return { data }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+export const getUnreadCountAction = withAction({
+  effect: (session) => getUnreadCount(session.user.id),
+})
 
-export async function getUnreadCountAction() {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+export const markAsReadAction = withAction<string, any>({
+  effect: (session, notificationId) => markAsRead(notificationId, session.user.id),
+})
 
-  try {
-    const count = await Effect.runPromise(getUnreadCount(session.user.id))
-    return { data: count }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function markAsReadAction(notificationId: string) {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  try {
-    await Effect.runPromise(markAsRead(notificationId, session.user.id))
-    return { data: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function markAllAsReadAction() {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  try {
-    await Effect.runPromise(markAllAsRead(session.user.id))
-    return { data: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+export const markAllAsReadAction = withAction({
+  effect: (session) => markAllAsRead(session.user.id),
+})

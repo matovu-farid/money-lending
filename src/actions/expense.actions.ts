@@ -1,104 +1,57 @@
 "use server"
 
 import { Effect } from "effect"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { withAction } from "@/lib/with-action"
+import { getUserRole } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
 import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
-import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { CreateTransactionInput, CreateCategoryInput } from "@/types"
 
-export async function listExpenseTransactionsAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+export const listExpenseTransactionsAction = withAction({
+  effect: () => listTransactions({ type: "debit", manualOnly: true }, 1, 50),
+})
 
-  try {
-    const result = await Effect.runPromise(listTransactions({ type: "debit", manualOnly: true }, 1, 50))
-    return { data: result }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+export const listExpenseCategoriesAction = withAction({
+  effect: () => listCategories("expense"),
+})
 
-export async function listExpenseCategoriesAction() {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
+export const recordExpenseAction = withAction<CreateTransactionInput, { success: true } | { error: string }>({
+  minRole: "loanOfficer",
+  action: async (session, input) => {
+    if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
+      return { error: "A valid positive amount is required" }
+    }
+    if (!input.categoryId?.trim()) return { error: "Category is required" }
+    if (!input.transactionDate?.trim() || isNaN(Date.parse(input.transactionDate))) {
+      return { error: "A valid date is required" }
+    }
 
-  try {
-    const data = await Effect.runPromise(listCategories("expense"))
-    return { data }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+    try {
+      await Effect.runPromise(recordExpense(input, session.user.id))
+      revalidatePath("/expenses")
+      revalidatePath("/transactions")
+      return { success: true as const }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
 
-export async function recordExpenseAction(input: CreateTransactionInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) return { error: "Forbidden" }
+export const deleteExpenseAction = withAction<string, any>({
+  minRole: "loanOfficer",
+  effect: (session, id) => deleteTransaction(id, session.user.id, getUserRole(session) as string),
+  revalidate: ["/expenses", "/transactions"],
+})
 
-  if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
-    return { error: "A valid positive amount is required" }
-  }
-  if (!input.categoryId?.trim()) return { error: "Category is required" }
-  if (!input.transactionDate?.trim() || isNaN(Date.parse(input.transactionDate))) {
-    return { error: "A valid date is required" }
-  }
+export const createExpenseCategoryAction = withAction<CreateCategoryInput, any>({
+  minRole: "loanOfficer",
+  effect: (session, input) => createCategory(input, session.user.id),
+  revalidate: ["/expenses"],
+})
 
-  try {
-    await Effect.runPromise(recordExpense(input, session.user.id))
-    revalidatePath("/expenses")
-    revalidatePath("/transactions")
-    return { success: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function deleteExpenseAction(id: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) return { error: "Forbidden" }
-
-  try {
-    await Effect.runPromise(deleteTransaction(id, session.user.id, role as string))
-    revalidatePath("/expenses")
-    revalidatePath("/transactions")
-    return { success: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function createExpenseCategoryAction(input: CreateCategoryInput) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) return { error: "Forbidden" }
-
-  try {
-    const category = await Effect.runPromise(createCategory(input, session.user.id))
-    revalidatePath("/expenses")
-    return { data: category }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function deleteExpenseCategoryAction(id: string) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) return { error: "Unauthorized" }
-  const role = (session.user.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) return { error: "Forbidden" }
-
-  try {
-    await Effect.runPromise(deleteCategory(id, session.user.id))
-    revalidatePath("/expenses")
-    return { success: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+export const deleteExpenseCategoryAction = withAction<string, any>({
+  minRole: "loanOfficer",
+  effect: (session, id) => deleteCategory(id, session.user.id),
+  revalidate: ["/expenses"],
+})

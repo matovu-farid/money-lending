@@ -1,7 +1,8 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired, getErrorTag, getErrorField } from "@/lib/action-utils"
+import { withAction } from "@/lib/with-action"
+import { getSession, getUserRole, validatePositiveDecimal, getErrorTag, getErrorField } from "@/lib/action-utils"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"
@@ -21,19 +22,9 @@ import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/servic
 import { getLocationBalances } from "@/services/report.service"
 import { formatAmount } from "@/lib/interest/engine"
 
-export async function getLocationBalancesAction(): Promise<
-  { data: Record<"cash" | "bank" | "strong_room", string> } | { error: string }
-> {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  try {
-    const data = await Effect.runPromise(getLocationBalances())
-    return { data }
-  } catch {
-    return { error: "Failed to fetch balances" }
-  }
-}
+export const getLocationBalancesAction = withAction({
+  effect: () => getLocationBalances(),
+})
 
 export async function getCollateralNaturesAction(): Promise<string[]> {
   const session = await getSession()
@@ -47,94 +38,79 @@ export async function getCollateralNaturesAction(): Promise<string[]> {
   return rows.map((r) => r.nature)
 }
 
-export async function getLoanPaymentContextAction(loanId: string) {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+export const getLoanPaymentContextAction = withAction<string, any>({
+  action: async (_session, loanId) => {
+    const [row] = await db
+      .select({
+        id: loans.id,
+        customerName: customers.fullName,
+      })
+      .from(loans)
+      .innerJoin(customers, eq(loans.customerId, customers.id))
+      .where(eq(loans.id, loanId))
 
-  const [row] = await db
-    .select({
-      id: loans.id,
-      customerName: customers.fullName,
-    })
-    .from(loans)
-    .innerJoin(customers, eq(loans.customerId, customers.id))
-    .where(eq(loans.id, loanId))
+    if (!row) return { error: "Loan not found" }
 
-  if (!row) return { error: "Loan not found" }
+    return {
+      data: {
+        loanId: row.id,
+        customerName: row.customerName,
+        loanReference: `LOAN-${row.id.slice(0, 8).toUpperCase()}`,
+      },
+    }
+  },
+})
 
-  return {
-    data: {
-      loanId: row.id,
-      customerName: row.customerName,
-      loanReference: `LOAN-${row.id.slice(0, 8).toUpperCase()}`,
-    },
-  }
-}
+export const getLoanCollateralAction = withAction<string, { data: { nature: string; description: string | null } | null }>({
+  action: async (_session, loanId) => {
+    const [record] = await db.select({
+      nature: collateral.nature,
+      description: collateral.description,
+    }).from(collateral).where(eq(collateral.loanId, loanId))
 
-export async function getLoanCollateralAction(loanId: string): Promise<
-  { data: { nature: string; description: string | null } | null } | { error: string }
-> {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+    return { data: record ?? null }
+  },
+})
 
-  const [record] = await db.select({
-    nature: collateral.nature,
-    description: collateral.description,
-  }).from(collateral).where(eq(collateral.loanId, loanId))
+export const getLoanReceiptDataAction = withAction<string, any>({
+  action: async (_session, loanId) => {
+    const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
+    if (!loan) return { error: "Loan not found" }
 
-  return { data: record ?? null }
-}
+    const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
+      db.select().from(customers).where(eq(customers.id, loan.customerId)),
+      db.select().from(collateral).where(eq(collateral.loanId, loanId)),
+      db.select().from(user).where(eq(user.id, loan.issuedBy)),
+    ])
 
-export async function getLoanReceiptDataAction(loanId: string) {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+    const rate = new BigNumber(loan.interestRate).multipliedBy(100)
+    const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
+    return {
+      data: {
+        receiptNumber: `LOAN-${loanId.slice(0, 8).toUpperCase()}`,
+        date: loan.startDate.toISOString(),
+        customerName: customer?.fullName ?? "\u2014",
+        customerNin: customer?.nin,
+        loanAmount: isRollover
+          ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
+          : loan.principalAmount,
+        issuanceFee: loan.issuanceFee,
+        interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
+        collateralNature: collateralRecord?.nature ?? "\u2014",
+        disbursementSource: loan.disbursementSource,
+        officerName: issuingUser?.name ?? "Officer",
+        ...(isRollover ? {
+          rolloverAmount: loan.rolloverAmount!,
+          totalNewPrincipal: loan.principalAmount,
+        } : {}),
+      },
+    }
+  },
+})
 
-  const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
-  if (!loan) return { error: "Loan not found" }
-
-  const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
-    db.select().from(customers).where(eq(customers.id, loan.customerId)),
-    db.select().from(collateral).where(eq(collateral.loanId, loanId)),
-    db.select().from(user).where(eq(user.id, loan.issuedBy)),
-  ])
-
-  const rate = new BigNumber(loan.interestRate).multipliedBy(100)
-  const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
-  return {
-    data: {
-      receiptNumber: `LOAN-${loanId.slice(0, 8).toUpperCase()}`,
-      date: loan.startDate.toISOString(),
-      customerName: customer?.fullName ?? "—",
-      customerNin: customer?.nin,
-      loanAmount: isRollover
-        ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
-        : loan.principalAmount,
-      issuanceFee: loan.issuanceFee,
-      interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
-      collateralNature: collateralRecord?.nature ?? "—",
-      disbursementSource: loan.disbursementSource,
-      officerName: issuingUser?.name ?? "Officer",
-      ...(isRollover ? {
-        rolloverAmount: loan.rolloverAmount!,
-        totalNewPrincipal: loan.principalAmount,
-      } : {}),
-    },
-  }
-}
-
-export async function listLoansAction() {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
-
-  try {
-    const data = await Effect.runPromise(listLoans())
-    return { data }
-  } catch (error) {
-    return { error: "Internal server error" }
-  }
-}
+export const listLoansAction = withAction({
+  effect: () => listLoans(),
+})
 
 export async function getCurrentUserRoleAction(): Promise<UserRole> {
   const session = await getSession()
@@ -142,74 +118,66 @@ export async function getCurrentUserRoleAction(): Promise<UserRole> {
   return (session.user.role ?? "unassigned") as UserRole
 }
 
-export async function updateLoanAction(input: UpdateLoanInput) {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
-
-  const forbidden = requireRole(session, "admin")
-  if (forbidden) return { error: forbidden }
-
-  if (!input.loanId?.trim()) {
-    return { error: "Loan ID is required" }
-  }
-  if (!input.reason?.trim()) {
-    return { error: "Reason is required" }
-  }
-  if (input.principalAmount !== undefined) {
-    const err = validatePositiveDecimal(input.principalAmount, "Principal")
-    if (err) return { error: err }
-  }
-  if (input.issuanceFee !== undefined) {
-    if (!/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
-      return { error: "Issuance fee must be a valid decimal number" }
+export const updateLoanAction = withAction<UpdateLoanInput, any>({
+  minRole: "admin",
+  action: async (session, input) => {
+    if (!input.loanId?.trim()) {
+      return { error: "Loan ID is required" }
     }
-    if (parseFloat(input.issuanceFee) < 50000) {
-      return { error: "Issuance fee must be at least 50,000 UGX" }
+    if (!input.reason?.trim()) {
+      return { error: "Reason is required" }
     }
-  }
-  try {
-    const data = await Effect.runPromise(updateLoan(input, session.user.id))
-    revalidatePath("/loans")
-    revalidatePath(`/loans/${input.loanId}`)
-    return { data }
-  } catch (error) {
-    if (getErrorTag(error) === "LoanNotFound") {
-      return { error: "Loan not found" }
+    if (input.principalAmount !== undefined) {
+      const err = validatePositiveDecimal(input.principalAmount, "Principal")
+      if (err) return { error: err }
     }
-    return { error: "Internal server error" }
-  }
-}
-
-export async function deleteLoanAction(input: DeleteLoanInput) {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
-
-  const forbidden = requireRole(session, "admin")
-  if (forbidden) return { error: forbidden }
-
-  if (!input.loanId?.trim()) {
-    return { error: "Loan ID is required" }
-  }
-  if (!input.reason?.trim()) {
-    return { error: "Reason is required" }
-  }
-
-  try {
-    const data = await Effect.runPromise(deleteLoan(input, session.user.id))
-    revalidatePath("/loans")
-    return { data }
-  } catch (error) {
-    if (getErrorTag(error) === "LoanNotFound") {
-      return { error: "Loan not found" }
+    if (input.issuanceFee !== undefined) {
+      if (!/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
+        return { error: "Issuance fee must be a valid decimal number" }
+      }
+      if (parseFloat(input.issuanceFee) < 50000) {
+        return { error: "Issuance fee must be at least 50,000 UGX" }
+      }
     }
-    return { error: "Internal server error" }
-  }
-}
+    try {
+      const data = await Effect.runPromise(updateLoan(input, session.user.id))
+      revalidatePath("/loans")
+      revalidatePath(`/loans/${input.loanId}`)
+      return { data }
+    } catch (error) {
+      if (getErrorTag(error) === "LoanNotFound") {
+        return { error: "Loan not found" }
+      }
+      return { error: "Internal server error" }
+    }
+  },
+})
 
+export const deleteLoanAction = withAction<DeleteLoanInput, any>({
+  minRole: "admin",
+  action: async (session, input) => {
+    if (!input.loanId?.trim()) {
+      return { error: "Loan ID is required" }
+    }
+    if (!input.reason?.trim()) {
+      return { error: "Reason is required" }
+    }
+
+    try {
+      const data = await Effect.runPromise(deleteLoan(input, session.user.id))
+      revalidatePath("/loans")
+      return { data }
+    } catch (error) {
+      if (getErrorTag(error) === "LoanNotFound") {
+        return { error: "Loan not found" }
+      }
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+// createLoanAction has complex multi-step validation and role-based branching that
+// doesn't fit the wrapper cleanly -- keep inline auth.
 export async function createLoanAction(input: CreateLoanInput) {
   const session = await getSession()
   if (!session) {
@@ -429,166 +397,162 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
   })
 }
 
-export async function getCustomerLoansWithOverdueAction(customerId: string) {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  try {
-    const customerLoans = await db
-      .select({
-        id: loans.id,
-        customerId: loans.customerId,
-        principalAmount: loans.principalAmount,
-        issuanceFee: loans.issuanceFee,
-        interestRate: loans.interestRate,
-        minInterestDays: loans.minInterestDays,
-        startDate: loans.startDate,
-        status: loans.status,
-        interestRateOverride: loans.interestRateOverride,
-        minPeriodOverride: loans.minPeriodOverride,
-        issuedBy: loans.issuedBy,
-        disbursementSource: loans.disbursementSource,
-        loanType: loans.loanType,
-        termMonths: loans.termMonths,
-        penaltyMultiplier: loans.penaltyMultiplier,
-        penaltyWaived: loans.penaltyWaived,
-        penaltyWaivedBy: loans.penaltyWaivedBy,
-        penaltyWaivedAt: loans.penaltyWaivedAt,
-        rolledOverFrom: loans.rolledOverFrom,
-        rolloverAmount: loans.rolloverAmount,
-        backdatedFrom: loans.backdatedFrom,
-        backdatedBy: loans.backdatedBy,
-        backdatedAt: loans.backdatedAt,
-        backdateNote: loans.backdateNote,
-        createdAt: loans.createdAt,
-        updatedAt: loans.updatedAt,
-        deletedAt: loans.deletedAt,
-        customerName: customers.fullName,
-        customerContact: customers.contact,
-      })
-      .from(loans)
-      .innerJoin(customers, eq(loans.customerId, customers.id))
-      .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
-      .orderBy(desc(loans.createdAt))
-    return { data: await computeOverdue(customerLoans) }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function listLoansWithOverdueAction() {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  try {
-    const allLoans = await Effect.runPromise(listLoans())
-    return { data: await computeOverdue(allLoans) }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
-export async function exportLoansExcelAction(filter?: "all" | "critical" | "at-risk" | "early") {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  try {
-    const allLoans = await Effect.runPromise(listLoans())
-    let entries = await computeOverdue(allLoans)
-
-    // Apply filter if specified
-    if (filter && filter !== "all") {
-      entries = entries.filter((entry) => {
-        if (entry.daysOverdue < 0) return false
-        if (filter === "critical") return entry.daysOverdue >= 30
-        if (filter === "at-risk") return entry.daysOverdue >= 25 && entry.daysOverdue < 30
-        if (filter === "early") return entry.daysOverdue >= 0 && entry.daysOverdue < 25
-        return true
-      })
+export const getCustomerLoansWithOverdueAction = withAction<string, any>({
+  action: async (_session, customerId) => {
+    try {
+      const customerLoans = await db
+        .select({
+          id: loans.id,
+          customerId: loans.customerId,
+          principalAmount: loans.principalAmount,
+          issuanceFee: loans.issuanceFee,
+          interestRate: loans.interestRate,
+          minInterestDays: loans.minInterestDays,
+          startDate: loans.startDate,
+          status: loans.status,
+          interestRateOverride: loans.interestRateOverride,
+          minPeriodOverride: loans.minPeriodOverride,
+          issuedBy: loans.issuedBy,
+          disbursementSource: loans.disbursementSource,
+          loanType: loans.loanType,
+          termMonths: loans.termMonths,
+          penaltyMultiplier: loans.penaltyMultiplier,
+          penaltyWaived: loans.penaltyWaived,
+          penaltyWaivedBy: loans.penaltyWaivedBy,
+          penaltyWaivedAt: loans.penaltyWaivedAt,
+          rolledOverFrom: loans.rolledOverFrom,
+          rolloverAmount: loans.rolloverAmount,
+          backdatedFrom: loans.backdatedFrom,
+          backdatedBy: loans.backdatedBy,
+          backdatedAt: loans.backdatedAt,
+          backdateNote: loans.backdateNote,
+          createdAt: loans.createdAt,
+          updatedAt: loans.updatedAt,
+          deletedAt: loans.deletedAt,
+          customerName: customers.fullName,
+          customerContact: customers.contact,
+        })
+        .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
+        .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
+        .orderBy(desc(loans.createdAt))
+      return { data: await computeOverdue(customerLoans) }
+    } catch {
+      return { error: "Internal server error" }
     }
+  },
+})
 
-    if (entries.length === 0) {
-      return { error: "No loans to export" }
+export const listLoansWithOverdueAction = withAction({
+  action: async () => {
+    try {
+      const allLoans = await Effect.runPromise(listLoans())
+      return { data: await computeOverdue(allLoans) }
+    } catch {
+      return { error: "Internal server error" }
     }
+  },
+})
 
-    const buffer = await generateLoansExcel(entries)
-    const base64 = buffer.toString("base64")
-    return { data: base64 }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+export const exportLoansExcelAction = withAction<"all" | "critical" | "at-risk" | "early" | undefined, any>({
+  action: async (_session, filter) => {
+    try {
+      const allLoans = await Effect.runPromise(listLoans())
+      let entries = await computeOverdue(allLoans)
 
-export async function listActiveLoansWithOverdueAction() {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+      // Apply filter if specified
+      if (filter && filter !== "all") {
+        entries = entries.filter((entry) => {
+          if (entry.daysOverdue < 0) return false
+          if (filter === "critical") return entry.daysOverdue >= 30
+          if (filter === "at-risk") return entry.daysOverdue >= 25 && entry.daysOverdue < 30
+          if (filter === "early") return entry.daysOverdue >= 0 && entry.daysOverdue < 25
+          return true
+        })
+      }
 
-  try {
-    const allLoans = await Effect.runPromise(listLoans())
-    const activeLoans = allLoans.filter((l) => l.status === "active")
-    return { data: await computeOverdue(activeLoans) }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+      if (entries.length === 0) {
+        return { error: "No loans to export" }
+      }
 
-export async function waivePenaltyAction(loanId: string) {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
+      const buffer = await generateLoansExcel(entries)
+      const base64 = buffer.toString("base64")
+      return { data: base64 }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
 
-  const forbidden = requireRole(session, "admin", "Only admins can waive penalties")
-  if (forbidden) return { error: forbidden }
+export const listActiveLoansWithOverdueAction = withAction({
+  action: async () => {
+    try {
+      const allLoans = await Effect.runPromise(listLoans())
+      const activeLoans = allLoans.filter((l) => l.status === "active")
+      return { data: await computeOverdue(activeLoans) }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
 
-  try {
-    const [loan] = await db
-      .select({ id: loans.id })
-      .from(loans)
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+export const waivePenaltyAction = withAction<string, any>({
+  minRole: "admin",
+  forbiddenMessage: "Only admins can waive penalties",
+  action: async (session, loanId) => {
+    try {
+      const [loan] = await db
+        .select({ id: loans.id })
+        .from(loans)
+        .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
 
-    if (!loan) return { error: "Loan not found" }
+      if (!loan) return { error: "Loan not found" }
 
-    await db.update(loans).set({
-      penaltyWaived: true,
-      penaltyWaivedBy: session.user.id,
-      penaltyWaivedAt: new Date(),
-    }).where(eq(loans.id, loanId))
+      await db.update(loans).set({
+        penaltyWaived: true,
+        penaltyWaivedBy: session.user.id,
+        penaltyWaivedAt: new Date(),
+      }).where(eq(loans.id, loanId))
 
-    revalidatePath("/loans")
-    revalidatePath(`/loans/${loanId}`)
-    return { success: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
+      revalidatePath("/loans")
+      revalidatePath(`/loans/${loanId}`)
+      return { success: true }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
 
 export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: string) {
-  const session = await getSession()
-  if (!session) return { error: "Unauthorized" }
-
-  const forbidden = requireRole(session, "admin", "Only admins can adjust penalty rates")
-  if (forbidden) return { error: forbidden }
-
-  const value = parseFloat(multiplier)
-  if (isNaN(value) || value < 0 || value >= 1) {
-    return { error: "Multiplier must be between 0 and 1 (e.g., 0.10 for 10%)" }
-  }
-
-  try {
-    const [loan] = await db
-      .select({ id: loans.id })
-      .from(loans)
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
-
-    if (!loan) return { error: "Loan not found" }
-
-    await db.update(loans).set({
-      penaltyMultiplier: value.toFixed(4),
-    }).where(eq(loans.id, loanId))
-
-    revalidatePath("/loans")
-    revalidatePath(`/loans/${loanId}`)
-    return { success: true }
-  } catch {
-    return { error: "Internal server error" }
-  }
+  return adjustPenaltyMultiplierWrapped({ loanId, multiplier })
 }
+
+const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: string }, any>({
+  minRole: "admin",
+  forbiddenMessage: "Only admins can adjust penalty rates",
+  action: async (_session, { loanId, multiplier }) => {
+    const value = parseFloat(multiplier)
+    if (isNaN(value) || value < 0 || value >= 1) {
+      return { error: "Multiplier must be between 0 and 1 (e.g., 0.10 for 10%)" }
+    }
+
+    try {
+      const [loan] = await db
+        .select({ id: loans.id })
+        .from(loans)
+        .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+
+      if (!loan) return { error: "Loan not found" }
+
+      await db.update(loans).set({
+        penaltyMultiplier: value.toFixed(4),
+      }).where(eq(loans.id, loanId))
+
+      revalidatePath("/loans")
+      revalidatePath(`/loans/${loanId}`)
+      return { success: true }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})

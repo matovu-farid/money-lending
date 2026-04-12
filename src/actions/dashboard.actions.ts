@@ -1,39 +1,21 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, getErrorTag } from "@/lib/action-utils"
+import { withAction } from "@/lib/with-action"
 import { getDashboardKPIs, getRecentActivity } from "@/services/dashboard.service"
 
-export async function getDashboardAction() {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
-
-  try {
-    const kpis = await Effect.runPromise(getDashboardKPIs())
-    return { data: { kpis } }
-  } catch (error) {
-    if (getErrorTag(error) === "DatabaseError") {
-      return { error: "Database error" }
-    }
-    return { error: "Internal server error" }
-  }
-}
+export const getDashboardAction = withAction({
+  effect: () => Effect.map(getDashboardKPIs(), (kpis) => ({ kpis })),
+  errors: { DatabaseError: "Database error" },
+})
 
 export async function getRecentActivityAction(page = 1, pageSize = 10) {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
-
-  try {
-    const data = await Effect.runPromise(getRecentActivity(page, pageSize))
-    return { data }
-  } catch (error) {
-    if (getErrorTag(error) === "DatabaseError") {
-      return { error: "Database error" }
-    }
-    return { error: "Internal server error" }
-  }
+  // This action has a multi-arg signature that doesn't fit withAction cleanly.
+  // We use withAction with a tuple input to keep the auth wrapper.
+  return getRecentActivityWrapped({ page, pageSize })
 }
+
+const getRecentActivityWrapped = withAction<{ page: number; pageSize: number }, any>({
+  effect: (_session, { page, pageSize }) => getRecentActivity(page, pageSize),
+  errors: { DatabaseError: "Database error" },
+})
