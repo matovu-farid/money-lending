@@ -52,7 +52,7 @@ import {
 } from "@/components/ui/table";
 import { InfoPopover } from "@/components/ui/info-popover";
 import { PageHeader } from "@/components/ui/page-header";
-import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils";
+import { cn, formatDate, formatCurrency, formatRate, shortId } from "@/lib/utils";
 import { customerStatusVariant, customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/status";
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
@@ -91,7 +91,7 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-mono text-muted-foreground">
-                LOAN-{item.loan.id.slice(0, 8).toUpperCase()}
+                LOAN-{shortId(item.loan.id).toUpperCase()}
               </span>
               <Badge variant={loanStatusVariant(item.loan.status)}>
                 {loanStatusLabel(item.loan.status)}
@@ -214,7 +214,7 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
                               data={{
                                 paymentDate: payment.paymentDate,
                                 customerName,
-                                loanReference: `LOAN-${item.loan.id.slice(0, 8).toUpperCase()}`,
+                                loanReference: `LOAN-${shortId(item.loan.id).toUpperCase()}`,
                                 amountPaid: payment.amount,
                                 interestPortion: portionsData?.[payment.id]?.interestPortion ?? "0.00",
                                 principalPortion: portionsData?.[payment.id]?.principalPortion ?? "0.00",
@@ -260,7 +260,7 @@ export default function CustomerProfilePage() {
     queryFn: async () => {
       const result = await getCustomerLoansWithOverdueAction(customerId);
       if (!("data" in result) || !result.data) return [];
-      return result.data.map((item) => ({
+      return result.data.map((item: any) => ({
         loan: item,
         daysOverdue: item.daysOverdue,
       }));
@@ -575,7 +575,7 @@ export default function CustomerProfilePage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <Select value={customer.status} onValueChange={handleStatusSelect}>
+          <Select value={customer.status ?? "active"} onValueChange={handleStatusSelect}>
             <SelectTrigger className="w-[200px]">
               <SelectValue>{customerStatusLabel(customer.status)}</SelectValue>
             </SelectTrigger>
