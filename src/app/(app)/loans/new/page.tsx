@@ -20,6 +20,7 @@ import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptDisbursement } from "@/components/receipts/pos-receipt-disbursement"
 import { useNewLoanFormStore } from "@/lib/stores/new-loan-form"
 import { todayDateString } from "@/lib/utils"
+import type { UserRole } from "@/types"
 import type { LoanFormValues, ReceiptData } from "./_types"
 import { StepIndicator } from "./_components/step-indicator"
 import { LoanDetailsStep } from "./_components/loan-details-step"
@@ -33,6 +34,7 @@ function NewLoanPageInner() {
   const router = useRouter()
   const createLoan = useCreateLoan()
   const { data: session } = useSession()
+  const userRole = (session?.user?.role ?? "unassigned") as UserRole
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
   // Restore draft state from zustand store.
@@ -328,6 +330,7 @@ function NewLoanPageInner() {
             startDate={startDate}
             principalAmount={principalAmount}
             locationBalances={locationBalances}
+            userRole={userRole}
             onNext={handleStep1Next}
           />
         )}

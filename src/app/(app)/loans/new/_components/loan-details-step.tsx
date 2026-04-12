@@ -11,6 +11,7 @@ import { DisbursementSourceSelect } from "@/components/loans/disbursement-source
 import { RolloverBanner } from "@/components/loans/rollover-banner"
 import type { LoanFormValues } from "../_types"
 import { todayDateString } from "@/lib/utils"
+import { ROLE_LEVELS, type UserRole } from "@/types"
 
 interface ActiveLoanInfo {
   loan: { id: string; customerId: string }
@@ -33,6 +34,7 @@ interface LoanDetailsStepProps {
   startDate: string
   principalAmount: string
   locationBalances: Record<"cash" | "bank" | "strong_room", string> | null | undefined
+  userRole: UserRole
   onNext: () => void
 }
 
@@ -50,6 +52,7 @@ export function LoanDetailsStep({
   startDate,
   principalAmount,
   locationBalances,
+  userRole,
   onNext,
 }: LoanDetailsStepProps) {
   return (
@@ -134,7 +137,7 @@ export function LoanDetailsStep({
           startDate={startDate}
         />
 
-        <InterestRateField register={register} errors={errors} />
+        <InterestRateField register={register} errors={errors} userRole={userRole} />
 
         <DisbursementSourceSelect
           name="disbursementSource"
@@ -294,13 +297,29 @@ function StartDateField({
   )
 }
 
+/**
+ * Minimum interest rate (%) the user's role is allowed to set.
+ * - admin / superAdmin: no floor
+ * - supervisor: 8%
+ * - loanOfficer and below: 10%
+ */
+function getMinRateForRole(role: UserRole): number {
+  if (ROLE_LEVELS[role] >= ROLE_LEVELS.admin) return 0
+  if (ROLE_LEVELS[role] >= ROLE_LEVELS.supervisor) return 8
+  return 10
+}
+
 function InterestRateField({
   register,
   errors,
+  userRole,
 }: {
   register: UseFormRegister<LoanFormValues>
   errors: FieldErrors<LoanFormValues>
+  userRole: UserRole
 }) {
+  const minRate = getMinRateForRole(userRole)
+
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-1.5">
@@ -308,15 +327,12 @@ function InterestRateField({
         <InfoPopover>
           <p className="font-semibold text-sm mb-2">Interest Rate Permissions</p>
           <div className="text-xs text-muted-foreground space-y-2">
-            <p>Any loan officer can set the initial rate when creating a loan.</p>
-            <p className="font-medium text-foreground">Changing the rate after creation:</p>
             <ul className="list-disc pl-4 space-y-1">
-              <li><strong>10% or above</strong> — No approval needed, applies immediately.</li>
-              <li><strong>8% to 9.9%</strong> — Requires <strong>Supervisor</strong> approval.</li>
-              <li><strong>Below 8%</strong> — Requires <strong>Admin</strong> approval.</li>
+              <li><strong>10% or above</strong> — Any role can set this.</li>
+              <li><strong>8% to 9.9%</strong> — Requires <strong>Supervisor</strong> or above.</li>
+              <li><strong>Below 8%</strong> — Requires <strong>Admin</strong> or above.</li>
             </ul>
-            <p>If your role meets or exceeds the required approver role, the change applies immediately without waiting for approval.</p>
-            <p className="pt-1">Need a different rate? Create the loan first, then use the <strong>Request Rate Change</strong> button on the loan detail page to submit a change for approval.</p>
+            <p className="pt-1">Need a lower rate? Create the loan first, then use <strong>Request Rate Change</strong> on the loan detail page to submit a change for approval.</p>
             <Link
               href="/approvals"
               className="inline-flex items-center gap-1.5 mt-2 text-xs font-medium text-primary hover:underline"
@@ -330,7 +346,7 @@ function InterestRateField({
       <Input
         id="interestRate"
         type="number"
-        min="0"
+        min={minRate || "0"}
         step="0.1"
         placeholder="10"
         {...register("interestRateDisplay", {
@@ -338,12 +354,18 @@ function InterestRateField({
           validate: (v) => {
             const n = parseFloat(v)
             if (isNaN(n) || n <= 0) return "Interest rate must be greater than 0"
+            if (n < minRate) return `Your role requires a minimum rate of ${minRate}%`
             return true
           },
         })}
       />
       {errors.interestRateDisplay && (
         <p className="text-sm text-destructive">{errors.interestRateDisplay.message}</p>
+      )}
+      {minRate > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Your role allows rates of {minRate}% and above. To set a lower rate, request a rate change after the loan is created.
+        </p>
       )}
     </div>
   )
