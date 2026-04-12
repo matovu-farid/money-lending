@@ -66,12 +66,13 @@ interface LoanWithOverdue {
 
 function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { data: payments, isLoading: loadingPayments } = useLoanPayments(
+  const { data: rawPayments, isLoading: loadingPayments } = useLoanPayments(
     item.loan.id,
     expanded,
   );
+  const payments = Array.isArray(rawPayments) ? rawPayments : [];
 
-  const activePaymentIds = (Array.isArray(payments) ? payments : []).filter((p) => p.deletedAt === null).map((p) => p.id);
+  const activePaymentIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id);
   const { data: portionsData } = useQuery<PaymentPortionsMap>({
     queryKey: [...queryKeys.payments.portions(item.loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
@@ -150,7 +151,7 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
               <p className="text-sm text-muted-foreground">
                 Loading payments...
               </p>
-            ) : !payments || payments.length === 0 ? (
+            ) : payments.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 No payments recorded.
               </p>
