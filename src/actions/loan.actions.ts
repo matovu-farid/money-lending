@@ -1,17 +1,12 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired } from "@/lib/action-utils"
+import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired, getErrorTag, getErrorField } from "@/lib/action-utils"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { createLoan, listLoans, updateLoan, deleteLoan } from "@/services/loan.service"
-import {
-  CustomerNotFound,
-  IncompleteLoanRequirements,
-  LoanNotFound,
-} from "@/lib/errors"
 import { ROLE_LEVELS, toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
@@ -22,7 +17,7 @@ import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
-import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/transaction.service"
+import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
 import { getLocationBalances } from "@/services/report.service"
 import { formatAmount } from "@/lib/interest/engine"
 
@@ -180,7 +175,7 @@ export async function updateLoanAction(input: UpdateLoanInput) {
     revalidatePath(`/loans/${input.loanId}`)
     return { data }
   } catch (error) {
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }
@@ -208,7 +203,7 @@ export async function deleteLoanAction(input: DeleteLoanInput) {
     revalidatePath("/loans")
     return { data }
   } catch (error) {
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }
@@ -355,13 +350,13 @@ export async function createLoanAction(input: CreateLoanInput) {
     })
     return { data }
   } catch (error) {
-    if (error instanceof CustomerNotFound) {
+    if (getErrorTag(error) === "CustomerNotFound") {
       return { error: "Customer not found" }
     }
-    if (error instanceof IncompleteLoanRequirements) {
+    if (getErrorTag(error) === "IncompleteLoanRequirements") {
+      const missing = getErrorField(error, "missing") as string[] | undefined
       return {
-        error: "Incomplete loan requirements",
-        details: { missing: (error as any).missing },
+        error: `Missing fields: ${missing?.join(", ") ?? "unknown"}`,
       }
     }
     return { error: "Internal server error" }

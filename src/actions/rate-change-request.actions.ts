@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, getUserRole, requireRole } from "@/lib/action-utils"
+import { getSession, getUserRole, requireRole, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
@@ -12,7 +12,6 @@ import {
   reviewRequest,
   countPendingRequests,
 } from "@/services/rate-change-request.service"
-import { LoanNotFound, RateChangeRequestNotFound } from "@/lib/errors"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
@@ -81,7 +80,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
       revalidatePath(`/loans/${input.loanId}`)
       return { data: { applied: true as const, message: "Rate changed immediately" } }
     } catch (error) {
-      if (error instanceof LoanNotFound) {
+      if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
       return { error: "Internal server error" }
@@ -129,7 +128,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     if (err?._tag === "DuplicatePending") {
       return { error: "A pending rate change request already exists for this loan" }
     }
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }
@@ -224,7 +223,7 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
     revalidatePath("/loans")
     return { data }
   } catch (error) {
-    if (error instanceof RateChangeRequestNotFound) {
+    if (getErrorTag(error) === "RateChangeRequestNotFound") {
       return { error: "Rate change request not found" }
     }
     return { error: "Internal server error" }

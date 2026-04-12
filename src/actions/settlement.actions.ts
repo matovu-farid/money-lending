@@ -1,10 +1,9 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, requireRole } from "@/lib/action-utils"
+import { getSession, requireRole, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { settleWithCollateral, getCustomerActiveLoan } from "@/services/collateral-settlement.service"
-import { LoanNotFound } from "@/lib/errors"
 import { type SettleWithCollateralInput } from "@/types"
 
 export async function settleWithCollateralAction(input: SettleWithCollateralInput) {
@@ -29,7 +28,7 @@ export async function settleWithCollateralAction(input: SettleWithCollateralInpu
     revalidatePath(`/loans/${input.loanId}`)
     return { data }
   } catch (error) {
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }

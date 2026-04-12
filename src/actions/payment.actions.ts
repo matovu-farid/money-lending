@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired } from "@/lib/action-utils"
+import { getSession, getUserRole, requireRole, validatePositiveDecimal, validateRequired, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
@@ -9,11 +9,12 @@ import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull } from "drizzle-orm"
-import { PaymentNotFound, LoanNotFound } from "@/lib/errors"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
 import { sendAdminNotification } from "@/lib/email"
-import { postJournalEntry, autoPostInterestEarned, autoPostPrincipalRepayment, reverseInterestAccrual, getLoanBalanceFromLedger, getPaymentPortionsFromLedger } from "@/services/transaction.service"
+import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
+import { autoPostInterestEarned, autoPostPrincipalRepayment } from "@/services/auto-post.service"
+import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { allocatePayment } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { daysBetween } from "@/lib/db/utils"
@@ -51,7 +52,7 @@ export async function recordPaymentAction(input: RecordPaymentInput) {
     })
     return { data }
   } catch (error) {
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }
@@ -99,10 +100,10 @@ export async function editPaymentAction(input: EditPaymentInput) {
     })
     return { data }
   } catch (error) {
-    if (error instanceof PaymentNotFound) {
+    if (getErrorTag(error) === "PaymentNotFound") {
       return { error: "Payment not found" }
     }
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }
@@ -150,10 +151,10 @@ export async function deletePaymentAction(input: DeletePaymentInput) {
     })
     return { data }
   } catch (error) {
-    if (error instanceof PaymentNotFound) {
+    if (getErrorTag(error) === "PaymentNotFound") {
       return { error: "Payment not found" }
     }
-    if (error instanceof LoanNotFound) {
+    if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
     return { error: "Internal server error" }

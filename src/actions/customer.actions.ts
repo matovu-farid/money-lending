@@ -1,10 +1,9 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, requireRole } from "@/lib/action-utils"
+import { getSession, requireRole, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
-import { CustomerNotFound, DatabaseError } from "@/lib/errors"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput, CustomerStatus } from "@/types"
 
 export async function listCustomersAction() {
@@ -15,7 +14,7 @@ export async function listCustomersAction() {
     const data = await Effect.runPromise(listCustomers())
     return { data }
   } catch (error) {
-    if (error instanceof DatabaseError) {
+    if (getErrorTag(error) === "DatabaseError") {
       return { error: "Database error" }
     }
     return { error: "Internal server error" }
@@ -44,7 +43,7 @@ export async function createCustomerAction(input: CreateCustomerInput) {
     revalidatePath("/customers")
     return { data }
   } catch (error) {
-    if (error instanceof DatabaseError) {
+    if (getErrorTag(error) === "DatabaseError") {
       return { error: "Database error" }
     }
     return { error: "Internal server error" }
@@ -59,7 +58,7 @@ export async function getCustomerAction(id: string) {
     const data = await Effect.runPromise(getCustomer(id))
     return { data }
   } catch (error) {
-    if (error instanceof CustomerNotFound) {
+    if (getErrorTag(error) === "CustomerNotFound") {
       return { error: "Customer not found" }
     }
     return { error: "Internal server error" }
@@ -79,7 +78,7 @@ export async function updateCustomerAction(
     revalidatePath(`/customers/${id}`)
     return { data }
   } catch (error) {
-    if (error instanceof CustomerNotFound) {
+    if (getErrorTag(error) === "CustomerNotFound") {
       return { error: "Customer not found" }
     }
     return { error: "Internal server error" }
@@ -95,7 +94,7 @@ export async function searchCustomersAction(params: CustomerSearchParams) {
     return { data }
   } catch (error) {
     console.error("[searchCustomersAction] error:", error)
-    if (error instanceof DatabaseError) {
+    if (getErrorTag(error) === "DatabaseError") {
       return { error: "Database error" }
     }
     return { error: "Internal server error" }
@@ -128,7 +127,7 @@ export async function changeCustomerStatusAction(input: ChangeStatusInput) {
     revalidatePath(`/customers/${input.customerId}`)
     return { data }
   } catch (error) {
-    if (error instanceof CustomerNotFound) {
+    if (getErrorTag(error) === "CustomerNotFound") {
       return { error: "Customer not found" }
     }
     return { error: "Internal server error" }

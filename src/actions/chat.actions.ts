@@ -15,7 +15,7 @@ import {
   getConversationParticipants,
   getAttachmentData,
 } from "@/services/chat.service"
-import { ConversationNotFound, MessageNotFound, ForbiddenError, ValidationError } from "@/lib/errors"
+import { getErrorTag, getErrorField } from "@/lib/action-utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { CreateConversationInput, SendMessageInput } from "@/types"
 
@@ -41,7 +41,9 @@ export async function createConversationAction(input: CreateConversationInput) {
     )
     return { data }
   } catch (error) {
-    if (error instanceof ValidationError) return { error: error.message }
+    if (getErrorTag(error) === "ValidationError") {
+      return { error: (getErrorField(error, "message") as string) ?? "Validation failed" }
+    }
     return { error: "Internal server error" }
   }
 }
@@ -66,8 +68,8 @@ export async function getMessagesAction(conversationId: string, cursor?: string)
     const data = await Effect.runPromise(getMessages(conversationId, user.id, cursor))
     return { data }
   } catch (error) {
-    if (error instanceof ConversationNotFound) return { error: "Conversation not found" }
-    if (error instanceof ForbiddenError) return { error: "Forbidden" }
+    if (getErrorTag(error) === "ConversationNotFound") return { error: "Conversation not found" }
+    if (getErrorTag(error) === "ForbiddenError") return { error: "Forbidden" }
     return { error: "Internal server error" }
   }
 }
@@ -92,9 +94,11 @@ export async function sendMessageAction(input: SendMessageInput) {
     )
     return { data }
   } catch (error) {
-    if (error instanceof ConversationNotFound) return { error: "Conversation not found" }
-    if (error instanceof ForbiddenError) return { error: "Forbidden" }
-    if (error instanceof ValidationError) return { error: error.message }
+    if (getErrorTag(error) === "ConversationNotFound") return { error: "Conversation not found" }
+    if (getErrorTag(error) === "ForbiddenError") return { error: "Forbidden" }
+    if (getErrorTag(error) === "ValidationError") {
+      return { error: (getErrorField(error, "message") as string) ?? "Validation failed" }
+    }
     return { error: "Internal server error" }
   }
 }
@@ -107,8 +111,8 @@ export async function deleteMessageAction(messageId: string) {
     await Effect.runPromise(deleteMessage(messageId, user.id, user.role))
     return { data: null }
   } catch (error) {
-    if (error instanceof MessageNotFound) return { error: "Message not found" }
-    if (error instanceof ForbiddenError) return { error: "Forbidden" }
+    if (getErrorTag(error) === "MessageNotFound") return { error: "Message not found" }
+    if (getErrorTag(error) === "ForbiddenError") return { error: "Forbidden" }
     return { error: "Internal server error" }
   }
 }
@@ -147,9 +151,11 @@ export async function addParticipantsAction(conversationId: string, userIds: str
     await Effect.runPromise(addParticipants(conversationId, userIds, user.id))
     return { data: null }
   } catch (error) {
-    if (error instanceof ConversationNotFound) return { error: "Conversation not found" }
-    if (error instanceof ForbiddenError) return { error: "Forbidden" }
-    if (error instanceof ValidationError) return { error: error.message }
+    if (getErrorTag(error) === "ConversationNotFound") return { error: "Conversation not found" }
+    if (getErrorTag(error) === "ForbiddenError") return { error: "Forbidden" }
+    if (getErrorTag(error) === "ValidationError") {
+      return { error: (getErrorField(error, "message") as string) ?? "Validation failed" }
+    }
     return { error: "Internal server error" }
   }
 }
@@ -165,7 +171,7 @@ export async function getConversationParticipantsAction(conversationId: string) 
     if (!isMember) return { error: "Forbidden" }
     return { data }
   } catch (error) {
-    if (error instanceof ConversationNotFound) return { error: "Conversation not found" }
+    if (getErrorTag(error) === "ConversationNotFound") return { error: "Conversation not found" }
     return { error: "Internal server error" }
   }
 }
@@ -178,8 +184,10 @@ export async function getAttachmentDataAction(attachmentId: string) {
     const data = await Effect.runPromise(getAttachmentData(attachmentId, user.id))
     return { data }
   } catch (error) {
-    if (error instanceof ValidationError) return { error: error.message }
-    if (error instanceof ForbiddenError) return { error: "Forbidden" }
+    if (getErrorTag(error) === "ValidationError") {
+      return { error: (getErrorField(error, "message") as string) ?? "Validation failed" }
+    }
+    if (getErrorTag(error) === "ForbiddenError") return { error: "Forbidden" }
     return { error: "Internal server error" }
   }
 }
