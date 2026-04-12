@@ -67,7 +67,6 @@ export default async function TransactionLogPage({ searchParams }: TransactionLo
         categories={categories}
         page={page}
         pageSize={pageSize}
-        filters={filters}
       />
     </div>
   )

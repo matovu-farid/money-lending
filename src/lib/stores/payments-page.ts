@@ -2,15 +2,6 @@ import { create } from "zustand"
 import { devtools } from "zustand/middleware"
 import type { PaymentWithCustomer } from "@/types"
 
-interface PaymentsPageFilters {
-  customerName: string
-  dateFrom: string
-  dateTo: string
-  amountMin: string
-  amountMax: string
-  page: number
-}
-
 interface PaymentsPageState {
   // Quick record dialog
   quickRecordOpen: boolean
@@ -31,9 +22,6 @@ interface PaymentsPageState {
   markWrongOpen: boolean
   markWrongTarget: PaymentWithCustomer | null
   markWrongReason: string
-
-  // Filters
-  filters: PaymentsPageFilters
 }
 
 interface PaymentsPageActions {
@@ -53,20 +41,6 @@ interface PaymentsPageActions {
   openMarkWrong: (payment: PaymentWithCustomer) => void
   closeMarkWrong: () => void
   setMarkWrongReason: (v: string) => void
-
-  setFilter: <K extends keyof PaymentsPageFilters>(key: K, value: PaymentsPageFilters[K]) => void
-  clearFilters: () => void
-  setPage: (page: number) => void
-  initFilters: (params: Partial<PaymentsPageFilters>) => void
-}
-
-const defaultFilters: PaymentsPageFilters = {
-  customerName: "",
-  dateFrom: "",
-  dateTo: "",
-  amountMin: "",
-  amountMax: "",
-  page: 1,
 }
 
 export const usePaymentsPageStore = create<PaymentsPageState & PaymentsPageActions>()(devtools((set) => ({
@@ -83,7 +57,6 @@ export const usePaymentsPageStore = create<PaymentsPageState & PaymentsPageActio
   markWrongOpen: false,
   markWrongTarget: null,
   markWrongReason: "",
-  filters: { ...defaultFilters },
 
   // Quick record
   openQuickRecord: () => set({ quickRecordOpen: true }),
@@ -116,11 +89,4 @@ export const usePaymentsPageStore = create<PaymentsPageState & PaymentsPageActio
     set({ markWrongOpen: true, markWrongTarget: payment, markWrongReason: "" }),
   closeMarkWrong: () => set({ markWrongOpen: false, markWrongTarget: null }),
   setMarkWrongReason: (v) => set({ markWrongReason: v }),
-
-  // Filters
-  setFilter: (key, value) =>
-    set((s) => ({ filters: { ...s.filters, [key]: value, ...(key !== "page" ? { page: 1 } : {}) } })),
-  clearFilters: () => set({ filters: { ...defaultFilters } }),
-  setPage: (page) => set((s) => ({ filters: { ...s.filters, page } })),
-  initFilters: (params) => set((s) => ({ filters: { ...s.filters, ...params } })),
 }), { name: "payments-page" }))

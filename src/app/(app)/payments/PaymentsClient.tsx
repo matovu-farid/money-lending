@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useEffect, useMemo } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
@@ -33,6 +33,7 @@ import { useSession } from "@/lib/auth-client"
 import { formatNumberWithCommas, formatDate } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer } from "@/types"
 import { usePaymentsPageStore } from "@/lib/stores/payments-page"
+import { useUrlFilters } from "@/hooks/use-url-filters"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DailyCollectionsTab } from "./DailyCollectionsTab"
 import { QuickRecordDialog } from "./QuickRecordDialog"
@@ -93,22 +94,14 @@ export function PaymentsClient() {
     openEdit: openEditSheet, closeEdit, setEditAmount, setEditDate, setEditReason,
     markWrongOpen, markWrongTarget, markWrongReason,
     openMarkWrong: openMarkWrongDialog, closeMarkWrong, setMarkWrongReason,
-    filters, setFilter, clearFilters, setPage, initFilters,
   } = usePaymentsPageStore()
 
-  const { customerName, dateFrom, dateTo, amountMin, amountMax, page } = filters
-
-  // Initialize filters from URL params on mount
-  useEffect(() => {
-    initFilters({
-      customerName: searchParams.get("customerName") ?? "",
-      dateFrom: searchParams.get("dateFrom") ?? "",
-      dateTo: searchParams.get("dateTo") ?? "",
-      amountMin: searchParams.get("amountMin") ?? "",
-      amountMax: searchParams.get("amountMax") ?? "",
-      page: Math.max(1, Number(searchParams.get("page")) || 1),
+  const { filters, page, setFilter, clearFilters, setPage, hasFilters, activeFilterCount } =
+    useUrlFilters({
+      basePath: "/payments",
+      defaults: { customerName: "", dateFrom: "", dateTo: "", amountMin: "", amountMax: "" },
     })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const { customerName, dateFrom, dateTo, amountMin, amountMax } = filters
 
   // Edit mutation — no optimistic update since ledger-derived portions can't be computed client-side
   const editMutation = useMutation({
@@ -152,19 +145,6 @@ export function PaymentsClient() {
   })
 
 
-  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  const hasFilters =
-    customerName !== "" || dateFrom !== "" || dateTo !== "" || amountMin !== "" || amountMax !== ""
-
-  const activeFilterCount = [
-    customerName !== "",
-    dateFrom !== "",
-    dateTo !== "",
-    amountMin !== "",
-    amountMax !== "",
-  ].filter(Boolean).length
-
   // TanStack Query for paginated data
   const filterParams = useMemo(() => ({
     dateFrom: dateFrom || undefined,
@@ -178,47 +158,6 @@ export function PaymentsClient() {
 
   const rows = data?.rows ?? []
   const total = data?.total ?? 0
-
-  // Sync filter state with URL after debounce
-  const syncFiltersToUrl = useCallback(
-    (updated: Record<string, string>) => {
-      const params = new URLSearchParams(searchParams.toString())
-      const keys = ["customerName", "dateFrom", "dateTo", "amountMin", "amountMax"] as const
-      for (const key of keys) {
-        const val = updated[key] ?? ""
-        if (val) params.set(key, val)
-        else params.delete(key)
-      }
-      params.delete("page")
-      router.push(`/payments?${params.toString()}`)
-    },
-    [router, searchParams]
-  )
-
-  useEffect(() => {
-    return () => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current)
-    }
-  }, [])
-
-  function handleFilterChange(key: "customerName" | "dateFrom" | "dateTo" | "amountMin" | "amountMax", value: string) {
-    setFilter(key, value)
-    const updated = { customerName, dateFrom, dateTo, amountMin, amountMax, [key]: value }
-    if (debounceTimer.current) clearTimeout(debounceTimer.current)
-    debounceTimer.current = setTimeout(() => syncFiltersToUrl(updated), 300)
-  }
-
-  function handleClearFilters() {
-    clearFilters()
-    router.push("/payments")
-  }
-
-  function handlePageChange(newPage: number) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set("page", String(newPage))
-    setPage(newPage)
-    router.push(`/payments?${params.toString()}`)
-  }
 
   function handleEditSubmit() {
     if (!selectedPayment) return
@@ -421,7 +360,7 @@ export function PaymentsClient() {
             <Input
               placeholder="Search by customer name..."
               value={customerName}
-              onChange={(e) => handleFilterChange("customerName", e.target.value)}
+              onChange={(e) => setFilter("customerName", e.target.value)}
               className="w-[220px]"
             />
           </div>
@@ -431,7 +370,7 @@ export function PaymentsClient() {
               type="date"
               className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
               value={dateFrom}
-              onChange={(e) => handleFilterChange("dateFrom", e.target.value)}
+              onChange={(e) => setFilter("dateFrom", e.target.value)}
             />
           </div>
           <div>
@@ -440,7 +379,7 @@ export function PaymentsClient() {
               type="date"
               className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
               value={dateTo}
-              onChange={(e) => handleFilterChange("dateTo", e.target.value)}
+              onChange={(e) => setFilter("dateTo", e.target.value)}
             />
           </div>
           <div>
@@ -450,7 +389,7 @@ export function PaymentsClient() {
               inputMode="numeric"
               className="w-[120px]"
               value={amountMin}
-              onChange={(e) => handleFilterChange("amountMin", e.target.value)}
+              onChange={(e) => setFilter("amountMin", e.target.value)}
               placeholder="0"
             />
           </div>
@@ -461,7 +400,7 @@ export function PaymentsClient() {
               inputMode="numeric"
               className="w-[120px]"
               value={amountMax}
-              onChange={(e) => handleFilterChange("amountMax", e.target.value)}
+              onChange={(e) => setFilter("amountMax", e.target.value)}
               placeholder="Any"
             />
           </div>
@@ -470,7 +409,7 @@ export function PaymentsClient() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground"
-              onClick={handleClearFilters}
+              onClick={clearFilters}
             >
               Clear filters
             </Button>
@@ -496,7 +435,7 @@ export function PaymentsClient() {
             <p className="text-muted-foreground mt-2">
               Try adjusting the date range, amount range, or customer name search.
             </p>
-            <Button variant="outline" className="mt-4" onClick={handleClearFilters}>
+            <Button variant="outline" className="mt-4" onClick={clearFilters}>
               Clear filters
             </Button>
           </div>
@@ -528,7 +467,7 @@ export function PaymentsClient() {
                   variant="outline"
                   size="sm"
                   disabled={page === 1}
-                  onClick={() => handlePageChange(page - 1)}
+                  onClick={() => setPage(page - 1)}
                 >
                   Previous
                 </Button>
@@ -536,7 +475,7 @@ export function PaymentsClient() {
                   variant="outline"
                   size="sm"
                   disabled={page * pageSize >= total}
-                  onClick={() => handlePageChange(page + 1)}
+                  onClick={() => setPage(page + 1)}
                 >
                   Next
                 </Button>
