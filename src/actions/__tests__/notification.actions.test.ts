@@ -42,15 +42,12 @@ import {
   markAllAsReadAction,
 } from "../notification.actions"
 
+import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockGetNotifications = vi.mocked(getNotifications)
 const mockGetUnreadCount = vi.mocked(getUnreadCount)
 const mockMarkAsRead = vi.mocked(markAsRead)
 const mockMarkAllAsRead = vi.mocked(markAllAsRead)
-
-const fakeSession = {
-  user: { id: "u1", name: "Test", email: "t@t.com", role: "admin" },
-} as any
 
 // ---------- Tests ----------
 

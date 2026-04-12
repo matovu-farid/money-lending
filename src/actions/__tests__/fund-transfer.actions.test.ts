@@ -46,16 +46,13 @@ import {
   listFundTransfersAction,
 } from "../fund-transfer.actions"
 
+import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockCreateFundTransfer = vi.mocked(createFundTransfer)
 const mockCreateCapitalInjection = vi.mocked(createCapitalInjection)
 const mockListFundTransfers = vi.mocked(listFundTransfers)
-
-const fakeSession = {
-  user: { id: "u1", name: "Test", email: "t@t.com", role: "admin" },
-} as any
 
 // ---------- Tests ----------
 

@@ -43,20 +43,13 @@ import {
   deleteIncomeCategoryAction,
 } from "../income.actions"
 
+import { fakeSession, lowRoleSession } from "./test-utils"
 const mockGetSession = vi.mocked(auth.api.getSession)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockRecordIncome = vi.mocked(recordIncome)
 const mockDeleteTransaction = vi.mocked(deleteTransaction)
 const mockCreateCategory = vi.mocked(createCategory)
 const mockDeleteCategory = vi.mocked(deleteCategory)
-
-const fakeSession = {
-  user: { id: "u1", name: "Test", email: "t@t.com", role: "admin" },
-} as any
-
-const lowRoleSession = {
-  user: { id: "u2", name: "Low", email: "l@l.com", role: "unassigned" },
-} as any
 
 // ---------- Tests ----------
 

@@ -30,13 +30,10 @@ import { getDailyCollections, getLoansDueToday } from "@/services/daily-collecti
 
 import { getDailyCollectionsAction, getLoansDueTodayAction } from "../daily-collections.actions"
 
+import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockGetDailyCollections = vi.mocked(getDailyCollections)
 const mockGetLoansDueToday = vi.mocked(getLoansDueToday)
-
-const fakeSession = {
-  user: { id: "u1", name: "Test", email: "t@t.com", role: "admin" },
-} as any
 
 // ---------- Tests ----------
 
