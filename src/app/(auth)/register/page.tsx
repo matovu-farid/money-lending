@@ -74,6 +74,9 @@ export default function RegisterPage() {
         return
       }
 
+      // Mark that this browser has an account (survives logout)
+      document.cookie = "has_account=1; path=/; max-age=315360000; SameSite=Lax"
+
       router.push("/verify-email")
       router.refresh()
     })

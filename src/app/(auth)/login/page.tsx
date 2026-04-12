@@ -51,6 +51,9 @@ export default function LoginPage() {
         return
       }
 
+      // Mark that this browser has logged in before (survives logout)
+      document.cookie = "has_account=1; path=/; max-age=315360000; SameSite=Lax"
+
       // Successful sign-in — proxy.ts will redirect based on role
       router.push("/dashboard")
       router.refresh()

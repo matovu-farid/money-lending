@@ -14,10 +14,12 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const isAuthPage = AUTH_PAGES.some((p) => pathname.startsWith(p))
 
-  // No valid session -- redirect to login unless on auth page
+  // No valid session -- redirect to auth page
   if (!session?.user) {
     if (isAuthPage) return NextResponse.next()
-    return NextResponse.redirect(new URL("/login", request.url))
+    // Returning user (has_account cookie) → login, new visitor → register
+    const dest = request.cookies.has("has_account") ? "/login" : "/register"
+    return NextResponse.redirect(new URL(dest, request.url))
   }
 
   // Email not verified -- redirect to /verify-email (skip in test/Cypress env)
