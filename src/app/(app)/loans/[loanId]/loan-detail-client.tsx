@@ -6,17 +6,11 @@ import Link from "next/link"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
-  MoreHorizontal,
-  Loader2,
   Pencil,
   Trash2,
   ArrowLeft,
-  ArrowUpDown,
-  Calendar,
-  Percent,
   Banknote,
   Receipt,
-  UserCircle,
   ShieldAlert,
 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
@@ -32,29 +26,6 @@ import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dia
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
-import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
-import {
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Textarea } from "@/components/ui/textarea"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import BigNumber from "bignumber.js"
@@ -62,8 +33,10 @@ import { cn, formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
 import { useLoanDetailStore } from "@/lib/stores/loan-detail"
 import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
-import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button"
+import { LoanInfoCards } from "./loan-info-cards"
+import { PaymentTable } from "./payment-table"
+import { LoanDialogs } from "./loan-dialogs"
 
 interface LoanDetailClientProps {
   loan: Loan
@@ -347,6 +320,32 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     })
   }
 
+  function handleWaivePenalty() {
+    startWaivePenaltyTransition(async () => {
+      const result = await waivePenaltyAction(loan.id)
+      if ("error" in result) {
+        toast.error(result.error)
+      } else {
+        toast.success("Penalty waived")
+        router.refresh()
+      }
+    })
+  }
+
+  function handleAdjustPenaltySave() {
+    startAdjustPenaltyTransition(async () => {
+      const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4)
+      const result = await adjustPenaltyMultiplierAction(loan.id, decimal)
+      if ("error" in result) {
+        toast.error(result.error)
+      } else {
+        toast.success("Penalty rate adjusted")
+        closePenaltyAdjust()
+        router.refresh()
+      }
+    })
+  }
+
   const loanRef = `LOAN-${loan.id.slice(0, 8).toUpperCase()}`
 
   return (
@@ -423,224 +422,23 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </div>
 
       {/* Loan Details Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-muted-foreground mb-2">
-            <Banknote className="h-4 w-4" />
-            <span className="text-xs font-medium uppercase tracking-wider">Principal</span>
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Principal Amount</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                The original amount disbursed to the borrower. Interest is calculated on the remaining principal balance, not this original amount.
-              </p>
-            </InfoPopover>
-          </div>
-          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
-            {formatCurrency(loan.principalAmount)}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-muted-foreground mb-2">
-            <Percent className="h-4 w-4" />
-            <span className="text-xs font-medium uppercase tracking-wider">Interest Rate</span>
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Monthly Interest Rate</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                The rate charged per 30-day period. Interest accrues daily using this formula:
-              </p>
-              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                Daily Interest = Balance x (Rate / 30)
-              </p>
-              <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
-                <p className="font-medium">Example (10% / month):</p>
-                <p>UGX 1,000,000 x (0.10 / 30) = UGX 3,333/day</p>
-              </div>
-            </InfoPopover>
-          </div>
-          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
-            {formatRate(loan.interestRate, 1)}
-            <span className="text-sm font-normal text-muted-foreground ml-1">/ month</span>
-          </p>
-          {penaltyActive && (
-            <div className="mt-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
-              <div className="flex items-center gap-2 mb-1">
-                <ShieldAlert className="h-3.5 w-3.5 text-destructive" />
-                <span className="text-xs font-medium text-destructive">Penalty Rate Active</span>
-                <InfoPopover>
-                  <p className="font-semibold text-sm mb-1">Overdue Penalty</p>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    This loan has had unpaid interest for more than 60 days. A penalty of {formatRate(loan.penaltyMultiplier)} has been added to the base interest rate.
-                  </p>
-                  <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                    Effective Rate = {formatRate(loan.interestRate, 1)} + ({formatRate(loan.penaltyMultiplier)} penalty) = {formatRate(getEffectiveRate(loan, penaltyActive), 1)}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    The penalty is automatically removed when the borrower catches up on interest payments (less than 60 days overdue). An admin can also waive it manually.
-                  </p>
-                </InfoPopover>
-              </div>
-              <p className="text-sm font-mono font-semibold text-destructive">
-                Effective: {formatRate(getEffectiveRate(loan, penaltyActive), 1)} / month
-              </p>
-              {ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin ? (
-                <div className="flex items-center gap-2 mt-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs"
-                    disabled={isWaivingPenalty}
-                    onClick={() => {
-                      startWaivePenaltyTransition(async () => {
-                        const result = await waivePenaltyAction(loan.id)
-                        if ("error" in result) {
-                          toast.error(result.error)
-                        } else {
-                          toast.success("Penalty waived")
-                          router.refresh()
-                        }
-                      })
-                    }}
-                  >
-                    {isWaivingPenalty ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
-                    Waive Penalty
-                  </Button>
-                  {!adjustingPenalty ? (
-                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => openPenaltyAdjust()}>
-                      Adjust Rate
-                    </Button>
-                  ) : (
-                    <div className="flex items-center gap-1">
-                      <Input
-                        className="h-7 w-16 text-xs"
-                        value={penaltyMultiplierInput}
-                        onChange={(e) => setPenaltyMultiplierInput(e.target.value)}
-                        placeholder="%"
-                      />
-                      <span className="text-xs text-muted-foreground">%</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={isAdjustingPenalty}
-                        onClick={() => {
-                          startAdjustPenaltyTransition(async () => {
-                            const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4)
-                            const result = await adjustPenaltyMultiplierAction(loan.id, decimal)
-                            if ("error" in result) {
-                              toast.error(result.error)
-                            } else {
-                              toast.success("Penalty rate adjusted")
-                              closePenaltyAdjust()
-                              router.refresh()
-                            }
-                          })
-                        }}
-                      >
-                        {isAdjustingPenalty ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
-                      </Button>
-                      <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => closePenaltyAdjust()}>
-                        Cancel
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="mt-2">
-                  <PermissionInfo
-                    requiredRole="admin"
-                    action="Waive or adjust penalty"
-                    detail="Only admins can waive penalties or adjust the penalty multiplier rate."
-                    locked
-                  />
-                </div>
-              )}
-            </div>
-          )}
-          {pendingRateRequest && (
-            <Badge variant="outline" className="mt-2 text-xs">
-              Pending: {formatRate(pendingRateRequest.requestedRate, 1)}
-            </Badge>
-          )}
-          {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
-            <div className="flex items-center gap-1.5 mt-2">
-              <Button variant="outline" size="sm" onClick={() => openRateChange(loan.interestRate)}>
-                <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
-                Request Rate Change
-              </Button>
-              <PermissionInfo
-                requiredRole="loanOfficer"
-                action="Request rate change"
-                detail="Any loan officer can request a rate change. Rates ≥10% apply immediately. Rates 8-10% need supervisor approval. Rates below 8% need admin approval."
-              />
-            </div>
-          )}
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-muted-foreground mb-2">
-            <Calendar className="h-4 w-4" />
-            <span className="text-xs font-medium uppercase tracking-wider">Start Date</span>
-            {loan.backdatedFrom && (
-              <InfoPopover>
-                <p className="font-semibold text-sm mb-1">Backdated Loan</p>
-                <div className="text-xs text-muted-foreground space-y-1.5">
-                  <p>This loan was entered into the system on <strong>{formatDate(loan.backdatedFrom)}</strong> but backdated to <strong>{formatDate(loan.startDate)}</strong>.</p>
-                  {loan.backdatedBy && userNameMap[loan.backdatedBy] && (
-                    <p>Backdated by: <strong>{userNameMap[loan.backdatedBy]}</strong></p>
-                  )}
-                  {loan.backdateNote && (
-                    <p>Reason: {loan.backdateNote}</p>
-                  )}
-                </div>
-              </InfoPopover>
-            )}
-          </div>
-          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
-            {formatDate(loan.startDate)}
-          </p>
-          {loan.backdatedFrom && (
-            <p className="text-xs text-amber-600 mt-1">Backdated (entered {formatDate(loan.backdatedFrom)})</p>
-          )}
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-muted-foreground mb-2">
-            <Banknote className="h-4 w-4" />
-            <span className="text-xs font-medium uppercase tracking-wider">Issuance Fee</span>
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Issuance Fee</p>
-              <p className="text-xs text-muted-foreground">
-                A one-time fee charged when the loan is disbursed. This is deducted upfront and recorded as revenue. It does not affect the principal balance or interest calculations.
-              </p>
-            </InfoPopover>
-          </div>
-          <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
-            {formatCurrency(loan.issuanceFee)}
-          </p>
-        </div>
-        <div className="rounded-xl border border-border bg-card p-5">
-          <div className="flex items-center gap-2 text-muted-foreground mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Loan Type</span>
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Loan Type</p>
-              <div className="text-xs text-muted-foreground space-y-2">
-                <p><strong>Fixed Rate</strong> — Interest is always calculated on the original principal amount, regardless of how much has been repaid.</p>
-                <p><strong>Reducing Balance</strong> — Interest is calculated on the remaining principal balance, so it decreases as the borrower pays down the loan.</p>
-                <p><strong>Perpetual</strong> — No maturity date. The loan runs indefinitely in 30-day cycles until fully paid or settled.</p>
-              </div>
-            </InfoPopover>
-          </div>
-          <p className="text-lg font-semibold">
-            {loan.loanType === "fixed_rate" ? "Fixed Rate" : loan.loanType === "reducing_balance" ? "Reducing Balance" : "Perpetual"}
-          </p>
-        </div>
-        {loan.termMonths && (
-          <div className="rounded-xl border border-border bg-card p-5">
-            <div className="flex items-center gap-2 text-muted-foreground mb-2">
-              <span className="text-xs font-medium uppercase tracking-wider">Term</span>
-            </div>
-            <p className="text-lg font-semibold">{loan.termMonths} months</p>
-          </div>
-        )}
-      </div>
+      <LoanInfoCards
+        loan={loan}
+        penaltyActive={penaltyActive}
+        userRole={userRole}
+        userNameMap={userNameMap}
+        pendingRateRequest={pendingRateRequest}
+        isWaivingPenalty={isWaivingPenalty}
+        onWaivePenalty={handleWaivePenalty}
+        adjustingPenalty={adjustingPenalty}
+        penaltyMultiplierInput={penaltyMultiplierInput}
+        onPenaltyMultiplierInputChange={setPenaltyMultiplierInput}
+        isAdjustingPenalty={isAdjustingPenalty}
+        onAdjustPenaltySave={handleAdjustPenaltySave}
+        onOpenPenaltyAdjust={openPenaltyAdjust}
+        onClosePenaltyAdjust={closePenaltyAdjust}
+        onOpenRateChange={openRateChange}
+      />
 
       {/* Amortization Schedule */}
       {loan.loanType && loan.loanType !== "perpetual" && loan.termMonths && (
@@ -751,127 +549,20 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       </div>
 
       {/* Payments Section */}
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold tracking-tight">Payment History</h2>
-          {activePayments.length > 0 && (
-            <span className="text-xs text-muted-foreground font-mono tabular-nums">
-              {activePayments.length} payment{activePayments.length !== 1 ? "s" : ""}
-            </span>
-          )}
-        </div>
-
-        {activePayments.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border bg-muted/30 flex flex-col items-center justify-center py-16 gap-3 text-center">
-            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-              <Banknote className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <p className="text-sm font-medium">No payments recorded</p>
-            <p className="text-xs text-muted-foreground max-w-xs">
-              Record the first payment against this loan to start tracking repayments.
-            </p>
-            {loan.status === "active" && (
-              <Link
-                href={`/loans/${loan.id}/payments/new`}
-                className={cn(buttonVariants({ size: "sm" }), "mt-2")}
-              >
-                Record Payment
-              </Link>
-            )}
-          </div>
-        ) : (
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-muted/50 hover:bg-muted/50">
-                    <TableHead className="text-xs font-medium uppercase tracking-wider">Date</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Amount</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Interest</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Principal</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider text-right">Balance</TableHead>
-                    <TableHead className="text-xs font-medium uppercase tracking-wider">Recorded By</TableHead>
-                    <TableHead className="w-12"></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {payments.map((payment) => {
-                    const isDeleted = payment.deletedAt !== null
-                    const cellClass = isDeleted ? "opacity-50 line-through" : ""
-                    const recorderName = userNameMap[payment.recordedBy] ?? payment.recordedBy.slice(0, 8)
-                    return (
-                      <TableRow key={payment.id} data-testid="data-row" className={isDeleted ? "bg-muted/20" : ""}>
-                        <TableCell className={cn("font-mono tabular-nums text-sm", cellClass)}>
-                          {formatDate(payment.paymentDate)}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {formatCurrency(payment.amount)}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {formatCurrency(currentPortions[payment.id]?.interestPortion ?? "0.00")}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {formatCurrency(currentPortions[payment.id]?.principalPortion ?? "0.00")}
-                        </TableCell>
-                        <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                          {payment.markedWrong ? "—" : formatCurrency(runningBalanceMap[payment.id] ?? outstandingBalance)}
-                        </TableCell>
-                        <TableCell className={cn("text-sm", cellClass)}>
-                          <div className="flex items-center gap-1.5">
-                            <UserCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                            <span className="truncate max-w-[120px]">{recorderName}</span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {isDeleted ? (
-                            <Badge variant="outline" className="text-[10px] px-1.5 py-0">Deleted</Badge>
-                          ) : (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger
-                                aria-label="Payment actions"
-                                className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
-                              >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <PaymentReceiptButton
-                                  variant="dropdown-item"
-                                  data={{
-                                    paymentDate: payment.paymentDate,
-                                    customerName: customerName ?? "—",
-                                    loanReference: loanRef,
-                                    amountPaid: payment.amount,
-                                    interestPortion: currentPortions[payment.id]?.interestPortion ?? "0.00",
-                                    principalPortion: currentPortions[payment.id]?.principalPortion ?? "0.00",
-                                    balanceAfter: runningBalanceMap[payment.id] ?? outstandingBalance,
-                                    depositLocation: payment.depositLocation,
-                                    officerName: userNameMap[payment.recordedBy] ?? "Officer",
-                                  }}
-                                />
-                                <DropdownMenuItem
-                                  onClick={() => openPaymentEdit(payment)}
-                                >
-                                  Edit Payment
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  onClick={() => openPaymentDelete(payment)}
-                                  variant="destructive"
-                                >
-                                  Delete Payment
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-        )}
-      </div>
+      <PaymentTable
+        payments={payments}
+        activePayments={activePayments}
+        loanId={loan.id}
+        loanRef={loanRef}
+        loanStatus={loan.status}
+        customerName={customerName}
+        userNameMap={userNameMap}
+        currentPortions={currentPortions}
+        runningBalanceMap={runningBalanceMap}
+        outstandingBalance={outstandingBalance}
+        onEditPayment={openPaymentEdit}
+        onDeletePayment={openPaymentDelete}
+      />
 
       {loan.status === "active" && (
         <SimulatorPanel
@@ -884,304 +575,51 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         />
       )}
 
-      {/* Edit Payment Dialog */}
-      <DrawerDialog open={editingPayment !== null} onOpenChange={(open) => { if (!open) closePaymentEdit() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Payment</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="editAmount">Amount (UGX)</Label>
-              <Input
-                id="editAmount"
-                type="text"
-                value={editAmount}
-                onChange={(e) => setEditAmount(e.target.value)}
-                disabled={isEditPending}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="editDate">Payment Date</Label>
-              <Input
-                id="editDate"
-                type="date"
-                value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
-                disabled={isEditPending}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="editReason">Reason for edit</Label>
-              <Textarea
-                id="editReason"
-                value={editReason}
-                onChange={(e) => setEditReason(e.target.value)}
-                placeholder="Explain what is being corrected and why"
-                disabled={isEditPending}
-                maxLength={2500}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closePaymentEdit}
-              disabled={isEditPending}
-            >
-              Discard Changes
-            </Button>
-            <Button
-              onClick={handleEditSubmit}
-              disabled={isEditPending || !editReason.trim()}
-            >
-              {isEditPending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Saving...
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
-
-      {/* Delete Payment Dialog */}
-      <DrawerDialog open={deletingPayment !== null} onOpenChange={(open) => { if (!open) closePaymentDelete() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete payment?</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This payment will be marked as deleted. The record is not permanently removed. All
-              subsequent balances will be recalculated.
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="deleteReason">Reason for deletion</Label>
-              <Textarea
-                id="deleteReason"
-                value={deleteReason}
-                onChange={(e) => setDeleteReason(e.target.value)}
-                placeholder="Explain why this payment is being deleted"
-                disabled={isDeletePending}
-                maxLength={2500}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closePaymentDelete}
-              disabled={isDeletePending}
-            >
-              Keep Payment
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteSubmit}
-              disabled={isDeletePending || !deleteReason.trim()}
-            >
-              {isDeletePending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete Payment"
-              )}
-            </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
-
-      {/* Edit Loan Dialog */}
-      <DrawerDialog open={editingLoan} onOpenChange={(open) => { if (!open) closeLoanEdit() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Loan</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="loanPrincipal">Principal Amount (UGX)</Label>
-              <Input
-                id="loanPrincipal"
-                type="text"
-                value={loanPrincipal}
-                onChange={(e) => setLoanPrincipal(e.target.value)}
-                disabled={isLoanEditPending}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="loanInterestRate">Interest Rate (% per month)</Label>
-              <Input
-                id="loanInterestRate"
-                type="number"
-                min="0"
-                step="0.1"
-                value={loanInterestRate}
-                onChange={(e) => setLoanInterestRate(e.target.value)}
-                disabled={isLoanEditPending}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="loanStartDate">Start Date</Label>
-              <Input
-                id="loanStartDate"
-                type="date"
-                value={loanStartDate}
-                onChange={(e) => setLoanStartDate(e.target.value)}
-                disabled={isLoanEditPending}
-              />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="loanEditReason">Reason for edit</Label>
-              <Textarea
-                id="loanEditReason"
-                value={loanEditReason}
-                onChange={(e) => setLoanEditReason(e.target.value)}
-                placeholder="Explain what is being corrected and why"
-                disabled={isLoanEditPending}
-                maxLength={2500}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closeLoanEdit}
-              disabled={isLoanEditPending}
-            >
-              Discard Changes
-            </Button>
-            <Button
-              onClick={handleLoanEditSubmit}
-              disabled={isLoanEditPending || !loanEditReason.trim()}
-            >
-              {isLoanEditPending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Saving...
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
-
-      {/* Delete Loan Dialog */}
-      <DrawerDialog open={deletingLoan} onOpenChange={(open) => { if (!open) closeLoanDelete() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete loan?</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              This will permanently delete the loan and all associated payments. This action cannot be undone.
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="loanDeleteReason">Reason for deletion</Label>
-              <Textarea
-                id="loanDeleteReason"
-                value={loanDeleteReason}
-                onChange={(e) => setLoanDeleteReason(e.target.value)}
-                placeholder="Explain why this loan is being deleted"
-                disabled={isLoanDeletePending}
-                maxLength={2500}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closeLoanDelete}
-              disabled={isLoanDeletePending}
-            >
-              Keep Loan
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleLoanDeleteSubmit}
-              disabled={isLoanDeletePending || !loanDeleteReason.trim()}
-            >
-              {isLoanDeletePending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Deleting...
-                </>
-              ) : (
-                "Delete Loan"
-              )}
-            </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
-
-      {/* Rate Change Request Dialog */}
-      <DrawerDialog open={requestingRateChange} onOpenChange={(open) => { if (!open) closeRateChange() }}>
-        <DrawerDialogContent>
-          <DialogHeader>
-            <DialogTitle>Request Interest Rate Change</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Current rate: {formatRate(loan.interestRate, 1)} per month.
-              {ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
-                ? " As a supervisor or above, rates between 8-10% will be applied immediately."
-                : " Your request will be sent for supervisor or admin approval."}
-            </p>
-            <div className="space-y-1">
-              <Label htmlFor="newRate">New Rate (% per month)</Label>
-              <Input
-                id="newRate"
-                type="number"
-                min="0.1"
-                max="99.9"
-                step="0.1"
-                value={newRate}
-                onChange={(e) => setNewRate(e.target.value)}
-                disabled={isRateChangePending}
-                placeholder="e.g. 8.0"
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                {newRate && parseFloat(newRate) >= 10
-                  ? "No approval required."
-                  : newRate && parseFloat(newRate) >= 8 && parseFloat(newRate) < 10
-                    ? "Requires supervisor approval (or higher)."
-                    : newRate && parseFloat(newRate) > 0 && parseFloat(newRate) < 8
-                      ? "Requires admin approval (or higher)."
-                      : "Enter the new monthly interest rate."}
-              </p>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={closeRateChange}
-              disabled={isRateChangePending}
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handleRateChangeSubmit}
-              disabled={isRateChangePending || !newRate.trim() || parseFloat(newRate) <= 0}
-            >
-              {isRateChangePending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Submitting...
-                </>
-              ) : (
-                "Submit Request"
-              )}
-            </Button>
-          </DialogFooter>
-        </DrawerDialogContent>
-      </DrawerDialog>
+      {/* Dialogs */}
+      <LoanDialogs
+        loan={loan}
+        userRole={userRole}
+        editingPayment={editingPayment !== null}
+        editAmount={editAmount}
+        editDate={editDate}
+        editReason={editReason}
+        isEditPending={isEditPending}
+        onEditAmountChange={setEditAmount}
+        onEditDateChange={setEditDate}
+        onEditReasonChange={setEditReason}
+        onEditSubmit={handleEditSubmit}
+        onEditClose={closePaymentEdit}
+        deletingPayment={deletingPayment !== null}
+        deleteReason={deleteReason}
+        isDeletePending={isDeletePending}
+        onDeleteReasonChange={setDeleteReason}
+        onDeleteSubmit={handleDeleteSubmit}
+        onDeleteClose={closePaymentDelete}
+        editingLoan={editingLoan}
+        loanPrincipal={loanPrincipal}
+        loanInterestRate={loanInterestRate}
+        loanStartDate={loanStartDate}
+        loanEditReason={loanEditReason}
+        isLoanEditPending={isLoanEditPending}
+        onLoanPrincipalChange={setLoanPrincipal}
+        onLoanInterestRateChange={setLoanInterestRate}
+        onLoanStartDateChange={setLoanStartDate}
+        onLoanEditReasonChange={setLoanEditReason}
+        onLoanEditSubmit={handleLoanEditSubmit}
+        onLoanEditClose={closeLoanEdit}
+        deletingLoan={deletingLoan}
+        loanDeleteReason={loanDeleteReason}
+        isLoanDeletePending={isLoanDeletePending}
+        onLoanDeleteReasonChange={setLoanDeleteReason}
+        onLoanDeleteSubmit={handleLoanDeleteSubmit}
+        onLoanDeleteClose={closeLoanDelete}
+        requestingRateChange={requestingRateChange}
+        newRate={newRate}
+        isRateChangePending={isRateChangePending}
+        onNewRateChange={setNewRate}
+        onRateChangeSubmit={handleRateChangeSubmit}
+        onRateChangeClose={closeRateChange}
+      />
 
       {balanceData && collateralNature && (
         <SettleCollateralDialog
