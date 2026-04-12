@@ -3,6 +3,7 @@
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
 import { getErrorTag } from "@/lib/action-utils"
+import { validateFullName, validateNIN, validateUgandanPhone } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput, CustomerStatus } from "@/types"
@@ -14,15 +15,12 @@ export const listCustomersAction = withAction({
 
 export const createCustomerAction = withAction<CreateCustomerInput, any>({
   action: async (_session, input) => {
-    if (!input.fullName?.trim() || input.fullName.trim().split(/\s+/).length < 2) {
-      return { error: "Full name with first and last name is required" }
-    }
-    if (!input.nin?.trim() || !/^[CA][MF]\d{8}[A-Z0-9]{4}$/.test(input.nin.trim().toUpperCase())) {
-      return { error: "Valid NIN is required (e.g. CM97027102X4CU)" }
-    }
-    if (!input.contact?.trim() || !/^(07\d{8}|\+2567\d{8})$/.test(input.contact.trim().replace(/\s/g, ""))) {
-      return { error: "Valid Ugandan mobile number is required (e.g. 0771234567)" }
-    }
+    const nameErr = validateFullName(input.fullName)
+    if (nameErr) return { error: nameErr }
+    const ninErr = validateNIN(input.nin)
+    if (ninErr) return { error: ninErr }
+    const phoneErr = validateUgandanPhone(input.contact)
+    if (phoneErr) return { error: phoneErr }
     if (!input.address?.trim() || input.address.trim().length < 5) {
       return { error: "Address is required (at least 5 characters)" }
     }

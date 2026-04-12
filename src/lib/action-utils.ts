@@ -31,35 +31,6 @@ export function requireRole(
 }
 
 /**
- * Validate that a string is a positive decimal number (up to 2 decimal places).
- * Returns an error string or null.
- */
-export function validatePositiveDecimal(
-  value: string | undefined | null,
-  fieldName: string,
-): string | null {
-  if (!value?.trim() || !/^\d+(\.\d{1,2})?$/.test(value)) {
-    return `${fieldName} must be a valid decimal number`
-  }
-  if (parseFloat(value) <= 0) {
-    return `${fieldName} must be greater than zero`
-  }
-  return null
-}
-
-/**
- * Validate that a string is present and non-empty after trimming.
- * Returns an error string or null.
- */
-export function validateRequired(
-  value: string | undefined | null,
-  fieldName: string,
-): string | null {
-  if (!value?.trim()) return `${fieldName} is required`
-  return null
-}
-
-/**
  * Extract the `_tag` string from an Effect FiberFailure error.
  *
  * `Effect.runPromise` wraps failures in a `FiberFailureImpl` object,

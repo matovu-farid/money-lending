@@ -3,12 +3,34 @@ import { Effect } from "effect"
 
 // ---------- Mocks ----------
 
+vi.mock("@/lib/validators", () => ({
+  validateFullName: vi.fn((value: string | undefined | null) => {
+    const trimmed = value?.trim()
+    if (!trimmed || trimmed.split(/\s+/).length < 2) {
+      return "Full name with first and last name is required"
+    }
+    return null
+  }),
+  validateNIN: vi.fn((value: string | undefined | null) => {
+    const trimmed = value?.trim()?.toUpperCase()
+    if (!trimmed || !/^[CA][MF]\d{8}[A-Z0-9]{4}$/.test(trimmed)) {
+      return "Valid NIN is required (e.g. CM97027102X4CU)"
+    }
+    return null
+  }),
+  validateUgandanPhone: vi.fn((value: string | undefined | null) => {
+    const cleaned = value?.trim()?.replace(/\s/g, "")
+    if (!cleaned || !/^(07\d{8}|\+2567\d{8})$/.test(cleaned)) {
+      return "Valid Ugandan mobile number is required (e.g. 0771234567)"
+    }
+    return null
+  }),
+}))
+
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   getUserRole: vi.fn(),
   requireRole: vi.fn(),
-  validatePositiveDecimal: vi.fn(),
-  validateRequired: vi.fn(),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {

@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { validatePositiveDecimal } from "@/lib/action-utils"
+import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { createFundTransfer, createCapitalInjection, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"

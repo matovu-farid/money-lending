@@ -2,7 +2,8 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, validatePositiveDecimal, getErrorTag, getErrorField } from "@/lib/action-utils"
+import { getSession, getUserRole, getErrorTag, getErrorField } from "@/lib/action-utils"
+import { validatePositiveDecimal } from "@/lib/validators"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"

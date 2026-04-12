@@ -3,10 +3,7 @@ import { Effect } from "effect"
 
 // ---------- Mocks ----------
 
-vi.mock("@/lib/action-utils", () => ({
-  getSession: vi.fn(),
-  getUserRole: vi.fn(),
-  requireRole: vi.fn(),
+vi.mock("@/lib/validators", () => ({
   validatePositiveDecimal: vi.fn((value: string | undefined | null, fieldName: string) => {
     if (!value?.trim() || !/^\d+(\.\d{1,2})?$/.test(value)) {
       return `${fieldName} must be a valid decimal number`
@@ -17,6 +14,12 @@ vi.mock("@/lib/action-utils", () => ({
     return null
   }),
   validateRequired: vi.fn(),
+}))
+
+vi.mock("@/lib/action-utils", () => ({
+  getSession: vi.fn(),
+  getUserRole: vi.fn(),
+  requireRole: vi.fn(),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -127,7 +130,8 @@ vi.mock("@/lib/interest/engine", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, getUserRole, requireRole, validatePositiveDecimal } from "@/lib/action-utils"
+import { getSession, getUserRole, requireRole } from "@/lib/action-utils"
+import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { createLoan, listLoans, updateLoan, deleteLoan } from "@/services/loan.service"
 import { getLocationBalances } from "@/services/report.service"

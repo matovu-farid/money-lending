@@ -2,7 +2,8 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, requireRole, validatePositiveDecimal, getErrorTag } from "@/lib/action-utils"
+import { getSession, getUserRole, requireRole, getErrorTag } from "@/lib/action-utils"
+import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
