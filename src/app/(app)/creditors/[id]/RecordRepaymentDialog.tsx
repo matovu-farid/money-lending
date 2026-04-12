@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, todayDateString } from "@/lib/utils"
 import type { CreditorInvestment } from "@/types"
 
 interface Props {
@@ -57,7 +57,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     defaultValues: {
       investmentId: "",
       amount: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayDateString(),
     },
   })
 
@@ -67,7 +67,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     reset({
       investmentId: "",
       amount: "",
-      date: new Date().toISOString().split("T")[0],
+      date: todayDateString(),
     })
   }
 

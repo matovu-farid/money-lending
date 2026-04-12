@@ -33,7 +33,7 @@ import {
 } from "@/components/ui/dialog"
 import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { formatCurrency, formatDate, formatNumberWithCommas } from "@/lib/utils"
+import { formatCurrency, formatDate, formatNumberWithCommas, todayDateString } from "@/lib/utils"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
@@ -52,9 +52,6 @@ interface RecordPaymentFormProps {
   balanceData: BalanceData
 }
 
-function todayISODate(): string {
-  return new Date().toISOString().split("T")[0]
-}
 
 interface PaymentFormValues {
   paymentDate: string
@@ -79,7 +76,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
     formState: { errors },
   } = useForm<PaymentFormValues>({
     defaultValues: {
-      paymentDate: todayISODate(),
+      paymentDate: todayDateString(),
       amount: "",
       depositLocation: "cash",
       note: "",

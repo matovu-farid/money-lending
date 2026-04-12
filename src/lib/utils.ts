@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { format, formatDistanceToNow } from "date-fns"
+import { SHORT_ID_LENGTH } from "@/lib/constants"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -26,6 +27,20 @@ export function formatNumberWithCommas(value: string): string {
  */
 export function stripCommas(value: string): string {
   return value.replace(/,/g, "")
+}
+
+/**
+ * Today's date as a YYYY-MM-DD string in the user's local timezone.
+ * Avoids the UTC-shift bug where `new Date().toISOString().split("T")[0]`
+ * returns yesterday when the local time is past midnight but still the
+ * previous day in UTC.
+ */
+export function todayDateString(): string {
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, "0")
+  const day = String(d.getDate()).padStart(2, "0")
+  return `${y}-${m}-${day}`
 }
 
 /**
@@ -120,4 +135,11 @@ export function formatPeriodDate(period: string, position: "start" | "end"): str
     ? new Date(year, month - 1, 1)
     : new Date(year, month, 0)
   return date.toLocaleDateString("en-UG", { month: "long", day: "numeric", year: "numeric" })
+}
+
+/**
+ * Truncate a UUID to a short human-readable identifier.
+ */
+export function shortId(id: string): string {
+  return id.slice(0, SHORT_ID_LENGTH)
 }

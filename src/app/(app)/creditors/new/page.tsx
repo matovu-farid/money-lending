@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { cn } from "@/lib/utils"
+import { cn, todayDateString } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 
 interface CreditorFormValues {
@@ -41,7 +41,7 @@ export default function NewCreditorPage() {
       address: "",
       amount: "",
       interestRateMonthly: "10",
-      investmentDate: new Date().toISOString().split("T")[0],
+      investmentDate: todayDateString(),
     },
   })
 

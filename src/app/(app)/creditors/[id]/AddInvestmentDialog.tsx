@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { queryKeys } from "@/hooks/query-keys"
+import { todayDateString } from "@/lib/utils"
 
 interface Props {
   creditorId: string
@@ -44,7 +45,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
     defaultValues: {
       amount: "",
       interestRate: "10",
-      date: new Date().toISOString().split("T")[0],
+      date: todayDateString(),
     },
   })
 
@@ -52,7 +53,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
     reset({
       amount: "",
       interestRate: "10",
-      date: new Date().toISOString().split("T")[0],
+      date: todayDateString(),
     })
   }
 
