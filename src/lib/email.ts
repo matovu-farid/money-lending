@@ -2,6 +2,7 @@ import { Resend } from "resend"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
 import { AdminNotificationTemplate } from "@/lib/emails"
+import { formatNumberWithCommas } from "@/lib/utils"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -39,7 +40,8 @@ export async function sendAdminNotification(
       return
     }
 
-    const subject = `${SUBJECT_MAP[event]} — ${payload.loanRef} — UGX ${payload.amount}`
+    const formattedAmount = formatNumberWithCommas(payload.amount)
+    const subject = `${SUBJECT_MAP[event]} — ${payload.loanRef} — UGX ${formattedAmount}`
 
     const formattedTimestamp = payload.timestamp.toLocaleString("en-UG", {
       timeZone: process.env.BUSINESS_TIMEZONE || "Africa/Kampala",
@@ -56,7 +58,7 @@ export async function sendAdminNotification(
         actorName: payload.actorName,
         actorEmail: payload.actorEmail,
         loanRef: payload.loanRef,
-        amount: payload.amount,
+        amount: formattedAmount,
         formattedTimestamp,
       }),
     })
