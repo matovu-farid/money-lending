@@ -22,6 +22,8 @@ import { generateLoansExcel } from "@/services/export/excel.service"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
 import { getLocationBalances } from "@/services/report.service"
 import { formatAmount } from "@/lib/interest/engine"
+import { VALID_DEPOSIT_LOCATIONS, VALID_LOAN_TYPES } from "@/lib/constants"
+import { shortId } from "@/lib/utils"
 
 export const getLocationBalancesAction = withAction({
   effect: () => getLocationBalances(),
@@ -56,7 +58,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
       data: {
         loanId: row.id,
         customerName: row.customerName,
-        loanReference: `LOAN-${row.id.slice(0, 8).toUpperCase()}`,
+        loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
       },
     }
   },
@@ -84,11 +86,11 @@ export const getLoanReceiptDataAction = withAction<string, any>({
       db.select().from(user).where(eq(user.id, loan.issuedBy)),
     ])
 
-    const rate = new BigNumber(loan.interestRate).multipliedBy(100)
+    const rate = new BigNumber(loan.interestRateOverride ?? loan.interestRate).multipliedBy(100)
     const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
     return {
       data: {
-        receiptNumber: `LOAN-${loanId.slice(0, 8).toUpperCase()}`,
+        receiptNumber: `LOAN-${shortId(loanId).toUpperCase()}`,
         date: loan.startDate.toISOString(),
         customerName: customer?.fullName ?? "\u2014",
         customerNin: customer?.nin,
@@ -248,8 +250,7 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Collateral description is required" }
   }
 
-  const validLocations = ["cash", "bank", "strong_room"]
-  if (!input.disbursementSource || !validLocations.includes(input.disbursementSource)) {
+  if (!input.disbursementSource || !VALID_DEPOSIT_LOCATIONS.includes(input.disbursementSource)) {
     return { error: "Disbursement source is required (cash, bank, or strong_room)" }
   }
 
@@ -271,9 +272,8 @@ export async function createLoanAction(input: CreateLoanInput) {
   }
 
   // Validate loanType
-  const validLoanTypes = ["perpetual", "fixed_rate", "reducing_balance"]
   const loanType = input.loanType || "perpetual"
-  if (!validLoanTypes.includes(loanType)) {
+  if (!VALID_LOAN_TYPES.includes(loanType as any)) {
     return { error: "Loan type must be perpetual, fixed_rate, or reducing_balance" }
   }
 
@@ -313,7 +313,7 @@ export async function createLoanAction(input: CreateLoanInput) {
     void sendAdminNotification("loan.disbursed", {
       actorName: session.user.name ?? "Unknown",
       actorEmail: session.user.email,
-      loanRef: `LOAN-${data.id.slice(0, 8).toUpperCase()}`,
+      loanRef: `LOAN-${shortId(data.id).toUpperCase()}`,
       amount: input.principalAmount,
       timestamp: new Date(),
     })

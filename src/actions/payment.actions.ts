@@ -13,6 +13,8 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull } from "drizzle-orm"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
+import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
+import { shortId } from "@/lib/utils"
 import { sendAdminNotification } from "@/lib/email"
 import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
 import { autoPostInterestEarned, autoPostPrincipalRepayment } from "@/services/auto-post.service"
@@ -32,8 +34,7 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
       return { error: "Payment date must be a valid date" }
     }
 
-    const validLocations = ["cash", "bank", "strong_room"]
-    if (!input.depositLocation || !validLocations.includes(input.depositLocation)) {
+    if (!input.depositLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.depositLocation)) {
       return { error: "Deposit location is required (cash, bank, or strong_room)" }
     }
 
@@ -44,7 +45,7 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
       void sendAdminNotification("payment.created", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,
-        loanRef: `LOAN-${input.loanId.slice(0, 8).toUpperCase()}`,
+        loanRef: `LOAN-${shortId(input.loanId).toUpperCase()}`,
         amount: input.amount,
         timestamp: new Date(),
       })
@@ -89,7 +90,7 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
       void sendAdminNotification("payment.updated", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,
-        loanRef: `LOAN-${data.loanId.slice(0, 8).toUpperCase()}`,
+        loanRef: `LOAN-${shortId(data.loanId).toUpperCase()}`,
         amount: data.amount,
         timestamp: new Date(),
       })
@@ -137,7 +138,7 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
       void sendAdminNotification("payment.deleted", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,
-        loanRef: `LOAN-${data.loanId.slice(0, 8).toUpperCase()}`,
+        loanRef: `LOAN-${shortId(data.loanId).toUpperCase()}`,
         amount: data.amount,
         timestamp: new Date(),
       })

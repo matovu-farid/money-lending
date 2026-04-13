@@ -8,6 +8,7 @@ import { eq, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { autoPostRateChangeAdjustment } from "./auto-post.service"
+import { shortId } from "@/lib/utils"
 import type { CreateRateChangeRequestInput, ReviewRateChangeRequestInput, RateChangeRequest } from "@/types"
 
 export interface RateChangeRequestWithLoan extends RateChangeRequest {
@@ -124,7 +125,7 @@ export const listAllRequests = (): Effect.Effect<RateChangeRequestWithLoan[], Da
 
       return rows.map((row) => ({
         ...row,
-        loanRef: `LOAN-${row.loanId.slice(0, 8).toUpperCase()}`,
+        loanRef: `LOAN-${shortId(row.loanId).toUpperCase()}`,
       }))
     },
     catch: (e) => new DatabaseError({ cause: e }),

@@ -1,7 +1,8 @@
 "use server"
 
 import { Effect } from "effect"
-import { getSession, getUserRole, requireRole, getErrorTag } from "@/lib/action-utils"
+import { withAction } from "@/lib/with-action"
+import { getSession, getUserRole, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
@@ -30,6 +31,7 @@ function getRequiredApproverRole(requestedRateDecimal: string): UserRole | null 
   return "admin"
 }
 
+// This action has complex role-based branching that doesn't fit withAction cleanly
 export async function requestRateChangeAction(input: CreateRateChangeRequestInput) {
   const session = await getSession()
   if (!session) {
@@ -154,24 +156,22 @@ export async function listAllRequestsAction() {
   }
 }
 
-export async function listRequestsForLoanAction(loanId: string) {
-  const session = await getSession()
-  if (!session) {
-    return { error: "Unauthorized" }
-  }
+export const listRequestsForLoanAction = withAction<string, any>({
+  action: async (_session, loanId) => {
+    if (!loanId?.trim()) {
+      return { error: "Loan ID is required" }
+    }
 
-  if (!loanId?.trim()) {
-    return { error: "Loan ID is required" }
-  }
+    try {
+      const data = await Effect.runPromise(listRequestsForLoan(loanId))
+      return { data }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
 
-  try {
-    const data = await Effect.runPromise(listRequestsForLoan(loanId))
-    return { data }
-  } catch {
-    return { error: "Internal server error" }
-  }
-}
-
+// This action has complex role checking (requiredApproverRole per-request), keep inline auth
 export async function reviewRateChangeRequestAction(input: ReviewRateChangeRequestInput) {
   const session = await getSession()
   if (!session) {
