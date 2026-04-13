@@ -105,4 +105,10 @@ export const queryKeys = {
       [...queryKeys.reports.all, "retained-earnings", period] as const,
     transactions: () => [...queryKeys.reports.all, "transactions"] as const,
   },
+
+  activities: {
+    all: ["activities"] as const,
+    list: (params: Record<string, string>, page: number) =>
+      [...queryKeys.activities.all, params, page] as const,
+  },
 } as const
