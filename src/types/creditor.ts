@@ -53,3 +53,18 @@ export interface CreditorInvestmentSummary {
   interestAccrued: string
   totalRepaid: string
 }
+
+export interface MonthlySummaryRow {
+  /** Format: "YYYY-MM" */
+  month: string
+  /** Interest due for this month (principal_balance * monthly_rate) */
+  interestDue: string
+  /** Interest portion of repayments made this month */
+  interestPaid: string
+  /** Principal portion of repayments made this month */
+  principalPaid: string
+  /** interestPaid + principalPaid */
+  totalPaid: string
+  /** Running remaining principal balance after this month */
+  remainingBalance: string
+}
