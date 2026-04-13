@@ -436,3 +436,48 @@ export const getSystemCapital = (): Effect.Effect<
     },
     catch: (e) => new DatabaseError({ cause: e }),
   });
+
+/**
+ * For each creditor, compute the monthly interest due:
+ * Sum of (principal_balance × monthly_rate) across all their investments.
+ * Returns Map<creditorId, formatted string>.
+ */
+export const getCreditorMonthlyInterestDue = (): Effect.Effect<
+  Map<string, string>,
+  DatabaseError
+> =>
+  Effect.tryPromise({
+    try: async () => {
+      const allInvestments = await db.select().from(creditorInvestments);
+      if (allInvestments.length === 0) return new Map<string, string>();
+
+      const investmentIds = allInvestments.map((inv) => inv.id);
+      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds);
+
+      const dueByCreditor = new Map<string, BigNumber>();
+
+      for (const investment of allInvestments) {
+        const principalBalance =
+          ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
+
+        if (principalBalance.isLessThanOrEqualTo(0)) continue;
+
+        const monthlyRate = new BigNumber(investment.interestRateMonthly);
+        const monthlyInterest = principalBalance.times(monthlyRate);
+
+        const current =
+          dueByCreditor.get(investment.creditorId) ?? new BigNumber(0);
+        dueByCreditor.set(
+          investment.creditorId,
+          current.plus(monthlyInterest),
+        );
+      }
+
+      const result = new Map<string, string>();
+      for (const [creditorId, amount] of dueByCreditor) {
+        result.set(creditorId, formatAmount(amount));
+      }
+      return result;
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  });
