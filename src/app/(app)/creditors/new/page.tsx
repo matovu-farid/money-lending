@@ -4,18 +4,18 @@ import { useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import Link from "next/link"
-import { Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { createCreditorAction, addInvestmentAction } from "@/actions/creditor.actions"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
-import { cn, todayDateString } from "@/lib/utils"
+import { todayDateString } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 import { usePermissions } from "@/hooks/use-permissions"
 
@@ -47,7 +47,7 @@ export default function NewCreditorPage() {
       contact: "",
       address: "",
       amount: "",
-      interestRateMonthly: "10",
+      interestRateMonthly: "3",
       investmentDate: todayDateString(),
     },
   })
@@ -99,6 +99,14 @@ export default function NewCreditorPage() {
 
   return (
     <div className="p-4 md:p-6 max-w-lg">
+      <Link
+        href="/creditors"
+        className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mb-4"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Back to Creditors
+      </Link>
+
       <PageHeader
         title="Add Creditor"
         subtitle="Register a new creditor and record their initial investment."
@@ -243,12 +251,6 @@ export default function NewCreditorPage() {
               "Register Creditor"
             )}
           </Button>
-          <Link
-            href="/creditors"
-            className={cn(buttonVariants({ variant: "outline" }))}
-          >
-            Cancel
-          </Link>
         </div>
       </div>
     </div>
