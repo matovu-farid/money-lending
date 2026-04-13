@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table"
 import { AddInvestmentDialog } from "./AddInvestmentDialog"
 import { RecordRepaymentDialog } from "./RecordRepaymentDialog"
-import type { Creditor, CreditorDashboard, CreditorInvestment, CreditorRepayment, PaymentPortionsMap } from "@/types"
+import type { Creditor, CreditorDashboard, CreditorInvestment, CreditorRepayment, PaymentPortionsMap, MonthlySummaryRow } from "@/types"
 import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 
 interface Props {
@@ -21,6 +21,13 @@ interface Props {
   investments: CreditorInvestment[]
   repayments: CreditorRepayment[]
   repaymentPortions: PaymentPortionsMap
+  monthlySummary: MonthlySummaryRow[]
+}
+
+function formatMonth(monthKey: string): string {
+  const [year, month] = monthKey.split("-")
+  const date = new Date(Number(year), Number(month) - 1)
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "short" })
 }
 
 export function CreditorProfileClient({
@@ -30,6 +37,7 @@ export function CreditorProfileClient({
   investments,
   repayments,
   repaymentPortions,
+  monthlySummary,
 }: Props) {
   return (
     <div className="space-y-4">
@@ -46,6 +54,7 @@ export function CreditorProfileClient({
         <TabsList>
           <TabsTrigger value="investments">Investments</TabsTrigger>
           <TabsTrigger value="repayments">Repayments</TabsTrigger>
+          <TabsTrigger value="monthly-summary">Monthly Summary</TabsTrigger>
         </TabsList>
 
         <TabsContent value="investments">
@@ -111,6 +120,41 @@ export function CreditorProfileClient({
                       </TableRow>
                     )
                   })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="monthly-summary">
+          {monthlySummary.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground">
+              No monthly data available yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Month</TableHead>
+                    <TableHead className="text-right">Interest Due</TableHead>
+                    <TableHead className="text-right">Interest Paid</TableHead>
+                    <TableHead className="text-right">Principal Paid</TableHead>
+                    <TableHead className="text-right">Total Paid</TableHead>
+                    <TableHead className="text-right">Remaining Balance</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {monthlySummary.map((row) => (
+                    <TableRow key={row.month} data-testid="data-row">
+                      <TableCell className="font-mono tabular-nums">{formatMonth(row.month)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.interestDue)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.interestPaid)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.principalPaid)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.totalPaid)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.remainingBalance)}</TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

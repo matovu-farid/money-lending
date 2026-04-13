@@ -2,14 +2,14 @@ import { Effect } from "effect"
 import { notFound, redirect } from "next/navigation"
 import { getSession, getUserRole } from "@/lib/action-utils"
 import { ROLE_LEVELS } from "@/types"
-import { getCreditor, getCreditorDashboard } from "@/services/creditor.service"
+import { getCreditor, getCreditorDashboard, getCreditorMonthlySummary } from "@/services/creditor.service"
 import { db } from "@/lib/db"
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
 import { eq, asc, inArray } from "drizzle-orm"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorProfileClient } from "./CreditorProfileClient"
-import type { CreditorRepayment, CreditorInvestment, PaymentPortionsMap } from "@/types"
+import type { CreditorRepayment, CreditorInvestment, PaymentPortionsMap, MonthlySummaryRow } from "@/types"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
@@ -33,6 +33,7 @@ export default async function CreditorProfilePage({ params }: Props) {
   let investments: CreditorInvestment[] = []
   let repayments: CreditorRepayment[] = []
   const repaymentPortions: PaymentPortionsMap = {}
+  let monthlySummary: MonthlySummaryRow[] = []
 
   try {
     ;[creditor, dashboard] = await Promise.all([
@@ -72,6 +73,12 @@ export default async function CreditorProfilePage({ params }: Props) {
           // Non-critical — page renders without portion breakdown
         }
       }
+    }
+
+    try {
+      monthlySummary = await Effect.runPromise(getCreditorMonthlySummary(id))
+    } catch {
+      // Non-critical — page renders without monthly summary
     }
   } catch (e) {
     if (e && typeof e === "object" && "_tag" in e && e._tag === "CreditorNotFound") {
@@ -158,6 +165,7 @@ export default async function CreditorProfilePage({ params }: Props) {
         investments={investments}
         repayments={repayments}
         repaymentPortions={repaymentPortions}
+        monthlySummary={monthlySummary}
       />
     </div>
   )
