@@ -48,9 +48,9 @@ interface TransactionListClientProps {
   /** "income" or "expense" — drives labels and optimistic transaction type */
   variant: "income" | "expense"
   /** Server action to record a transaction */
-  recordAction: (input: CreateTransactionInput) => Promise<{ error: string } | { success: boolean }>
+  recordAction: (input: CreateTransactionInput) => Promise<Record<string, unknown>>
   /** Server action to delete a transaction */
-  deleteAction: (id: string) => Promise<{ error: string } | { success: boolean }>
+  deleteAction: (id: string) => Promise<Record<string, unknown>>
   /** Server action to create a category */
   createCategoryAction: (input: CreateCategoryInput) => Promise<
     { error: string } | { data: { id: string; name: string; type: string; isDefault: boolean; [key: string]: unknown } }
@@ -179,7 +179,7 @@ export function TransactionListClient({
         setOptimisticTransactions((prev) => prev.filter((t) => t.id !== context.optimisticId))
       }
       if (result && "error" in result) {
-        toast.error(result.error)
+        toast.error((result as { error: string }).error)
         return
       }
       toast.success(labels.successRecord)

@@ -380,7 +380,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
             interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
             principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
             balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
-            outstandingBalance={receiptData.payment.allocation?.principalBalanceBefore}
+            outstandingBalance={receiptData.payment.allocation?.outstandingBalanceAfter}
             depositLocation={receiptData.payment.depositLocationValue}
             officerName={session?.user?.name ?? "Officer"}
           />
