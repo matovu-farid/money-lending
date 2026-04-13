@@ -104,6 +104,13 @@ export const recordPayment = (
           throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
         }
 
+        // Reject future-dated payments — payments can only be recorded for today or earlier
+        const paymentDateOnly = new Date(input.paymentDate).toISOString().slice(0, 10)
+        const todayOnly = new Date().toISOString().slice(0, 10)
+        if (paymentDateOnly > todayOnly) {
+          throw { _tag: "ValidationError", message: "Payment date cannot be in the future", field: "paymentDate" }
+        }
+
         const baseRate = getBaseRate(loan)
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
 
@@ -153,10 +160,13 @@ export const recordPayment = (
         const loanType = loan.loanType ?? "perpetual"
         const paymentNumber = activePayments.length + 1
 
-        // For perpetual loans: find interest already collected by payments in the
-        // same min-interest period so we don't double-charge the 30-day minimum.
+        // Find interest already collected by payments in the same period so we
+        // don't double-charge when multiple payments land within one interest window.
+        // This applies to ALL loan types — perpetual (30-day min), fixed_rate, and
+        // reducing_balance (monthly period). If interest is already paid, subsequent
+        // payments go directly to principal, rewarding borrowers who pay more often.
         let interestAlreadyPaidInPeriod = "0"
-        if (loanType === "perpetual" || !loanType) {
+        {
           // Payments that share the same prevDate window (from prevDate onward)
           const paymentsSincePrevDate = activePayments.filter(
             (p) => new Date(p.paymentDate) >= prevDate
@@ -307,6 +317,13 @@ export const editPayment = (
           throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
         }
 
+        // Reject future-dated payments
+        const editDateOnly = newPaymentDate.toISOString().slice(0, 10)
+        const editTodayOnly = new Date().toISOString().slice(0, 10)
+        if (editDateOnly > editTodayOnly) {
+          throw { _tag: "ValidationError", message: "Payment date cannot be in the future", field: "paymentDate" }
+        }
+
         // 1. Reverse old journals using ledger-derived portions
         const oldPortions = await getPaymentPortionsFromLedger([input.paymentId], tx)
         const oldPortion = oldPortions.get(input.paymentId)
@@ -392,6 +409,26 @@ export const editPayment = (
           principalBalanceBefore = runningBalance.toFixed(0)
         }
 
+        // Compute interest already paid by earlier payments in the same period
+        // (excluding the payment being edited, since its journals were reversed above)
+        let interestAlreadyPaidInPeriod = "0"
+        {
+          const earlierInPeriod = activePayments.filter(
+            (p) => p.id !== input.paymentId && new Date(p.paymentDate) >= prevDate
+          )
+          if (earlierInPeriod.length > 0) {
+            const portionsMap = await getPaymentPortionsFromLedger(
+              earlierInPeriod.map((p) => p.id),
+              tx
+            )
+            let sum = new BigNumber(0)
+            for (const [, portions] of portionsMap) {
+              sum = sum.plus(portions.interestPortion)
+            }
+            interestAlreadyPaidInPeriod = sum.toFixed(0)
+          }
+        }
+
         const allocation = allocatePayment({
           paymentAmount: newAmount,
           principalBalanceBefore,
@@ -402,6 +439,7 @@ export const editPayment = (
           originalPrincipal: loan.principalAmount,
           termMonths: loan.termMonths ?? undefined,
           paymentNumber,
+          interestAlreadyPaidInPeriod,
         })
 
         // M2: Reject overpayments that exceed total owed

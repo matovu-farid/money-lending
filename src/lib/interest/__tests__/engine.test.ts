@@ -505,6 +505,42 @@ describe("allocateFixedRatePayment", () => {
     expect(result.loanFullyPaid).toBe(true)
   })
 
+  // interestAlreadyPaidInPeriod: second payment in same month skips interest
+  it("second payment in same month — interest already paid, goes to principal", () => {
+    // Monthly interest = 1M * 0.10 = 100k
+    // First payment already covered 100k interest → remaining = 0
+    const result = allocateFixedRatePayment({
+      paymentAmount: "200000",
+      principalBalanceBefore: "1000000",
+      originalPrincipal: "1000000",
+      monthlyRateDecimal: "0.10",
+      termMonths: 5,
+      paymentNumber: 2,
+      interestAlreadyPaidInPeriod: "100000",
+    })
+    expect(result.interestPortion).toBe("0")
+    expect(result.principalPortion).toBe("200000")
+    expect(result.principalBalanceAfter).toBe("800000")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // interestAlreadyPaidInPeriod: partial interest paid, remainder charged
+  it("partial interest already paid — only remainder charged", () => {
+    // Monthly interest = 100k, already paid 60k → owe 40k
+    const result = allocateFixedRatePayment({
+      paymentAmount: "200000",
+      principalBalanceBefore: "1000000",
+      originalPrincipal: "1000000",
+      monthlyRateDecimal: "0.10",
+      termMonths: 5,
+      paymentNumber: 2,
+      interestAlreadyPaidInPeriod: "60000",
+    })
+    expect(result.interestPortion).toBe("40000")
+    expect(result.principalPortion).toBe("160000")
+    expect(result.principalBalanceAfter).toBe("840000")
+  })
+
   // Edge case: payment slightly above normal installment should NOT trigger early payoff
   it("payment slightly above installment does NOT trigger early payoff", () => {
     // Normal installment = 300k. Payment = 300001.
@@ -588,6 +624,39 @@ describe("allocateReducingBalancePayment", () => {
     expect(result.principalPortion).toBe("800000")
     expect(result.principalBalanceAfter).toBe("0")
     expect(result.loanFullyPaid).toBe(true)
+  })
+
+  // interestAlreadyPaidInPeriod: second payment in same month skips interest
+  it("second payment in same month — interest already paid, goes to principal", () => {
+    // Balance = 800k, interest = 80k, already paid 80k → remaining = 0
+    const result = allocateReducingBalancePayment({
+      paymentAmount: "200000",
+      principalBalanceBefore: "800000",
+      originalPrincipal: "1000000",
+      monthlyRateDecimal: "0.10",
+      termMonths: 5,
+      interestAlreadyPaidInPeriod: "80000",
+    })
+    expect(result.interestPortion).toBe("0")
+    expect(result.principalPortion).toBe("200000")
+    expect(result.principalBalanceAfter).toBe("600000")
+    expect(result.loanFullyPaid).toBe(false)
+  })
+
+  // interestAlreadyPaidInPeriod: partial interest paid, remainder charged
+  it("partial interest already paid — only remainder charged", () => {
+    // Balance = 800k, interest = 80k, already paid 30k → owe 50k
+    const result = allocateReducingBalancePayment({
+      paymentAmount: "200000",
+      principalBalanceBefore: "800000",
+      originalPrincipal: "1000000",
+      monthlyRateDecimal: "0.10",
+      termMonths: 5,
+      interestAlreadyPaidInPeriod: "30000",
+    })
+    expect(result.interestPortion).toBe("50000")
+    expect(result.principalPortion).toBe("150000")
+    expect(result.principalBalanceAfter).toBe("650000")
   })
 
   // Large overpayment — capped at balance

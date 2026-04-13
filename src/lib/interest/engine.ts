@@ -213,26 +213,29 @@ export function allocateFixedRatePayment(params: {
   monthlyRateDecimal: string
   termMonths: number
   paymentNumber: number
+  /** Interest already collected from earlier payments within the same monthly period */
+  interestAlreadyPaidInPeriod?: string
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, originalPrincipal, monthlyRateDecimal, termMonths, paymentNumber } = params
+  const { paymentAmount, principalBalanceBefore, originalPrincipal, monthlyRateDecimal, termMonths, paymentNumber, interestAlreadyPaidInPeriod } = params
   const payment = new BigNumber(paymentAmount)
   const balance = new BigNumber(principalBalanceBefore)
   const monthlyInterest = new BigNumber(originalPrincipal).multipliedBy(new BigNumber(monthlyRateDecimal))
+  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
 
   // Clamp remaining months to at least 1 (handles paymentNumber > termMonths from partial payments)
   const remainingMonths = Math.max(termMonths - paymentNumber + 1, 1)
 
   // Early payoff threshold: payment exceeds current month interest + remaining principal
   // This means the borrower intends to close the loan, so charge all remaining term interest
-  const earlyPayoffThreshold = monthlyInterest.plus(balance)
+  const earlyPayoffThreshold = BigNumber.max(monthlyInterest.minus(alreadyPaid), 0).plus(balance)
 
   let interestOwed: BigNumber
   if (payment.isGreaterThanOrEqualTo(earlyPayoffThreshold)) {
-    // Early payoff: charge all remaining term interest
-    interestOwed = monthlyInterest.multipliedBy(remainingMonths)
+    // Early payoff: charge all remaining term interest minus what's already paid this period
+    interestOwed = BigNumber.max(monthlyInterest.multipliedBy(remainingMonths).minus(alreadyPaid), 0)
   } else {
-    // Normal payment: charge one month of interest
-    interestOwed = monthlyInterest
+    // Normal payment: charge one month of interest minus what's already paid this period
+    interestOwed = BigNumber.max(monthlyInterest.minus(alreadyPaid), 0)
   }
 
   // Interest-first allocation
@@ -273,11 +276,14 @@ export function allocateReducingBalancePayment(params: {
   originalPrincipal: string
   monthlyRateDecimal: string
   termMonths: number
+  /** Interest already collected from earlier payments within the same monthly period */
+  interestAlreadyPaidInPeriod?: string
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal } = params
+  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, interestAlreadyPaidInPeriod } = params
   const payment = new BigNumber(paymentAmount)
   const balance = new BigNumber(principalBalanceBefore)
-  const interestOwed = balance.multipliedBy(new BigNumber(monthlyRateDecimal))
+  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
+  const interestOwed = BigNumber.max(balance.multipliedBy(new BigNumber(monthlyRateDecimal)).minus(alreadyPaid), 0)
 
   // Interest-first allocation
   if (payment.isLessThanOrEqualTo(interestOwed)) {
@@ -341,6 +347,7 @@ export function allocatePayment(params: {
       monthlyRateDecimal,
       termMonths,
       paymentNumber,
+      interestAlreadyPaidInPeriod,
     })
   }
 
@@ -352,6 +359,7 @@ export function allocatePayment(params: {
       originalPrincipal,
       monthlyRateDecimal,
       termMonths,
+      interestAlreadyPaidInPeriod,
     })
   }
 

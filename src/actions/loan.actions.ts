@@ -47,6 +47,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
       .select({
         id: loans.id,
         customerName: customers.fullName,
+        startDate: loans.startDate,
       })
       .from(loans)
       .innerJoin(customers, eq(loans.customerId, customers.id))
@@ -59,6 +60,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
         loanId: row.id,
         customerName: row.customerName,
         loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
+        startDate: new Date(row.startDate).toISOString().slice(0, 10),
       },
     }
   },

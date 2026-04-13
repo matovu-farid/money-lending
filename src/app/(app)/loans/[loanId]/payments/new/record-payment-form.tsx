@@ -49,6 +49,7 @@ interface RecordPaymentFormProps {
   loanId: string
   customerName: string
   loanReference: string
+  loanStartDate: string
   balanceData: BalanceData | null
   balanceLoading?: boolean
 }
@@ -65,7 +66,7 @@ function BalanceSkeleton() {
   return <span className="inline-block h-4 w-24 rounded bg-muted-foreground/10 animate-pulse align-middle" />
 }
 
-export function RecordPaymentForm({ loanId, customerName, loanReference, balanceData, balanceLoading }: RecordPaymentFormProps) {
+export function RecordPaymentForm({ loanId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { data: session } = useSession()
@@ -209,6 +210,8 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
               <Input
                 id="paymentDate"
                 type="date"
+                min={loanStartDate}
+                max={todayDateString()}
                 disabled={isPending}
                 {...register("paymentDate", { required: "Payment date is required" })}
               />

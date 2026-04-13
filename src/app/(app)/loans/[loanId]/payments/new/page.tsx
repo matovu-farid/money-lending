@@ -54,6 +54,7 @@ export default function RecordPaymentPage() {
       loanId={loanId}
       customerName={context.customerName}
       loanReference={context.loanReference}
+      loanStartDate={context.startDate}
       balanceData={balanceData ?? null}
       balanceLoading={balanceLoading}
     />
