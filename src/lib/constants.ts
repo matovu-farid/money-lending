@@ -21,6 +21,18 @@ export const DEPOSIT_LOCATION_OPTIONS: { value: DepositLocation; label: string }
   { value: "strong_room", label: "Strong Room" },
 ]
 
+/** Valid deposit locations for runtime validation */
+export const VALID_DEPOSIT_LOCATIONS: string[] = DEPOSIT_LOCATION_OPTIONS.map((o) => o.value)
+
+/** Short ID length for truncated UUID references */
+export const SHORT_ID_LENGTH = 8
+
+/** Valid loan types */
+export const VALID_LOAN_TYPES = ["perpetual", "fixed_rate", "reducing_balance"] as const
+
+/** Valid customer statuses */
+export const VALID_CUSTOMER_STATUSES = ["active", "blacklisted", "inactive"] as const
+
 /** Common amount presets for payment forms */
 export const AMOUNT_PRESETS = [
   { label: "50K", value: "50000" },

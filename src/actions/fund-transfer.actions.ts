@@ -6,16 +6,16 @@ import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { createFundTransfer, createCapitalInjection, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
+import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 
 export const createFundTransferAction = withAction<CreateFundTransferInput, any>({
   minRole: "admin",
   forbiddenMessage: "Forbidden: admin access required",
   action: async (session, input) => {
-    const validLocations = ["cash", "bank", "strong_room"]
-    if (!input.fromLocation || !validLocations.includes(input.fromLocation)) {
+    if (!input.fromLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.fromLocation)) {
       return { error: "Invalid source location" }
     }
-    if (!input.toLocation || !validLocations.includes(input.toLocation)) {
+    if (!input.toLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.toLocation)) {
       return { error: "Invalid destination location" }
     }
     if (input.fromLocation === input.toLocation) {
@@ -39,8 +39,7 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
   minRole: "admin",
   forbiddenMessage: "Forbidden: admin access required",
   action: async (session, input) => {
-    const validLocations = ["cash", "bank", "strong_room"]
-    if (!input.toLocation || !validLocations.includes(input.toLocation)) {
+    if (!input.toLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.toLocation)) {
       return { error: "Invalid deposit location" }
     }
     const amountErr = validatePositiveDecimal(input.amount, "Amount")

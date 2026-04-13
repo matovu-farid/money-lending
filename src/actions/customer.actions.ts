@@ -7,6 +7,7 @@ import { validateFullName, validateNIN, validateUgandanPhone } from "@/lib/valid
 import { revalidatePath } from "next/cache"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput, CustomerStatus } from "@/types"
+import { VALID_CUSTOMER_STATUSES } from "@/lib/constants"
 
 export const listCustomersAction = withAction({
   effect: () => listCustomers(),
@@ -67,8 +68,7 @@ export const changeCustomerStatusAction = withAction<ChangeStatusInput, any>({
     if (!input.customerId?.trim()) {
       return { error: "Customer ID is required" }
     }
-    const validStatuses: CustomerStatus[] = ["active", "blacklisted", "inactive"]
-    if (!input.newStatus || !validStatuses.includes(input.newStatus)) {
+    if (!input.newStatus || !VALID_CUSTOMER_STATUSES.includes(input.newStatus as any)) {
       return { error: "Invalid status" }
     }
     if (!input.reason?.trim() || input.reason.trim().length < 10) {
