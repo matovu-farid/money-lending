@@ -5,7 +5,12 @@ import {
   loanOfficerRole,
   adminRole,
   superAdminRole,
+  PERMISSIONS,
+  ROLE_PERMISSIONS,
+  MANAGING_SUPERVISOR_ELEVATED,
+  getPermissionsForRole,
 } from "../permissions"
+import type { Permission } from "@/types/common"
 
 describe("ac (access control)", () => {
   it("exposes the full statement definitions", () => {
@@ -418,6 +423,164 @@ describe("role hierarchy — privilege escalation boundaries", () => {
     const denied = adminRole.authorize({ role: ["assign-super-admin"] })
     expect(allowed.success).toBe(true)
     expect(denied.success).toBe(false)
+  })
+})
+
+// ─── New granular permission catalog tests ───
+
+describe("PERMISSIONS array", () => {
+  it("contains all expected permissions", () => {
+    const expected: Permission[] = [
+      // operations
+      "loan:create", "loan:read", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
+      "customer:create", "customer:read", "customer:update",
+      "payment:create", "payment:read", "payment:update", "payment:delete", "payment:edit-any", "payment:delete-any",
+      "expense:create", "expense:read",
+      "income:create", "income:read",
+      "fund-transfer:create", "fund-transfer:read",
+      // approvals
+      "backdate:beyond-3-days",
+      "rate-change:create", "rate-change:approve-standard", "rate-change:approve-low",
+      // creditors
+      "creditor:read", "creditor:create", "creditor:update",
+      // admin
+      "dashboard:read",
+      "reports:read",
+      "settings:read", "settings:update",
+      "user:list", "user:ban", "user:impersonate",
+      "session:list", "session:revoke", "session:delete",
+      // delegation
+      "delegation:create", "delegation:revoke", "delegation:read",
+      // roles
+      "role:assign-loan-officer", "role:assign-supervisor", "role:assign-admin", "role:assign-super-admin",
+    ]
+    for (const perm of expected) {
+      expect(PERMISSIONS).toContain(perm)
+    }
+    expect(PERMISSIONS.length).toBe(expected.length)
+  })
+})
+
+describe("ROLE_PERMISSIONS", () => {
+  it("unassigned has empty set", () => {
+    expect(ROLE_PERMISSIONS.unassigned.size).toBe(0)
+  })
+
+  it("loanOfficer has basic operations", () => {
+    const lo = ROLE_PERMISSIONS.loanOfficer
+    const expected: Permission[] = [
+      "loan:create", "loan:read", "loan:update",
+      "customer:create", "customer:read", "customer:update",
+      "payment:create", "payment:read", "payment:update", "payment:delete",
+      "expense:create", "expense:read",
+      "income:create", "income:read",
+      "fund-transfer:create", "fund-transfer:read",
+      "rate-change:create",
+      "reports:read",
+    ]
+    for (const perm of expected) {
+      expect(lo.has(perm)).toBe(true)
+    }
+    expect(lo.size).toBe(expected.length)
+  })
+
+  it("supervisor inherits loanOfficer and adds extras", () => {
+    const sup = ROLE_PERMISSIONS.supervisor
+    // Should have all loanOfficer perms
+    for (const perm of ROLE_PERMISSIONS.loanOfficer) {
+      expect(sup.has(perm)).toBe(true)
+    }
+    // Supervisor extras
+    const extras: Permission[] = [
+      "loan:disburse", "loan:rollover", "loan:settle",
+      "backdate:beyond-3-days",
+      "rate-change:approve-standard",
+      "dashboard:read",
+      "role:assign-loan-officer",
+      "creditor:read", "creditor:create", "creditor:update",
+      "payment:edit-any", "payment:delete-any",
+    ]
+    for (const perm of extras) {
+      expect(sup.has(perm)).toBe(true)
+    }
+  })
+
+  it("admin inherits supervisor and adds extras", () => {
+    const adm = ROLE_PERMISSIONS.admin
+    // Should have all supervisor perms
+    for (const perm of ROLE_PERMISSIONS.supervisor) {
+      expect(adm.has(perm)).toBe(true)
+    }
+    // Admin extras
+    const extras: Permission[] = [
+      "rate-change:approve-low",
+      "role:assign-supervisor",
+      "settings:read", "settings:update",
+      "user:list", "user:ban", "user:impersonate",
+      "session:list", "session:revoke", "session:delete",
+      "delegation:create", "delegation:revoke", "delegation:read",
+    ]
+    for (const perm of extras) {
+      expect(adm.has(perm)).toBe(true)
+    }
+  })
+
+  it("superAdmin has everything including role escalation", () => {
+    const sa = ROLE_PERMISSIONS.superAdmin
+    // Should have all admin perms
+    for (const perm of ROLE_PERMISSIONS.admin) {
+      expect(sa.has(perm)).toBe(true)
+    }
+    expect(sa.has("role:assign-admin")).toBe(true)
+    expect(sa.has("role:assign-super-admin")).toBe(true)
+    // superAdmin should have ALL permissions
+    for (const perm of PERMISSIONS) {
+      expect(sa.has(perm)).toBe(true)
+    }
+  })
+})
+
+describe("MANAGING_SUPERVISOR_ELEVATED", () => {
+  it("contains admin operational permissions", () => {
+    // Should include things like loan:disburse, settings:*, user:*, session:*, etc.
+    expect(MANAGING_SUPERVISOR_ELEVATED.has("loan:disburse")).toBe(true)
+    expect(MANAGING_SUPERVISOR_ELEVATED.has("settings:read")).toBe(true)
+    expect(MANAGING_SUPERVISOR_ELEVATED.has("user:list")).toBe(true)
+    expect(MANAGING_SUPERVISOR_ELEVATED.has("session:list")).toBe(true)
+    expect(MANAGING_SUPERVISOR_ELEVATED.has("rate-change:approve-low")).toBe(true)
+  })
+
+  it("excludes creditor:* permissions", () => {
+    for (const perm of MANAGING_SUPERVISOR_ELEVATED) {
+      expect(perm.startsWith("creditor:")).toBe(false)
+    }
+  })
+
+  it("excludes role:* permissions", () => {
+    for (const perm of MANAGING_SUPERVISOR_ELEVATED) {
+      expect(perm.startsWith("role:")).toBe(false)
+    }
+  })
+
+  it("excludes delegation:* permissions", () => {
+    for (const perm of MANAGING_SUPERVISOR_ELEVATED) {
+      expect(perm.startsWith("delegation:")).toBe(false)
+    }
+  })
+})
+
+describe("getPermissionsForRole", () => {
+  it("returns correct set for each known role", () => {
+    expect(getPermissionsForRole("unassigned")).toEqual(ROLE_PERMISSIONS.unassigned)
+    expect(getPermissionsForRole("loanOfficer")).toEqual(ROLE_PERMISSIONS.loanOfficer)
+    expect(getPermissionsForRole("supervisor")).toEqual(ROLE_PERMISSIONS.supervisor)
+    expect(getPermissionsForRole("admin")).toEqual(ROLE_PERMISSIONS.admin)
+    expect(getPermissionsForRole("superAdmin")).toEqual(ROLE_PERMISSIONS.superAdmin)
+  })
+
+  it("returns empty set for unknown role", () => {
+    const result = getPermissionsForRole("bogusRole" as any)
+    expect(result.size).toBe(0)
   })
 })
 
