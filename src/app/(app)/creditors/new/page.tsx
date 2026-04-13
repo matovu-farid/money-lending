@@ -6,6 +6,7 @@ import { useForm } from "react-hook-form"
 import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { useSession } from "@/lib/auth-client"
 import { createCreditorAction, addInvestmentAction } from "@/actions/creditor.actions"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,8 +14,10 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { PermissionInfo } from "@/components/ui/permission-info"
 import { cn, todayDateString } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
+import { ROLE_LEVELS, type UserRole } from "@/types"
 
 interface CreditorFormValues {
   name: string
@@ -26,6 +29,10 @@ interface CreditorFormValues {
 }
 
 export default function NewCreditorPage() {
+  const { data: session } = useSession()
+  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
+  const isSupervisorOrAbove = ROLE_LEVELS[actorRole] >= ROLE_LEVELS.supervisor
+
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
 
@@ -44,6 +51,20 @@ export default function NewCreditorPage() {
       investmentDate: todayDateString(),
     },
   })
+
+  if (!isSupervisorOrAbove) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="supervisor" action="Add creditors" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Supervisor or higher permissions to add creditors.
+        </p>
+      </div>
+    )
+  }
 
   function onSubmit(data: CreditorFormValues) {
     startTransition(async () => {

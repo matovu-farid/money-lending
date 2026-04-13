@@ -1,6 +1,7 @@
 "use client"
 
 import { useQuery } from "@tanstack/react-query"
+import { useSession } from "@/lib/auth-client"
 import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"
@@ -8,8 +9,10 @@ import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
+import { PermissionInfo } from "@/components/ui/permission-info"
 import { queryKeys } from "@/hooks/query-keys"
 import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
+import { ROLE_LEVELS, type UserRole } from "@/types"
 
 const defaultCapital = {
   totalInvested: "0.00",
@@ -19,6 +22,10 @@ const defaultCapital = {
 }
 
 export default function CreditorsPage() {
+  const { data: session } = useSession()
+  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
+  const isSupervisorOrAbove = ROLE_LEVELS[actorRole] >= ROLE_LEVELS.supervisor
+
   const { data: creditors = [], isLoading: creditorsLoading } = useQuery({
     queryKey: queryKeys.creditors.all,
     queryFn: async () => {
@@ -26,6 +33,7 @@ export default function CreditorsPage() {
       if ("error" in result) throw new Error(result.error)
       return result.data
     },
+    enabled: !!session && isSupervisorOrAbove,
   })
 
   const { data: capital = defaultCapital, isLoading: capitalLoading } = useQuery({
@@ -35,9 +43,24 @@ export default function CreditorsPage() {
       if ("error" in result) throw new Error(result.error)
       return result.data
     },
+    enabled: !!session && isSupervisorOrAbove,
   })
 
   const isLoading = creditorsLoading || capitalLoading
+
+  if (!isSupervisorOrAbove) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="supervisor" action="View creditors" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Supervisor or higher permissions to view creditors.
+        </p>
+      </div>
+    )
+  }
 
   if (isLoading) {
     return (

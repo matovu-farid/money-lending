@@ -1,5 +1,7 @@
 import { Effect } from "effect"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
+import { getSession, getUserRole } from "@/lib/action-utils"
+import { ROLE_LEVELS } from "@/types"
 import { getCreditor, getCreditorDashboard } from "@/services/creditor.service"
 import { db } from "@/lib/db"
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
@@ -19,6 +21,11 @@ interface Props {
 }
 
 export default async function CreditorProfilePage({ params }: Props) {
+  const session = await getSession()
+  if (!session) redirect("/sign-in")
+  const role = getUserRole(session)
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) redirect("/creditors")
+
   const { id } = await params
 
   let creditor

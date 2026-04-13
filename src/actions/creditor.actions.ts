@@ -19,15 +19,17 @@ import type {
 } from "@/types"
 
 export const listCreditorsAction = withAction({
+  minRole: "supervisor",
   effect: () => listCreditors(),
 })
 
 export const getSystemCapitalAction = withAction({
+  minRole: "supervisor",
   effect: () => getSystemCapital(),
 })
 
 export const createCreditorAction = withAction<CreateCreditorInput, any>({
-  minRole: "loanOfficer",
+  minRole: "supervisor",
   action: async (session, input) => {
     if (!input.name?.trim()) return { error: "Creditor name is required" }
     if (!input.contact?.trim()) return { error: "Contact is required" }
@@ -51,13 +53,13 @@ export async function updateCreditorAction(
 }
 
 const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInput }, any>({
-  minRole: "loanOfficer",
+  minRole: "supervisor",
   effect: (session, { id, input }) => updateCreditor(id, input, session.user.id),
   revalidate: (input) => ["/creditors", `/creditors/${input.id}`],
 })
 
 export const addInvestmentAction = withAction<AddInvestmentInput, any>({
-  minRole: "loanOfficer",
+  minRole: "supervisor",
   action: async (session, input) => {
     if (!input.creditorId?.trim()) return { error: "Creditor ID is required" }
     if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
@@ -79,7 +81,7 @@ export const addInvestmentAction = withAction<AddInvestmentInput, any>({
 })
 
 export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentInput, any>({
-  minRole: "loanOfficer",
+  minRole: "supervisor",
   action: async (session, input) => {
     if (!input.investmentId?.trim()) return { error: "Investment ID is required" }
     if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {

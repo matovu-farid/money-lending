@@ -30,6 +30,7 @@ import { listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
 import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "@/actions/expense.actions"
 import { useSidebarStore } from "@/lib/stores/sidebar"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -112,79 +113,95 @@ export function Sidebar({ onClose }: SidebarProps) {
   const userRole = (user?.role ?? "unassigned") as UserRole
   const userLevel = ROLE_LEVELS[userRole] ?? 0
 
-  // Eagerly prefetch operations pages (route + data) on mount
+  // Prefetch all pages via the global priority queue on mount
   useEffect(() => {
     const staleTime = 30_000
-    router.prefetch("/dashboard")
-    router.prefetch("/customers")
-    router.prefetch("/loans")
-    router.prefetch("/payments")
+    const { HIGH, NORMAL, LOW } = Priority
 
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.dashboard.kpis(),
-      queryFn: () => getDashboardAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-      staleTime,
-    })
+    // HIGH — Core operations pages (user will visit these first)
+    prefetchQueue.add(() => router.prefetch("/dashboard"), HIGH)
+    prefetchQueue.add(() => router.prefetch("/customers"), HIGH)
+    prefetchQueue.add(() => router.prefetch("/loans"), HIGH)
+    prefetchQueue.add(() => router.prefetch("/payments"), HIGH)
 
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.customers.search({}, 0),
-      queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-      staleTime,
-    })
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.loans.all,
-      queryFn: () => listLoansWithOverdueAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-      staleTime,
-    })
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.payments.list({}, 1),
-      queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-      staleTime,
-    })
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.dashboard.kpis(),
+        queryFn: () => getDashboardAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      }), HIGH)
 
-    // Lower-priority pages: prefetch after a delay so high-priority ones finish first
-    const delayedTimer = setTimeout(() => {
-      router.prefetch("/creditors")
-      router.prefetch("/expenses")
-      router.prefetch("/fund-transfers")
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.customers.search({}, 0),
+        queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      }), HIGH)
 
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.loans.all,
+        queryFn: () => listLoansWithOverdueAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      }), HIGH)
+
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.payments.list({}, 1),
+        queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+        staleTime,
+      }), HIGH)
+
+    // NORMAL — Secondary pages
+    prefetchQueue.add(() => router.prefetch("/creditors"), NORMAL)
+    prefetchQueue.add(() => router.prefetch("/expenses"), NORMAL)
+    prefetchQueue.add(() => router.prefetch("/fund-transfers"), NORMAL)
+
+    prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.fundTransfers.all,
         queryFn: () => listFundTransfersAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
         staleTime,
-      })
+      }), NORMAL)
+
+    prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.creditors.all,
         queryFn: () => listCreditorsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
         staleTime,
-      })
+      }), NORMAL)
+
+    prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.creditors.capital(),
         queryFn: () => getSystemCapitalAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
         staleTime,
-      })
+      }), NORMAL)
+
+    prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.expenses.list({}, 1),
         queryFn: () => listExpenseTransactionsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
         staleTime,
-      })
+      }), NORMAL)
+
+    prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.expenses.categories(),
         queryFn: () => listExpenseCategoriesAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
         staleTime,
-      })
+      }), NORMAL)
 
-      if (userLevel >= ROLE_LEVELS.supervisor) {
-        router.prefetch("/approvals")
+    // LOW — Conditional pages
+    if (userLevel >= ROLE_LEVELS.supervisor) {
+      prefetchQueue.add(() => router.prefetch("/approvals"), LOW)
+      prefetchQueue.add(() =>
         queryClient.prefetchQuery({
           queryKey: queryKeys.rateChangeRequests.pending(),
           queryFn: () => listAllRequestsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
           staleTime,
-        })
-      }
-    }, 3000)
-
-    return () => clearTimeout(delayedTimer)
+        }), LOW)
+    }
   }, [router, queryClient, userLevel])
 
   // Prefetch TanStack Query data on hover with 100ms delay to avoid needless fetches
@@ -231,6 +248,7 @@ export function Sidebar({ onClose }: SidebarProps) {
       ...group,
       items: group.items.filter((item) => {
         if (item.href === "/fund-transfers") return userLevel >= ROLE_LEVELS.admin
+        if (item.href === "/creditors") return userLevel >= ROLE_LEVELS.supervisor
         return true
       }),
     }
