@@ -16,7 +16,7 @@ import { PermissionInfo } from "@/components/ui/permission-info"
 import { ROLE_LEVELS } from "@/types"
 import type { UserRole, RateChangeRequest, Loan } from "@/types"
 import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
-import { getEffectiveRate } from "@/lib/interest/effective-rate"
+import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
 
 export interface LoanInfoCardsProps {
   loan: Loan
@@ -91,7 +91,7 @@ export function LoanInfoCards({
           </InfoPopover>
         </div>
         <p className="text-2xl font-semibold font-mono tabular-nums tracking-tight">
-          {formatRate(loan.interestRate, 1)}
+          {formatRate(getBaseRate(loan), 1)}
           <span className="text-sm font-normal text-muted-foreground ml-1">/ month</span>
         </p>
         {penaltyActive && (
@@ -105,7 +105,7 @@ export function LoanInfoCards({
                   This loan has had unpaid interest for more than 60 days. A penalty of {formatRate(loan.penaltyMultiplier)} has been added to the base interest rate.
                 </p>
                 <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                  Effective Rate = {formatRate(loan.interestRate, 1)} + ({formatRate(loan.penaltyMultiplier)} penalty) = {formatRate(getEffectiveRate(loan, penaltyActive), 1)}
+                  Effective Rate = {formatRate(getBaseRate(loan), 1)} + ({formatRate(loan.penaltyMultiplier)} penalty) = {formatRate(getEffectiveRate(loan, penaltyActive), 1)}
                 </p>
                 <p className="text-xs text-muted-foreground">
                   The penalty is automatically removed when the borrower catches up on interest payments (less than 60 days overdue). An admin can also waive it manually.
@@ -174,7 +174,7 @@ export function LoanInfoCards({
         )}
         {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
           <div className="flex items-center gap-1.5 mt-2">
-            <Button variant="outline" size="sm" onClick={() => onOpenRateChange(loan.interestRate)}>
+            <Button variant="outline" size="sm" onClick={() => onOpenRateChange(getBaseRate(loan))}>
               <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
               Request Rate Change
             </Button>

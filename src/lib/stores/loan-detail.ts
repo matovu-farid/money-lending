@@ -50,7 +50,7 @@ interface LoanDetailActions {
   setDeleteReason: (v: string) => void
 
   // Loan edit
-  openLoanEdit: (loan: { principalAmount: string; interestRate: string; startDate: Date | string }) => void
+  openLoanEdit: (loan: { principalAmount: string; interestRate: string; interestRateOverride?: string | null; startDate: Date | string }) => void
   closeLoanEdit: () => void
   setLoanPrincipal: (v: string) => void
   setLoanInterestRate: (v: string) => void
@@ -138,7 +138,7 @@ export const useLoanDetailStore = create<LoanDetailState & LoanDetailActions>()(
     set({
       editingLoan: true,
       loanPrincipal: loan.principalAmount,
-      loanInterestRate: (Number(loan.interestRate) * 100).toFixed(1),
+      loanInterestRate: (Number(loan.interestRateOverride ?? loan.interestRate) * 100).toFixed(1),
       loanStartDate: formatDateForInput(loan.startDate),
       loanEditReason: "",
     }),

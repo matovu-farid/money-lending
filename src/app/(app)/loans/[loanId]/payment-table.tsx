@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table"
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
 import type { Payment, PaymentPortionsMap } from "@/types"
-import { cn, formatDate, formatCurrency } from "@/lib/utils"
+import { cn, formatDate, formatCurrency, shortId } from "@/lib/utils"
 
 export interface PaymentTableProps {
   payments: Payment[]
@@ -103,7 +103,7 @@ export function PaymentTable({
                 {payments.map((payment) => {
                   const isDeleted = payment.deletedAt !== null
                   const cellClass = isDeleted ? "opacity-50 line-through" : ""
-                  const recorderName = userNameMap[payment.recordedBy] ?? payment.recordedBy.slice(0, 8)
+                  const recorderName = userNameMap[payment.recordedBy] ?? shortId(payment.recordedBy)
                   return (
                     <TableRow key={payment.id} data-testid="data-row" className={isDeleted ? "bg-muted/20" : ""}>
                       <TableCell className={cn("font-mono tabular-nums text-sm", cellClass)}>

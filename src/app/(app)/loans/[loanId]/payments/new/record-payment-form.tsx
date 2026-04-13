@@ -49,7 +49,8 @@ interface RecordPaymentFormProps {
   loanId: string
   customerName: string
   loanReference: string
-  balanceData: BalanceData
+  balanceData: BalanceData | null
+  balanceLoading?: boolean
 }
 
 
@@ -60,7 +61,11 @@ interface PaymentFormValues {
   note: string
 }
 
-export function RecordPaymentForm({ loanId, customerName, loanReference, balanceData }: RecordPaymentFormProps) {
+function BalanceSkeleton() {
+  return <span className="inline-block h-4 w-24 rounded bg-muted-foreground/10 animate-pulse align-middle" />
+}
+
+export function RecordPaymentForm({ loanId, customerName, loanReference, balanceData, balanceLoading }: RecordPaymentFormProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { data: session } = useSession()
@@ -151,16 +156,24 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
           <Separator className="my-2" />
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Outstanding Principal</span>
-            <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.outstandingPrincipal)}</span>
+            {balanceLoading || !balanceData ? <BalanceSkeleton /> : (
+              <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.outstandingPrincipal)}</span>
+            )}
           </div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Accrued Interest</span>
-            <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.accruedInterest)}</span>
+            {balanceLoading || !balanceData ? <BalanceSkeleton /> : (
+              <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.accruedInterest)}</span>
+            )}
           </div>
           <Separator className="my-2" />
           <div className="flex items-center justify-between">
             <span className="text-sm font-semibold">Total Balance Owed</span>
-            <span className="font-mono tabular-nums font-bold text-lg">{formatCurrency(balanceData.totalBalance)}</span>
+            {balanceLoading || !balanceData ? (
+              <span className="inline-block h-6 w-32 rounded bg-muted-foreground/10 animate-pulse align-middle" />
+            ) : (
+              <span className="font-mono tabular-nums font-bold text-lg">{formatCurrency(balanceData.totalBalance)}</span>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -367,7 +380,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, balance
             interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
             principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
             balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
-            outstandingBalance={receiptData.payment.allocation?.outstandingBalanceAfter}
+            outstandingBalance={receiptData.payment.allocation?.principalBalanceBefore}
             depositLocation={receiptData.payment.depositLocationValue}
             officerName={session?.user?.name ?? "Officer"}
           />

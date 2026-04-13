@@ -28,7 +28,7 @@ export default function RecordPaymentPage() {
     },
   })
 
-  if (contextLoading || balanceLoading) {
+  if (contextLoading) {
     return (
       <div className="p-4 md:p-6 max-w-xl">
         <div className="space-y-4">
@@ -41,7 +41,7 @@ export default function RecordPaymentPage() {
     )
   }
 
-  if (!context || !balanceData) {
+  if (!context) {
     return (
       <div className="p-4 md:p-6">
         <p className="text-destructive">Loan not found.</p>
@@ -54,7 +54,8 @@ export default function RecordPaymentPage() {
       loanId={loanId}
       customerName={context.customerName}
       loanReference={context.loanReference}
-      balanceData={balanceData}
+      balanceData={balanceData ?? null}
+      balanceLoading={balanceLoading}
     />
   )
 }
