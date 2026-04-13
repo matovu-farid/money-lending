@@ -2,10 +2,18 @@
 
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
-import { getSession } from "@/lib/action-utils"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
 
 const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "supervisor", "admin", "superAdmin"]
+
+/** Map each assignable role to the permission required to assign it. */
+const ROLE_ASSIGN_PERMISSION: Record<string, Permission> = {
+  loanOfficer: "role:assign-loan-officer",
+  supervisor: "role:assign-supervisor",
+  admin: "role:assign-admin",
+  superAdmin: "role:assign-super-admin",
+}
 
 export async function assignRole(input: { userId: string; role: UserRole }) {
   const session = await getSession()
@@ -26,20 +34,27 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
     return { error: "Cannot change your own role" }
   }
 
-  const actorRole = (session.user.role ?? "unassigned") as UserRole
+  const actorRole = getUserRole(session)
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
   const targetLevel = ROLE_LEVELS[targetRole] ?? 0
 
+  // Keep hierarchy guard: can't assign at or above your own level
   if (targetLevel >= actorLevel) {
     return { error: "Cannot assign role at or above your own level" }
   }
 
-  if (actorLevel < ROLE_LEVELS.admin) {
+  // Check permission for the specific role being assigned
+  const requiredPermission = ROLE_ASSIGN_PERMISSION[targetRole]
+  if (!requiredPermission) {
+    return { error: "Cannot assign this role" }
+  }
+
+  const perms = await getEffectivePermissions(session.user.id, actorRole)
+  if (!perms.has(requiredPermission)) {
     return { error: "Insufficient permissions to assign roles" }
   }
 
   try {
-    // Verify the target user's current role is below the actor's level
     const targetUser = await auth.api.getUser({ query: { id: userId }, headers: await headers() })
     if (targetUser) {
       const existingRole = (targetUser.role ?? "unassigned") as UserRole
@@ -57,4 +72,12 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
   } catch {
     return { error: "Failed to update role" }
   }
+}
+
+export async function getEffectivePermissionsAction(): Promise<string[]> {
+  const session = await getSession()
+  if (!session) return []
+  const role = getUserRole(session)
+  const perms = await getEffectivePermissions(session.user.id, role)
+  return [...perms]
 }

@@ -1,9 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { UserRole, Permission } from "@/types"
+import { getPermissionsForRole } from "@/lib/permissions"
 
 // ---------- Mocks ----------
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
+  getUserRole: vi.fn((session: { user: { role?: string | null } }): UserRole => {
+    return (session.user.role ?? "unassigned") as UserRole
+  }),
+  getEffectivePermissions: vi.fn(async (_userId: string, role: UserRole): Promise<Set<Permission>> => {
+    return getPermissionsForRole(role)
+  }),
 }))
 
 vi.mock("@/lib/auth", () => ({
@@ -78,16 +86,31 @@ describe("User Actions — assignRole", () => {
   })
 
   // ===== Insufficient permissions =====
-  it("loanOfficer cannot assign roles (below admin level)", async () => {
+  it("loanOfficer cannot assign unassigned role (no permission mapping)", async () => {
     mockGetSession.mockResolvedValue(loanOfficerSession) // level 1
     const result = await assignRole({ userId: "u9", role: "unassigned" })
-    expect(result).toEqual({ error: "Insufficient permissions to assign roles" })
+    expect(result).toEqual({ error: "Cannot assign this role" })
   })
 
-  it("supervisor cannot assign roles (below admin level)", async () => {
+  it("supervisor cannot assign unassigned role (no permission mapping)", async () => {
     mockGetSession.mockResolvedValue(supervisorSession) // level 2
     const result = await assignRole({ userId: "u9", role: "unassigned" })
-    expect(result).toEqual({ error: "Insufficient permissions to assign roles" })
+    expect(result).toEqual({ error: "Cannot assign this role" })
+  })
+
+  it("loanOfficer cannot assign loanOfficer (insufficient permissions)", async () => {
+    // loanOfficer (level 1) trying to assign loanOfficer (level 1) → "at or above"
+    mockGetSession.mockResolvedValue(loanOfficerSession)
+    const result = await assignRole({ userId: "u9", role: "loanOfficer" })
+    expect(result).toEqual({ error: "Cannot assign role at or above your own level" })
+  })
+
+  it("supervisor can assign loanOfficer (has role:assign-loan-officer permission)", async () => {
+    mockGetSession.mockResolvedValue(supervisorSession)
+    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
+    mockSetRole.mockResolvedValue(undefined as any)
+    const result = await assignRole({ userId: "u9", role: "loanOfficer" })
+    expect(result).toEqual({ data: { role: "loanOfficer" } })
   })
 
   it("unassigned user cannot assign roles (hits level check first)", async () => {
