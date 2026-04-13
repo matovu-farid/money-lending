@@ -67,6 +67,8 @@ export const PERMISSIONS: readonly Permission[] = [
   "session:list", "session:revoke", "session:delete",
   // delegation
   "delegation:create", "delegation:revoke", "delegation:read",
+  // activity monitoring
+  "activity:read",
   // roles
   "role:assign-loan-officer", "role:assign-supervisor", "role:assign-admin", "role:assign-super-admin",
 ] as const
@@ -92,6 +94,7 @@ const supervisorExtras: Permission[] = [
   "role:assign-loan-officer",
   "creditor:read", "creditor:create", "creditor:update",
   "payment:edit-any", "payment:delete-any",
+  "activity:read",
 ]
 
 const adminExtras: Permission[] = [

@@ -33,6 +33,8 @@ export type Permission =
   | "session:list" | "session:revoke" | "session:delete"
   // delegation
   | "delegation:create" | "delegation:revoke" | "delegation:read"
+  // activity monitoring
+  | "activity:read"
   // roles
   | "role:assign-loan-officer" | "role:assign-supervisor" | "role:assign-admin" | "role:assign-super-admin"
 
