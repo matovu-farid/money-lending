@@ -1,6 +1,11 @@
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { ROLE_LEVELS, type UserRole } from "@/types"
+import { getPermissionsForRole, MANAGING_SUPERVISOR_ELEVATED } from "@/lib/permissions"
+import { db } from "@/lib/db"
+import { delegations } from "@/lib/db/schema/delegations"
+import { eq, isNull, and } from "drizzle-orm"
+import type { Permission } from "@/types"
 
 /**
  * Get the current authenticated session, or null if not logged in.
@@ -28,6 +33,50 @@ export function requireRole(
 ): string | null {
   const role = getUserRole(session)
   return ROLE_LEVELS[role] < ROLE_LEVELS[minRole] ? (message ?? "Forbidden") : null
+}
+
+/**
+ * Check if a user has an active delegation (revokedAt IS NULL).
+ */
+export async function hasActiveDelegation(userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: delegations.id })
+    .from(delegations)
+    .where(and(eq(delegations.userId, userId), isNull(delegations.revokedAt)))
+    .limit(1)
+  return rows.length > 0
+}
+
+/**
+ * Get effective permissions for a user based on their role.
+ * Supervisors with an active delegation get elevated permissions.
+ */
+export async function getEffectivePermissions(
+  userId: string,
+  role: UserRole,
+): Promise<Set<Permission>> {
+  const base = getPermissionsForRole(role)
+  if (role === "supervisor") {
+    const delegated = await hasActiveDelegation(userId)
+    if (delegated) {
+      return new Set<Permission>([...base, ...MANAGING_SUPERVISOR_ELEVATED])
+    }
+  }
+  return base
+}
+
+/**
+ * Check if the session user has the required permission.
+ * Returns an error string if forbidden, or null if permitted.
+ */
+export async function checkPermission(
+  session: { user: { id: string; role?: string | null } },
+  permission: Permission,
+  message?: string,
+): Promise<string | null> {
+  const role = getUserRole(session)
+  const perms = await getEffectivePermissions(session.user.id, role)
+  return perms.has(permission) ? null : (message ?? "Forbidden")
 }
 
 /**

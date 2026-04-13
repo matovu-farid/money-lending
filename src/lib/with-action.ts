@@ -1,7 +1,7 @@
-import { getSession, requireRole, getErrorTag } from "@/lib/action-utils"
+import { getSession, checkPermission, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { Effect } from "effect"
-import type { UserRole } from "@/types"
+import type { Permission } from "@/types"
 
 /** The session type returned by getSession() when non-null. */
 export type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>
@@ -11,13 +11,13 @@ export type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>
 // ---------------------------------------------------------------------------
 
 interface ActionOptionsWithInput<TInput, TResult> {
-  minRole?: UserRole
+  permission?: Permission
   forbiddenMessage?: string
   action: (session: Session, input: TInput) => Promise<TResult>
 }
 
 interface ActionOptionsNoInput<TResult> {
-  minRole?: UserRole
+  permission?: Permission
   forbiddenMessage?: string
   action: (session: Session) => Promise<TResult>
 }
@@ -27,7 +27,7 @@ interface ActionOptionsNoInput<TResult> {
 // ---------------------------------------------------------------------------
 
 interface EffectOptionsBase {
-  minRole?: UserRole
+  permission?: Permission
   forbiddenMessage?: string
   errors?: Record<string, string>
 }
@@ -75,8 +75,8 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
     const session = await getSession()
     if (!session) return { error: "Unauthorized" }
 
-    if (opts.minRole) {
-      const forbidden = requireRole(session, opts.minRole, opts.forbiddenMessage)
+    if (opts.permission) {
+      const forbidden = await checkPermission(session, opts.permission, opts.forbiddenMessage)
       if (forbidden) return { error: forbidden }
     }
 

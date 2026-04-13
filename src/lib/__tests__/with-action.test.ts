@@ -4,13 +4,15 @@ import { Effect, Data } from "effect"
 // ---------- Mocks ----------
 
 const mockGetSession = vi.fn()
-const mockRequireRole = vi.fn()
+const mockCheckPermission = vi.fn()
 const mockGetErrorTag = vi.fn()
 const mockRevalidatePath = vi.fn()
+const mockGetUserRole = vi.fn()
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: () => mockGetSession(),
-  requireRole: (...args: any[]) => mockRequireRole(...args),
+  checkPermission: (...args: any[]) => mockCheckPermission(...args),
+  getUserRole: (...args: any[]) => mockGetUserRole(...args),
   getErrorTag: (error: unknown) => mockGetErrorTag(error),
 }))
 
@@ -42,11 +44,12 @@ describe("withAction", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockGetSession.mockResolvedValue(fakeSession)
-    mockRequireRole.mockReturnValue(null) // no forbidden
+    mockCheckPermission.mockResolvedValue(null) // no forbidden
+    mockGetUserRole.mockReturnValue(fakeSession.user.role ?? "unassigned")
   })
 
   // ---------------------------------------------------------------
-  // Classic mode (backward compatibility)
+  // Classic mode
   // ---------------------------------------------------------------
 
   describe("classic mode", () => {
@@ -75,14 +78,38 @@ describe("withAction", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
-    it("returns forbidden when role check fails", async () => {
-      mockRequireRole.mockReturnValue("Forbidden")
+    it("returns forbidden when permission check fails", async () => {
+      mockCheckPermission.mockResolvedValue("Forbidden")
       const action = withAction({
-        minRole: "super_admin" as any,
+        permission: "loan:create" as any,
         action: async () => ({ data: "ok" }),
       })
       const result = await action()
       expect(result).toEqual({ error: "Forbidden" })
+    })
+
+    it("passes forbiddenMessage through to checkPermission", async () => {
+      mockCheckPermission.mockResolvedValue("Custom forbidden message")
+      const action = withAction({
+        permission: "loan:create" as any,
+        forbiddenMessage: "Custom forbidden message",
+        action: async () => ({ data: "ok" }),
+      })
+      const result = await action()
+      expect(mockCheckPermission).toHaveBeenCalledWith(
+        fakeSession,
+        "loan:create",
+        "Custom forbidden message",
+      )
+      expect(result).toEqual({ error: "Custom forbidden message" })
+    })
+
+    it("does not call checkPermission when no permission is specified", async () => {
+      const action = withAction({
+        action: async () => ({ data: "ok" }),
+      })
+      await action()
+      expect(mockCheckPermission).not.toHaveBeenCalled()
     })
   })
 
@@ -195,18 +222,27 @@ describe("withAction", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
-    it("checks role before running effect", async () => {
-      mockRequireRole.mockReturnValue("Forbidden")
+    it("checks permission before running effect", async () => {
+      mockCheckPermission.mockResolvedValue("Forbidden")
 
       const effectFn = vi.fn(() => Effect.succeed("data"))
       const action = withAction({
-        minRole: "super_admin" as any,
+        permission: "loan:create" as any,
         effect: effectFn,
       })
 
       const result = await action()
       expect(result).toEqual({ error: "Forbidden" })
       expect(effectFn).not.toHaveBeenCalled()
+    })
+
+    it("does not call checkPermission in effect mode when no permission specified", async () => {
+      const action = withAction({
+        effect: () => Effect.succeed("data"),
+      })
+
+      await action()
+      expect(mockCheckPermission).not.toHaveBeenCalled()
     })
   })
 })
