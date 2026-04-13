@@ -6,7 +6,7 @@ import { user } from "@/lib/db/schema/auth"
 import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PrintButton } from "@/app/(app)/receipts/disbursement/[loanId]/print-button"
-import { formatDate } from "@/lib/utils"
+import { formatDate, shortId } from "@/lib/utils"
 import { getPaymentPortionsFromLedger, getLoanBalanceFromLedger } from "@/services/ledger-queries.service"
 
 export default async function RepaymentReceiptPage({
@@ -78,8 +78,8 @@ export default async function RepaymentReceiptPage({
     `UGX ${new Intl.NumberFormat("en-UG", { maximumFractionDigits: 0 }).format(Number(value))}`
 
 
-  const receiptNumber = `PAY-${paymentId.slice(0, 8).toUpperCase()}`
-  const loanReference = loan ? `LOAN-${loan.id.slice(0, 8).toUpperCase()}` : "\u2014"
+  const receiptNumber = `PAY-${shortId(paymentId).toUpperCase()}`
+  const loanReference = loan ? `LOAN-${shortId(loan.id).toUpperCase()}` : "\u2014"
 
   return (
     <div className="min-h-screen bg-muted print:bg-white print:min-h-0">

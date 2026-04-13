@@ -2,7 +2,7 @@
 
 import { AlertTriangle } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
-import { formatCurrency } from "@/lib/utils"
+import { formatCurrency, shortId } from "@/lib/utils"
 import BigNumber from "bignumber.js"
 
 interface RolloverBannerProps {
@@ -22,7 +22,7 @@ export function RolloverBanner({
     .plus(new BigNumber(accruedInterest))
     .toFixed(0)
 
-  const loanRef = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
+  const loanRef = `LOAN-${shortId(loanId).toUpperCase()}`
 
   return (
     <div className="rounded-lg border border-orange-200 bg-orange-50 p-4 space-y-3">

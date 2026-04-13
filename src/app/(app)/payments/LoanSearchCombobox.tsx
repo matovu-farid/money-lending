@@ -5,7 +5,7 @@ import { Clock, Search, X } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Spinner } from "@/components/ui/spinner"
 import { useSearchActiveLoans } from "@/hooks/use-search-active-loans"
-import { formatNumberWithCommas } from "@/lib/utils"
+import { formatNumberWithCommas, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
 
 interface RecentLoan {
@@ -63,7 +63,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
     return (
       <div className="relative w-full">
         <Input
-          value={`${selectedLoan.customerName}  ·  LOAN-${selectedLoan.loanId.slice(0, 8).toUpperCase()}`}
+          value={`${selectedLoan.customerName}  ·  LOAN-${shortId(selectedLoan.loanId).toUpperCase()}`}
           readOnly
           className="pr-10 cursor-default"
         />
@@ -121,7 +121,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
                       onClick={() => handleRecentSelect(loan)}
                     >
                       <div className="text-sm">
-                        {loan.customerName}&nbsp;&nbsp;·&nbsp;&nbsp;LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
+                        {loan.customerName}&nbsp;&nbsp;·&nbsp;&nbsp;LOAN-{shortId(loan.loanId).toUpperCase()}
                       </div>
                     </button>
                   </li>
@@ -150,7 +150,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
                     onClick={() => handleSelect(loan)}
                   >
                     <div className="text-sm">
-                      {loan.customerName}&nbsp;&nbsp;·&nbsp;&nbsp;LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
+                      {loan.customerName}&nbsp;&nbsp;·&nbsp;&nbsp;LOAN-{shortId(loan.loanId).toUpperCase()}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       Balance: UGX {formatNumberWithCommas(loan.principalAmount)}

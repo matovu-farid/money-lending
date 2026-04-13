@@ -665,11 +665,11 @@ export const listPayments = (
 
       if (loanIds.length > 0) {
         // Fetch loan principal amounts and interest rates
-        const loanRows = await db.select({ id: loans.id, principalAmount: loans.principalAmount, interestRate: loans.interestRate })
+        const loanRows = await db.select({ id: loans.id, principalAmount: loans.principalAmount, interestRate: loans.interestRate, interestRateOverride: loans.interestRateOverride })
           .from(loans).where(inArray(loans.id, loanIds))
         for (const l of loanRows) {
           loanPrincipalMap.set(l.id, l.principalAmount)
-          loanRateMap.set(l.id, l.interestRate)
+          loanRateMap.set(l.id, l.interestRateOverride ?? l.interestRate)
         }
 
         // For each loan, get all its active payments sorted by date to compute running balance

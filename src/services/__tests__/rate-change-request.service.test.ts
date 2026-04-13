@@ -1,3 +1,4 @@
+import { shortId } from "@/lib/utils"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
 
@@ -199,7 +200,7 @@ describe("Rate Change Request Service", () => {
 
     expect(result).toHaveLength(1)
     expect(result[0].customerName).toBe("John Doe")
-    expect(result[0].loanRef).toBe(`LOAN-${mockRequest.loanId.slice(0, 8).toUpperCase()}`)
+    expect(result[0].loanRef).toBe(`LOAN-${shortId(mockRequest.loanId).toUpperCase()}`)
   })
 
   // ── listRequestsForLoan ───────────────────────────────────────────

@@ -30,7 +30,7 @@ import { editPaymentAction, markPaymentWrongAction, listPaymentsAction } from "@
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
-import { formatNumberWithCommas, formatDate } from "@/lib/utils"
+import { formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
 import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer } from "@/types"
 import { usePaymentsPageStore } from "@/lib/stores/payments-page"
 import { useUrlFilters } from "@/hooks/use-url-filters"
@@ -41,6 +41,7 @@ import { usePayments } from "@/hooks/use-payments"
 import { queryKeys } from "@/hooks/query-keys"
 import { FilterPanel } from "@/components/ui/filter-panel"
 import { downloadBlob } from "@/lib/download"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
   const headers = ["Date", "Customer", "Amount", "Interest", "Principal", "Principal Balance"]
@@ -184,13 +185,14 @@ export function PaymentsClient() {
   // Prefetch next page for instant pagination
   useEffect(() => {
     if (page * pageSize < total) {
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.payments.list(filterParams, page + 1),
-        queryFn: () => listPaymentsAction({ ...filterParams, page: page + 1, pageSize }).then(
-          (r) => ("data" in r ? r.data : undefined)
-        ),
-        staleTime: 30_000,
-      })
+      prefetchQueue.add(() =>
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.payments.list(filterParams, page + 1),
+          queryFn: () => listPaymentsAction({ ...filterParams, page: page + 1, pageSize }).then(
+            (r) => ("data" in r ? r.data : undefined)
+          ),
+          staleTime: 30_000,
+        }), Priority.NORMAL)
     }
   }, [page, total, filterParams, queryClient])
 
@@ -283,7 +285,7 @@ export function PaymentsClient() {
           data={{
             paymentDate: row.paymentDate,
             customerName: row.customerName,
-            loanReference: `LOAN-${row.loanId.slice(0, 8).toUpperCase()}`,
+            loanReference: `LOAN-${shortId(row.loanId).toUpperCase()}`,
             amountPaid: row.amount,
             interestPortion: row.interestPortion,
             principalPortion: row.principalPortion,

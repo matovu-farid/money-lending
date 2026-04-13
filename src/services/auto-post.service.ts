@@ -4,6 +4,7 @@ import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq, and } from "drizzle-orm"
 import { postJournalEntry, reverseInterestAccrual } from "./transaction.service"
+import { shortId } from "@/lib/utils"
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -83,7 +84,7 @@ export async function autoPostPrincipalDisbursement(
     debitCategory: { name: "Loans Receivable", type: "asset" },
     creditCategory: { name: "Cash", type: "asset" },
     amount: params.amount, referenceType: "loan", referenceId: params.loanId,
-    description: `Principal disbursed - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
+    description: `Principal disbursed - loan ${shortId(params.loanId).toUpperCase()}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     creditDepositLocation: params.depositLocation,
     loanId: params.loanId,
@@ -111,7 +112,7 @@ export async function autoPostRolloverPrincipalTransfer(
     referenceType: "rollover",
     referenceId: params.oldLoanId,
     loanId: params.newLoanId,
-    description: `Principal carried from loan ${params.oldLoanId.slice(0, 8).toUpperCase()}`,
+    description: `Principal carried from loan ${shortId(params.oldLoanId).toUpperCase()}`,
     transactionDate: params.transactionDate,
     recordedBy: params.actorId,
     journalGroupId,
@@ -125,7 +126,7 @@ export async function autoPostRolloverPrincipalTransfer(
     referenceType: "rollover",
     referenceId: params.newLoanId,
     loanId: params.oldLoanId,
-    description: `Principal transferred to loan ${params.newLoanId.slice(0, 8).toUpperCase()}`,
+    description: `Principal transferred to loan ${shortId(params.newLoanId).toUpperCase()}`,
     transactionDate: params.transactionDate,
     recordedBy: params.actorId,
     journalGroupId,
@@ -140,7 +141,7 @@ export async function autoPostPrincipalRepayment(
     debitCategory: { name: "Cash", type: "asset" },
     creditCategory: { name: "Loans Receivable", type: "asset" },
     amount: params.amount, referenceType: "payment", referenceId: params.paymentId,
-    description: `Principal repaid - loan ${params.loanId.slice(0, 8).toUpperCase()} payment ${params.paymentId.slice(0, 8).toUpperCase()}`,
+    description: `Principal repaid - loan ${shortId(params.loanId).toUpperCase()} payment ${shortId(params.paymentId).toUpperCase()}`,
     transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
     loanId: params.loanId,
@@ -155,7 +156,7 @@ export async function autoPostPrincipalRecovery(
     debitCategory: { name: "Seized Collateral", type: "asset" },
     creditCategory: { name: "Loans Receivable", type: "asset" },
     amount: params.amount, referenceType: "collateral_settlement", referenceId: params.loanId,
-    description: `Principal recovered via collateral - loan ${params.loanId.slice(0, 8).toUpperCase()}`,
+    description: `Principal recovered via collateral - loan ${shortId(params.loanId).toUpperCase()}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     loanId: params.loanId,
   })
@@ -169,7 +170,7 @@ export async function autoPostCreditorInvestment(
     debitCategory: { name: "Cash", type: "asset" },
     creditCategory: { name: "Creditor Investment", type: "liability" },
     amount: params.amount, referenceType: "creditor_investment", referenceId: params.investmentId,
-    description: `Creditor investment received - ${params.investmentId.slice(0, 8).toUpperCase()}`,
+    description: `Creditor investment received - ${shortId(params.investmentId).toUpperCase()}`,
     transactionDate: new Date(params.investmentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
   })
@@ -183,7 +184,7 @@ export async function autoPostCreditorPrincipalRepaid(
     debitCategory: { name: "Creditor Investment", type: "liability" },
     creditCategory: { name: "Cash", type: "asset" },
     amount: params.amount, referenceType: "creditor_repayment", referenceId: params.repaymentId ?? params.investmentId,
-    description: `Creditor principal repaid - investment ${params.investmentId.slice(0, 8).toUpperCase()}`,
+    description: `Creditor principal repaid - investment ${shortId(params.investmentId).toUpperCase()}`,
     transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
     creditDepositLocation: params.sourceLocation,
   })

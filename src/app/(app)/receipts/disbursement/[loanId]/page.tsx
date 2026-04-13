@@ -6,7 +6,8 @@ import { user } from "@/lib/db/schema/auth"
 import { eq } from "drizzle-orm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { PrintButton } from "./print-button"
-import { formatDate, formatRate } from "@/lib/utils"
+import { formatDate, formatRate, shortId } from "@/lib/utils"
+import { getBaseRate } from "@/lib/interest/effective-rate"
 
 export default async function DisbursementReceiptPage({
   params,
@@ -53,8 +54,8 @@ export default async function DisbursementReceiptPage({
     `UGX ${new Intl.NumberFormat("en-UG", { maximumFractionDigits: 0 }).format(Number(value))}`
 
 
-  const receiptNumber = `LOAN-${loanId.slice(0, 8).toUpperCase()}`
-  const interestRateDisplay = `${formatRate(loan.interestRate, 1)} per month`
+  const receiptNumber = `LOAN-${shortId(loanId).toUpperCase()}`
+  const interestRateDisplay = `${formatRate(getBaseRate(loan), 1)} per month`
   const minPeriodDisplay = `${loan.minPeriodOverride ?? loan.minInterestDays} days`
 
   return (
@@ -168,7 +169,9 @@ export default async function DisbursementReceiptPage({
                 {collateralRecord?.description && (
                   <tr>
                     <td className="py-1 text-gray-500 align-top">Description</td>
-                    <td className="py-1 text-right max-w-[300px] truncate">{collateralRecord.description}</td>
+                    <td className="py-1 text-right">
+                      <span className="inline-block max-w-[280px] truncate align-bottom">{collateralRecord.description}</span>
+                    </td>
                   </tr>
                 )}
               </tbody>

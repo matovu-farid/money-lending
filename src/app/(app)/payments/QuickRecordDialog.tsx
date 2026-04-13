@@ -26,7 +26,7 @@ import { useSession } from "@/lib/auth-client"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { getRecentlyCollectedLoansAction, recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { queryKeys } from "@/hooks/query-keys"
-import { formatNumberWithCommas, formatCurrency, formatDate } from "@/lib/utils"
+import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
 import {
   Select,
   SelectContent,
@@ -165,7 +165,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   const isSubmitDisabled = !selectedLoan || isPending
 
   const loanRef = selectedLoan
-    ? `LOAN-${selectedLoan.loanId.slice(0, 8).toUpperCase()}`
+    ? `LOAN-${shortId(selectedLoan.loanId).toUpperCase()}`
     : ""
 
   return (
@@ -241,7 +241,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                           size="sm"
                           onClick={() => handleChipClick(loan)}
                         >
-                          {loan.customerName}&nbsp;·&nbsp;LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
+                          {loan.customerName}&nbsp;·&nbsp;LOAN-{shortId(loan.loanId).toUpperCase()}
                         </Button>
                       ))}
                     </div>

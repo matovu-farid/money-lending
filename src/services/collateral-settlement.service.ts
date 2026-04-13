@@ -8,6 +8,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { eq, and, isNull, asc } from "drizzle-orm"
 import BigNumber from "bignumber.js"
 import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors"
+import { shortId } from "@/lib/utils"
 import { writeAuditLog } from "./audit.service"
 import { calculateInterest, formatAmount } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"
@@ -158,7 +159,7 @@ export const settleWithCollateral = (
             amount: formatAmount(accruedInterest),
             referenceType: "collateral_settlement",
             referenceId: input.loanId,
-            description: `Accrued interest on collateral settlement for loan ${input.loanId.slice(0, 8).toUpperCase()}`,
+            description: `Accrued interest on collateral settlement for loan ${shortId(input.loanId).toUpperCase()}`,
             transactionDate: now,
             recordedBy: actorId,
             loanId: input.loanId,

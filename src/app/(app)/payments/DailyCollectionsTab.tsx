@@ -20,7 +20,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { useDailyCollections, useLoansDueToday } from "@/hooks/use-daily-collections"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { formatNumberWithCommas, formatDate } from "@/lib/utils"
+import { formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
 import BigNumber from "bignumber.js"
 
 export function DailyCollectionsTab() {
@@ -208,7 +208,7 @@ export function DailyCollectionsTab() {
                   <TableCell>{row.customerName}</TableCell>
                   <TableCell>
                     <span className="text-xs font-mono tabular-nums">
-                      LOAN-{row.loanId.slice(0, 8).toUpperCase()}
+                      LOAN-{shortId(row.loanId).toUpperCase()}
                     </span>
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.amount)}</TableCell>
@@ -293,7 +293,7 @@ export function DailyCollectionsTab() {
                   <TableCell>{loan.customerName}</TableCell>
                   <TableCell>
                     <span className="text-xs font-mono tabular-nums">
-                      LOAN-{loan.loanId.slice(0, 8).toUpperCase()}
+                      LOAN-{shortId(loan.loanId).toUpperCase()}
                     </span>
                   </TableCell>
                   <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(loan.outstandingBalance)}</TableCell>

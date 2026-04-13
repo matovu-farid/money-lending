@@ -64,7 +64,7 @@ export const markAllAsRead = (
 
 export async function createNotification(
   userId: string,
-  type: "loan_due_soon" | "chat_mention",
+  type: "loan_due_soon",
   message: string,
   referenceType?: string,
   referenceId?: string,
