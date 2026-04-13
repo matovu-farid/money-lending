@@ -6,7 +6,7 @@ import { useForm, Controller } from "react-hook-form"
 import { Loader2, ArrowRightLeft, PlusCircle } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
 import { createFundTransferAction, createCapitalInjectionAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
@@ -59,9 +59,8 @@ interface InjectionFormValues {
 
 export default function FundTransfersPage() {
   const { data: session } = useSession()
-  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
-  const actorLevel = ROLE_LEVELS[actorRole] ?? 0
-  const isAdmin = actorLevel >= ROLE_LEVELS.admin
+  const { has } = usePermissions()
+  const isAdmin = has("fund-transfer:create")
 
   const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)

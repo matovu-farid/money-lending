@@ -7,7 +7,8 @@ import { useSession } from "@/lib/auth-client"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
 import { listAllRequestsAction, reviewRateChangeRequestAction } from "@/actions/rate-change-request.actions"
 import { queryKeys } from "@/hooks/query-keys"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import type { Permission } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -39,9 +40,8 @@ export default function ApprovalsPage() {
   const queryClient = useQueryClient()
   const [isPending, startTransition] = useTransition()
 
-  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
-  const actorLevel = ROLE_LEVELS[actorRole] ?? 0
-  const isSupervisorOrAbove = actorLevel >= ROLE_LEVELS.supervisor
+  const { has } = usePermissions()
+  const isSupervisorOrAbove = has("rate-change:approve-standard")
 
   const { data: requests = [], isLoading } = useQuery({
     queryKey: queryKeys.rateChangeRequests.pending(),
@@ -196,7 +196,7 @@ export default function ApprovalsPage() {
                 </TableHeader>
                 <TableBody>
                   {pendingRequests.map((request: RateChangeRequestWithLoan) => {
-                    const canReview = ROLE_LEVELS[actorRole] >= ROLE_LEVELS[request.requiredApproverRole as UserRole]
+                    const canReview = has(request.requiredApproverRole as Permission)
                     return (
                       <TableRow key={request.id} data-testid="pending-request-row">
                         <TableCell className="font-mono text-sm">

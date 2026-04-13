@@ -31,7 +31,8 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
 import { formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
-import { ROLE_LEVELS, type UserRole, type PaymentWithCustomer } from "@/types"
+import type { PaymentWithCustomer } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import { usePaymentsPageStore } from "@/lib/stores/payments-page"
 import { useUrlFilters } from "@/hooks/use-url-filters"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -85,9 +86,9 @@ export function PaymentsClient() {
     router.push(`/payments?${params.toString()}`)
   }
 
-  const userRole = (session?.user?.role ?? "unassigned") as UserRole
-  const isAdmin = ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin
-  const isSupervisor = ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
+  const { has } = usePermissions()
+  const isAdmin = has("payment:edit-any")
+  const isSupervisor = has("payment:edit-any")
 
   const {
     quickRecordOpen, openQuickRecord, closeQuickRecord,
@@ -192,7 +193,7 @@ export function PaymentsClient() {
             (r) => ("data" in r ? r.data : undefined)
           ),
           staleTime: 30_000,
-        }), Priority.NORMAL)
+        }), Priority.NORMAL, `data:payments-list-${page + 1}`)
     }
   }, [page, total, filterParams, queryClient])
 

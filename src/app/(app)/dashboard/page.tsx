@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from "react"
 import { useInfiniteQuery } from "@tanstack/react-query"
-import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp, Loader2, ExternalLink } from "lucide-react"
+import Link from "next/link"
+import { useSession } from "@/lib/auth-client"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { getRecentActivityAction } from "@/actions/dashboard.actions"
 import { queryKeys } from "@/hooks/query-keys"
@@ -10,6 +12,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
+import { usePermissions } from "@/hooks/use-permissions"
 import type { ActivityFeedItem } from "@/types"
 import { formatDate, formatCurrency, formatRelativeTime } from "@/lib/utils"
 
@@ -49,7 +52,16 @@ function formatDetailValue(key: string, value: string | number | null | undefine
   return str
 }
 
+function getActivityHref(item: ActivityFeedItem): string | null {
+  if (item.loanId) return `/loans/${item.loanId}`
+  return null
+}
+
 export default function DashboardPage() {
+  const { data: session } = useSession()
+  const { has } = usePermissions()
+  const isAdmin = has("settings:read")
+
   const { data, isLoading: loading, error: queryError } = useDashboard()
   const kpis = data?.kpis ?? null
   const error = queryError?.message ?? null
@@ -123,37 +135,6 @@ export default function DashboardPage() {
           }
         />
         <KpiCard
-          label="Repayments Collected"
-          value={formatCurrency(kpis?.repaymentsCollected ?? "0")}
-          icon={CreditCard}
-          loading={loading}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Repayments Collected</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                Total amount of all payments received across all loans (both interest and principal portions combined).
-              </p>
-            </InfoPopover>
-          }
-        />
-        <KpiCard
-          label="Interest Earned"
-          value={formatCurrency(kpis?.interestEarned ?? "0")}
-          icon={TrendingUp}
-          loading={loading}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Interest Earned</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                Total interest portions collected from all payments. When a borrower pays, interest is deducted first before any principal reduction.
-              </p>
-              <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                Interest = Principal × (Monthly Rate ÷ 30) × Days
-              </p>
-            </InfoPopover>
-          }
-        />
-        <KpiCard
           label="Active Borrowers"
           value={String(kpis?.activeBorrowers ?? 0)}
           icon={Users}
@@ -188,23 +169,58 @@ export default function DashboardPage() {
             </InfoPopover>
           }
         />
-        <KpiCard
-          label="Cash Available"
-          value={formatCurrency(kpis?.capitalInSystem ?? "0")}
-          icon={Landmark}
-          loading={loading}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Cash Available</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                Total cash balance across all locations (cash on hand, bank, and strong room). This is the money available for new loan disbursements.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Increases when payments are received and decreases when loans are disbursed or expenses are recorded.
-              </p>
-            </InfoPopover>
-          }
-        />
+        {isAdmin && (
+          <>
+            <KpiCard
+              label="Repayments Collected"
+              value={formatCurrency(kpis?.repaymentsCollected ?? "0")}
+              icon={CreditCard}
+              loading={loading}
+              labelExtra={
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Repayments Collected</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Total amount of all payments received across all loans (both interest and principal portions combined).
+                  </p>
+                </InfoPopover>
+              }
+            />
+            <KpiCard
+              label="Interest Earned"
+              value={formatCurrency(kpis?.interestEarned ?? "0")}
+              icon={TrendingUp}
+              loading={loading}
+              labelExtra={
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Interest Earned</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Total interest portions collected from all payments. When a borrower pays, interest is deducted first before any principal reduction.
+                  </p>
+                  <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                    Interest = Principal × (Monthly Rate ÷ 30) × Days
+                  </p>
+                </InfoPopover>
+              }
+            />
+            <KpiCard
+              label="Cash Available"
+              value={formatCurrency(kpis?.capitalInSystem ?? "0")}
+              icon={Landmark}
+              loading={loading}
+              labelExtra={
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Cash Available</p>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Total cash balance across all locations (cash on hand, bank, and strong room). This is the money available for new loan disbursements.
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Increases when payments are received and decreases when loans are disbursed or expenses are recorded.
+                  </p>
+                </InfoPopover>
+              }
+            />
+          </>
+        )}
       </div>
 
       {/* Activity Feed */}
@@ -234,6 +250,7 @@ export default function DashboardPage() {
               {activity.map((item, index) => {
                 const isExpanded = expandedId === item.id
                 const hasDetail = item.detail && Object.keys(item.detail).length > 0
+                const href = getActivityHref(item)
                 return (
                   <div
                     key={item.id}
@@ -247,10 +264,29 @@ export default function DashboardPage() {
                     >
                       {activityIcon(item.type)}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm">{item.description}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                          {formatRelativeTime(item.timestamp)}
-                        </p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm">{item.description}</p>
+                          {href && (
+                            <Link
+                              href={href}
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                              title="View details"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </Link>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-muted-foreground font-mono">
+                            {formatRelativeTime(item.timestamp)}
+                          </p>
+                          {item.actorName && (
+                            <span className="text-xs text-muted-foreground">
+                              · by {item.actorName}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       {hasDetail && (
                         isExpanded

@@ -8,6 +8,7 @@ import { assignRole } from "@/actions/user.actions"
 import { useAdminUsers, type AdminUser } from "@/hooks/use-admin-users"
 import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import {
   Table,
   TableBody,
@@ -42,11 +43,12 @@ export default function AdminPage() {
   const queryClient = useQueryClient()
   const [, startTransition] = useTransition()
 
+  const { has } = usePermissions()
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
-  const isAdmin = actorLevel >= ROLE_LEVELS.admin
+  const canViewUsers = has("user:list")
 
-  const { data: users = [], isLoading, isFetching } = useAdminUsers(!!session && isAdmin)
+  const { data: users = [], isLoading, isFetching } = useAdminUsers(!!session && canViewUsers)
 
   function handleRoleChange(userId: string, newRole: UserRole) {
     startTransition(async () => {
@@ -73,7 +75,7 @@ export default function AdminPage() {
     })
   }
 
-  const loading = isAdmin ? (isLoading && isFetching) : !session
+  const loading = canViewUsers ? (isLoading && isFetching) : !session
   if (!session || loading) {
     return (
       <div className="p-4 md:p-6">
@@ -82,7 +84,7 @@ export default function AdminPage() {
     )
   }
 
-  if (actorLevel < ROLE_LEVELS.admin) {
+  if (!has("user:list")) {
     return (
       <div className="p-4 md:p-6 space-y-2">
         <div className="flex items-center gap-2">

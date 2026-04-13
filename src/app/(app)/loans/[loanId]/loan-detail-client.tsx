@@ -1,36 +1,35 @@
 "use client"
 
-import { useTransition, useEffect, useMemo, useRef } from "react"
+import { useTransition, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
-  Pencil,
-  Trash2,
   ArrowLeft,
   Banknote,
   Receipt,
   ShieldAlert,
+  PlusCircle,
 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
-import { updateLoanAction, deleteLoanAction, waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction } from "@/actions/loan.actions"
-import { getEffectiveRate, isPenaltyActive } from "@/lib/interest/effective-rate"
+import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction } from "@/actions/loan.actions"
+import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
-import { ROLE_LEVELS, type UserRole, type RateChangeRequest } from "@/types"
+import type { UserRole, RateChangeRequest } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, Payment, PaymentPortionsMap } from "@/types"
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { PermissionInfo } from "@/components/ui/permission-info"
 import BigNumber from "bignumber.js"
-import { cn, formatDate, formatCurrency, formatRate, shortId } from "@/lib/utils"
+import { cn, formatCurrency, shortId } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
 import { useLoanDetailStore } from "@/lib/stores/loan-detail"
 import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
@@ -39,16 +38,12 @@ import { LoanInfoCards } from "./loan-info-cards"
 import { PaymentTable } from "./payment-table"
 import { EditPaymentDialog } from "./edit-payment-dialog"
 import { DeletePaymentDialog } from "./delete-payment-dialog"
-import { EditLoanDialog } from "./edit-loan-dialog"
-import { DeleteLoanDialog } from "./delete-loan-dialog"
 import { RateChangeDialog } from "./rate-change-dialog"
 
 interface LoanDetailClientProps {
   loan: Loan
   initialPayments: Payment[]
   customerName: string | null
-  canModify: boolean
-  openEditOnMount?: boolean
   userNameMap: Record<string, string>
   ledgerBalance: string | null
   paymentPortions: PaymentPortionsMap
@@ -58,9 +53,10 @@ interface LoanDetailClientProps {
   daysOverdue: number
 }
 
-export function LoanDetailClient({ loan, initialPayments, customerName, canModify, openEditOnMount, userNameMap, ledgerBalance, paymentPortions, userRole, collateralNature, collateralDescription, daysOverdue }: LoanDetailClientProps) {
+export function LoanDetailClient({ loan, initialPayments, customerName, userNameMap, ledgerBalance, paymentPortions, userRole, collateralNature, collateralDescription, daysOverdue }: LoanDetailClientProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { has } = usePermissions()
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
   // Use TanStack Query for payments so subsequent navigations are cached
@@ -87,10 +83,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     openPaymentEdit, closePaymentEdit, setEditAmount, setEditDate, setEditReason,
     deletingPayment, deleteReason,
     openPaymentDelete, closePaymentDelete, setDeleteReason,
-    editingLoan, loanPrincipal, loanInterestRate, loanStartDate, loanEditReason,
-    openLoanEdit, closeLoanEdit, setLoanPrincipal, setLoanInterestRate, setLoanStartDate, setLoanEditReason,
-    deletingLoan, loanDeleteReason,
-    openLoanDelete, closeLoanDelete, setLoanDeleteReason,
     settlingCollateral, openSettleCollateral, closeSettleCollateral,
     requestingRateChange, newRate,
     openRateChange, closeRateChange, setNewRate,
@@ -101,8 +93,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
 
   const [isEditPending, startEditTransition] = useTransition()
   const [isDeletePending, startDeleteTransition] = useTransition()
-  const [isLoanEditPending, startLoanEditTransition] = useTransition()
-  const [isLoanDeletePending, startLoanDeleteTransition] = useTransition()
   const [isRateChangePending, startRateChangeTransition] = useTransition()
   const [isWaivingPenalty, startWaivePenaltyTransition] = useTransition()
   const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
@@ -134,7 +124,7 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       queryClient.prefetchQuery({
         queryKey: queryKeys.loans.paymentContext(loan.id),
         queryFn: () => getLoanPaymentContextAction(loan.id).then((r) => ("error" in r ? undefined : r.data)),
-      }), Priority.NORMAL);
+      }), Priority.NORMAL, `data:loan-payment-context-${loan.id}`);
   }, [loan.id, loan.status, queryClient]);
 
   const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
@@ -146,13 +136,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
     return () => reset()
   }, [loan.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const didOpenRef = useRef(false)
-  useEffect(() => {
-    if (!didOpenRef.current && openEditOnMount && canModify) {
-      didOpenRef.current = true
-      openLoanEdit(loan)
-    }
-  }, [openEditOnMount, canModify, loan, openLoanEdit])
 
   const activePayments = payments
     .filter((p) => p.deletedAt === null)
@@ -249,56 +232,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
     })
   }
-
-  function handleLoanEditSubmit() {
-    startLoanEditTransition(async () => {
-      const interestRateDecimal = loanInterestRate.trim()
-        ? (parseFloat(loanInterestRate) / 100).toFixed(10)
-        : undefined
-
-      const result = await updateLoanAction({
-        loanId: loan.id,
-        principalAmount: loanPrincipal.trim() || undefined,
-        interestRate: interestRateDecimal,
-        startDate: loanStartDate ? new Date(loanStartDate).toISOString() : undefined,
-        reason: loanEditReason.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      toast.success("Loan updated")
-      closeLoanEdit()
-
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-    })
-  }
-
-  function handleLoanDeleteSubmit() {
-    startLoanDeleteTransition(async () => {
-      const result = await deleteLoanAction({
-        loanId: loan.id,
-        reason: loanDeleteReason.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      toast.success("Loan deleted")
-      closeLoanDelete()
-
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-      router.push("/loans")
-    })
-  }
-
 
   function handleRateChangeSubmit() {
     startRateChangeTransition(async () => {
@@ -404,34 +337,26 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           </div>
         </div>
 
-        {canModify && (
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => openLoanEdit(loan)}>
-              <Pencil className="h-3.5 w-3.5 mr-1.5" />
-              Edit
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/loans/new?customerId=${loan.customerId}`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+          >
+            <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+            Issue New Loan
+          </Link>
+          {loan.status === "active" && has("loan:settle") && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openSettleCollateral()}
+              className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
+              Settle with Collateral
             </Button>
-            <Button variant="outline" size="sm" onClick={openLoanDelete} className="text-destructive hover:text-destructive hover:bg-destructive/10 border-destructive/30">
-              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-              Delete
-            </Button>
-            {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openSettleCollateral()}
-                className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300"
-              >
-                <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
-                Settle with Collateral
-              </Button>
-            )}
-            <PermissionInfo
-              requiredRole="admin"
-              action="Edit or delete loan"
-              detail="Admins can edit or delete any loan. Loan officers and supervisors can only edit their own loan immediately after creation."
-            />
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Loan Details Grid */}
@@ -607,28 +532,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         onReasonChange={setDeleteReason}
         onSubmit={handleDeleteSubmit}
         onClose={closePaymentDelete}
-      />
-      <EditLoanDialog
-        open={editingLoan}
-        principal={loanPrincipal}
-        interestRate={loanInterestRate}
-        startDate={loanStartDate}
-        reason={loanEditReason}
-        isPending={isLoanEditPending}
-        onPrincipalChange={setLoanPrincipal}
-        onInterestRateChange={setLoanInterestRate}
-        onStartDateChange={setLoanStartDate}
-        onReasonChange={setLoanEditReason}
-        onSubmit={handleLoanEditSubmit}
-        onClose={closeLoanEdit}
-      />
-      <DeleteLoanDialog
-        open={deletingLoan}
-        reason={loanDeleteReason}
-        isPending={isLoanDeletePending}
-        onReasonChange={setLoanDeleteReason}
-        onSubmit={handleLoanDeleteSubmit}
-        onClose={closeLoanDelete}
       />
       <RateChangeDialog
         open={requestingRateChange}

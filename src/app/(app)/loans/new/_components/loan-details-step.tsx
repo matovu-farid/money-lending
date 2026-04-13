@@ -11,7 +11,8 @@ import { DisbursementSourceSelect } from "@/components/loans/disbursement-source
 import { RolloverBanner } from "@/components/loans/rollover-banner"
 import type { LoanFormValues } from "../_types"
 import { todayDateString } from "@/lib/utils"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import type { UserRole } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 
 interface ActiveLoanInfo {
   loan: { id: string; customerId: string }
@@ -137,7 +138,7 @@ export function LoanDetailsStep({
           startDate={startDate}
         />
 
-        <InterestRateField register={register} errors={errors} userRole={userRole} />
+        <InterestRateField register={register} errors={errors} />
 
         <DisbursementSourceSelect
           name="disbursementSource"
@@ -298,27 +299,26 @@ function StartDateField({
 }
 
 /**
- * Minimum interest rate (%) the user's role is allowed to set.
- * - admin / superAdmin: no floor
- * - supervisor: 8%
- * - loanOfficer and below: 10%
+ * Minimum interest rate (%) the user's permissions allow.
+ * - rate-change:approve-low (admin+): no floor
+ * - rate-change:approve-standard (supervisor+): 8%
+ * - everyone else: 10%
  */
-function getMinRateForRole(role: UserRole): number {
-  if (ROLE_LEVELS[role] >= ROLE_LEVELS.admin) return 0
-  if (ROLE_LEVELS[role] >= ROLE_LEVELS.supervisor) return 8
+function useMinRate(): number {
+  const { has } = usePermissions()
+  if (has("rate-change:approve-low")) return 0
+  if (has("rate-change:approve-standard")) return 8
   return 10
 }
 
 function InterestRateField({
   register,
   errors,
-  userRole,
 }: {
   register: UseFormRegister<LoanFormValues>
   errors: FieldErrors<LoanFormValues>
-  userRole: UserRole
 }) {
-  const minRate = getMinRateForRole(userRole)
+  const minRate = useMinRate()
 
   return (
     <div className="space-y-1">

@@ -13,8 +13,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
-import { ROLE_LEVELS } from "@/types"
 import type { UserRole, RateChangeRequest, Loan } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
 
@@ -55,6 +55,8 @@ export function LoanInfoCards({
   onClosePenaltyAdjust,
   onOpenRateChange,
 }: LoanInfoCardsProps) {
+  const { has } = usePermissions()
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
       <div className="rounded-xl border border-border bg-card p-5">
@@ -115,7 +117,7 @@ export function LoanInfoCards({
             <p className="text-sm font-mono font-semibold text-destructive">
               Effective: {formatRate(getEffectiveRate(loan, penaltyActive), 1)} / month
             </p>
-            {ROLE_LEVELS[userRole] >= ROLE_LEVELS.admin ? (
+            {has("settings:update") ? (
               <div className="flex items-center gap-2 mt-2">
                 <Button
                   variant="outline"
@@ -172,7 +174,7 @@ export function LoanInfoCards({
             Pending: {formatRate(pendingRateRequest.requestedRate, 1)}
           </Badge>
         )}
-        {loan.status === "active" && ROLE_LEVELS[userRole] >= ROLE_LEVELS.loanOfficer && !pendingRateRequest && (
+        {loan.status === "active" && has("rate-change:create") && !pendingRateRequest && (
           <div className="flex items-center gap-1.5 mt-2">
             <Button variant="outline" size="sm" onClick={() => onOpenRateChange(getBaseRate(loan))}>
               <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />

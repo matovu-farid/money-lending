@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ROLE_LEVELS } from "@/types"
 import type { UserRole, Loan } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 import { formatRate } from "@/lib/utils"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 
@@ -36,6 +36,8 @@ export function RateChangeDialog({
   onSubmit,
   onClose,
 }: RateChangeDialogProps) {
+  const { has } = usePermissions()
+
   return (
     <DrawerDialog open={open} onOpenChange={(o) => { if (!o) onClose() }}>
       <DrawerDialogContent>
@@ -45,7 +47,7 @@ export function RateChangeDialog({
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             Current rate: {formatRate(getBaseRate(loan), 1)} per month.
-            {ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
+            {has("rate-change:approve-standard")
               ? " As a supervisor or above, rates between 8-10% will be applied immediately."
               : " Your request will be sent for supervisor or admin approval."}
           </p>

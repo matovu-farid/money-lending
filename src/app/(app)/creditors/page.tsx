@@ -12,7 +12,7 @@ import { PageHeader } from "@/components/ui/page-header"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { queryKeys } from "@/hooks/query-keys"
 import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 
 const defaultCapital = {
   totalInvested: "0.00",
@@ -23,8 +23,8 @@ const defaultCapital = {
 
 export default function CreditorsPage() {
   const { data: session } = useSession()
-  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
-  const isSupervisorOrAbove = ROLE_LEVELS[actorRole] >= ROLE_LEVELS.supervisor
+  const { has } = usePermissions()
+  const isSupervisorOrAbove = has("creditor:read")
 
   const { data: creditors = [], isLoading: creditorsLoading } = useQuery({
     queryKey: queryKeys.creditors.all,

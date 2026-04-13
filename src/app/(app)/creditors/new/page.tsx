@@ -17,7 +17,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { cn, todayDateString } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 
 interface CreditorFormValues {
   name: string
@@ -30,8 +30,8 @@ interface CreditorFormValues {
 
 export default function NewCreditorPage() {
   const { data: session } = useSession()
-  const actorRole = (session?.user?.role ?? "unassigned") as UserRole
-  const isSupervisorOrAbove = ROLE_LEVELS[actorRole] >= ROLE_LEVELS.supervisor
+  const { has } = usePermissions()
+  const isSupervisorOrAbove = has("creditor:create")
 
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
