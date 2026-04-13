@@ -8,7 +8,7 @@ import { settleWithCollateral, getCustomerActiveLoan } from "@/services/collater
 import { type SettleWithCollateralInput } from "@/types"
 
 export const settleWithCollateralAction = withAction<SettleWithCollateralInput, any>({
-  minRole: "supervisor",
+  permission: "loan:settle",
   forbiddenMessage: "Only supervisors and above can settle loans with collateral",
   action: async (session, input) => {
     if (!input.loanId?.trim()) {

@@ -24,7 +24,7 @@ export const getSettingsAction = withAction({
 })
 
 export const updateSettingAction = withAction<UpdateSettingInput, any>({
-  minRole: "superAdmin",
+  permission: "settings:update",
   forbiddenMessage: "Only Super Admin can edit system settings",
   action: async (session, input) => {
     if (!VALID_SETTING_KEYS.includes(input.key as SettingKey)) {

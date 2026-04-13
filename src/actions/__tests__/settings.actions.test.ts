@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock("@/lib/db", () => {
@@ -26,7 +27,7 @@ vi.mock("@/lib/db/schema/settings", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, requireRole } from "@/lib/action-utils"
+import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
 import { db } from "@/lib/db"
 
 import { getSettingsAction, updateSettingAction } from "../settings.actions"
@@ -34,6 +35,7 @@ import { getSettingsAction, updateSettingAction } from "../settings.actions"
 import { superAdminSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
+const mockCheckPermission = vi.mocked(checkPermission)
 
 const fakeSession = superAdminSession
 
@@ -78,14 +80,14 @@ describe("Settings Actions", () => {
 
     it("returns error when role is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Only Super Admin can edit system settings")
+      mockCheckPermission.mockResolvedValue("Only Super Admin can edit system settings")
       const result = await updateSettingAction({ key: "default_interest_rate", value: "0.12" })
       expect(result).toEqual({ error: "Only Super Admin can edit system settings" })
     })
 
     it("returns error for invalid setting key", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await updateSettingAction({ key: "bogus_key", value: "0.12" })
       expect(result).toHaveProperty("error")
       expect((result as any).error).toContain("Invalid setting key")
@@ -93,14 +95,14 @@ describe("Settings Actions", () => {
 
     it("returns error for empty value", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await updateSettingAction({ key: "default_interest_rate", value: "" })
       expect(result).toEqual({ error: "Setting value is required" })
     })
 
     it("updates setting on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await updateSettingAction({ key: "default_interest_rate", value: "0.12" })
       expect(result).toHaveProperty("data")
     })

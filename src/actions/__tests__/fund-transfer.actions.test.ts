@@ -18,6 +18,7 @@ vi.mock("@/lib/validators", () => ({
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock("next/cache", () => ({
@@ -32,7 +33,7 @@ vi.mock("@/services/fund-transfer.service", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, requireRole } from "@/lib/action-utils"
+import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import {
   createFundTransfer,
@@ -49,6 +50,7 @@ import {
 import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
+const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockCreateFundTransfer = vi.mocked(createFundTransfer)
 const mockCreateCapitalInjection = vi.mocked(createCapitalInjection)
@@ -77,28 +79,28 @@ describe("Fund Transfer Actions", () => {
 
     it("returns error when role is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Forbidden: admin access required")
+      mockCheckPermission.mockResolvedValue("Forbidden: admin access required")
       const result = await createFundTransferAction(validInput as any)
       expect(result).toEqual({ error: "Forbidden: admin access required" })
     })
 
     it("returns error for invalid source location", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await createFundTransferAction({ ...validInput, fromLocation: "pillow" } as any)
       expect(result).toEqual({ error: "Invalid source location" })
     })
 
     it("returns error for same source and destination", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await createFundTransferAction({ ...validInput, toLocation: "cash" } as any)
       expect(result).toEqual({ error: "Source and destination must be different" })
     })
 
     it("returns error for invalid amount", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await createFundTransferAction({ ...validInput, amount: "abc" } as any)
       expect(result).toHaveProperty("error")
       expect((result as any).error).toContain("Amount")
@@ -106,7 +108,7 @@ describe("Fund Transfer Actions", () => {
 
     it("creates transfer and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const created = { id: "ft1" }
       mockCreateFundTransfer.mockReturnValue(Effect.succeed(created) as any)
 
@@ -132,21 +134,21 @@ describe("Fund Transfer Actions", () => {
 
     it("returns error when role is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Forbidden: admin access required")
+      mockCheckPermission.mockResolvedValue("Forbidden: admin access required")
       const result = await createCapitalInjectionAction(validInput as any)
       expect(result).toEqual({ error: "Forbidden: admin access required" })
     })
 
     it("returns error for invalid deposit location", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await createCapitalInjectionAction({ ...validInput, toLocation: "mattress" } as any)
       expect(result).toEqual({ error: "Invalid deposit location" })
     })
 
     it("creates injection and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const created = { id: "ci1" }
       mockCreateCapitalInjection.mockReturnValue(Effect.succeed(created) as any)
 
@@ -166,14 +168,14 @@ describe("Fund Transfer Actions", () => {
 
     it("returns error when role is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Forbidden: admin access required")
+      mockCheckPermission.mockResolvedValue("Forbidden: admin access required")
       const result = await listFundTransfersAction()
       expect(result).toEqual({ error: "Forbidden: admin access required" })
     })
 
     it("returns transfers on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const transfers = [{ id: "ft1" }]
       mockListFundTransfers.mockReturnValue(Effect.succeed(transfers) as any)
       const result = await listFundTransfersAction()

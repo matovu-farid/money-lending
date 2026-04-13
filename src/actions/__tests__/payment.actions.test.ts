@@ -20,6 +20,8 @@ vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   getUserRole: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn().mockResolvedValue(null),
+  getEffectivePermissions: vi.fn().mockResolvedValue(new Set(["payment:edit-any", "payment:delete-any"])),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {

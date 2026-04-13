@@ -15,6 +15,30 @@ vi.mock("next/headers", () => ({
   headers: vi.fn().mockResolvedValue(new Headers()),
 }))
 
+vi.mock("@/lib/action-utils", async () => {
+  const { auth } = await import("@/lib/auth") as any
+  const { headers } = await import("next/headers") as any
+  return {
+    getSession: vi.fn(async () => {
+      const session = await auth.api.getSession({ headers: await headers() })
+      return session?.user ? session : null
+    }),
+    getUserRole: vi.fn((session: any) => (session?.user?.role ?? "unassigned")),
+    checkPermission: vi.fn(async (_session: any, _perm: string) => {
+      // By default, return null (allowed). Tests override via mockResolvedValueOnce.
+      return null
+    }),
+    getEffectivePermissions: vi.fn().mockResolvedValue(new Set(["expense:create", "backdate:beyond-3-days"])),
+    getErrorTag: (error: unknown): string | undefined => {
+      if (error == null || typeof error !== "object") return undefined
+      if ("_tag" in error && typeof (error as any)._tag === "string") {
+        return (error as any)._tag
+      }
+      return undefined
+    },
+  }
+})
+
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }))
@@ -34,6 +58,7 @@ vi.mock("@/services/category.service", () => ({
 // ---------- Imports ----------
 
 import { auth } from "@/lib/auth"
+import { checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
 import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
@@ -49,6 +74,7 @@ import {
 
 import { fakeSession, lowRoleSession } from "./test-utils"
 const mockGetSession = vi.mocked(auth.api.getSession)
+const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockRecordExpense = vi.mocked(recordExpense)
 const mockDeleteTransaction = vi.mocked(deleteTransaction)
@@ -123,6 +149,7 @@ describe("Expense Actions", () => {
 
     it("returns Forbidden for low role", async () => {
       mockGetSession.mockResolvedValue(lowRoleSession)
+      mockCheckPermission.mockResolvedValueOnce("Forbidden")
       const result = await recordExpenseAction(validInput as any)
       expect(result).toEqual({ error: "Forbidden" })
     })
@@ -166,6 +193,7 @@ describe("Expense Actions", () => {
 
     it("returns Forbidden for low role", async () => {
       mockGetSession.mockResolvedValue(lowRoleSession)
+      mockCheckPermission.mockResolvedValueOnce("Forbidden")
       const result = await deleteExpenseAction("t1")
       expect(result).toEqual({ error: "Forbidden" })
     })

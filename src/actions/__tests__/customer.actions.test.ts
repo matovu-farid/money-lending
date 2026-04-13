@@ -31,6 +31,7 @@ vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   getUserRole: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn().mockResolvedValue(null),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -62,7 +63,7 @@ vi.mock("@/services/customer.service", () => ({
 
 // ---------- Imports (after mocks) ----------
 
-import { getSession, requireRole } from "@/lib/action-utils"
+import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import {
   createCustomer,
@@ -85,6 +86,7 @@ import {
 
 const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
+const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockCreateCustomer = vi.mocked(createCustomer)
 const mockGetCustomer = vi.mocked(getCustomer)
@@ -304,14 +306,14 @@ describe("Customer Actions", () => {
 
     it("returns error when role is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Forbidden")
+      mockCheckPermission.mockResolvedValue("Forbidden")
       const result = await changeCustomerStatusAction(validInput)
       expect(result).toEqual({ error: "Forbidden" })
     })
 
     it("returns error for missing customer ID", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await changeCustomerStatusAction({
         ...validInput,
         customerId: "",
@@ -321,7 +323,7 @@ describe("Customer Actions", () => {
 
     it("returns error for invalid status", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await changeCustomerStatusAction({
         ...validInput,
         newStatus: "bogus" as any,
@@ -331,7 +333,7 @@ describe("Customer Actions", () => {
 
     it("returns error for short reason", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await changeCustomerStatusAction({
         ...validInput,
         reason: "short",
@@ -341,7 +343,7 @@ describe("Customer Actions", () => {
 
     it("changes status and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const updated = { id: "c1", status: "blacklisted" }
       mockChangeCustomerStatus.mockReturnValue(Effect.succeed(updated) as any)
 
@@ -360,7 +362,7 @@ describe("Customer Actions", () => {
 
     it("returns error when customer not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       mockChangeCustomerStatus.mockReturnValue(
         Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
       )

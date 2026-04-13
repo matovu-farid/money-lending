@@ -2,15 +2,14 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getUserRole } from "@/lib/action-utils"
+import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction } from "@/services/transaction.service"
 import { createCategory, deleteCategory } from "@/services/category.service"
-import { ROLE_LEVELS } from "@/types"
 import type { CreateTransactionInput, CreateCategoryInput, UserRole } from "@/types"
 
 export const recordIncomeAction = withAction<CreateTransactionInput, { success: true } | { error: string }>({
-  minRole: "loanOfficer",
+  permission: "income:create",
   action: async (session, input) => {
     if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
       return { error: "A valid positive amount is required" }
@@ -33,7 +32,8 @@ export const recordIncomeAction = withAction<CreateTransactionInput, { success: 
     const daysDiff = Math.round((todayStart.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24))
     if (daysDiff > 0) {
       const role = getUserRole(session) as UserRole
-      if (daysDiff > 3 && ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+      const perms = await getEffectivePermissions(session.user.id, role)
+      if (daysDiff > 3 && !perms.has("backdate:beyond-3-days")) {
         return { error: `Backdating beyond 3 days requires supervisor permission. You selected ${daysDiff} days ago.` }
       }
       if (!input.backdateNote?.trim()) {
@@ -53,19 +53,19 @@ export const recordIncomeAction = withAction<CreateTransactionInput, { success: 
 })
 
 export const deleteIncomeAction = withAction<string, any>({
-  minRole: "loanOfficer",
+  permission: "income:create",
   effect: (session, id) => deleteTransaction(id, session.user.id, getUserRole(session) as string),
   revalidate: ["/income", "/transactions"],
 })
 
 export const createIncomeCategoryAction = withAction<CreateCategoryInput, any>({
-  minRole: "loanOfficer",
+  permission: "income:create",
   effect: (session, input) => createCategory(input, session.user.id),
   revalidate: ["/income"],
 })
 
 export const deleteIncomeCategoryAction = withAction<string, any>({
-  minRole: "loanOfficer",
+  permission: "income:create",
   effect: (session, id) => deleteCategory(id, session.user.id),
   revalidate: ["/income"],
 })

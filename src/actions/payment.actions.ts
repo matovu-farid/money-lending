@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, requireRole, getErrorTag } from "@/lib/action-utils"
+import { getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
@@ -11,7 +11,6 @@ import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull } from "drizzle-orm"
-import { ROLE_LEVELS, type UserRole } from "@/types"
 import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 import { shortId } from "@/lib/utils"
@@ -68,9 +67,10 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
       return { error: "A reason is required to edit a payment" }
     }
 
-    // Permission check: must be own payment or admin+
+    // Permission check: must be own payment or have payment:edit-any
     const role = getUserRole(session)
-    if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+    const perms = await getEffectivePermissions(session.user.id, role)
+    if (!perms.has("payment:edit-any")) {
       const [payment] = await db
         .select()
         .from(payments)
@@ -116,9 +116,10 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
       return { error: "A reason is required to delete a payment" }
     }
 
-    // Permission check: must be own payment or admin+
+    // Permission check: must be own payment or have payment:delete-any
     const role = getUserRole(session)
-    if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+    const perms = await getEffectivePermissions(session.user.id, role)
+    if (!perms.has("payment:delete-any")) {
       const [payment] = await db
         .select()
         .from(payments)
@@ -224,7 +225,7 @@ const markPaymentWrongWrapped = withAction<
   { paymentId: string; reason: string },
   any
 >({
-  minRole: "supervisor",
+  permission: "payment:edit-any",
   forbiddenMessage: "Only supervisors and above can mark payments as wrong",
   action: async (session, { paymentId, reason }) => {
     if (!paymentId?.trim()) {
@@ -316,7 +317,7 @@ const markPaymentWrongWrapped = withAction<
 })
 
 export const unmarkPaymentWrongAction = withAction<string, any>({
-  minRole: "supervisor",
+  permission: "payment:edit-any",
   forbiddenMessage: "Only supervisors and above can unmark payments",
   action: async (session, paymentId) => {
     if (!paymentId?.trim()) {

@@ -6,6 +6,7 @@ import { Effect } from "effect"
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn().mockResolvedValue(null),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -33,7 +34,7 @@ vi.mock("@/services/collateral-settlement.service", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, requireRole } from "@/lib/action-utils"
+import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { settleWithCollateral, getCustomerActiveLoan } from "@/services/collateral-settlement.service"
 import { LoanNotFound } from "@/lib/errors"
@@ -43,6 +44,7 @@ import { settleWithCollateralAction, checkCustomerActiveLoanAction } from "../se
 import { supervisorSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
+const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockSettleWithCollateral = vi.mocked(settleWithCollateral)
 const mockGetCustomerActiveLoan = vi.mocked(getCustomerActiveLoan)
@@ -68,28 +70,28 @@ describe("Settlement Actions", () => {
 
     it("returns error when role is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Only supervisors and above can settle loans with collateral")
+      mockCheckPermission.mockResolvedValue("Only supervisors and above can settle loans with collateral")
       const result = await settleWithCollateralAction(validInput as any)
       expect(result).toEqual({ error: "Only supervisors and above can settle loans with collateral" })
     })
 
     it("returns error for missing loan ID", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await settleWithCollateralAction({ ...validInput, loanId: "" } as any)
       expect(result).toEqual({ error: "Loan ID is required" })
     })
 
     it("returns error for missing reason", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const result = await settleWithCollateralAction({ ...validInput, reason: "" } as any)
       expect(result).toEqual({ error: "Reason is required" })
     })
 
     it("settles loan and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       const settled = { id: "l1", status: "settled" }
       mockSettleWithCollateral.mockReturnValue(Effect.succeed(settled) as any)
 
@@ -101,7 +103,7 @@ describe("Settlement Actions", () => {
 
     it("returns error when loan not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
+      mockCheckPermission.mockResolvedValue(null)
       mockSettleWithCollateral.mockReturnValue(
         Effect.fail(new LoanNotFound({ id: "l1" })) as any,
       )

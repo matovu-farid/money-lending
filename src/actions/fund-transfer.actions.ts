@@ -9,8 +9,8 @@ import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/typ
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 
 export const createFundTransferAction = withAction<CreateFundTransferInput, any>({
-  minRole: "admin",
-  forbiddenMessage: "Forbidden: admin access required",
+  permission: "fund-transfer:create",
+  forbiddenMessage: "Forbidden: supervisor access required",
   action: async (session, input) => {
     if (!input.fromLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.fromLocation)) {
       return { error: "Invalid source location" }
@@ -36,8 +36,8 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
 })
 
 export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInput, any>({
-  minRole: "admin",
-  forbiddenMessage: "Forbidden: admin access required",
+  permission: "fund-transfer:create",
+  forbiddenMessage: "Forbidden: supervisor access required",
   action: async (session, input) => {
     if (!input.toLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.toLocation)) {
       return { error: "Invalid deposit location" }
@@ -57,7 +57,7 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
 })
 
 export const listFundTransfersAction = withAction({
-  minRole: "admin",
-  forbiddenMessage: "Forbidden: admin access required",
+  permission: "fund-transfer:read",
+  forbiddenMessage: "Forbidden: supervisor access required",
   effect: () => listFundTransfers(),
 })

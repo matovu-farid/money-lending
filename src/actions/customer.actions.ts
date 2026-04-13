@@ -63,7 +63,7 @@ export const searchCustomersAction = withAction<CustomerSearchParams, any>({
 })
 
 export const changeCustomerStatusAction = withAction<ChangeStatusInput, any>({
-  minRole: "admin",
+  permission: "user:ban",
   action: async (session, input) => {
     if (!input.customerId?.trim()) {
       return { error: "Customer ID is required" }
