@@ -451,6 +451,8 @@ describe("PERMISSIONS array", () => {
       "session:list", "session:revoke", "session:delete",
       // delegation
       "delegation:create", "delegation:revoke", "delegation:read",
+      // activity monitoring
+      "activity:read",
       // roles
       "role:assign-loan-officer", "role:assign-supervisor", "role:assign-admin", "role:assign-super-admin",
     ]
@@ -499,6 +501,7 @@ describe("ROLE_PERMISSIONS", () => {
       "role:assign-loan-officer",
       "creditor:read", "creditor:create", "creditor:update",
       "payment:edit-any", "payment:delete-any",
+      "activity:read",
     ]
     for (const perm of extras) {
       expect(sup.has(perm)).toBe(true)
