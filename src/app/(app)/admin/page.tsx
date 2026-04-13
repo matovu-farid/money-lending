@@ -1,10 +1,12 @@
 "use client"
 
 import { useTransition } from "react"
-import { useQueryClient } from "@tanstack/react-query"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { assignRole } from "@/actions/user.actions"
+import { createDelegationAction, revokeDelegationAction, listDelegationsAction } from "@/actions/delegation.actions"
+import { Button } from "@/components/ui/button"
 import { useAdminUsers, type AdminUser } from "@/hooks/use-admin-users"
 import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -49,6 +51,42 @@ export default function AdminPage() {
   const canViewUsers = has("user:list")
 
   const { data: users = [], isLoading, isFetching } = useAdminUsers(!!session && canViewUsers)
+
+  const { data: delegationsResult } = useQuery({
+    queryKey: ["delegations"],
+    queryFn: () => listDelegationsAction(),
+    enabled: has("delegation:read"),
+  })
+
+  const allDelegations = (delegationsResult && "data" in delegationsResult && delegationsResult.data) ? delegationsResult.data : []
+  const activeDelegations = allDelegations.filter((d: any) => !d.revokedAt)
+  const pastDelegations = allDelegations.filter((d: any) => d.revokedAt)
+
+  const delegateMutation = useMutation({
+    mutationFn: (userId: string) => createDelegationAction({ userId }),
+    onSuccess: (result) => {
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ["delegations"] })
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
+      toast.success("Delegation created")
+    },
+  })
+
+  const revokeMutation = useMutation({
+    mutationFn: (delegationId: string) => revokeDelegationAction({ delegationId }),
+    onSuccess: (result) => {
+      if ("error" in result) {
+        toast.error(result.error)
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ["delegations"] })
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
+      toast.success("Delegation revoked")
+    },
+  })
 
   function handleRoleChange(userId: string, newRole: UserRole) {
     startTransition(async () => {
@@ -181,6 +219,20 @@ export default function AdminPage() {
                               : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
                         </span>
                       )}
+                      {user.role === "supervisor" && has("delegation:create") && !activeDelegations.some((d: any) => d.userId === user.id) && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => delegateMutation.mutate(user.id)}
+                          disabled={delegateMutation.isPending}
+                          className="ml-2"
+                        >
+                          Delegate
+                        </Button>
+                      )}
+                      {user.role === "supervisor" && activeDelegations.some((d: any) => d.userId === user.id) && (
+                        <Badge variant="default" className="ml-2">Managing Supervisor</Badge>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -198,6 +250,79 @@ export default function AdminPage() {
             })}
           </TableBody>
         </Table>
+      )}
+
+      {has("delegation:read") && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold">Active Delegations</h2>
+          {activeDelegations.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No active delegations.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Supervisor</TableHead>
+                  <TableHead>Delegated By</TableHead>
+                  <TableHead>Since</TableHead>
+                  <TableHead>Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {activeDelegations.map((d: any) => (
+                  <TableRow key={d.id}>
+                    <TableCell className="font-medium">{d.userName}</TableCell>
+                    <TableCell>{d.delegatedBy}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
+                      {formatDate(d.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      {has("delegation:revoke") && (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => revokeMutation.mutate(d.id)}
+                          disabled={revokeMutation.isPending}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+
+          {pastDelegations.length > 0 && (
+            <details>
+              <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                Delegation History ({pastDelegations.length})
+              </summary>
+              <Table className="mt-2">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Supervisor</TableHead>
+                    <TableHead>Delegated By</TableHead>
+                    <TableHead>Active Period</TableHead>
+                    <TableHead>Revoked By</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pastDelegations.map((d: any) => (
+                    <TableRow key={d.id}>
+                      <TableCell className="font-medium">{d.userName}</TableCell>
+                      <TableCell>{d.delegatedBy}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
+                        {formatDate(d.createdAt)} — {d.revokedAt ? formatDate(d.revokedAt) : "—"}
+                      </TableCell>
+                      <TableCell>{d.revokedBy ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </details>
+          )}
+        </section>
       )}
     </div>
   )
