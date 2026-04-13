@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useMemo, useCallback } from "react"
+import { useState, useMemo, useCallback, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
-import { Plus, ChevronRight } from "lucide-react"
+import { Plus, ChevronRight, Loader2 } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { useLoans } from "@/hooks/use-loans"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button"
 import type { LoanListEntry } from "@/types"
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { exportLoansExcelAction } from "@/actions/loan.actions"
 import { getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
@@ -52,6 +53,8 @@ export default function LoansPage() {
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all")
   const [isExporting, setIsExporting] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
+  const prefetchedRef = useRef(new Set<string>())
 
   const handleExportExcel = useCallback(async () => {
     setIsExporting(true)
@@ -126,25 +129,46 @@ export default function LoansPage() {
     }
   }, [activeFilter, critical, atRisk, early, sortedEntries])
 
-  const handlePrefetch = useCallback((loanId: string) => {
-    router.prefetch(`/loans/${loanId}`)
-    const staleTime = 30_000
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.payments.byLoan(loanId),
-      queryFn: () => getPaymentsByLoanAction(loanId),
-      staleTime,
-    })
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.loans.balance(loanId),
-      queryFn: () => getLoanBalanceAction(loanId),
-      staleTime,
-    })
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
-      queryFn: () => listRequestsForLoanAction(loanId),
-      staleTime,
-    })
-  }, [queryClient])
+  const enqueueLoanPrefetch = useCallback((loanId: string, priority: (typeof Priority)[keyof typeof Priority] = Priority.LOW) => {
+    if (prefetchedRef.current.has(loanId)) return
+    prefetchedRef.current.add(loanId)
+    const staleTime = 60_000
+    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}`), priority)
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.payments.byLoan(loanId),
+        queryFn: () => getPaymentsByLoanAction(loanId),
+        staleTime,
+      }), priority)
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.loans.balance(loanId),
+        queryFn: () => getLoanBalanceAction(loanId),
+        staleTime,
+      }), priority)
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
+        queryFn: () => listRequestsForLoanAction(loanId),
+        staleTime,
+      }), priority)
+  }, [queryClient, router])
+
+  // Background prefetch all visible loans via the global queue at LOW priority
+  useEffect(() => {
+    if (!entries.length) return
+    const id = setTimeout(() => {
+      for (const entry of entries) {
+        enqueueLoanPrefetch(entry.id, Priority.LOW)
+      }
+    }, 1_500)
+    return () => { clearTimeout(id); prefetchQueue.clear() }
+  }, [entries, enqueueLoanPrefetch])
+
+  const handleRowClick = useCallback((loanId: string) => {
+    setNavigatingTo(loanId)
+    router.push(`/loans/${loanId}`)
+  }, [router])
 
   const columns: Column<LoanListEntry>[] = [
     {
@@ -153,13 +177,7 @@ export default function LoansPage() {
       cardLabel: "Customer",
       primary: true,
       render: (e) => (
-        <Link
-          href={`/customers/${e.customerId}`}
-          className="font-medium underline-offset-4 hover:underline"
-          onClick={(ev) => ev.stopPropagation()}
-        >
-          {e.customerName}
-        </Link>
+        <span className="font-medium">{e.customerName}</span>
       ),
     },
     {
@@ -304,7 +322,12 @@ export default function LoansPage() {
       key: "chevron",
       header: "",
       hideInCard: true,
-      render: () => <ChevronRight className="h-4 w-4 text-muted-foreground" />,
+      render: (e) =>
+        navigatingTo === e.id ? (
+          <Loader2 className="h-4 w-4 text-muted-foreground animate-spin" />
+        ) : (
+          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+        ),
     },
   ]
 
@@ -491,10 +514,10 @@ export default function LoansPage() {
               getRowKey={(e) => e.id}
               getRowProps={(e) => ({
                 "data-testid": "data-row",
-                className: "cursor-pointer hover:bg-muted/50",
-                onClick: () => router.push(`/loans/${e.id}`),
-                onMouseEnter: () => handlePrefetch(e.id),
-                onFocus: () => handlePrefetch(e.id),
+                className: `cursor-pointer hover:bg-muted/50 ${navigatingTo === e.id ? "opacity-70" : ""}`,
+                onClick: () => handleRowClick(e.id),
+                onMouseEnter: () => enqueueLoanPrefetch(e.id, Priority.CRITICAL),
+                onFocus: () => enqueueLoanPrefetch(e.id, Priority.CRITICAL),
                 role: "button",
                 "aria-label": `View loan for ${e.customerName}`,
               })}

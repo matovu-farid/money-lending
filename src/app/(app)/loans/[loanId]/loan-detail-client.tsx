@@ -3,6 +3,7 @@
 import { useTransition, useEffect, useMemo, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
@@ -129,10 +130,11 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
   // Prefetch record-payment data so the page loads instantly
   useEffect(() => {
     if (loan.status !== "active") return;
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.loans.paymentContext(loan.id),
-      queryFn: () => getLoanPaymentContextAction(loan.id).then((r) => ("error" in r ? undefined : r.data)),
-    });
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.loans.paymentContext(loan.id),
+        queryFn: () => getLoanPaymentContextAction(loan.id).then((r) => ("error" in r ? undefined : r.data)),
+      }), Priority.NORMAL);
   }, [loan.id, loan.status, queryClient]);
 
   const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
@@ -369,7 +371,12 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           <div>
             <div className="flex items-center gap-2.5">
               {customerName && (
-                <h1 className="text-xl font-semibold tracking-tight">{customerName}</h1>
+                <Link
+                  href={`/customers/${loan.customerId}`}
+                  className="text-xl font-semibold tracking-tight underline-offset-4 hover:underline cursor-pointer"
+                >
+                  {customerName}
+                </Link>
               )}
               <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
               {penaltyActive && (
@@ -446,49 +453,6 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
         onOpenRateChange={openRateChange}
       />
 
-      {/* Amortization Schedule */}
-      {loan.loanType && loan.loanType !== "perpetual" && loan.termMonths && (
-        <div className="rounded-xl border border-border bg-card p-6">
-          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
-            Amortization Schedule
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Amortization Schedule</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                A projected breakdown of each monthly payment showing how much goes to interest vs principal. Actual payments may differ if payments are made early, late, or in different amounts.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                For <strong>Fixed Rate</strong> loans, interest is the same each month. For <strong>Reducing Balance</strong> loans, interest decreases as the principal is paid down.
-              </p>
-            </InfoPopover>
-          </h3>
-          <div className="rounded-md border overflow-auto max-h-64">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 sticky top-0">
-                <tr>
-                  <th className="px-3 py-2 text-left">Month</th>
-                  <th className="px-3 py-2 text-right">Principal</th>
-                  <th className="px-3 py-2 text-right">Interest</th>
-                  <th className="px-3 py-2 text-right">Installment</th>
-                  <th className="px-3 py-2 text-right">Balance</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schedule.map((entry) => (
-                  <tr key={entry.month} className="border-t">
-                    <td className="px-3 py-2">{entry.month}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInterest).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInstallment).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.balanceAfter).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-
       {/* Principal Balance Card */}
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -553,6 +517,48 @@ export function LoanDetailClient({ loan, initialPayments, customerName, canModif
           </div>
         </div>
       </div>
+
+      {/* Amortization Schedule */}
+      {loan.loanType && loan.loanType !== "perpetual" && loan.termMonths && (
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+            Amortization Schedule
+            <InfoPopover>
+              <p className="font-semibold text-sm mb-1">Amortization Schedule</p>
+              <p className="text-xs text-muted-foreground mb-2">
+                A projected breakdown of each monthly payment showing how much goes to interest vs principal. Actual payments may differ if payments are made early, late, or in different amounts.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                For <strong>Fixed Rate</strong> loans, interest is the same each month. For <strong>Reducing Balance</strong> loans, interest decreases as the principal is paid down.
+              </p>
+            </InfoPopover>
+          </h3>
+          <div className="rounded-md border overflow-auto max-h-64">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="px-3 py-2 text-left">Month</th>
+                  <th className="px-3 py-2 text-right">Principal</th>
+                  <th className="px-3 py-2 text-right">Interest</th>
+                  <th className="px-3 py-2 text-right">Installment</th>
+                  <th className="px-3 py-2 text-right">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {schedule.map((entry) => (
+                  <tr key={entry.month} className="border-t">
+                    <td className="px-3 py-2">{entry.month}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInterest).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInstallment).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">{Number(entry.balanceAfter).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Payments Section */}
       <PaymentTable

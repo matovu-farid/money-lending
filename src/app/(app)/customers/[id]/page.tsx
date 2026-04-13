@@ -17,6 +17,8 @@ import { useCustomer } from "@/hooks/use-customer";
 import { useLoanPayments } from "@/hooks/use-payments";
 import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
+import { getBaseRate } from "@/lib/interest/effective-rate";
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue";
 import type { Customer, Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -91,9 +93,12 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-mono text-muted-foreground">
+              <Link
+                href={`/loans/${item.loan.id}`}
+                className="text-sm font-mono text-muted-foreground underline underline-offset-4 hover:text-foreground"
+              >
                 LOAN-{shortId(item.loan.id).toUpperCase()}
-              </span>
+              </Link>
               <Badge variant={loanStatusVariant(item.loan.status)}>
                 {loanStatusLabel(item.loan.status)}
               </Badge>
@@ -139,7 +144,7 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
           </p>
           <p className="text-sm text-muted-foreground">
             <span className="font-mono tabular-nums">
-              {formatRate(item.loan.interestRate)}
+              {formatRate(getBaseRate(item.loan))}
             </span>{" "}
             per month
           </p>
@@ -291,15 +296,17 @@ export default function CustomerProfilePage() {
   useEffect(() => {
     if (!activeLoan) return;
     const loanId = activeLoan.loan.id;
-    router.prefetch(`/loans/${loanId}/payments/new`);
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.loans.paymentContext(loanId),
-      queryFn: () => getLoanPaymentContextAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
-    });
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.loans.balance(loanId),
-      queryFn: () => getLoanBalanceAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
-    });
+    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}/payments/new`), Priority.NORMAL);
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.loans.paymentContext(loanId),
+        queryFn: () => getLoanPaymentContextAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
+      }), Priority.NORMAL);
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.loans.balance(loanId),
+        queryFn: () => getLoanBalanceAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
+      }), Priority.NORMAL);
   }, [activeLoan, router, queryClient]);
 
   function handleEditStart() {
