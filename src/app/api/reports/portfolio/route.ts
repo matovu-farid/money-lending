@@ -20,7 +20,7 @@ export async function GET(request: Request) {
 
     if (format === "excel") {
       const buffer = await generatePortfolioExcel(data)
-      return new Response(new Uint8Array(buffer), {
+      return new Response(new Blob([buffer]), {
         headers: {
           "Content-Type":
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
     }
 
     const buffer = generatePortfolioPdf(data)
-    return new Response(new Uint8Array(buffer), {
+    return new Response(new Blob([buffer]), {
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="portfolio-report.pdf"`,

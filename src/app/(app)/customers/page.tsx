@@ -44,29 +44,33 @@ export default function CustomersPage() {
 
   const handlePrefetch = useCallback((customerId: string) => {
     if (customerId.startsWith("optimistic-")) return
-    router.prefetch(`/customers/${customerId}`)
     const staleTime = 30_000
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.customers.detail(customerId),
-      queryFn: async () => {
-        const result = await getCustomerAction(customerId)
-        return unwrapAction(result as { data: Customer } | { error: string })
-      },
-      staleTime,
-    })
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.loans.byCustomer(customerId),
-      queryFn: async () => {
-        const result = await getCustomerLoansWithOverdueAction(customerId)
-        if (!("data" in result) || !result.data) return []
-        return result.data.map((item: any) => ({
-          loan: item,
-          daysOverdue: item.daysOverdue,
-        }))
-      },
-      staleTime,
-    })
-  }, [queryClient])
+    prefetchQueue.add(
+      () => router.prefetch(`/customers/${customerId}`),
+      Priority.CRITICAL, `route:/customers/${customerId}`)
+    prefetchQueue.add(
+      () => queryClient.prefetchQuery({
+        queryKey: queryKeys.customers.detail(customerId),
+        queryFn: async () => {
+          const result = await getCustomerAction(customerId)
+          return unwrapAction(result as { data: Customer } | { error: string })
+        },
+        staleTime,
+      }), Priority.CRITICAL, `data:customer-detail-${customerId}`)
+    prefetchQueue.add(
+      () => queryClient.prefetchQuery({
+        queryKey: queryKeys.loans.byCustomer(customerId),
+        queryFn: async () => {
+          const result = await getCustomerLoansWithOverdueAction(customerId)
+          if (!("data" in result) || !result.data) return []
+          return result.data.map((item: any) => ({
+            loan: item,
+            daysOverdue: item.daysOverdue,
+          }))
+        },
+        staleTime,
+      }), Priority.CRITICAL, `data:loans-by-customer-${customerId}`)
+  }, [queryClient, router])
 
   // Background prefetch each customer's detail + loans via the global queue
   const customerIds = customers
@@ -80,7 +84,6 @@ export default function CustomersPage() {
 
     const timer = setTimeout(() => {
       for (const id of ids) {
-        if (queryClient.getQueryData(queryKeys.customers.detail(id))) continue
         prefetchQueue.add(() =>
           queryClient.prefetchQuery({
             queryKey: queryKeys.customers.detail(id),
@@ -89,7 +92,7 @@ export default function CustomersPage() {
               return unwrapAction(result as { data: Customer } | { error: string })
             },
             staleTime,
-          }), Priority.LOW)
+          }), Priority.LOW, `data:customer-detail-${id}`)
         prefetchQueue.add(() =>
           queryClient.prefetchQuery({
             queryKey: queryKeys.loans.byCustomer(id),
@@ -102,7 +105,7 @@ export default function CustomersPage() {
               }))
             },
             staleTime,
-          }), Priority.LOW)
+          }), Priority.LOW, `data:loans-by-customer-${id}`)
       }
     }, 1_000)
 

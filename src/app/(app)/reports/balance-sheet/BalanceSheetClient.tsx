@@ -1,5 +1,6 @@
 "use client"
 
+import { useCallback } from "react"
 import {
   Card,
   CardContent,
@@ -9,24 +10,56 @@ import type { BalanceSheetData } from "@/types"
 import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
+import { useBalanceSheetReport } from "@/hooks/use-reports"
+import { Loader2 } from "lucide-react"
 
 interface BalanceSheetClientProps {
-  data: BalanceSheetData
   period: string
 }
 
-export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
-  const totalCurrentAssets = new BigNumber(data.assets.cashBalance)
-    .plus(data.assets.bankBalance)
-    .plus(data.assets.strongRoomBalance)
+export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
+  const { data, isLoading } = useBalanceSheetReport(period)
+
+  const bsData: BalanceSheetData = data ?? {
+    asOf: period,
+    assets: {
+      cashBalance: "0",
+      bankBalance: "0",
+      strongRoomBalance: "0",
+      totalLoansOutstanding: "0",
+      interestReceivable: "0",
+      seizedCollateralValue: "0",
+      totalAssets: "0",
+    },
+    liabilities: { totalCreditorBalances: "0" },
+    equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },
+  }
+
+  const onExport = useCallback(async (format: "pdf" | "excel") => {
+    if (!bsData) throw new Error("No data")
+    if (format === "pdf") {
+      const { generateBalanceSheetPdf } = await import("@/services/export/pdf.service")
+      const buffer = generateBalanceSheetPdf(bsData)
+      return { blob: new Blob([buffer], { type: "application/pdf" }), filename: `balance-sheet-${period}.pdf` }
+    }
+    const { generateBalanceSheetExcel } = await import("@/services/export/excel.service")
+    const buffer = await generateBalanceSheetExcel(bsData)
+    return { blob: new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `balance-sheet-${period}.xlsx` }
+  }, [bsData, period])
+
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+
+  const totalCurrentAssets = new BigNumber(bsData.assets.cashBalance)
+    .plus(bsData.assets.bankBalance)
+    .plus(bsData.assets.strongRoomBalance)
     .toFixed(0)
 
-  const totalLiabilitiesPlusEquity = new BigNumber(data.liabilities.totalCreditorBalances)
-    .plus(data.liabilities.interestPayable ?? "0")
-    .plus(data.equity.totalEquity)
+  const totalLiabilitiesPlusEquity = new BigNumber(bsData.liabilities.totalCreditorBalances)
+    .plus(bsData.liabilities.interestPayable ?? "0")
+    .plus(bsData.equity.totalEquity)
     .toFixed(0)
 
-  const isBalanced = new BigNumber(data.assets.totalAssets).isEqualTo(totalLiabilitiesPlusEquity)
+  const isBalanced = new BigNumber(bsData.assets.totalAssets).isEqualTo(totalLiabilitiesPlusEquity)
 
   return (
     <div className="space-y-4">
@@ -34,8 +67,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
       <ReportToolbar
         period={period}
         basePath="/reports/balance-sheet"
-        exportHref={(fmt, p) => `/api/reports/balance-sheet?format=${fmt}&period=${p}`}
-        exportFilename={(fmt, p) => `balance-sheet-${p}.${fmt === "pdf" ? "pdf" : "xlsx"}`}
+        onExport={onExport}
       />
 
       {/* Report Card */}
@@ -77,19 +109,19 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   <tr>
                     <td className="py-1.5 pl-6">Cash on Hand</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.assets.cashBalance)}
+                      {formatCurrency(bsData.assets.cashBalance)}
                     </td>
                   </tr>
                   <tr>
                     <td className="py-1.5 pl-6">Bank</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.assets.bankBalance)}
+                      {formatCurrency(bsData.assets.bankBalance)}
                     </td>
                   </tr>
                   <tr className="border-b">
                     <td className="py-1.5 pl-6">Strong Room</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.assets.strongRoomBalance)}
+                      {formatCurrency(bsData.assets.strongRoomBalance)}
                     </td>
                   </tr>
                   <tr>
@@ -126,10 +158,10 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                       </span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.assets.totalLoansOutstanding)}
+                      {formatCurrency(bsData.assets.totalLoansOutstanding)}
                     </td>
                   </tr>
-                  {parseFloat(data.assets.interestReceivable) > 0 && (
+                  {parseFloat(bsData.assets.interestReceivable) > 0 && (
                     <tr>
                       <td className="py-1.5 pl-6">
                         <span className="inline-flex items-center gap-1">
@@ -143,11 +175,11 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                         </span>
                       </td>
                       <td className="py-1.5 text-right font-mono tabular-nums">
-                        {formatCurrency(data.assets.interestReceivable)}
+                        {formatCurrency(bsData.assets.interestReceivable)}
                       </td>
                     </tr>
                   )}
-                  {parseFloat(data.assets.seizedCollateralValue) > 0 && (
+                  {parseFloat(bsData.assets.seizedCollateralValue) > 0 && (
                     <tr>
                       <td className="py-1.5 pl-6">
                       <span className="inline-flex items-center gap-1">
@@ -161,7 +193,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                       </span>
                     </td>
                       <td className="py-1.5 text-right font-mono tabular-nums">
-                        {formatCurrency(data.assets.seizedCollateralValue)}
+                        {formatCurrency(bsData.assets.seizedCollateralValue)}
                       </td>
                     </tr>
                   )}
@@ -169,9 +201,9 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                     <td className="py-2 pl-2 font-semibold">Total Non-Current Assets</td>
                     <td className="py-2 text-right font-mono tabular-nums font-semibold">
                       {formatCurrency(
-                        new BigNumber(data.assets.totalLoansOutstanding)
-                          .plus(data.assets.interestReceivable)
-                          .plus(data.assets.seizedCollateralValue)
+                        new BigNumber(bsData.assets.totalLoansOutstanding)
+                          .plus(bsData.assets.interestReceivable)
+                          .plus(bsData.assets.seizedCollateralValue)
                           .toFixed(0)
                       )}
                     </td>
@@ -181,7 +213,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                   <tr className="border-t-2">
                     <td className="pt-3 pb-1 font-bold text-base">Total Assets</td>
                     <td className="pt-3 pb-1 text-right font-mono tabular-nums font-bold text-base">
-                      {formatCurrency(data.assets.totalAssets)}
+                      {formatCurrency(bsData.assets.totalAssets)}
                     </td>
                   </tr>
                   <tr>
@@ -214,7 +246,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                       </span>
                     </td>
                   </tr>
-                  <tr className={new BigNumber(data.liabilities.interestPayable ?? "0").isGreaterThan(0) ? "" : "border-b"}>
+                  <tr className={new BigNumber(bsData.liabilities.interestPayable ?? "0").isGreaterThan(0) ? "" : "border-b"}>
                     <td className="py-1.5 pl-6">
                       <span className="inline-flex items-center gap-1">
                         Creditor Balances
@@ -227,21 +259,21 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                       </span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.liabilities.totalCreditorBalances)}
+                      {formatCurrency(bsData.liabilities.totalCreditorBalances)}
                     </td>
                   </tr>
-                  {new BigNumber(data.liabilities.interestPayable ?? "0").isGreaterThan(0) && (
+                  {new BigNumber(bsData.liabilities.interestPayable ?? "0").isGreaterThan(0) && (
                     <tr className="border-b">
                       <td className="py-1.5 pl-6">Interest Payable</td>
                       <td className="py-1.5 text-right font-mono tabular-nums">
-                        {formatCurrency(data.liabilities.interestPayable!)}
+                        {formatCurrency(bsData.liabilities.interestPayable!)}
                       </td>
                     </tr>
                   )}
                   <tr>
                     <td className="py-2 pl-2 font-semibold">Total Liabilities</td>
                     <td className="py-2 text-right font-mono tabular-nums font-semibold">
-                      {formatCurrency(new BigNumber(data.liabilities.totalCreditorBalances).plus(data.liabilities.interestPayable ?? "0").toFixed(0))}
+                      {formatCurrency(new BigNumber(bsData.liabilities.totalCreditorBalances).plus(bsData.liabilities.interestPayable ?? "0").toFixed(0))}
                     </td>
                   </tr>
 
@@ -267,7 +299,7 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                       </span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.equity.shareCapital)}
+                      {formatCurrency(bsData.equity.shareCapital)}
                     </td>
                   </tr>
                   <tr className="border-b">
@@ -283,13 +315,13 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
                       </span>
                     </td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(data.equity.retainedEarnings)}
+                      {formatCurrency(bsData.equity.retainedEarnings)}
                     </td>
                   </tr>
                   <tr>
                     <td className="py-2 pl-2 font-semibold">Total Equity</td>
                     <td className="py-2 text-right font-mono tabular-nums font-semibold">
-                      {formatCurrency(data.equity.totalEquity)}
+                      {formatCurrency(bsData.equity.totalEquity)}
                     </td>
                   </tr>
 
@@ -315,11 +347,11 @@ export function BalanceSheetClient({ data, period }: BalanceSheetClientProps) {
           {/* Balance Check */}
           {!isBalanced && (
             <div className="mt-4 rounded-md bg-destructive/10 border border-destructive/30 px-4 py-3 text-sm text-destructive">
-              Balance sheet does not balance. Assets ({formatCurrency(data.assets.totalAssets)})
+              Balance sheet does not balance. Assets ({formatCurrency(bsData.assets.totalAssets)})
               {" "}&ne;{" "}
               Liabilities + Equity ({formatCurrency(totalLiabilitiesPlusEquity)}).
               Difference: {formatCurrency(
-                new BigNumber(data.assets.totalAssets).minus(totalLiabilitiesPlusEquity).toFixed(0)
+                new BigNumber(bsData.assets.totalAssets).minus(totalLiabilitiesPlusEquity).toFixed(0)
               )}
             </div>
           )}

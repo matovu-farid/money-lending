@@ -1,36 +1,12 @@
-import { Effect, Exit } from "effect"
-import { getBalanceSheetData } from "@/services/report.service"
+"use client"
+
+import { useSearchParams } from "next/navigation"
 import { BalanceSheetClient } from "./BalanceSheetClient"
 import { getCurrentMonth } from "@/lib/utils"
-import type { BalanceSheetData } from "@/types"
 
-interface BalanceSheetPageProps {
-  searchParams: Promise<{ period?: string }>
-}
-
-export default async function BalanceSheetPage({
-  searchParams,
-}: BalanceSheetPageProps) {
-  const params = await searchParams
-  const period = params.period ?? getCurrentMonth()
-
-  const exit = await Effect.runPromiseExit(getBalanceSheetData(period))
-  const data: BalanceSheetData = Exit.isSuccess(exit)
-    ? exit.value
-    : {
-        asOf: period,
-        assets: {
-          cashBalance: "0",
-          bankBalance: "0",
-          strongRoomBalance: "0",
-          totalLoansOutstanding: "0",
-          interestReceivable: "0",
-          seizedCollateralValue: "0",
-          totalAssets: "0",
-        },
-        liabilities: { totalCreditorBalances: "0" },
-        equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },
-      }
+export default function BalanceSheetPage() {
+  const searchParams = useSearchParams()
+  const period = searchParams.get("period") ?? getCurrentMonth()
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -40,8 +16,7 @@ export default async function BalanceSheetPage({
           Assets, liabilities, and equity
         </p>
       </div>
-
-      <BalanceSheetClient data={data} period={period} />
+      <BalanceSheetClient period={period} />
     </div>
   )
 }

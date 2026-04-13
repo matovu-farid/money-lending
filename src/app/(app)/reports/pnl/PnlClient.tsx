@@ -1,5 +1,7 @@
 "use client"
 
+import { useCallback } from "react"
+import { Loader2 } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -8,14 +10,31 @@ import type { PnlData } from "@/types"
 import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
+import { usePnlReport } from "@/hooks/use-reports"
 
 interface PnlClientProps {
-  data: PnlData
   period: string
 }
 
-export function PnlClient({ data, period }: PnlClientProps) {
-  const hasData = data.income.length > 0 || data.expenses.length > 0
+export function PnlClient({ period }: PnlClientProps) {
+  const { data, isLoading } = usePnlReport(period)
+
+  const onExport = useCallback(async (format: "pdf" | "excel") => {
+    if (!data) throw new Error("No data")
+    if (format === "pdf") {
+      const { generatePnlPdf } = await import("@/services/export/pdf.service")
+      const buffer = generatePnlPdf(data)
+      return { blob: new Blob([buffer], { type: "application/pdf" }), filename: `pnl-${period}.pdf` }
+    }
+    const { generatePnlExcel } = await import("@/services/export/excel.service")
+    const buffer = await generatePnlExcel(data)
+    return { blob: new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `pnl-${period}.xlsx` }
+  }, [data, period])
+
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+
+  const pnlData: PnlData = data ?? { period, income: [], totalIncome: "0", expenses: [], totalExpenses: "0", netProfit: "0" }
+  const hasData = pnlData.income.length > 0 || pnlData.expenses.length > 0
 
   return (
     <div className="space-y-4">
@@ -23,8 +42,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
       <ReportToolbar
         period={period}
         basePath="/reports/pnl"
-        exportHref={(fmt, p) => `/api/reports/pnl?format=${fmt}&period=${p}`}
-        exportFilename={(fmt, p) => `pnl-${p}.${fmt === "pdf" ? "pdf" : "xlsx"}`}
+        onExport={onExport}
       />
 
       {/* Report Card */}
@@ -60,7 +78,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
                     </span>
                   </td>
                 </tr>
-                {data.income.map((row) => (
+                {pnlData.income.map((row) => (
                   <tr key={row.category}>
                     <td className="py-1.5 pl-6">{row.category}</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
@@ -72,7 +90,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
                 <tr className="border-t">
                   <td className="py-2 pl-2 font-semibold">Total Revenue</td>
                   <td className="py-2 text-right font-mono tabular-nums font-semibold">
-                    {formatCurrency(data.totalIncome)}
+                    {formatCurrency(pnlData.totalIncome)}
                   </td>
                 </tr>
 
@@ -93,10 +111,10 @@ export function PnlClient({ data, period }: PnlClientProps) {
                     </span>
                   </td>
                 </tr>
-                {data.expenses.map((row, i) => (
+                {pnlData.expenses.map((row, i) => (
                   <tr
                     key={row.category}
-                    className={i === data.expenses.length - 1 ? "border-b" : ""}
+                    className={i === pnlData.expenses.length - 1 ? "border-b" : ""}
                   >
                     <td className="py-1.5 pl-6">{row.category}</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
@@ -108,7 +126,7 @@ export function PnlClient({ data, period }: PnlClientProps) {
                 <tr>
                   <td className="py-2 pl-2 font-semibold">Total Expenses</td>
                   <td className="py-2 text-right font-mono tabular-nums font-semibold">
-                    {formatCurrency(data.totalExpenses)}
+                    {formatCurrency(pnlData.totalExpenses)}
                   </td>
                 </tr>
 
@@ -130,12 +148,12 @@ export function PnlClient({ data, period }: PnlClientProps) {
                   </td>
                   <td
                     className={`pt-3 pb-1 text-right font-mono tabular-nums font-bold text-base ${
-                      parseFloat(data.netProfit) >= 0
+                      parseFloat(pnlData.netProfit) >= 0
                         ? "text-green-700 dark:text-green-400"
                         : "text-destructive"
                     }`}
                   >
-                    {formatCurrency(data.netProfit)}
+                    {formatCurrency(pnlData.netProfit)}
                   </td>
                 </tr>
                 <tr>

@@ -1,32 +1,22 @@
-import { Effect, Exit } from "effect"
-import { getPnlData } from "@/services/report.service"
+"use client"
+
+import { useSearchParams } from "next/navigation"
 import { PnlClient } from "./PnlClient"
 import { getCurrentMonth } from "@/lib/utils"
-import type { PnlData } from "@/types"
 
-interface PnlPageProps {
-  searchParams: Promise<{ period?: string }>
-}
-
-export default async function PnlPage({ searchParams }: PnlPageProps) {
-  const params = await searchParams
-  const period = params.period ?? getCurrentMonth()
-
-  const exit = await Effect.runPromiseExit(getPnlData(period))
-  const data: PnlData = Exit.isSuccess(exit)
-    ? exit.value
-    : { period, income: [], totalIncome: "0", expenses: [], totalExpenses: "0", netProfit: "0" }
+export default function PnlPage() {
+  const searchParams = useSearchParams()
+  const period = searchParams.get("period") ?? getCurrentMonth()
 
   return (
     <div className="space-y-6 p-4 md:p-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Profit & Loss</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Profit &amp; Loss</h1>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
           Revenue and expense summary
         </p>
       </div>
-
-      <PnlClient data={data} period={period} />
+      <PnlClient period={period} />
     </div>
   )
 }

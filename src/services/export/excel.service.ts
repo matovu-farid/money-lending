@@ -70,7 +70,7 @@ function setColumnWidths(sheet: ExcelJS.Worksheet, widths: number[]): void {
 
 export async function generatePortfolioExcel(
   data: PortfolioEntry[]
-): Promise<Buffer> {
+): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Loan Portfolio")
 
@@ -111,11 +111,10 @@ export async function generatePortfolioExcel(
 
   setColumnWidths(sheet, [28, 20, 20, 22, 14, 12, 12])
 
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
 }
 
-export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
+export async function generatePnlExcel(data: PnlData): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet(`P&L ${data.period}`)
 
@@ -180,13 +179,12 @@ export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
 
   setColumnWidths(sheet, [30, 20])
 
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
 }
 
 export async function generateBalanceSheetExcel(
   data: BalanceSheetData
-): Promise<Buffer> {
+): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Balance Sheet")
 
@@ -270,14 +268,13 @@ export async function generateBalanceSheetExcel(
 
   setColumnWidths(sheet, [32, 20])
 
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
 }
 
 export async function generateTransactionsExcel(
   data: TransactionRow[],
   categories: Map<string, string>
-): Promise<Buffer> {
+): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Transaction Log")
 
@@ -313,13 +310,12 @@ export async function generateTransactionsExcel(
 
   setColumnWidths(sheet, [14, 10, 24, 32, 18, 20])
 
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
 }
 
 export async function generateLoansExcel(
   data: LoanListEntry[]
-): Promise<Buffer> {
+): Promise<ArrayBuffer> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Sovereign Ledger"
   workbook.created = new Date()
@@ -332,11 +328,14 @@ export async function generateLoansExcel(
     "",
     "",
     "",
+    "",
+    "",
+    "",
     `Generated: ${formatDateStr(new Date())}`,
   ])
   titleRow.getCell(1).font = { bold: true, size: 16, color: { argb: "FF1F2937" } }
-  titleRow.getCell(5).font = { size: 11, italic: true, color: { argb: "FF6B7280" } }
-  sheet.mergeCells("A1:D1")
+  titleRow.getCell(8).font = { size: 11, italic: true, color: { argb: "FF6B7280" } }
+  sheet.mergeCells("A1:G1")
 
   // Blank separator
   sheet.addRow([])
@@ -344,9 +343,12 @@ export async function generateLoansExcel(
   // Header row
   const headerRow = sheet.addRow([
     "Customer Name",
+    "Contact",
     "Principal Amount (UGX)",
     "Principal Balance (UGX)",
     "Total Due (UGX)",
+    "Accrued Interest (UGX)",
+    "Days Overdue",
     "Last Payment",
   ])
   applyHeaderStyle(headerRow)
@@ -357,12 +359,13 @@ export async function generateLoansExcel(
   // Auto-filter on the header row
   sheet.autoFilter = {
     from: { row: 3, column: 1 },
-    to: { row: 3, column: 5 },
+    to: { row: 3, column: 8 },
   }
 
   let totalPrincipal = 0
   let totalOutstanding = 0
   let totalOwed = 0
+  let totalInterest = 0
 
   // Data rows
   data.forEach((entry, idx) => {
@@ -373,20 +376,29 @@ export async function generateLoansExcel(
     totalOutstanding += outstanding
     totalOwed += owed
 
+    const unpaidInterest = parseFloat(entry.unpaidInterest)
+    totalInterest += unpaidInterest
+
     const row = sheet.addRow([
       entry.customerName,
+      entry.customerContact ?? "",
       principal,
       outstanding,
       owed,
+      unpaidInterest,
+      entry.daysOverdue,
       entry.lastPaymentDate ? formatDateStr(entry.lastPaymentDate) : "No payments",
     ])
 
-    row.getCell(2).numFmt = UGX_FORMAT
-    row.getCell(2).alignment = { horizontal: "right" }
     row.getCell(3).numFmt = UGX_FORMAT
     row.getCell(3).alignment = { horizontal: "right" }
     row.getCell(4).numFmt = UGX_FORMAT
     row.getCell(4).alignment = { horizontal: "right" }
+    row.getCell(5).numFmt = UGX_FORMAT
+    row.getCell(5).alignment = { horizontal: "right" }
+    row.getCell(6).numFmt = UGX_FORMAT
+    row.getCell(6).alignment = { horizontal: "right" }
+    row.getCell(7).alignment = { horizontal: "right" }
 
     applyDataRowStyle(row, idx % 2 === 1)
   })
@@ -397,15 +409,15 @@ export async function generateLoansExcel(
   // Summary row
   const summaryRow = sheet.addRow([
     "TOTAL",
+    "",
     totalPrincipal,
     totalOutstanding,
     totalOwed,
+    totalInterest,
+    "",
     `${data.length} loan${data.length === 1 ? "" : "s"}`,
   ])
   summaryRow.getCell(1).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
-  summaryRow.getCell(2).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
-  summaryRow.getCell(2).numFmt = UGX_FORMAT
-  summaryRow.getCell(2).alignment = { horizontal: "right" }
   summaryRow.getCell(3).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
   summaryRow.getCell(3).numFmt = UGX_FORMAT
   summaryRow.getCell(3).alignment = { horizontal: "right" }
@@ -413,6 +425,12 @@ export async function generateLoansExcel(
   summaryRow.getCell(4).numFmt = UGX_FORMAT
   summaryRow.getCell(4).alignment = { horizontal: "right" }
   summaryRow.getCell(5).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.getCell(5).numFmt = UGX_FORMAT
+  summaryRow.getCell(5).alignment = { horizontal: "right" }
+  summaryRow.getCell(6).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
+  summaryRow.getCell(6).numFmt = UGX_FORMAT
+  summaryRow.getCell(6).alignment = { horizontal: "right" }
+  summaryRow.getCell(8).font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } }
   summaryRow.eachCell((cell) => {
     cell.fill = {
       type: "pattern",
@@ -427,8 +445,7 @@ export async function generateLoansExcel(
     }
   })
 
-  setColumnWidths(sheet, [30, 24, 24, 24, 18])
+  setColumnWidths(sheet, [30, 18, 24, 24, 24, 16, 14, 18])
 
-  const buffer = await workbook.xlsx.writeBuffer()
-  return Buffer.from(buffer)
+  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
 }

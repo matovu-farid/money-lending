@@ -92,4 +92,15 @@ export const queryKeys = {
   fundTransfers: {
     all: ["fund-transfers"] as const,
   },
+
+  reports: {
+    all: ["reports"] as const,
+    portfolio: () => [...queryKeys.reports.all, "portfolio"] as const,
+    pnl: (period: string) => [...queryKeys.reports.all, "pnl", period] as const,
+    balanceSheet: (period: string) =>
+      [...queryKeys.reports.all, "balance-sheet", period] as const,
+    retainedEarnings: (period: string) =>
+      [...queryKeys.reports.all, "retained-earnings", period] as const,
+    transactions: () => [...queryKeys.reports.all, "transactions"] as const,
+  },
 } as const

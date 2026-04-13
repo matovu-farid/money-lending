@@ -20,3 +20,4 @@ export class TransactionNotFound extends Data.TaggedError("TransactionNotFound")
 export class RateChangeRequestNotFound extends Data.TaggedError("RateChangeRequestNotFound")<{ id: string }> {}
 export class ConversationNotFound extends Data.TaggedError("ConversationNotFound")<{ id: string }> {}
 export class MessageNotFound extends Data.TaggedError("MessageNotFound")<{ id: string }> {}
+export class InsufficientFundsError extends Data.TaggedError("InsufficientFundsError")<{ location: string; available: string; required: string }> {}

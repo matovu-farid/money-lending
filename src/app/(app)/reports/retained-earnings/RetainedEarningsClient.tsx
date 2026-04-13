@@ -4,17 +4,23 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card"
-import type { RetainedEarningsData } from "@/types"
 import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
+import { useRetainedEarningsReport } from "@/hooks/use-reports"
+import { Loader2 } from "lucide-react"
 
 interface RetainedEarningsClientProps {
-  data: RetainedEarningsData
   period: string
 }
 
-export function RetainedEarningsClient({ data, period }: RetainedEarningsClientProps) {
+export function RetainedEarningsClient({ period }: RetainedEarningsClientProps) {
+  const { data, isLoading } = useRetainedEarningsReport(period)
+
+  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+
+  const reData = data ?? { period, beginningBalance: "0", netIncome: "0", endingBalance: "0" }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -52,7 +58,7 @@ export function RetainedEarningsClient({ data, period }: RetainedEarningsClientP
                   </span>
                 </td>
                 <td className="py-2 text-right font-mono tabular-nums">
-                  {formatCurrency(data.beginningBalance)}
+                  {formatCurrency(reData.beginningBalance)}
                 </td>
               </tr>
 
@@ -70,9 +76,9 @@ export function RetainedEarningsClient({ data, period }: RetainedEarningsClientP
                   </span>
                 </td>
                 <td className={`py-2 text-right font-mono tabular-nums ${
-                  parseFloat(data.netIncome) < 0 ? "text-destructive" : ""
+                  parseFloat(reData.netIncome) < 0 ? "text-destructive" : ""
                 }`}>
-                  {formatCurrency(data.netIncome)}
+                  {formatCurrency(reData.netIncome)}
                 </td>
               </tr>
 
@@ -93,7 +99,7 @@ export function RetainedEarningsClient({ data, period }: RetainedEarningsClientP
                   </span>
                 </td>
                 <td className="pt-3 pb-1 text-right font-mono tabular-nums font-bold text-base">
-                  {formatCurrency(data.endingBalance)}
+                  {formatCurrency(reData.endingBalance)}
                 </td>
               </tr>
               <tr>

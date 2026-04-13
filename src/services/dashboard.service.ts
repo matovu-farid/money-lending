@@ -7,6 +7,7 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { auditLog } from "@/lib/db/schema/audit"
 import { customers } from "@/lib/db/schema/customers"
+import { user } from "@/lib/db/schema/auth"
 import { eq, isNull, desc, and, inArray, asc, sql } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
@@ -174,8 +175,19 @@ export const getRecentActivity = (
       const total = Number(countResult?.count ?? 0)
 
       const recentEntries = await db
-        .select()
+        .select({
+          id: auditLog.id,
+          actorId: auditLog.actorId,
+          action: auditLog.action,
+          entityType: auditLog.entityType,
+          entityId: auditLog.entityId,
+          beforeValue: auditLog.beforeValue,
+          afterValue: auditLog.afterValue,
+          occurredAt: auditLog.occurredAt,
+          actorName: user.name,
+        })
         .from(auditLog)
+        .leftJoin(user, eq(auditLog.actorId, user.id))
         .where(inArray(auditLog.entityType, ["loan", "payment"]))
         .orderBy(desc(auditLog.occurredAt))
         .limit(pageSize)
@@ -210,6 +222,7 @@ export const getRecentActivity = (
         let description = ""
         let loanId: string | undefined
         let customerId: string | undefined
+        let paymentId: string | undefined
         let detail: ActivityFeedItem["detail"]
 
         if (entry.entityType === "loan" && entry.action === "loan.create") {
@@ -234,6 +247,7 @@ export const getRecentActivity = (
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
           const amount = formatAmount(afterVal.amount)
           loanId = afterVal.loanId as string | undefined
+          paymentId = entry.entityId
           description = `Payment received — UGX ${amount}`
           detail = {
             interestPortion: afterVal.interestPortion,
@@ -278,9 +292,15 @@ export const getRecentActivity = (
           description = "Loan settled with collateral"
         } else if (entry.entityType === "payment" && entry.action === "payment.delete") {
           type = "payment_received"
+          paymentId = entry.entityId
+          const beforeVal = entry.beforeValue ? JSON.parse(entry.beforeValue) : {}
+          loanId = beforeVal.loanId as string | undefined
           description = "Payment deleted"
         } else if (entry.entityType === "payment" && entry.action === "payment.update") {
           type = "payment_received"
+          paymentId = entry.entityId
+          const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {}
+          loanId = afterVal.loanId as string | undefined
           description = "Payment updated"
         } else {
           description = `${entry.entityType} ${entry.action}`
@@ -293,6 +313,8 @@ export const getRecentActivity = (
           timestamp: entry.occurredAt,
           loanId,
           customerId,
+          paymentId,
+          actorName: entry.actorName ?? undefined,
           detail,
         })
       }

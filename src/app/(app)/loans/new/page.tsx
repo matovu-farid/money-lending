@@ -22,6 +22,7 @@ import { useNewLoanFormStore } from "@/lib/stores/new-loan-form"
 import { todayDateString } from "@/lib/utils"
 import type { UserRole } from "@/types"
 import type { LoanFormValues, ReceiptData } from "./_types"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { StepIndicator } from "./_components/step-indicator"
 import { LoanDetailsStep } from "./_components/loan-details-step"
 import { CollateralStep } from "./_components/collateral-step"
@@ -376,17 +377,21 @@ function NewLoanPageInner() {
           const customerId = receiptData?.customerId
           setReceiptData(null)
           if (customerId) {
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.customers.detail(customerId),
-              queryFn: () => getCustomerAction(customerId),
-              staleTime: 30_000,
-            })
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.loans.byCustomer(customerId),
-              queryFn: () => getCustomerLoansWithOverdueAction(customerId),
-              staleTime: 30_000,
-            })
-            router.prefetch(`/customers/${customerId}`)
+            prefetchQueue.add(() =>
+              queryClient.prefetchQuery({
+                queryKey: queryKeys.customers.detail(customerId),
+                queryFn: () => getCustomerAction(customerId),
+                staleTime: 30_000,
+              }), Priority.CRITICAL, `data:customer-detail-${customerId}`)
+            prefetchQueue.add(() =>
+              queryClient.prefetchQuery({
+                queryKey: queryKeys.loans.byCustomer(customerId),
+                queryFn: () => getCustomerLoansWithOverdueAction(customerId),
+                staleTime: 30_000,
+              }), Priority.CRITICAL, `data:loans-by-customer-${customerId}`)
+            prefetchQueue.add(
+              () => router.prefetch(`/customers/${customerId}`),
+              Priority.CRITICAL, `route:/customers/${customerId}`)
             router.push(`/customers/${customerId}`)
           }
         }}

@@ -1,9 +1,8 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react"
+import { useState, useMemo, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
-import Link from "next/link"
 import { Plus, ChevronRight, Loader2 } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { useLoans } from "@/hooks/use-loans"
@@ -54,7 +53,6 @@ export default function LoansPage() {
   const [isExporting, setIsExporting] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
-  const prefetchedRef = useRef(new Set<string>())
 
   const handleExportExcel = useCallback(async () => {
     setIsExporting(true)
@@ -130,28 +128,26 @@ export default function LoansPage() {
   }, [activeFilter, critical, atRisk, early, sortedEntries])
 
   const enqueueLoanPrefetch = useCallback((loanId: string, priority: (typeof Priority)[keyof typeof Priority] = Priority.LOW) => {
-    if (prefetchedRef.current.has(loanId)) return
-    prefetchedRef.current.add(loanId)
     const staleTime = 60_000
-    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}`), priority)
+    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}`), priority, `route:/loans/${loanId}`)
     prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.payments.byLoan(loanId),
         queryFn: () => getPaymentsByLoanAction(loanId),
         staleTime,
-      }), priority)
+      }), priority, `data:payments-by-loan-${loanId}`)
     prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.loans.balance(loanId),
         queryFn: () => getLoanBalanceAction(loanId),
         staleTime,
-      }), priority)
+      }), priority, `data:loan-balance-${loanId}`)
     prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
         queryFn: () => listRequestsForLoanAction(loanId),
         staleTime,
-      }), priority)
+      }), priority, `data:rate-change-requests-loan-${loanId}`)
   }, [queryClient, router])
 
   // Background prefetch all visible loans via the global queue at LOW priority

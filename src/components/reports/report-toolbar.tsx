@@ -14,15 +14,14 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { getMonthOptions } from "@/lib/utils"
-import { downloadFromUrl } from "@/lib/download"
+import { downloadBlob } from "@/lib/download"
 
 interface ReportToolbarProps {
   period?: string
   basePath: string
   showPeriodSelector?: boolean
   exportFormats?: ("pdf" | "excel")[]
-  exportHref?: (format: "pdf" | "excel", period: string) => string
-  exportFilename?: (format: "pdf" | "excel", period: string) => string
+  onExport?: (format: "pdf" | "excel") => Promise<{ blob: Blob; filename: string }>
 }
 
 export function ReportToolbar({
@@ -30,8 +29,7 @@ export function ReportToolbar({
   basePath,
   showPeriodSelector = true,
   exportFormats = ["pdf", "excel"],
-  exportHref,
-  exportFilename,
+  onExport,
 }: ReportToolbarProps) {
   const router = useRouter()
   const monthOptions = getMonthOptions()
@@ -45,13 +43,11 @@ export function ReportToolbar({
   }
 
   async function handleDownload(format: "pdf" | "excel") {
-    if (downloading) return
-    if (!exportHref || !exportFilename) return
+    if (downloading || !onExport) return
     setDownloading(format)
-    const href = exportHref(format, period ?? "")
-    const filename = exportFilename(format, period ?? "")
     try {
-      await downloadFromUrl(href, filename)
+      const { blob, filename } = await onExport(format)
+      downloadBlob(blob, filename)
     } catch {
       toast.error("Export failed. Please try again.")
     } finally {
@@ -59,7 +55,7 @@ export function ReportToolbar({
     }
   }
 
-  const showExportButtons = exportFormats.length > 0 && exportHref && exportFilename
+  const showExportButtons = exportFormats.length > 0 && onExport
 
   return (
     <div className="flex flex-wrap items-center gap-3">

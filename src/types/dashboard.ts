@@ -25,5 +25,7 @@ export interface ActivityFeedItem {
   timestamp: Date
   loanId?: string
   customerId?: string
+  paymentId?: string
+  actorName?: string
   detail?: Record<string, string | number | null | undefined>
 }

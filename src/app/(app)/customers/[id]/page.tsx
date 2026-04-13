@@ -296,17 +296,17 @@ export default function CustomerProfilePage() {
   useEffect(() => {
     if (!activeLoan) return;
     const loanId = activeLoan.loan.id;
-    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}/payments/new`), Priority.NORMAL);
+    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}/payments/new`), Priority.NORMAL, `route:/loans/${loanId}/payments/new`);
     prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.loans.paymentContext(loanId),
         queryFn: () => getLoanPaymentContextAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
-      }), Priority.NORMAL);
+      }), Priority.NORMAL, `data:loan-payment-context-${loanId}`);
     prefetchQueue.add(() =>
       queryClient.prefetchQuery({
         queryKey: queryKeys.loans.balance(loanId),
         queryFn: () => getLoanBalanceAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
-      }), Priority.NORMAL);
+      }), Priority.NORMAL, `data:loan-balance-${loanId}`);
   }, [activeLoan, router, queryClient]);
 
   function handleEditStart() {

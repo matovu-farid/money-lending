@@ -1,5 +1,7 @@
 "use client"
 
+import { useCallback } from "react"
+import { Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -9,33 +11,60 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import type { PortfolioEntry } from "@/types"
 import { formatCurrency } from "@/lib/utils"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
+import { usePortfolioReport } from "@/hooks/use-reports"
 
-interface PortfolioClientProps {
-  data: PortfolioEntry[]
-  exportPdfHref: string
-  exportExcelHref: string
-}
+export function PortfolioClient() {
+  const { data, isLoading } = usePortfolioReport()
+  const entries = data ?? []
 
-export function PortfolioClient({
-  data,
-  exportPdfHref,
-  exportExcelHref,
-}: PortfolioClientProps) {
+  const onExport = useCallback(
+    async (format: "pdf" | "excel") => {
+      if (!data) throw new Error("No data")
+      if (format === "pdf") {
+        const { generatePortfolioPdf } = await import(
+          "@/services/export/pdf.service"
+        )
+        const buffer = generatePortfolioPdf(data)
+        return {
+          blob: new Blob([buffer], { type: "application/pdf" }),
+          filename: "portfolio-report.pdf",
+        }
+      }
+      const { generatePortfolioExcel } = await import(
+        "@/services/export/excel.service"
+      )
+      const buffer = await generatePortfolioExcel(data)
+      return {
+        blob: new Blob([buffer], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        }),
+        filename: "portfolio-report.xlsx",
+      }
+    },
+    [data],
+  )
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
       <ReportToolbar
         basePath="/reports/portfolio"
         showPeriodSelector={false}
-        exportHref={(fmt) => fmt === "pdf" ? exportPdfHref : exportExcelHref}
-        exportFilename={(fmt) => `portfolio-report.${fmt === "pdf" ? "pdf" : "xlsx"}`}
+        onExport={onExport}
       />
 
       {/* Table */}
-      {data.length === 0 ? (
+      {entries.length === 0 ? (
         <p className="text-sm text-muted-foreground py-8 text-center">
           No active loans to display.
         </p>
@@ -58,7 +87,7 @@ export function PortfolioClient({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.map((entry) => (
+              {entries.map((entry) => (
                 <TableRow key={entry.loanId} data-testid="data-row">
                   <TableCell className="font-medium">
                     {entry.customerName}

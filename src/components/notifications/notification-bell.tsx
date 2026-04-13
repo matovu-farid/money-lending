@@ -22,6 +22,7 @@ import { useNotificationUnreadCount } from "@/hooks/use-notifications"
 import { queryKeys } from "@/hooks/query-keys"
 import type { Notification } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 export function NotificationBell() {
   const router = useRouter()
@@ -68,22 +69,28 @@ export function NotificationBell() {
       // Navigate to the relevant detail page based on reference type
       if (notification.referenceType === "loan" && notification.referenceId) {
         const loanId = notification.referenceId
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.payments.byLoan(loanId),
-          queryFn: () => getPaymentsByLoanAction(loanId),
-          staleTime: 30_000,
-        })
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.loans.balance(loanId),
-          queryFn: () => getLoanBalanceAction(loanId),
-          staleTime: 30_000,
-        })
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
-          queryFn: () => listRequestsForLoanAction(loanId),
-          staleTime: 30_000,
-        })
-        router.prefetch(`/loans/${loanId}`)
+        const staleTime = 30_000
+        prefetchQueue.add(() =>
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.payments.byLoan(loanId),
+            queryFn: () => getPaymentsByLoanAction(loanId),
+            staleTime,
+          }), Priority.CRITICAL, `data:payments-by-loan-${loanId}`)
+        prefetchQueue.add(() =>
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.loans.balance(loanId),
+            queryFn: () => getLoanBalanceAction(loanId),
+            staleTime,
+          }), Priority.CRITICAL, `data:loan-balance-${loanId}`)
+        prefetchQueue.add(() =>
+          queryClient.prefetchQuery({
+            queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
+            queryFn: () => listRequestsForLoanAction(loanId),
+            staleTime,
+          }), Priority.CRITICAL, `data:rate-change-requests-loan-${loanId}`)
+        prefetchQueue.add(
+          () => router.prefetch(`/loans/${loanId}`),
+          Priority.CRITICAL, `route:/loans/${loanId}`)
         router.push(`/loans/${loanId}`)
       }
       setOpen(false)

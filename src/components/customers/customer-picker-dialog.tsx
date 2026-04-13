@@ -9,6 +9,7 @@ import { queryKeys } from "@/hooks/query-keys"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import { Input } from "@/components/ui/input"
 import type { Customer } from "@/types"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 interface CustomerPickerDialogProps {
   open: boolean
@@ -72,12 +73,15 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
   }, [])
 
   function handleSelect(customer: Customer) {
-    router.prefetch(`/loans/new?customerId=${customer.id}`)
-    queryClient.prefetchQuery({
-      queryKey: queryKeys.customers.detail(customer.id),
-      queryFn: () => getCustomerAction(customer.id),
-      staleTime: 30_000,
-    })
+    prefetchQueue.add(
+      () => router.prefetch(`/loans/new?customerId=${customer.id}`),
+      Priority.CRITICAL, `route:/loans/new?customerId=${customer.id}`)
+    prefetchQueue.add(() =>
+      queryClient.prefetchQuery({
+        queryKey: queryKeys.customers.detail(customer.id),
+        queryFn: () => getCustomerAction(customer.id),
+        staleTime: 30_000,
+      }), Priority.CRITICAL, `data:customer-detail-${customer.id}`)
     onOpenChange(false)
     router.push(`/loans/new?customerId=${customer.id}`)
   }

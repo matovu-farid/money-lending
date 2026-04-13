@@ -32,6 +32,7 @@ import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
+import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 interface BalanceData {
   outstandingPrincipal: string
@@ -331,15 +332,22 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
           queryClient.invalidateQueries({ queryKey: queryKeys.payments.byLoan(loanId) })
           queryClient.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
           queryClient.invalidateQueries({ queryKey: queryKeys.payments.portions(loanId) })
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.payments.byLoan(loanId),
-            queryFn: () => getPaymentsByLoanAction(loanId),
-          })
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.loans.balance(loanId),
-            queryFn: () => getLoanBalanceAction(loanId),
-          })
-          router.prefetch(`/loans/${loanId}`)
+          // Reset debounce keys so fresh data is fetched after invalidation
+          prefetchQueue.resetKey(`data:payments-by-loan-${loanId}`)
+          prefetchQueue.resetKey(`data:loan-balance-${loanId}`)
+          prefetchQueue.add(() =>
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.payments.byLoan(loanId),
+              queryFn: () => getPaymentsByLoanAction(loanId),
+            }), Priority.CRITICAL, `data:payments-by-loan-${loanId}`)
+          prefetchQueue.add(() =>
+            queryClient.prefetchQuery({
+              queryKey: queryKeys.loans.balance(loanId),
+              queryFn: () => getLoanBalanceAction(loanId),
+            }), Priority.CRITICAL, `data:loan-balance-${loanId}`)
+          prefetchQueue.add(
+            () => router.prefetch(`/loans/${loanId}`),
+            Priority.CRITICAL, `route:/loans/${loanId}`)
           router.push(`/loans/${loanId}`)
         }}
         title="Payment Receipt"

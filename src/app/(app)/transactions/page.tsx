@@ -2,7 +2,6 @@ import { Effect, Exit } from "effect"
 import { listTransactions } from "@/services/transaction.service"
 import { listCategories } from "@/services/category.service"
 import { TransactionLogClient } from "./TransactionLogClient"
-import { buttonVariants } from "@/components/ui/button"
 import { PageHeader } from "@/components/ui/page-header"
 import type { TransactionLogFilters } from "@/types"
 
@@ -51,16 +50,7 @@ export default async function TransactionLogPage({ searchParams }: TransactionLo
 
   return (
     <div className="p-4 md:p-6 space-y-4">
-      <PageHeader title="Transactions" subtitle="Complete transaction history">
-        <div className="flex gap-2">
-          <a href="/api/reports/transactions?format=pdf" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Export PDF
-          </a>
-          <a href="/api/reports/transactions?format=excel" className={buttonVariants({ variant: "outline", size: "sm" })}>
-            Export Excel
-          </a>
-        </div>
-      </PageHeader>
+      <PageHeader title="Transactions" subtitle="Complete transaction history" />
       <TransactionLogClient
         transactions={transactionsResult.data}
         total={transactionsResult.total}

@@ -19,9 +19,8 @@ import {
 } from "@/lib/errors"
 import { writeAuditLog } from "./audit.service"
 import { postJournalEntry } from "./transaction.service"
-import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, autoPostInterestEarned, autoPostPrincipalRepayment, autoPostCapitalInjection } from "./auto-post.service"
+import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, autoPostInterestEarned, autoPostPrincipalRepayment } from "./auto-post.service"
 import { getPaymentPortionsFromLedger } from "./ledger-queries.service"
-import { fundTransfers } from "@/lib/db/schema"
 import { allocatePayment } from "@/lib/interest/engine"
 import { daysBetween } from "@/lib/db/utils"
 import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
@@ -234,55 +233,6 @@ export const createLoan = (
         const freshDisbursementAmount = input.rollover
           ? input.principalAmount  // fresh cash only (excludes carriedPrincipal + carriedInterest)
           : loan.principalAmount
-
-        // Auto-inject capital if cash balance would go negative
-        if (input.disbursementSource === "cash") {
-          let cashBalance = new BigNumber(0)
-          const balanceRows = await tx
-            .select({
-              txType: transactions.type,
-              total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
-            })
-            .from(transactions)
-            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
-            .where(
-              and(
-                eq(transactionCategories.name, "Cash"),
-                eq(transactions.depositLocation, "cash"),
-              )
-            )
-            .groupBy(transactions.type)
-
-          for (const row of balanceRows) {
-            if (row.txType === "debit") cashBalance = cashBalance.plus(row.total)
-            else cashBalance = cashBalance.minus(row.total)
-          }
-
-          const needed = new BigNumber(freshDisbursementAmount)
-          const shortfall = needed.minus(cashBalance)
-
-          if (shortfall.isGreaterThan(0)) {
-            const [injection] = await tx
-              .insert(fundTransfers)
-              .values({
-                transferType: "capital_injection",
-                fromLocation: null,
-                toLocation: "cash",
-                amount: shortfall.toFixed(0),
-                transferredBy: actorId,
-                note: `Auto-injected for loan ${shortId(loan.id).toUpperCase()} disbursement`,
-              })
-              .returning()
-
-            await autoPostCapitalInjection(tx, {
-              amount: shortfall.toFixed(0),
-              transferId: injection.id,
-              toLocation: "cash",
-              transactionDate: startDate.toISOString(),
-              actorId,
-            })
-          }
-        }
 
         await autoPostPrincipalDisbursement(tx, {
           amount: freshDisbursementAmount,

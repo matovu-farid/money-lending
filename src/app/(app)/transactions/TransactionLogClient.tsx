@@ -1,10 +1,14 @@
 "use client"
 
+import { useCallback, useState } from "react"
+import { toast } from "sonner"
 import { useUrlFilters } from "@/hooks/use-url-filters"
+import { useTransactionReportData } from "@/hooks/use-reports"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { Loader2 } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -12,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { downloadBlob } from "@/lib/download"
 import type { TransactionRow, CategoryRow } from "@/types"
 
 interface TransactionLogClientProps {
@@ -31,6 +36,30 @@ export function TransactionLogClient({
   page,
   pageSize,
 }: TransactionLogClientProps) {
+  const { data: reportData } = useTransactionReportData()
+  const [exporting, setExporting] = useState<"pdf" | "excel" | null>(null)
+
+  const handleExport = useCallback(async (format: "pdf" | "excel") => {
+    if (!reportData || exporting) return
+    setExporting(format)
+    try {
+      const categoryMap = new Map(reportData.categories)
+      if (format === "pdf") {
+        const { generateTransactionsPdf } = await import("@/services/export/pdf.service")
+        const buffer = generateTransactionsPdf(reportData.transactions, categoryMap)
+        downloadBlob(new Blob([buffer], { type: "application/pdf" }), "transaction-log.pdf")
+      } else {
+        const { generateTransactionsExcel } = await import("@/services/export/excel.service")
+        const buffer = await generateTransactionsExcel(reportData.transactions, categoryMap)
+        downloadBlob(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "transaction-log.xlsx")
+      }
+    } catch {
+      toast.error("Export failed. Please try again.")
+    } finally {
+      setExporting(null)
+    }
+  }, [reportData, exporting])
+
   const { filters, setFilter, clearFilters, hasFilters: isFiltersActive, setPage } = useUrlFilters({
     basePath: "/transactions",
     defaults: { type: "all", categoryId: "all", dateFrom: "", dateTo: "" },
@@ -150,6 +179,27 @@ export function TransactionLogClient({
             Clear filters
           </Button>
         )}
+
+        <div className="ml-auto flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleExport("pdf")}
+            disabled={!reportData || exporting !== null}
+          >
+            {exporting === "pdf" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {exporting === "pdf" ? "Exporting..." : "Export PDF"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleExport("excel")}
+            disabled={!reportData || exporting !== null}
+          >
+            {exporting === "excel" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {exporting === "excel" ? "Exporting..." : "Export Excel"}
+          </Button>
+        </div>
       </div>
 
       {/* Table or empty state */}
