@@ -1,17 +1,17 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { usePermissions } from "@/hooks/use-permissions"
 import { useSession } from "@/lib/auth-client"
-import { ROLE_LEVELS, type UserRole } from "@/types"
 
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
-  const { data: session, isPending } = useSession()
+  const { isPending } = useSession()
+  const { has } = usePermissions()
   const router = useRouter()
 
   if (isPending) return null
 
-  const role = (session?.user?.role ?? "unassigned") as UserRole
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+  if (!has("reports:read")) {
     router.replace("/dashboard")
     return null
   }
