@@ -10,6 +10,8 @@ import {
   recordCreditorRepayment,
   listCreditors,
   getSystemCapital,
+  getCreditorMonthlyInterestDue,
+  getCreditorMonthlySummary,
 } from "@/services/creditor.service"
 import type {
   CreateCreditorInput,
@@ -94,6 +96,32 @@ export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentI
     try {
       const data = await Effect.runPromise(recordCreditorRepayment(input, session.user.id))
       revalidatePath("/creditors")
+      return { data }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+export const getCreditorMonthlyInterestDueAction = withAction({
+  permission: "creditor:read",
+  action: async () => {
+    try {
+      const map = await Effect.runPromise(getCreditorMonthlyInterestDue())
+      const data: Record<string, string> = {}
+      for (const [k, v] of map) data[k] = v
+      return { data }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+export const getCreditorMonthlySummaryAction = withAction<string, any>({
+  permission: "creditor:read",
+  action: async (_session, creditorId) => {
+    try {
+      const data = await Effect.runPromise(getCreditorMonthlySummary(creditorId))
       return { data }
     } catch {
       return { error: "Internal server error" }
