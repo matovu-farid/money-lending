@@ -5,7 +5,6 @@ import { TopBar } from "@/components/layout/top-bar"
 import { Sidebar } from "@/components/layout/sidebar"
 import { BottomTabBar } from "@/components/layout/bottom-tab-bar"
 import { MoreSheet } from "@/components/layout/more-sheet"
-import { ChatWidget } from "@/components/chat/chat-widget"
 
 interface AppShellProps {
   children: React.ReactNode
@@ -33,7 +32,6 @@ export function AppShell({ children }: AppShellProps) {
         onMoreClick={() => setMoreOpen(true)}
       />
       <MoreSheet open={moreOpen} onOpenChange={setMoreOpen} />
-      <ChatWidget />
     </div>
   )
 }

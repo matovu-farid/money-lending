@@ -86,7 +86,6 @@ export function NotificationBell() {
         router.prefetch(`/loans/${loanId}`)
         router.push(`/loans/${loanId}`)
       }
-      // Chat is now a floating widget — no navigation needed for conversation notifications
       setOpen(false)
     }
   }

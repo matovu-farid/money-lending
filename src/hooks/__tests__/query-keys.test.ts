@@ -264,36 +264,6 @@ describe("queryKeys", () => {
     })
   })
 
-  describe("chat", () => {
-    it("all is the root tuple", () => {
-      expect(queryKeys.chat.all).toEqual(["chat"])
-    })
-
-    it("conversations extends all", () => {
-      expect(queryKeys.chat.conversations()).toEqual(["chat", "conversations"])
-    })
-
-    it("messages includes conversation id", () => {
-      expect(queryKeys.chat.messages("conv-1")).toEqual([
-        "chat",
-        "messages",
-        "conv-1",
-      ])
-    })
-
-    it("users includes query string", () => {
-      expect(queryKeys.chat.users("john")).toEqual(["chat", "users", "john"])
-    })
-
-    it("participants includes conversation id", () => {
-      expect(queryKeys.chat.participants("conv-1")).toEqual([
-        "chat",
-        "participants",
-        "conv-1",
-      ])
-    })
-  })
-
   describe("hierarchical key invariants", () => {
     it("all child keys start with the parent all prefix", () => {
       // Loans hierarchy: all > detail > balance/paymentContext
