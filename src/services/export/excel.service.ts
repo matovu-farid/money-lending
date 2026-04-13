@@ -70,7 +70,7 @@ function setColumnWidths(sheet: ExcelJS.Worksheet, widths: number[]): void {
 
 export async function generatePortfolioExcel(
   data: PortfolioEntry[]
-): Promise<ArrayBuffer> {
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Loan Portfolio")
 
@@ -111,10 +111,10 @@ export async function generatePortfolioExcel(
 
   setColumnWidths(sheet, [28, 20, 20, 22, 14, 12, 12])
 
-  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
+  return Buffer.from(await workbook.xlsx.writeBuffer())
 }
 
-export async function generatePnlExcel(data: PnlData): Promise<ArrayBuffer> {
+export async function generatePnlExcel(data: PnlData): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet(`P&L ${data.period}`)
 
@@ -179,12 +179,12 @@ export async function generatePnlExcel(data: PnlData): Promise<ArrayBuffer> {
 
   setColumnWidths(sheet, [30, 20])
 
-  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
+  return Buffer.from(await workbook.xlsx.writeBuffer())
 }
 
 export async function generateBalanceSheetExcel(
   data: BalanceSheetData
-): Promise<ArrayBuffer> {
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Balance Sheet")
 
@@ -268,13 +268,13 @@ export async function generateBalanceSheetExcel(
 
   setColumnWidths(sheet, [32, 20])
 
-  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
+  return Buffer.from(await workbook.xlsx.writeBuffer())
 }
 
 export async function generateTransactionsExcel(
   data: TransactionRow[],
   categories: Map<string, string>
-): Promise<ArrayBuffer> {
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   const sheet = workbook.addWorksheet("Transaction Log")
 
@@ -310,12 +310,12 @@ export async function generateTransactionsExcel(
 
   setColumnWidths(sheet, [14, 10, 24, 32, 18, 20])
 
-  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
+  return Buffer.from(await workbook.xlsx.writeBuffer())
 }
 
 export async function generateLoansExcel(
   data: LoanListEntry[]
-): Promise<ArrayBuffer> {
+): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
   workbook.creator = "Sovereign Ledger"
   workbook.created = new Date()
@@ -447,5 +447,5 @@ export async function generateLoansExcel(
 
   setColumnWidths(sheet, [30, 18, 24, 24, 24, 16, 14, 18])
 
-  return workbook.xlsx.writeBuffer() as Promise<ArrayBuffer>
+  return Buffer.from(await workbook.xlsx.writeBuffer())
 }

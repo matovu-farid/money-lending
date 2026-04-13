@@ -78,7 +78,7 @@ function addPageNumbers(doc: jsPDF): void {
   }
 }
 
-export function generatePortfolioPdf(data: PortfolioEntry[]): ArrayBuffer {
+export function generatePortfolioPdf(data: PortfolioEntry[]): Buffer {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
 
   addBrandedHeader(doc, "Loan Portfolio Report")
@@ -125,10 +125,10 @@ export function generatePortfolioPdf(data: PortfolioEntry[]): ArrayBuffer {
 
   addPageNumbers(doc)
 
-  return doc.output("arraybuffer")
+  return Buffer.from(doc.output("arraybuffer"))
 }
 
-export function generatePnlPdf(data: PnlData): ArrayBuffer {
+export function generatePnlPdf(data: PnlData): Buffer {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
 
   addBrandedHeader(doc, "Profit & Loss Statement", data.period)
@@ -202,10 +202,10 @@ export function generatePnlPdf(data: PnlData): ArrayBuffer {
 
   addPageNumbers(doc)
 
-  return doc.output("arraybuffer")
+  return Buffer.from(doc.output("arraybuffer"))
 }
 
-export function generateBalanceSheetPdf(data: BalanceSheetData): ArrayBuffer {
+export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" })
 
   addBrandedHeader(doc, "Balance Sheet", `As of: ${data.asOf}`)
@@ -289,13 +289,13 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): ArrayBuffer {
 
   addPageNumbers(doc)
 
-  return doc.output("arraybuffer")
+  return Buffer.from(doc.output("arraybuffer"))
 }
 
 export function generateTransactionsPdf(
   data: TransactionRow[],
   categories: Map<string, string>
-): ArrayBuffer {
+): Buffer {
   const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" })
 
   addBrandedHeader(doc, "Transaction Log")
@@ -329,5 +329,5 @@ export function generateTransactionsPdf(
 
   addPageNumbers(doc)
 
-  return doc.output("arraybuffer")
+  return Buffer.from(doc.output("arraybuffer"))
 }

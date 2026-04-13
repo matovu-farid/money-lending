@@ -55,6 +55,10 @@ vi.mock("@/services/category.service", () => ({
   listCategories: vi.fn(),
 }))
 
+vi.mock("@/services/report.service", () => ({
+  getLocationBalances: vi.fn(),
+}))
+
 // ---------- Imports ----------
 
 import { auth } from "@/lib/auth"
@@ -62,6 +66,7 @@ import { checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
 import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
+import { getLocationBalances } from "@/services/report.service"
 
 import {
   listExpenseTransactionsAction,
@@ -82,6 +87,7 @@ const mockListTransactions = vi.mocked(listTransactions)
 const mockCreateCategory = vi.mocked(createCategory)
 const mockDeleteCategory = vi.mocked(deleteCategory)
 const mockListCategories = vi.mocked(listCategories)
+const mockGetLocationBalances = vi.mocked(getLocationBalances)
 
 // ---------- Tests ----------
 
@@ -139,6 +145,7 @@ describe("Expense Actions", () => {
       transactionDate: "2026-04-01",
       description: "Office rent",
       sourceLocation: "cash",
+      backdateNote: "Backdated entry for prior month rent",
     }
 
     it("returns error when not authenticated", async () => {
@@ -175,6 +182,7 @@ describe("Expense Actions", () => {
     it("records expense and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockRecordExpense.mockReturnValue(Effect.succeed(undefined) as any)
+      mockGetLocationBalances.mockReturnValue(Effect.succeed({ cash: "1000000", bank: "0", strong_room: "0" }) as any)
 
       const result = await recordExpenseAction(validInput as any)
       expect(result).toEqual({ success: true })

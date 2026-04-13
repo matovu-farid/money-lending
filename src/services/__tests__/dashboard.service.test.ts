@@ -235,13 +235,15 @@ describe("Dashboard Service — Unit", () => {
             }),
           }
         }
-        // audit log query
+        // audit log query — includes leftJoin in the chain
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              orderBy: vi.fn().mockReturnValue({
-                limit: vi.fn().mockReturnValue({
-                  offset: vi.fn().mockResolvedValue([]),
+            leftJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockReturnValue({
+                    offset: vi.fn().mockResolvedValue([]),
+                  }),
                 }),
               }),
             }),
@@ -286,13 +288,15 @@ describe("Dashboard Service — Unit", () => {
           }
         }
         if (selectCallCount === 2) {
-          // Audit log query
+          // Audit log query — includes leftJoin in the chain
           return {
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockReturnValue({
-                    offset: vi.fn().mockResolvedValue([auditEntry]),
+              leftJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockReturnValue({
+                      offset: vi.fn().mockResolvedValue([auditEntry]),
+                    }),
                   }),
                 }),
               }),
@@ -349,12 +353,15 @@ describe("Dashboard Service — Unit", () => {
             }),
           }
         }
+        // audit log query — includes leftJoin in the chain
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              orderBy: vi.fn().mockReturnValue({
-                limit: vi.fn().mockReturnValue({
-                  offset: vi.fn().mockResolvedValue([auditEntry]),
+            leftJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockReturnValue({
+                    offset: vi.fn().mockResolvedValue([auditEntry]),
+                  }),
                 }),
               }),
             }),
@@ -399,12 +406,15 @@ describe("Dashboard Service — Unit", () => {
             }),
           }
         }
+        // audit log query — includes leftJoin in the chain
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              orderBy: vi.fn().mockReturnValue({
-                limit: vi.fn().mockReturnValue({
-                  offset: vi.fn().mockResolvedValue(entries),
+            leftJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockReturnValue({
+                    offset: vi.fn().mockResolvedValue(entries),
+                  }),
                 }),
               }),
             }),

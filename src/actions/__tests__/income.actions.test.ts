@@ -89,6 +89,7 @@ describe("Income Actions", () => {
       transactionDate: "2026-04-01",
       description: "Consulting fee",
       depositLocation: "bank",
+      backdateNote: "Backdated entry for prior month consulting fee",
     }
 
     it("returns error when not authenticated", async () => {
