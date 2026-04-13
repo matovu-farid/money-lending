@@ -1,9 +1,10 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { toast } from "sonner"
 import { useRouter } from "next/navigation"
-import { Loader2 } from "lucide-react"
+import { ArrowLeft, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -38,7 +39,8 @@ export function ReportToolbar({
 
   function handlePeriodChange(value: string | null) {
     if (value !== null) {
-      router.push(`${basePath}?period=${value}`)
+      // replace instead of push so period changes don't pollute browser history
+      router.replace(`${basePath}?period=${value}`)
     }
   }
 
@@ -61,6 +63,13 @@ export function ReportToolbar({
 
   return (
     <div className="flex flex-wrap items-center gap-3">
+      <Link
+        href="/reports"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors mr-1"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Reports
+      </Link>
       {showPeriodSelector && period && (
         <Select value={period} onValueChange={handlePeriodChange}>
           <SelectTrigger className="w-48">

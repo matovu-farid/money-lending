@@ -1,6 +1,8 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
+import { ArrowLeft } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
@@ -94,6 +96,14 @@ export default function ActiveLoansClient({ data }: ActiveLoansClientProps) {
 
   return (
     <div className="space-y-4">
+      <Link
+        href="/reports"
+        className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="h-4 w-4" />
+        Reports
+      </Link>
+
       {/* Search filter */}
       <div className="flex items-center gap-2 max-w-sm">
         <Input
