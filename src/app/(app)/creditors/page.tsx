@@ -11,7 +11,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { queryKeys } from "@/hooks/query-keys"
-import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
+import { listCreditorsAction, getSystemCapitalAction, getCreditorMonthlyInterestDueAction } from "@/actions/creditor.actions"
 import { usePermissions } from "@/hooks/use-permissions"
 
 const defaultCapital = {
@@ -46,7 +46,17 @@ export default function CreditorsPage() {
     enabled: !!session && isSupervisorOrAbove,
   })
 
-  const isLoading = creditorsLoading || capitalLoading
+  const { data: monthlyDue = {}, isLoading: monthlyDueLoading } = useQuery({
+    queryKey: queryKeys.creditors.monthlyDue(),
+    queryFn: async () => {
+      const result = await getCreditorMonthlyInterestDueAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
+    },
+    enabled: !!session && isSupervisorOrAbove,
+  })
+
+  const isLoading = creditorsLoading || capitalLoading || monthlyDueLoading
 
   if (!isSupervisorOrAbove) {
     return (
@@ -162,7 +172,7 @@ export default function CreditorsPage() {
           </ButtonLink>
         </div>
       ) : (
-        <CreditorsTable creditors={creditors} />
+        <CreditorsTable creditors={creditors} monthlyDue={monthlyDue} />
       )}
     </div>
   )
