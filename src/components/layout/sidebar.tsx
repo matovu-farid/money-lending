@@ -16,6 +16,7 @@ import {
   LogOut,
   ClipboardCheck,
   ArrowRightLeft,
+  Activity,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { Permission } from "@/types"
@@ -29,6 +30,7 @@ import { listLoansWithOverdueAction } from "@/actions/loan.actions"
 import { listAllRequestsAction } from "@/actions/rate-change-request.actions"
 import { listFundTransfersAction } from "@/actions/fund-transfer.actions"
 import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
+import { getActivitiesAction } from "@/actions/activity.actions"
 import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "@/actions/expense.actions"
 import {
   getPortfolioReportAction,
@@ -94,7 +96,10 @@ function getNavGroups(has: (p: Permission) => boolean): NavGroup[] {
     { items: topItems },
     { label: "Operations", items: operationsItems },
     { label: "Capital", items: capitalItems },
-    { label: "Insights", items: [{ label: "Reports", href: "/reports", icon: BarChart3 }] },
+    { label: "Insights", items: [
+      { label: "Reports", href: "/reports", icon: BarChart3 },
+      ...(has("activity:read") ? [{ label: "Activities", href: "/activities", icon: Activity }] : []),
+    ] },
     ...(systemItems.length > 0 ? [{ label: "System", items: systemItems }] : []),
   ]
 }
@@ -225,6 +230,14 @@ export function Sidebar({ onClose }: SidebarProps) {
       }), LOW, "data:reports-transactions")
 
     // LOW — Conditional pages
+    if (has("activity:read")) {
+      prefetchQueue.add(
+        () => queryClient.prefetchQuery({
+          queryKey: queryKeys.activities.list({ actorId: "", entityType: "", dateFrom: "", dateTo: "" }, 1),
+          queryFn: () => getActivitiesAction({ page: 1, pageSize: 25 }).then((r) => ("data" in r ? r.data : Promise.reject(r.error))),
+          staleTime,
+        }), LOW, "data:activities-list-1")
+    }
     if (has("rate-change:approve-standard")) {
       prefetchQueue.add(() => router.prefetch("/approvals"), LOW, "route:/approvals")
       prefetchQueue.add(() =>
