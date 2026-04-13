@@ -6,7 +6,8 @@ import { getUserRole } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction } from "@/services/transaction.service"
 import { createCategory, deleteCategory } from "@/services/category.service"
-import type { CreateTransactionInput, CreateCategoryInput } from "@/types"
+import { ROLE_LEVELS } from "@/types"
+import type { CreateTransactionInput, CreateCategoryInput, UserRole } from "@/types"
 
 export const recordIncomeAction = withAction<CreateTransactionInput, { success: true } | { error: string }>({
   minRole: "loanOfficer",
@@ -17,6 +18,27 @@ export const recordIncomeAction = withAction<CreateTransactionInput, { success: 
     if (!input.categoryId?.trim()) return { error: "Category is required" }
     if (!input.transactionDate?.trim() || isNaN(Date.parse(input.transactionDate))) {
       return { error: "A valid date is required" }
+    }
+
+    // No future dates
+    const txDate = new Date(input.transactionDate)
+    const todayStart = new Date()
+    todayStart.setHours(0, 0, 0, 0)
+    txDate.setHours(0, 0, 0, 0)
+    if (txDate.getTime() > todayStart.getTime()) {
+      return { error: "Date cannot be in the future" }
+    }
+
+    // Backdating validation (same rules as loans)
+    const daysDiff = Math.round((todayStart.getTime() - txDate.getTime()) / (1000 * 60 * 60 * 24))
+    if (daysDiff > 0) {
+      const role = getUserRole(session) as UserRole
+      if (daysDiff > 3 && ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+        return { error: `Backdating beyond 3 days requires supervisor permission. You selected ${daysDiff} days ago.` }
+      }
+      if (!input.backdateNote?.trim()) {
+        return { error: "A note is required when backdating to explain the reason" }
+      }
     }
 
     try {

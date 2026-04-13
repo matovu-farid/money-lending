@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { useMemo, useRef, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -16,23 +16,11 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { MoneyInput } from "@/components/ui/money-input"
-import { formatDate, formatCurrency } from "@/lib/utils"
+import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
+import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
-import { DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 import type { CreateCategoryInput, CreateTransactionInput, TransactionRow, CategoryRow, DepositLocation } from "@/types"
 
 interface TransactionFormValues {
@@ -40,6 +28,8 @@ interface TransactionFormValues {
   categoryId: string
   amount: string
   notes: string
+  backdateNote: string
+  location: DepositLocation
 }
 
 interface TransactionListClientProps {
@@ -115,13 +105,15 @@ export function TransactionListClient({
 
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState("")
   const [optimisticTransactions, setOptimisticTransactions] = useState<TransactionRow[]>([])
   const [removedTransactionIds, setRemovedTransactionIds] = useState<Set<string>>(new Set())
   const [optimisticCategories, setOptimisticCategories] = useState<CategoryRow[]>([])
-  const [location, setLocation] = useState<DepositLocation>("cash")
   const [_isCategoryPending, startCategoryTransition] = useTransition()
+
+  // Category combobox state
+  const [categoryQuery, setCategoryQuery] = useState("")
+  const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
+  const categoryInputRef = useRef<HTMLInputElement>(null)
 
   const {
     register,
@@ -132,10 +124,11 @@ export function TransactionListClient({
     control,
     formState: { errors },
   } = useForm<TransactionFormValues>({
-    defaultValues: { date: "", categoryId: "", amount: "", notes: "" },
+    defaultValues: { date: "", categoryId: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation },
   })
 
   const watchedCategoryId = watch("categoryId")
+  const watchedDate = watch("date")
 
   const displayedTransactions = useMemo(() => {
     const filtered = initialTransactions.filter(t => !removedTransactionIds.has(t.id))
@@ -146,6 +139,35 @@ export function TransactionListClient({
     () => [...initialCategories, ...optimisticCategories],
     [initialCategories, optimisticCategories],
   )
+
+  // Compute backdating info
+  const backdateDays = useMemo(() => {
+    if (!watchedDate) return 0
+    const selected = new Date(watchedDate)
+    const today = new Date()
+    selected.setHours(0, 0, 0, 0)
+    today.setHours(0, 0, 0, 0)
+    return Math.round((today.getTime() - selected.getTime()) / (1000 * 60 * 60 * 24))
+  }, [watchedDate])
+  const isBackdated = backdateDays > 0
+
+  // Filtered categories for combobox
+  const filteredCategories = useMemo(() => {
+    if (!categoryQuery.trim()) return displayedCategories
+    const q = categoryQuery.toLowerCase()
+    return displayedCategories.filter((c) => c.name.toLowerCase().includes(q))
+  }, [displayedCategories, categoryQuery])
+
+  const exactMatchExists = useMemo(() => {
+    const q = categoryQuery.trim().toLowerCase()
+    return q !== "" && displayedCategories.some((c) => c.name.toLowerCase() === q)
+  }, [displayedCategories, categoryQuery])
+
+  // The name shown in the category input
+  const selectedCategoryName = useMemo(() => {
+    if (!watchedCategoryId) return ""
+    return displayedCategories.find((c) => c.id === watchedCategoryId)?.name ?? ""
+  }, [watchedCategoryId, displayedCategories])
 
   const addMutation = useMutation({
     mutationFn: (input: CreateTransactionInput) => recordAction(input),
@@ -185,7 +207,7 @@ export function TransactionListClient({
       toast.success(labels.successRecord)
       setIsSheetOpen(false)
       reset()
-      setLocation("cash")
+      setCategoryQuery("")
     },
     onSettled: () => {
       for (const key of invalidateKeys) {
@@ -227,7 +249,8 @@ export function TransactionListClient({
       amount: data.amount,
       transactionDate: data.date,
       notes: data.notes || undefined,
-      location,
+      location: data.location,
+      backdateNote: data.backdateNote?.trim() || undefined,
     })
   }
 
@@ -236,11 +259,16 @@ export function TransactionListClient({
     deleteMutation.mutate(deleteTarget)
   }
 
-  function handleAddCategory() {
-    if (!newCategoryName.trim()) return
+  function handleSelectCategory(cat: CategoryRow) {
+    setValue("categoryId", cat.id, { shouldValidate: true })
+    setCategoryQuery("")
+    setCategoryDropdownOpen(false)
+  }
+
+  function handleCreateAndSelectCategory(name: string) {
     startCategoryTransition(async () => {
       try {
-        const created = await createCategoryAction({ name: newCategoryName.trim(), type: labels.categoryType as CreateCategoryInput["type"] })
+        const created = await createCategoryAction({ name: name.trim(), type: labels.categoryType as CreateCategoryInput["type"] })
         if ("error" in created) {
           toast.error(created.error)
           return
@@ -252,8 +280,9 @@ export function TransactionListClient({
           isDefault: created.data.isDefault,
         }
         setOptimisticCategories((prev) => [...prev, newCat])
-        setNewCategoryName("")
-        setIsAddCategoryOpen(false)
+        setValue("categoryId", newCat.id, { shouldValidate: true })
+        setCategoryQuery("")
+        setCategoryDropdownOpen(false)
       } catch {
         toast.error("Failed to add category.")
       }
@@ -335,7 +364,7 @@ export function TransactionListClient({
         />
 
         {/* Add Form Dialog */}
-        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) { reset(); setLocation("cash") } }}>
+        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) { reset(); setCategoryQuery("") } }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>{labels.addButton}</DialogTitle>
@@ -346,64 +375,123 @@ export function TransactionListClient({
                 <Input
                   id={`${idPrefix}-date`}
                   type="date"
+                  max={todayDateString()}
                   {...register("date", { required: "Date is required" })}
                 />
                 {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
               </div>
 
+              {isBackdated && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                  <p className="text-sm text-amber-800">
+                    This entry is backdated by <strong>{backdateDays} day{backdateDays > 1 ? "s" : ""}</strong>.
+                    {backdateDays > 3 && " Supervisor permission required."}
+                  </p>
+                  <div className="space-y-1">
+                    <Label htmlFor={`${idPrefix}-backdateNote`} className="font-semibold text-sm">Backdate Reason</Label>
+                    <textarea
+                      id={`${idPrefix}-backdateNote`}
+                      className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring min-h-[60px] resize-y"
+                      placeholder="Explain why this entry is being backdated..."
+                      maxLength={500}
+                      {...register("backdateNote", {
+                        validate: (v) => {
+                          if (!watchedDate) return true
+                          const sel = new Date(watchedDate)
+                          const now = new Date()
+                          sel.setHours(0, 0, 0, 0)
+                          now.setHours(0, 0, 0, 0)
+                          if (sel < now && !v?.trim()) return "A reason is required when backdating"
+                          return true
+                        },
+                      })}
+                    />
+                    {errors.backdateNote && (
+                      <p className="text-sm text-destructive">{errors.backdateNote.message}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <Label htmlFor={`${idPrefix}-category`}>Category</Label>
-                <Select
-                  value={watchedCategoryId}
-                  onValueChange={(value) => { if (value !== null) setValue("categoryId", value, { shouldValidate: true }) }}
-                >
-                  <SelectTrigger id={`${idPrefix}-category`} className="w-full">
-                    <SelectValue placeholder="Select category" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {displayedCategories.map((cat) => (
-                      <SelectItem key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Input
+                    ref={categoryInputRef}
+                    id={`${idPrefix}-category`}
+                    autoComplete="off"
+                    placeholder={watchedCategoryId ? selectedCategoryName : labels.categoryPlaceholder}
+                    value={categoryDropdownOpen ? categoryQuery : selectedCategoryName}
+                    onChange={(e) => {
+                      setCategoryQuery(e.target.value)
+                      setCategoryDropdownOpen(true)
+                      // Clear selection when user starts typing something new
+                      if (watchedCategoryId && e.target.value !== selectedCategoryName) {
+                        setValue("categoryId", "", { shouldValidate: false })
+                      }
+                    }}
+                    onFocus={() => setCategoryDropdownOpen(true)}
+                    onBlur={() => {
+                      // Delay so click on dropdown item registers first
+                      setTimeout(() => {
+                        setCategoryDropdownOpen(false)
+                        // If nothing selected, revert query
+                        if (!watchedCategoryId) setCategoryQuery("")
+                      }, 150)
+                    }}
+                  />
+                  {watchedCategoryId && !categoryDropdownOpen && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
+                      onClick={() => {
+                        setValue("categoryId", "", { shouldValidate: false })
+                        setCategoryQuery("")
+                        categoryInputRef.current?.focus()
+                      }}
+                    >
+                      &times;
+                    </button>
+                  )}
+                  {categoryDropdownOpen && (
+                    <div
+                      className="absolute left-0 right-0 z-[9999] mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md"
+                      onMouseDown={(e) => e.preventDefault()}
+                    >
+                      {filteredCategories.length > 0 ? (
+                        <ul className="py-1">
+                          {filteredCategories.map((cat) => (
+                            <li key={cat.id}>
+                              <button
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                                onClick={() => handleSelectCategory(cat)}
+                              >
+                                {cat.name}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : categoryQuery.trim() && !exactMatchExists ? (
+                        <button
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted transition-colors"
+                          onClick={() => handleCreateAndSelectCategory(categoryQuery)}
+                          disabled={_isCategoryPending}
+                        >
+                          {_isCategoryPending ? "Creating..." : `+ Create "${categoryQuery.trim()}"`}
+                        </button>
+                      ) : (
+                        <p className="px-3 py-2 text-sm text-muted-foreground">No categories found</p>
+                      )}
+                    </div>
+                  )}
+                </div>
                 <input
                   type="hidden"
                   {...register("categoryId", { required: "Category is required" })}
                 />
                 {errors.categoryId && <p className="text-sm text-destructive">{errors.categoryId.message}</p>}
-                <Popover open={isAddCategoryOpen} onOpenChange={setIsAddCategoryOpen}>
-                  <PopoverTrigger
-                    render={
-                      <button
-                        type="button"
-                        className="text-sm text-primary underline-offset-4 hover:underline"
-                      />
-                    }
-                  >
-                    + Add Category
-                  </PopoverTrigger>
-                  <PopoverContent side="bottom" align="start">
-                    <div className="flex flex-col gap-2">
-                      <Label htmlFor={`new-${idPrefix}-category-name`}>New category name</Label>
-                      <Input
-                        id={`new-${idPrefix}-category-name`}
-                        value={newCategoryName}
-                        onChange={(e) => setNewCategoryName(e.target.value)}
-                        placeholder={labels.categoryPlaceholder}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={handleAddCategory}
-                        disabled={!newCategoryName.trim() || _isCategoryPending}
-                      >
-                        Add
-                      </Button>
-                    </div>
-                  </PopoverContent>
-                </Popover>
               </div>
 
               <MoneyInput
@@ -425,19 +513,11 @@ export function TransactionListClient({
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor={`${idPrefix}-location`}>Source Location</Label>
-                <Select value={location} onValueChange={(v) => setLocation(v as DepositLocation)}>
-                  <SelectTrigger id={`${idPrefix}-location`} className="w-full">
-                    <SelectValue placeholder="Source location" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <DepositLocationSelect
+                name="location"
+                control={control}
+                id={`${idPrefix}-location`}
+              />
 
               {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}
 

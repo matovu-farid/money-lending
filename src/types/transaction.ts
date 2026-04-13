@@ -14,6 +14,7 @@ export interface CreateTransactionInput {
   transactionDate: string
   notes?: string
   location: DepositLocation
+  backdateNote?: string
 }
 
 export interface CreateCategoryInput {

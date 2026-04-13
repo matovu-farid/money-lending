@@ -243,15 +243,21 @@ export function Sidebar({ onClose }: SidebarProps) {
   }, [])
 
   const filteredNavGroups = getNavGroups(userRole).map((group) => {
-    if (group.label !== "Capital") return group
-    return {
-      ...group,
-      items: group.items.filter((item) => {
-        if (item.href === "/fund-transfers") return userLevel >= ROLE_LEVELS.admin
-        if (item.href === "/creditors") return userLevel >= ROLE_LEVELS.supervisor
-        return true
-      }),
+    if (group.label === "Capital") {
+      return {
+        ...group,
+        items: group.items.filter((item) => {
+          if (item.href === "/fund-transfers") return userLevel >= ROLE_LEVELS.admin
+          if (item.href === "/creditors") return userLevel >= ROLE_LEVELS.supervisor
+          return true
+        }),
+      }
     }
+    // Insights and System sections require admin+
+    if (group.label === "Insights" || group.label === "System") {
+      if (userLevel < ROLE_LEVELS.admin) return { ...group, items: [] }
+    }
+    return group
   }).filter((group) => group.items.length > 0)
 
   const initials = user?.name

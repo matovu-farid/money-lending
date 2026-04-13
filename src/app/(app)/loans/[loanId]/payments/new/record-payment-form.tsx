@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
-import { useForm, Controller } from "react-hook-form"
+import { useForm } from "react-hook-form"
 import { ArrowLeft } from "lucide-react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
@@ -17,13 +17,7 @@ import { MoneyInput } from "@/components/ui/money-input"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -37,7 +31,7 @@ import { formatCurrency, formatDate, formatNumberWithCommas, todayDateString } f
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
-import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS, DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
+import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
 
 interface BalanceData {
   outstandingPrincipal: string
@@ -230,33 +224,13 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
               presets={AMOUNT_PRESETS}
             />
 
-            <div className="space-y-1">
-              <Label htmlFor="depositLocation">Deposit Location</Label>
-              <Controller
-                name="depositLocation"
-                control={control}
-                rules={{ required: "Deposit location is required" }}
-                render={({ field }) => (
-                  <Select
-                    value={field.value}
-                    onValueChange={field.onChange}
-                    disabled={isPending}
-                  >
-                    <SelectTrigger id="depositLocation">
-                      <SelectValue placeholder="Select location" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              />
-              {errors.depositLocation && (
-                <p className="text-sm text-destructive">{errors.depositLocation.message}</p>
-              )}
-            </div>
+            <DepositLocationSelect
+              name="depositLocation"
+              control={control}
+              label="Deposit Location"
+              disabled={isPending}
+              id="depositLocation"
+            />
 
             <div className="space-y-1">
               <Label htmlFor="note">Note</Label>

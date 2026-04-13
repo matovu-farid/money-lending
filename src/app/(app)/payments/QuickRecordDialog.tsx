@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import { format } from "date-fns"
-import { useForm, Controller } from "react-hook-form"
+import { useForm } from "react-hook-form"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
@@ -23,19 +23,13 @@ import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import { generateReceiptNumber } from "@/lib/receipt-number"
 import { useSession } from "@/lib/auth-client"
+import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { getRecentlyCollectedLoansAction, recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import type { ActiveLoanSearchResult, DepositLocation, ReceiptPaymentData } from "@/types"
-import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS, DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
+import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
 
 interface QuickRecordDialogProps {
   open: boolean
@@ -290,30 +284,13 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                 />
 
                 {/* Deposit location */}
-                <div className="space-y-1.5">
-                  <Label htmlFor="quick-record-deposit-location">Deposit Location</Label>
-                  <Controller
-                    name="depositLocation"
-                    control={control}
-                    rules={{ required: "Deposit location is required" }}
-                    render={({ field }) => (
-                      <Select
-                        value={field.value}
-                        onValueChange={field.onChange}
-                        disabled={!selectedLoan || isPending}
-                      >
-                        <SelectTrigger id="quick-record-deposit-location">
-                          <SelectValue placeholder="Select location" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {DEPOSIT_LOCATION_OPTIONS.map((opt) => (
-                            <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                </div>
+                <DepositLocationSelect
+                  name="depositLocation"
+                  control={control}
+                  label="Deposit Location"
+                  disabled={!selectedLoan || isPending}
+                  id="quick-record-deposit-location"
+                />
 
                 {/* Payment date */}
                 <div className="space-y-1.5">
