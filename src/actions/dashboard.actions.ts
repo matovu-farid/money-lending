@@ -3,6 +3,8 @@
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
 import { getDashboardKPIs, getRecentActivity } from "@/services/dashboard.service"
+import { getActivities } from "@/services/activity.service"
+import type { UserRole } from "@/types/common"
 
 export const getDashboardAction = withAction({
   permission: "dashboard:read",
@@ -10,9 +12,23 @@ export const getDashboardAction = withAction({
   errors: { DatabaseError: "Database error" },
 })
 
+export const getDashboardActivityAction = withAction({
+  permission: "dashboard:read",
+  effect: (session): Effect.Effect<{ items: any[]; total: number }, any> => {
+    const role = (session.user as any).role as UserRole | undefined
+    const hasActivityRead = role === "supervisor" || role === "admin" || role === "superAdmin"
+
+    if (hasActivityRead) {
+      return getActivities({ page: 1, pageSize: 3, viewerRole: role! })
+    }
+    // Loan officers see general recent activity (current behavior)
+    return getRecentActivity(1, 3)
+  },
+  errors: { DatabaseError: "Database error" },
+})
+
+// Keep old action for backwards compat during transition
 export async function getRecentActivityAction(page = 1, pageSize = 10) {
-  // This action has a multi-arg signature that doesn't fit withAction cleanly.
-  // We use withAction with a tuple input to keep the auth wrapper.
   return getRecentActivityWrapped({ page, pageSize })
 }
 

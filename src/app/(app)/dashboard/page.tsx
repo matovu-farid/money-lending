@@ -1,61 +1,18 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { useInfiniteQuery } from "@tanstack/react-query"
-import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, CreditCard as PaymentIcon, ChevronDown, ChevronUp, Loader2, ExternalLink } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
+import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { useSession } from "@/lib/auth-client"
 import { useDashboard } from "@/hooks/use-dashboard"
-import { getRecentActivityAction } from "@/actions/dashboard.actions"
+import { getDashboardActivityAction } from "@/actions/dashboard.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { usePermissions } from "@/hooks/use-permissions"
-import type { ActivityFeedItem } from "@/types"
-import { formatDate, formatCurrency, formatRelativeTime } from "@/lib/utils"
-
-const PAGE_SIZE = 5
-
-function activityIcon(type: ActivityFeedItem["type"]) {
-  if (type === "loan_issued") return <Landmark className="h-4 w-4 text-muted-foreground shrink-0" />
-  if (type === "overdue_flagged") return <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-  return <PaymentIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-}
-
-const DETAIL_LABELS: Record<string, string> = {
-  amount: "Amount",
-  interestRate: "Interest Rate",
-  startDate: "Start Date",
-  customerName: "Customer",
-  collateral: "Collateral",
-  paymentDate: "Payment Date",
-  interestPortion: "Interest Portion",
-  principalPortion: "Principal Portion",
-}
-
-function formatDetailValue(key: string, value: string | number | null | undefined): string {
-  if (value == null) return "—"
-  const str = String(value)
-  if (["amount", "interestPortion", "principalPortion"].includes(key)) {
-    const num = parseFloat(str)
-    if (!isNaN(num)) return formatCurrency(num)
-  }
-  if (key === "interestRate") {
-    const num = parseFloat(str)
-    if (!isNaN(num)) return `${(num * 100).toFixed(0)}% / month`
-  }
-  if (key === "startDate" || key === "paymentDate") {
-    return formatDate(str)
-  }
-  return str
-}
-
-function getActivityHref(item: ActivityFeedItem): string | null {
-  if (item.loanId) return `/loans/${item.loanId}`
-  return null
-}
+import { formatCurrency, formatRelativeTime } from "@/lib/utils"
 
 export default function DashboardPage() {
   const { data: session } = useSession()
@@ -65,47 +22,20 @@ export default function DashboardPage() {
   const { data, isLoading: loading, error: queryError } = useDashboard()
   const kpis = data?.kpis ?? null
   const error = queryError?.message ?? null
-  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const {
     data: activityData,
-    fetchNextPage,
-    hasNextPage,
-    isFetchingNextPage,
     isLoading: activityLoading,
-  } = useInfiniteQuery({
+  } = useQuery({
     queryKey: queryKeys.dashboard.activity(),
-    queryFn: async ({ pageParam }) => {
-      const result = await getRecentActivityAction(pageParam, PAGE_SIZE)
+    queryFn: async () => {
+      const result = await getDashboardActivityAction() as { data: { items: any[]; total: number } } | { error: string }
       if ("error" in result) throw new Error(result.error)
       return result.data
     },
-    initialPageParam: 1,
-    getNextPageParam: (lastPage, allPages) => {
-      const fetched = allPages.length * PAGE_SIZE
-      return fetched < lastPage.total ? allPages.length + 1 : undefined
-    },
   })
 
-  const activity = activityData?.pages.flatMap((p) => p.items) ?? []
-
-  // Intersection observer for infinite scroll + eager prefetch
-  const sentinelRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const el = sentinelRef.current
-    if (!el) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasNextPage && !isFetchingNextPage) {
-          fetchNextPage()
-        }
-      },
-      { rootMargin: "100px" },
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage])
+  const activity = activityData?.items ?? []
 
   return (
     <div className="space-y-8">
@@ -223,17 +153,21 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Activity Feed */}
+      {/* Recent Activity */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle className="text-xl font-semibold">Recent Activity</CardTitle>
+          {has("activity:read") && (
+            <Link href="/activities" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              View all →
+            </Link>
+          )}
         </CardHeader>
-        <CardContent className="p-0 max-h-[420px] overflow-y-auto">
+        <CardContent className="p-0">
           {activityLoading ? (
             <div className="space-y-0">
               {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-3 px-6 py-4 border-b">
-                  <div className="h-4 w-4 rounded bg-muted-foreground/10 animate-pulse shrink-0" />
+                <div key={i} className="flex items-center gap-3 px-6 py-4 border-b last:border-b-0">
                   <div className="flex-1 space-y-1">
                     <div className="h-4 w-48 rounded bg-muted-foreground/10 animate-pulse" />
                     <div className="h-3 w-24 rounded bg-muted-foreground/10 animate-pulse" />
@@ -243,91 +177,47 @@ export default function DashboardPage() {
             </div>
           ) : activity.length === 0 ? (
             <p className="text-muted-foreground text-center py-8 px-6">
-              No recent activity yet.
+              No recent activity
             </p>
           ) : (
             <div>
-              {activity.map((item, index) => {
-                const isExpanded = expandedId === item.id
-                const hasDetail = item.detail && Object.keys(item.detail).length > 0
-                const href = getActivityHref(item)
+              {activity.map((item: any, index: number) => {
+                const href = "href" in item ? item.href : item.loanId ? `/loans/${item.loanId}` : null
+                const description = item.description ?? ""
+                const actorName = item.actorName ?? undefined
+                const timestamp = item.occurredAt ?? item.timestamp
                 return (
                   <div
                     key={item.id}
-                    className={index < activity.length - 1 ? "border-b" : ""}
+                    className={`flex items-start gap-3 px-6 py-4 ${index < activity.length - 1 ? "border-b" : ""}`}
                   >
-                    <button
-                      type="button"
-                      className={`flex items-start gap-3 px-6 py-4 w-full text-left ${hasDetail ? "cursor-pointer hover:bg-muted/50 transition-colors" : "cursor-default"}`}
-                      onClick={() => hasDetail && setExpandedId(isExpanded ? null : item.id)}
-                      data-testid={`activity-item-${item.id}`}
-                    >
-                      {activityIcon(item.type)}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm">{item.description}</p>
-                          {href && (
-                            <Link
-                              href={href}
-                              onClick={(e) => e.stopPropagation()}
-                              className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                              title="View details"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </Link>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <p className="text-xs text-muted-foreground font-mono">
-                            {formatRelativeTime(item.timestamp)}
-                          </p>
-                          {item.actorName && (
-                            <span className="text-xs text-muted-foreground">
-                              · by {item.actorName}
-                            </span>
-                          )}
-                        </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm">{description}</p>
+                        {href && (
+                          <Link
+                            href={href}
+                            className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+                            title="View details"
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </Link>
+                        )}
                       </div>
-                      {hasDetail && (
-                        isExpanded
-                          ? <ChevronUp className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                          : <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                      )}
-                    </button>
-                    {isExpanded && item.detail && (
-                      <div className="px-6 pb-4 pl-13" data-testid={`activity-detail-${item.id}`}>
-                        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm ml-7">
-                          {Object.entries(item.detail).map(([key, value]) => {
-                            const label = DETAIL_LABELS[key]
-                            if (!label || value == null) return null
-                            return (
-                              <div key={key} className="contents">
-                                <dt className="text-muted-foreground">{label}</dt>
-                                <dd className={["amount", "interestPortion", "principalPortion", "interestRate"].includes(key) ? "font-mono tabular-nums" : undefined}>{formatDetailValue(key, value as string | number | null | undefined)}</dd>
-                              </div>
-                            )
-                          })}
-                        </dl>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <p className="text-xs text-muted-foreground font-mono">
+                          {formatRelativeTime(timestamp)}
+                        </p>
+                        {actorName && (
+                          <span className="text-xs text-muted-foreground">
+                            · by {actorName}
+                          </span>
+                        )}
                       </div>
-                    )}
+                    </div>
                   </div>
                 )
               })}
-
-              {/* Sentinel for infinite scroll — triggers fetch 200px before visible */}
-              <div ref={sentinelRef} className="h-1" />
-
-              {isFetchingNextPage && (
-                <div className="flex items-center justify-center py-4">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
-
-              {!hasNextPage && activity.length > 0 && (
-                <p className="text-xs text-muted-foreground text-center py-3">
-                  No more activity
-                </p>
-              )}
             </div>
           )}
         </CardContent>
