@@ -2,14 +2,14 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, getErrorTag, getErrorField } from "@/lib/action-utils"
+import { getSession, getUserRole, getErrorTag, getErrorField, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { createLoan, listLoans, updateLoan, deleteLoan } from "@/services/loan.service"
-import { ROLE_LEVELS, toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
+import { createLoan, listLoans } from "@/services/loan.service"
+import { toLoanType, type UserRole, type Permission, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
@@ -123,61 +123,20 @@ export async function getCurrentUserRoleAction(): Promise<UserRole> {
   return (session.user.role ?? "unassigned") as UserRole
 }
 
+// Loan editing is permanently disabled to preserve system integrity.
+// To change loan terms, issue a new loan (which can roll over the old one).
 export const updateLoanAction = withAction<UpdateLoanInput, any>({
-  minRole: "admin",
-  action: async (session, input) => {
-    if (!input.loanId?.trim()) {
-      return { error: "Loan ID is required" }
-    }
-    if (!input.reason?.trim()) {
-      return { error: "Reason is required" }
-    }
-    if (input.principalAmount !== undefined) {
-      const err = validatePositiveDecimal(input.principalAmount, "Principal")
-      if (err) return { error: err }
-    }
-    if (input.issuanceFee !== undefined) {
-      if (!/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
-        return { error: "Issuance fee must be a valid decimal number" }
-      }
-      if (parseFloat(input.issuanceFee) < 50000) {
-        return { error: "Issuance fee must be at least 50,000 UGX" }
-      }
-    }
-    try {
-      const data = await Effect.runPromise(updateLoan(input, session.user.id))
-      revalidatePath("/loans")
-      revalidatePath(`/loans/${input.loanId}`)
-      return { data }
-    } catch (error) {
-      if (getErrorTag(error) === "LoanNotFound") {
-        return { error: "Loan not found" }
-      }
-      return { error: "Internal server error" }
-    }
+  permission: "loan:update",
+  action: async () => {
+    return { error: "Loan editing is disabled. Issue a new loan instead." }
   },
 })
 
+// Loan deletion is permanently disabled to preserve system integrity.
 export const deleteLoanAction = withAction<DeleteLoanInput, any>({
-  minRole: "admin",
-  action: async (session, input) => {
-    if (!input.loanId?.trim()) {
-      return { error: "Loan ID is required" }
-    }
-    if (!input.reason?.trim()) {
-      return { error: "Reason is required" }
-    }
-
-    try {
-      const data = await Effect.runPromise(deleteLoan(input, session.user.id))
-      revalidatePath("/loans")
-      return { data }
-    } catch (error) {
-      if (getErrorTag(error) === "LoanNotFound") {
-        return { error: "Loan not found" }
-      }
-      return { error: "Internal server error" }
-    }
+  permission: "loan:update",
+  action: async () => {
+    return { error: "Loan deletion is disabled. Loans are permanent records." }
   },
 })
 
@@ -190,13 +149,14 @@ export async function createLoanAction(input: CreateLoanInput) {
   }
 
   const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) {
+  const perms = await getEffectivePermissions(session.user.id, role)
+  if (!perms.has("loan:create")) {
     return { error: "Forbidden" }
   }
 
-  // Rollover requires supervisor+
+  // Rollover requires loan:rollover permission
   if (input.rollover) {
-    if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+    if (!perms.has("loan:rollover")) {
       return { error: "Only supervisors and above can perform loan rollovers" }
     }
   }
@@ -225,7 +185,7 @@ export async function createLoanAction(input: CreateLoanInput) {
   const isBackdated = daysDiff > 0
 
   if (isBackdated) {
-    if (daysDiff > 3 && ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+    if (daysDiff > 3 && !perms.has("backdate:beyond-3-days")) {
       return { error: `Backdating beyond 3 days requires supervisor permission. You selected ${daysDiff} days ago.` }
     }
     if (!input.backdateNote?.trim()) {
@@ -256,17 +216,21 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Disbursement source is required (cash, bank, or strong_room)" }
   }
 
-  // Check sufficient funds at disbursement source
+  // Check sufficient funds at disbursement source (all locations including cash)
   // For rollovers, principalAmount is already the fresh cash portion (carried amounts are separate)
   const freshAmount = new BigNumber(input.principalAmount)
 
-  if (input.disbursementSource !== "cash" && freshAmount.isGreaterThan(0)) {
+  if (freshAmount.isGreaterThan(0)) {
     try {
       const balances = await Effect.runPromise(getLocationBalances())
       const available = new BigNumber(balances[input.disbursementSource as keyof typeof balances])
       if (available.isLessThan(freshAmount)) {
         const loc = input.disbursementSource === "strong_room" ? "Strong Room" : input.disbursementSource === "bank" ? "Bank" : "Cash on Hand"
-        return { error: `Insufficient funds in ${loc}. Available: ${formatAmount(available)}, required: ${formatAmount(freshAmount)}` }
+        const isLoanOfficer = !perms.has("fund-transfer:create")
+        const action = isLoanOfficer
+          ? "Ask your supervisor to transfer or inject funds before disbursing."
+          : "Transfer or inject funds first."
+        return { error: `Insufficient funds in ${loc}. Available: ${formatAmount(available)}, required: ${formatAmount(freshAmount)}. ${action}` }
       }
     } catch {
       return { error: "Unable to verify fund balances. Please try again." }
@@ -301,7 +265,7 @@ export async function createLoanAction(input: CreateLoanInput) {
     termMonths: loanType !== "perpetual" ? input.termMonths : undefined,
   }
 
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) {
+  if (!perms.has("settings:update")) {
     loanInput.interestRateOverride = null
     loanInput.minPeriodOverride = null
   }
@@ -479,7 +443,12 @@ export const exportLoansExcelAction = withAction<"all" | "critical" | "at-risk" 
       }
 
       const buffer = await generateLoansExcel(entries)
-      const base64 = buffer.toString("base64")
+      const bytes = new Uint8Array(buffer)
+      let binary = ""
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i])
+      }
+      const base64 = btoa(binary)
       return { data: base64 }
     } catch {
       return { error: "Internal server error" }
@@ -500,7 +469,7 @@ export const listActiveLoansWithOverdueAction = withAction({
 })
 
 export const waivePenaltyAction = withAction<string, any>({
-  minRole: "admin",
+  permission: "loan:update",
   forbiddenMessage: "Only admins can waive penalties",
   action: async (session, loanId) => {
     try {
@@ -531,7 +500,7 @@ export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: 
 }
 
 const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: string }, any>({
-  minRole: "admin",
+  permission: "loan:update",
   forbiddenMessage: "Only admins can adjust penalty rates",
   action: async (_session, { loanId, multiplier }) => {
     const value = parseFloat(multiplier)

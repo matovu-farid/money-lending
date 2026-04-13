@@ -20,6 +20,12 @@ vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   getUserRole: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn(async () => null),
+  getEffectivePermissions: vi.fn().mockResolvedValue(new Set([
+    "loan:create", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
+    "backdate:beyond-3-days", "fund-transfer:create", "settings:update",
+    "rate-change:approve-standard", "rate-change:approve-low",
+  ])),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -121,7 +127,9 @@ vi.mock("@/services/ledger-queries.service", () => ({
 }))
 
 vi.mock("@/services/report.service", () => ({
-  getLocationBalances: vi.fn(),
+  getLocationBalances: vi.fn().mockReturnValue(
+    Effect.succeed({ cash: "99999999", bank: "99999999", strong_room: "99999999" })
+  ),
 }))
 
 vi.mock("@/lib/interest/engine", () => ({
@@ -130,13 +138,13 @@ vi.mock("@/lib/interest/engine", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, getUserRole, requireRole } from "@/lib/action-utils"
+import { getSession, getUserRole, checkPermission, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
-import { createLoan, listLoans, updateLoan, deleteLoan } from "@/services/loan.service"
+import { createLoan, listLoans } from "@/services/loan.service"
 import { getLocationBalances } from "@/services/report.service"
-import { CustomerNotFound, IncompleteLoanRequirements, LoanNotFound } from "@/lib/errors"
-import { ROLE_LEVELS } from "@/types"
+import { CustomerNotFound, IncompleteLoanRequirements } from "@/lib/errors"
+
 
 import {
   listLoansAction,
@@ -148,12 +156,11 @@ import {
 
 const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)
-const mockRequireRole = vi.mocked(requireRole)
+const mockCheckPermission = vi.mocked(checkPermission)
+const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockCreateLoan = vi.mocked(createLoan)
 const mockListLoans = vi.mocked(listLoans)
-const mockUpdateLoan = vi.mocked(updateLoan)
-const mockDeleteLoan = vi.mocked(deleteLoan)
 const mockGetLocationBalances = vi.mocked(getLocationBalances)
 
 const fakeSession = {
@@ -215,7 +222,7 @@ describe("Loan Actions", () => {
     })
   })
 
-  // ===== updateLoanAction =====
+  // ===== updateLoanAction (permanently disabled) =====
   describe("updateLoanAction", () => {
     const validInput = {
       loanId: "l1",
@@ -229,75 +236,21 @@ describe("Loan Actions", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
-    it("returns error when role is insufficient", async () => {
+    it("returns error when permission is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Forbidden")
+      mockCheckPermission.mockResolvedValueOnce("Forbidden")
       const result = await updateLoanAction(validInput)
       expect(result).toEqual({ error: "Forbidden" })
     })
 
-    it("returns error for missing loan ID", async () => {
+    it("always returns disabled message even with valid input", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const result = await updateLoanAction({ ...validInput, loanId: "" })
-      expect(result).toEqual({ error: "Loan ID is required" })
-    })
-
-    it("returns error for missing reason", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const result = await updateLoanAction({ ...validInput, reason: "" })
-      expect(result).toEqual({ error: "Reason is required" })
-    })
-
-    it("returns error for invalid principal amount", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const result = await updateLoanAction({
-        ...validInput,
-        principalAmount: "abc",
-      })
-      expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Principal")
-    })
-
-    it("returns error for low issuance fee", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const result = await updateLoanAction({
-        loanId: "l1",
-        reason: "Updating fee",
-        issuanceFee: "10000",
-      })
-      expect(result).toEqual({ error: "Issuance fee must be at least 50,000 UGX" })
-    })
-
-    it("updates loan and revalidates on success", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const updated = { id: "l1", principalAmount: "500000" }
-      mockUpdateLoan.mockReturnValue(Effect.succeed(updated) as any)
-
       const result = await updateLoanAction(validInput)
-
-      expect(result).toEqual({ data: updated })
-      expect(mockUpdateLoan).toHaveBeenCalledWith(validInput, "u1")
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/loans")
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/loans/l1")
-    })
-
-    it("returns error when loan not found", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      mockUpdateLoan.mockReturnValue(
-        Effect.fail(new LoanNotFound({ id: "l1" })) as any,
-      )
-      const result = await updateLoanAction(validInput)
-      expect(result).toEqual({ error: "Loan not found" })
+      expect(result).toEqual({ error: "Loan editing is disabled. Issue a new loan instead." })
     })
   })
 
-  // ===== deleteLoanAction =====
+  // ===== deleteLoanAction (permanently disabled) =====
   describe("deleteLoanAction", () => {
     const validInput = {
       loanId: "l1",
@@ -310,48 +263,17 @@ describe("Loan Actions", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
-    it("returns error when role is insufficient", async () => {
+    it("returns error when permission is insufficient", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue("Forbidden")
+      mockCheckPermission.mockResolvedValueOnce("Forbidden")
       const result = await deleteLoanAction(validInput)
       expect(result).toEqual({ error: "Forbidden" })
     })
 
-    it("returns error for missing loan ID", async () => {
+    it("always returns disabled message even with valid input", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const result = await deleteLoanAction({ ...validInput, loanId: "" })
-      expect(result).toEqual({ error: "Loan ID is required" })
-    })
-
-    it("returns error for missing reason", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const result = await deleteLoanAction({ ...validInput, reason: "" })
-      expect(result).toEqual({ error: "Reason is required" })
-    })
-
-    it("deletes loan and revalidates on success", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      const deleted = { id: "l1" }
-      mockDeleteLoan.mockReturnValue(Effect.succeed(deleted) as any)
-
       const result = await deleteLoanAction(validInput)
-
-      expect(result).toEqual({ data: deleted })
-      expect(mockDeleteLoan).toHaveBeenCalledWith(validInput, "u1")
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/loans")
-    })
-
-    it("returns error when loan not found", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockRequireRole.mockReturnValue(null)
-      mockDeleteLoan.mockReturnValue(
-        Effect.fail(new LoanNotFound({ id: "l1" })) as any,
-      )
-      const result = await deleteLoanAction(validInput)
-      expect(result).toEqual({ error: "Loan not found" })
+      expect(result).toEqual({ error: "Loan deletion is disabled. Loans are permanent records." })
     })
   })
 
@@ -373,6 +295,18 @@ describe("Loan Actions", () => {
       disbursementSource: "cash" as const,
     }
 
+    beforeEach(() => {
+      // Restore default mocks cleared by parent beforeEach
+      mockGetLocationBalances.mockReturnValue(
+        Effect.succeed({ cash: "99999999", bank: "99999999", strong_room: "99999999" }) as any
+      )
+      mockGetEffectivePermissions.mockResolvedValue(new Set([
+        "loan:create", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
+        "backdate:beyond-3-days", "fund-transfer:create", "settings:update",
+        "rate-change:approve-standard", "rate-change:approve-low",
+      ]))
+    })
+
     it("returns error when not authenticated", async () => {
       mockGetSession.mockResolvedValue(null)
       const result = await createLoanAction(validInput)
@@ -382,6 +316,7 @@ describe("Loan Actions", () => {
     it("returns error when role is below loanOfficer", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("unassigned")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set())
       const result = await createLoanAction(validInput)
       expect(result).toEqual({ error: "Forbidden" })
     })
@@ -498,6 +433,7 @@ describe("Loan Actions", () => {
     it("requires supervisor role for rollover loans", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("loanOfficer")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
       const result = await createLoanAction({
         ...validInput,
         rollover: {

@@ -7,6 +7,10 @@ vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   getUserRole: vi.fn(),
   requireRole: vi.fn(),
+  checkPermission: vi.fn(async () => null),
+  getEffectivePermissions: vi.fn().mockResolvedValue(new Set([
+    "loan:create", "rate-change:approve-standard", "rate-change:approve-low",
+  ])),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -75,7 +79,7 @@ vi.mock("drizzle-orm", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, getUserRole } from "@/lib/action-utils"
+import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import {
   applyRateChangeImmediately,
@@ -98,6 +102,7 @@ import {
 import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)
+const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockApplyRateChange = vi.mocked(applyRateChangeImmediately)
 const mockListAllRequests = vi.mocked(listAllRequests)
@@ -117,6 +122,10 @@ function getMockWhere() {
 describe("Rate Change Request Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    // Restore default permission mock after clearAllMocks
+    mockGetEffectivePermissions.mockResolvedValue(new Set([
+      "loan:create", "rate-change:approve-standard", "rate-change:approve-low",
+    ]))
   })
 
   // ===== requestRateChangeAction =====
@@ -132,6 +141,7 @@ describe("Rate Change Request Actions", () => {
     it("returns Forbidden for low role", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("unassigned")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set())
       const result = await requestRateChangeAction(validInput as any)
       expect(result).toEqual({ error: "Forbidden" })
     })
@@ -169,6 +179,7 @@ describe("Rate Change Request Actions", () => {
     it("returns Forbidden for low role", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("loanOfficer")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
       const result = await listAllRequestsAction()
       expect(result).toEqual({ error: "Forbidden" })
     })
@@ -217,6 +228,7 @@ describe("Rate Change Request Actions", () => {
     it("returns 0 for non-supervisor role", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("loanOfficer")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
       const result = await countPendingRequestsAction()
       expect(result).toEqual({ data: 0 })
     })

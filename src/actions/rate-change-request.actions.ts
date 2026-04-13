@@ -2,9 +2,9 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, getErrorTag } from "@/lib/action-utils"
+import { getSession, getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
-import { ROLE_LEVELS, type UserRole, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
+import { type Permission, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import {
   applyRateChangeImmediately,
@@ -18,20 +18,7 @@ import { loans } from "@/lib/db/schema/loans"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { eq, and, isNull } from "drizzle-orm"
 
-/**
- * Determine the required approver role based on the requested rate.
- * - Rate >= 10% (0.10) -> no approval needed (null)
- * - Rate >= 8% (0.08) and < 10% (0.10) -> supervisor can approve
- * - Rate < 8% (0.08) -> admin must approve
- */
-function getRequiredApproverRole(requestedRateDecimal: string): UserRole | null {
-  const rate = parseFloat(requestedRateDecimal)
-  if (rate >= 0.10) return null  // no approval needed
-  if (rate >= 0.08) return "supervisor"
-  return "admin"
-}
-
-// This action has complex role-based branching that doesn't fit withAction cleanly
+// This action has complex permission-based branching that doesn't fit withAction cleanly
 export async function requestRateChangeAction(input: CreateRateChangeRequestInput) {
   const session = await getSession()
   if (!session) {
@@ -39,7 +26,8 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
   }
 
   const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.loanOfficer) {
+  const perms = await getEffectivePermissions(session.user.id, role)
+  if (!perms.has("loan:create")) {
     return { error: "Forbidden" }
   }
 
@@ -70,10 +58,13 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     return { error: "Requested rate is the same as the current rate" }
   }
 
-  const requiredApproverRole = getRequiredApproverRole(input.requestedRate)
+  const requiredPermission: Permission | null =
+    requestedRateFloat >= 0.10 ? null :
+    requestedRateFloat >= 0.08 ? "rate-change:approve-standard" :
+    "rate-change:approve-low"
 
-  // If no approval needed (rate >= 10%) or user's role meets/exceeds the required approver role, apply immediately
-  if (requiredApproverRole === null || ROLE_LEVELS[role] >= ROLE_LEVELS[requiredApproverRole]) {
+  // If no approval needed (rate >= 10%) or user has the required permission, apply immediately
+  if (requiredPermission === null || perms.has(requiredPermission)) {
     try {
       await Effect.runPromise(
         applyRateChangeImmediately(input.loanId, input.requestedRate, session.user.id)
@@ -114,7 +105,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
           requestedRate: input.requestedRate,
           currentRate: effectiveRate,
           requestedBy: session.user.id,
-          requiredApproverRole,
+          requiredApproverRole: requiredPermission,
           status: "pending",
         })
         .returning()
@@ -124,7 +115,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
 
     revalidatePath("/approvals")
     revalidatePath(`/loans/${input.loanId}`)
-    return { data: { applied: false as const, request: data, message: `Rate change request submitted for ${requiredApproverRole} approval` } }
+    return { data: { applied: false as const, request: data, message: `Rate change request submitted for approval (requires ${requiredPermission})` } }
   } catch (error) {
     const err = error as Record<string, unknown>
     if (err?._tag === "DuplicatePending") {
@@ -144,7 +135,8 @@ export async function listAllRequestsAction() {
   }
 
   const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+  const perms = await getEffectivePermissions(session.user.id, role)
+  if (!perms.has("rate-change:approve-standard")) {
     return { error: "Forbidden" }
   }
 
@@ -171,7 +163,7 @@ export const listRequestsForLoanAction = withAction<string, any>({
   },
 })
 
-// This action has complex role checking (requiredApproverRole per-request), keep inline auth
+// This action has complex permission checking (requiredApproverRole per-request), keep inline auth
 export async function reviewRateChangeRequestAction(input: ReviewRateChangeRequestInput) {
   const session = await getSession()
   if (!session) {
@@ -179,7 +171,8 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
   }
 
   const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+  const perms = await getEffectivePermissions(session.user.id, role)
+  if (!perms.has("rate-change:approve-standard")) {
     return { error: "Forbidden" }
   }
 
@@ -210,9 +203,9 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
       return { error: "You cannot review your own rate change request" }
     }
 
-    const requiredRole = request.requiredApproverRole as UserRole
-    if (ROLE_LEVELS[role] < ROLE_LEVELS[requiredRole]) {
-      return { error: `This request requires ${requiredRole} or higher to review` }
+    const requiredPermission = request.requiredApproverRole as Permission
+    if (!perms.has(requiredPermission)) {
+      return { error: `You do not have permission to review this request (requires ${requiredPermission})` }
     }
 
     const data = await Effect.runPromise(
@@ -237,7 +230,8 @@ export async function countPendingRequestsAction() {
   }
 
   const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) {
+  const perms = await getEffectivePermissions(session.user.id, role)
+  if (!perms.has("rate-change:approve-standard")) {
     return { data: 0 }
   }
 
