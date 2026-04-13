@@ -11,7 +11,7 @@ import {
 } from "@/lib/errors";
 import { writeAuditLog } from "./audit.service";
 import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/auto-post.service";
-import { getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger } from "@/services/ledger-queries.service";
+import { getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger, getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service";
 import { reverseCreditorInterestAccrual } from "@/services/transaction.service";
 import {
   allocatePayment,
@@ -28,6 +28,7 @@ import type {
   RecordCreditorRepaymentInput,
   CreditorDashboard,
   CreditorInvestmentSummary,
+  MonthlySummaryRow,
 } from "@/types";
 
 function daysBetween(from: Date, to: Date): number {
@@ -480,4 +481,183 @@ export const getCreditorMonthlyInterestDue = (): Effect.Effect<
       return result;
     },
     catch: (e) => new DatabaseError({ cause: e }),
+  });
+
+/**
+ * Build a month-by-month summary for a single creditor.
+ * Walks from earliest investment month to current month.
+ * Each row: interest due, interest paid, principal paid, total paid, remaining balance.
+ */
+export const getCreditorMonthlySummary = (
+  creditorId: string,
+): Effect.Effect<MonthlySummaryRow[], CreditorNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const [creditor] = await db
+        .select()
+        .from(creditors)
+        .where(eq(creditors.id, creditorId));
+      if (!creditor) throw { _tag: "CreditorNotFound", id: creditorId };
+
+      const investments = await db
+        .select()
+        .from(creditorInvestments)
+        .where(eq(creditorInvestments.creditorId, creditorId))
+        .orderBy(asc(creditorInvestments.investmentDate));
+
+      if (investments.length === 0) return [];
+
+      // Fetch all repayments for this creditor's investments
+      const investmentIds = investments.map((inv) => inv.id);
+      const allRepayments = await db
+        .select()
+        .from(creditorRepayments)
+        .where(inArray(creditorRepayments.investmentId, investmentIds))
+        .orderBy(asc(creditorRepayments.repaymentDate));
+
+      // Get interest/principal portions for each repayment from ledger
+      const portionsMap =
+        allRepayments.length > 0
+          ? await getCreditorRepaymentPortionsFromLedger(
+              allRepayments.map((r) => r.id),
+            )
+          : new Map<
+              string,
+              { interestPortion: string; principalPortion: string }
+            >();
+
+      // Group repayments by month (YYYY-MM)
+      const repaymentsByMonth = new Map<
+        string,
+        { interestPaid: BigNumber; principalPaid: BigNumber }
+      >();
+      for (const repayment of allRepayments) {
+        const date = new Date(repayment.repaymentDate);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        const current = repaymentsByMonth.get(monthKey) ?? {
+          interestPaid: new BigNumber(0),
+          principalPaid: new BigNumber(0),
+        };
+        const portions = portionsMap.get(repayment.id);
+        if (portions) {
+          current.interestPaid = current.interestPaid.plus(
+            portions.interestPortion,
+          );
+          current.principalPaid = current.principalPaid.plus(
+            portions.principalPortion,
+          );
+        } else {
+          // Fallback: treat entire amount as principal
+          current.principalPaid = current.principalPaid.plus(repayment.amount);
+        }
+        repaymentsByMonth.set(monthKey, current);
+      }
+
+      // Track investment info for month-walking
+      interface InvestmentInfo {
+        id: string;
+        amount: BigNumber;
+        rate: BigNumber;
+        startMonth: string;
+      }
+      const investmentInfos: InvestmentInfo[] = investments.map((inv) => {
+        const d = new Date(inv.investmentDate);
+        return {
+          id: inv.id,
+          amount: new BigNumber(inv.amount),
+          rate: new BigNumber(inv.interestRateMonthly),
+          startMonth: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        };
+      });
+
+      // Determine month range
+      const earliestDate = new Date(investments[0].investmentDate);
+      const startYear = earliestDate.getFullYear();
+      const startMonth = earliestDate.getMonth(); // 0-indexed
+      const now = new Date();
+      const endYear = now.getFullYear();
+      const endMonth = now.getMonth();
+
+      // Walk month by month
+      const rows: MonthlySummaryRow[] = [];
+      const balances = new Map<string, BigNumber>();
+
+      let year = startYear;
+      let month = startMonth;
+
+      while (year < endYear || (year === endYear && month <= endMonth)) {
+        const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+
+        // Activate new investments this month
+        for (const info of investmentInfos) {
+          if (info.startMonth === monthKey && !balances.has(info.id)) {
+            balances.set(info.id, info.amount);
+          }
+        }
+
+        // Calculate interest due this month
+        let interestDue = new BigNumber(0);
+        for (const info of investmentInfos) {
+          const bal = balances.get(info.id);
+          if (bal && bal.isGreaterThan(0)) {
+            interestDue = interestDue.plus(bal.times(info.rate));
+          }
+        }
+
+        // Get repayments for this month
+        const monthRepayments = repaymentsByMonth.get(monthKey) ?? {
+          interestPaid: new BigNumber(0),
+          principalPaid: new BigNumber(0),
+        };
+
+        // Reduce principal balances proportionally
+        let totalPrincipalPaid = monthRepayments.principalPaid;
+        if (totalPrincipalPaid.isGreaterThan(0)) {
+          const totalBalance = Array.from(balances.values()).reduce(
+            (acc, b) => acc.plus(b),
+            new BigNumber(0),
+          );
+          if (totalBalance.isGreaterThan(0)) {
+            for (const [invId, bal] of balances) {
+              const share = bal.div(totalBalance);
+              const reduction = totalPrincipalPaid.times(share);
+              balances.set(invId, BigNumber.max(bal.minus(reduction), new BigNumber(0)));
+            }
+          }
+        }
+
+        const totalRemainingBalance = Array.from(balances.values()).reduce(
+          (acc, b) => acc.plus(b),
+          new BigNumber(0),
+        );
+
+        const totalPaid = monthRepayments.interestPaid.plus(
+          monthRepayments.principalPaid,
+        );
+
+        rows.push({
+          month: monthKey,
+          interestDue: formatAmount(interestDue),
+          interestPaid: formatAmount(monthRepayments.interestPaid),
+          principalPaid: formatAmount(monthRepayments.principalPaid),
+          totalPaid: formatAmount(totalPaid),
+          remainingBalance: formatAmount(totalRemainingBalance),
+        });
+
+        // Advance month
+        month++;
+        if (month > 11) {
+          month = 0;
+          year++;
+        }
+      }
+
+      // Return newest first
+      return rows.reverse();
+    },
+    catch: (e: any) => {
+      if (e?._tag === "CreditorNotFound")
+        return new CreditorNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
+    },
   });
