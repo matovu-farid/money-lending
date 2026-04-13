@@ -79,6 +79,8 @@ export const queryKeys = {
     all: ["creditors"] as const,
     detail: (id: string) => [...queryKeys.creditors.all, id] as const,
     capital: () => [...queryKeys.creditors.all, "capital"] as const,
+    monthlyDue: () => [...queryKeys.creditors.all, "monthly-due"] as const,
+    monthlySummary: (id: string) => [...queryKeys.creditors.detail(id), "monthly-summary"] as const,
   },
 
   rateChangeRequests: {
