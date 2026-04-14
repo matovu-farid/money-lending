@@ -1,28 +1,34 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
+import { expenseCollection, expenseCategoryCollection } from "@/collections"
 import { ExpenseListClient } from "./ExpenseListClient"
-import { queryKeys } from "@/hooks/query-keys"
-import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "@/actions/expense.actions"
+import { usePermissions } from "@/hooks/use-permissions"
 
 export default function ExpensesPage() {
-  const { data: transactionsResult, isLoading: transactionsLoading } = useQuery({
-    queryKey: queryKeys.expenses.list({}, 1),
-    queryFn: async () => {
-      const result = await listExpenseTransactionsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-  })
+  const { has } = usePermissions()
+  const canViewExpenses = has("expense:read")
 
-  const { data: categories = [], isLoading: categoriesLoading } = useQuery({
-    queryKey: queryKeys.expenses.categories(),
-    queryFn: async () => {
-      const result = await listExpenseCategoriesAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-  })
+  const { data: allExpenses, isLoading: transactionsLoading } = useLiveQuery((q) =>
+    q.from({ e: expenseCollection }).select(({ e }) => e)
+  )
+
+  const { data: rawCategories, isLoading: categoriesLoading } = useLiveQuery((q) =>
+    q.from({ c: expenseCategoryCollection }).select(({ c }) => c)
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const categories = (rawCategories ?? []) as any[]
+
+  if (!canViewExpenses) {
+    return (
+      <div className="p-4 md:p-6 flex flex-col items-center justify-center min-h-[40vh] text-center">
+        <p className="text-lg font-medium text-muted-foreground">Access Denied</p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Only supervisors and above can view and record expenses.
+        </p>
+      </div>
+    )
+  }
 
   const isLoading = transactionsLoading || categoriesLoading
 
@@ -38,7 +44,7 @@ export default function ExpensesPage() {
   return (
     <div className="p-4 md:p-6 space-y-4">
       <ExpenseListClient
-        transactions={transactionsResult?.data ?? []}
+        transactions={allExpenses ?? []}
         categories={categories}
       />
     </div>

@@ -1,12 +1,8 @@
 "use client"
 
-import { useQuery, keepPreviousData } from "@tanstack/react-query"
-import { getActivitiesAction } from "@/actions/activity.actions"
-import { queryKeys } from "./query-keys"
-import { unwrapAction } from "./query-utils"
+import { useLiveQuery } from "@tanstack/react-db"
+import { getActivitiesCollection, ACTIVITIES_PAGE_SIZE } from "@/collections"
 import type { GetActivitiesResult } from "@/types/activity"
-
-const PAGE_SIZE = 25
 
 export type ActivityFilterParams = {
   actorId: string
@@ -20,24 +16,23 @@ export function useActivities(
   page: number,
   enabled = true,
 ) {
-  return useQuery<GetActivitiesResult>({
-    queryKey: queryKeys.activities.list(params, page),
-    queryFn: async () => {
-      const input = {
-        page,
-        pageSize: PAGE_SIZE,
-        ...(params.actorId ? { actorId: params.actorId } : {}),
-        ...(params.entityType ? { entityType: params.entityType } : {}),
-        ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
-        ...(params.dateTo ? { dateTo: params.dateTo } : {}),
-      }
-      const result = await getActivitiesAction(input)
-      return unwrapAction(result as { data: GetActivitiesResult } | { error: string })
-    },
-    staleTime: 30_000,
-    placeholderData: keepPreviousData,
-    enabled,
-  })
+  const collection = getActivitiesCollection(params, page)
+  const { data, isLoading } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ a: collection as any }).select(({ a }: any) => a),
+    [JSON.stringify(params), page]
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const row = (data as any)?.[0]
+  const result: GetActivitiesResult | undefined = row
+    ? { items: row.items, total: row.total }
+    : undefined
+  return {
+    data: result,
+    isLoading: enabled ? isLoading : false,
+    isPlaceholderData: false,
+    isError: false,
+  }
 }
 
-export { PAGE_SIZE as ACTIVITIES_PAGE_SIZE }
+export { ACTIVITIES_PAGE_SIZE }

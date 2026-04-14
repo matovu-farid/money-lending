@@ -2,12 +2,9 @@
 
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { useQuery } from "@tanstack/react-query"
 import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useForm } from "react-hook-form"
-import { customerCollection } from "@/collections"
-import { getCollateralNaturesAction, getLoanCollateralAction, getLocationBalancesAction } from "@/actions/loan.actions"
-import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
+import { customerCollection, collateralNaturesCollection, locationBalancesCollection, getActiveLoanCheckCollection, getLoanCollateralCollection } from "@/collections"
 import { generateClientId } from "@/lib/client-id"
 import { insertLoanWithInput } from "@/collections"
 import { useSession } from "@/lib/auth-client"
@@ -117,19 +114,18 @@ function NewLoanPageInner() {
 
   // --- Data queries ---
 
-  const { data: knownNatures = [] } = useQuery({
-    queryKey: ["collateral-natures"],
-    queryFn: getCollateralNaturesAction,
-  })
+  const { data: knownNaturesRows } = useLiveQuery((q) =>
+    q.from({ n: collateralNaturesCollection }).select(({ n }) => n)
+  )
+  const knownNatures = (knownNaturesRows ?? []).map((r) => r.nature)
 
-  const { data: locationBalances } = useQuery({
-    queryKey: ["location-balances"],
-    queryFn: async () => {
-      const result = await getLocationBalancesAction()
-      if ("error" in result) return null
-      return result.data
-    },
-  })
+  const { data: locationBalancesRows } = useLiveQuery((q) =>
+    q.from({ l: locationBalancesCollection }).select(({ l }) => l)
+  )
+  const lbRow = locationBalancesRows?.[0]
+  const locationBalances: Record<"cash" | "bank" | "strong_room", string> | null = lbRow
+    ? { cash: lbRow.cash, bank: lbRow.bank, strong_room: lbRow.strong_room }
+    : null
 
   const { data: matchedCustomers } = useLiveQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, prefilledCustomerId)),
@@ -137,26 +133,22 @@ function NewLoanPageInner() {
   )
   const customerName = matchedCustomers?.[0]?.fullName ?? null
 
-  const { data: activeLoanData } = useQuery({
-    queryKey: ["active-loan-check", customerId],
-    queryFn: async () => {
-      const result = await checkCustomerActiveLoanAction(customerId)
-      if ("error" in result || !result.data) return null
-      return result.data
-    },
-    enabled: !!customerId && customerId.length > 0,
-  })
+  const activeLoanCheckColl = customerId ? getActiveLoanCheckCollection(customerId) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: activeLoanCheckRows } = useLiveQuery(((q: any) =>
+    activeLoanCheckColl ? q.from({ a: activeLoanCheckColl }).select(({ a }: any) => a) : q.from({ c: customerCollection }).where(() => false)
+  ) as any, [customerId])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeLoanData = (activeLoanCheckRows as any)?.[0]?.data ?? null
 
   const activeLoanId = activeLoanData?.loan.id
-  const { data: activeLoanCollateral } = useQuery({
-    queryKey: ["active-loan-collateral", activeLoanId],
-    queryFn: async () => {
-      const result = await getLoanCollateralAction(activeLoanId!)
-      if ("error" in result || !result.data) return null
-      return result.data
-    },
-    enabled: !!activeLoanId,
-  })
+  const activeLoanCollateralColl = activeLoanId ? getLoanCollateralCollection(activeLoanId) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: activeLoanCollateralRows } = useLiveQuery(((q: any) =>
+    activeLoanCollateralColl ? q.from({ c: activeLoanCollateralColl }).select(({ c }: any) => c) : q.from({ c: customerCollection }).where(() => false)
+  ) as any, [activeLoanId])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const activeLoanCollateral = (activeLoanCollateralRows as any)?.[0] ?? null
 
   // --- Rollover pre-fill effects ---
 

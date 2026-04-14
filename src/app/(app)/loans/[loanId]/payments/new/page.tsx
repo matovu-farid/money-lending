@@ -1,11 +1,8 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useQuery } from "@tanstack/react-query"
 import { useLiveQuery, eq } from "@tanstack/react-db"
-import { loanCollection, customerCollection } from "@/collections"
-import { getLoanBalanceAction } from "@/actions/payment.actions"
-import { queryKeys } from "@/hooks/query-keys"
+import { loanCollection, customerCollection, getLoanBalanceCollection } from "@/collections"
 import { shortId } from "@/lib/utils"
 import { RecordPaymentForm } from "./record-payment-form"
 
@@ -26,14 +23,14 @@ export default function RecordPaymentPage() {
   )
   const customerName = customers?.[0]?.fullName ?? ""
 
-  const { data: balanceData, isLoading: balanceLoading } = useQuery({
-    queryKey: queryKeys.loans.balance(loanId),
-    queryFn: async () => {
-      const result = await getLoanBalanceAction(loanId)
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-  })
+  const balanceColl = getLoanBalanceCollection(loanId)
+  const { data: balanceRows, isLoading: balanceLoading } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
+    [loanId]
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const balanceData = (balanceRows as any)?.[0] ?? null
 
   if (loanLoading) {
     return (

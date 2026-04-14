@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery, eq } from "@tanstack/react-db";
-import { customerCollection, loanCollection, paymentCollection } from "@/collections";
+import { customerCollection, loanCollection, paymentCollection, getPaymentPortionsCollection } from "@/collections";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -13,7 +13,7 @@ import {
   changeCustomerStatusAction,
 } from "@/actions/customer.actions";
 import { getLoanPaymentContextAction } from "@/actions/loan.actions";
-import { getPaymentPortionsAction, getLoanBalanceAction } from "@/actions/payment.actions";
+import { getLoanBalanceAction } from "@/actions/payment.actions";
 import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
@@ -74,16 +74,15 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
   const payments = Array.isArray(rawPayments) ? rawPayments : [];
 
   const activePaymentIds = payments.map((p) => p.id);
-  const { data: portionsData } = useQuery<PaymentPortionsMap>({
-    queryKey: [...queryKeys.payments.portions(item.loan.id), activePaymentIds.join(",")],
-    queryFn: async () => {
-      if (activePaymentIds.length === 0) return {};
-      const result = await getPaymentPortionsAction(activePaymentIds);
-      if ("error" in result) return {};
-      return result.data;
-    },
-    enabled: expanded && activePaymentIds.length > 0,
-  });
+  const portionsColl = expanded ? getPaymentPortionsCollection(item.loan.id, activePaymentIds) : null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: portionsRows } = useLiveQuery(((q: any) =>
+    portionsColl
+      ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
+      : q.from({ p: paymentCollection }).where(() => false)
+  ) as any, [activePaymentIds.join(","), expanded]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const portionsData: PaymentPortionsMap = (portionsRows as any)?.[0]?.portions ?? {};
 
   return (
     <>

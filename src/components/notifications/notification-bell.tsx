@@ -2,7 +2,8 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
 import { Bell } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,13 +13,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import {
-  getNotificationsAction,
   markAsReadAction,
   markAllAsReadAction,
 } from "@/actions/notification.actions"
 import { getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useNotificationUnreadCount } from "@/hooks/use-notifications"
+import { notificationListCollection } from "@/collections"
 import { queryKeys } from "@/hooks/query-keys"
 import type { Notification } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
@@ -32,17 +33,11 @@ export function NotificationBell() {
   // Fetch unread count with polling every 60s
   const { data: unreadCount = 0 } = useNotificationUnreadCount()
 
-  // Fetch full notification list when popover opens (lazy load via enabled)
-  const { data: notifications = [], isLoading: loadingNotifications } = useQuery<Notification[]>({
-    queryKey: [...queryKeys.notifications.all, "list"],
-    queryFn: async () => {
-      const result = await getNotificationsAction()
-      if ("data" in result) return result.data ?? []
-      return []
-    },
-    enabled: open,
-    staleTime: 0,
-  })
+  // Fetch full notification list from collection
+  const { data: notificationRows, isLoading: loadingNotifications } = useLiveQuery((q) =>
+    q.from({ n: notificationListCollection }).select(({ n }) => n)
+  )
+  const notifications: Notification[] = (notificationRows ?? []) as Notification[]
 
   function handleOpenChange(isOpen: boolean) {
     setOpen(isOpen)

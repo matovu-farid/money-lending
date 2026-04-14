@@ -1,12 +1,11 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { useSession } from "@/lib/auth-client"
 import { useDashboard } from "@/hooks/use-dashboard"
-import { getDashboardActivityAction } from "@/actions/dashboard.actions"
-import { queryKeys } from "@/hooks/query-keys"
+import { dashboardActivityCollection } from "@/collections"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -23,19 +22,11 @@ export default function DashboardPage() {
   const kpis = data?.kpis ?? null
   const error = queryError?.message ?? null
 
-  const {
-    data: activityData,
-    isLoading: activityLoading,
-  } = useQuery({
-    queryKey: queryKeys.dashboard.activity(),
-    queryFn: async () => {
-      const result = await getDashboardActivityAction() as { data: { items: any[]; total: number } } | { error: string }
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-  })
+  const { data: activityRows, isLoading: activityLoading } = useLiveQuery((q) =>
+    q.from({ a: dashboardActivityCollection }).select(({ a }) => a)
+  )
 
-  const activity = activityData?.items ?? []
+  const activity = activityRows?.[0]?.items ?? []
 
   return (
     <div className="space-y-8">

@@ -1,9 +1,7 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
-import { queryKeys } from "./query-keys"
-import { unwrapAction } from "./query-utils"
-import { getDashboardAction } from "@/actions/dashboard.actions"
+import { useLiveQuery } from "@tanstack/react-db"
+import { dashboardCollection } from "@/collections"
 import type { DashboardKPIs } from "@/types"
 
 export interface DashboardData {
@@ -11,11 +9,12 @@ export interface DashboardData {
 }
 
 export function useDashboard() {
-  return useQuery<DashboardData>({
-    queryKey: queryKeys.dashboard.kpis(),
-    queryFn: async () => {
-      const result = await getDashboardAction()
-      return unwrapAction<DashboardData>(result as { data: DashboardData } | { error: string })
-    },
-  })
+  const { data, isLoading } = useLiveQuery((q) =>
+    q.from({ d: dashboardCollection }).select(({ d }) => d)
+  )
+  const row = data?.[0]
+  const dashboardData: DashboardData | undefined = row
+    ? { kpis: row.kpis }
+    : undefined
+  return { data: dashboardData, isLoading, error: isLoading ? null : (dashboardData ? null : new Error("No data")) }
 }

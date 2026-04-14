@@ -3,9 +3,8 @@
 import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
-import { useQuery } from "@tanstack/react-query"
 import { useLiveQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections"
+import { loanCollection, getLoanBalanceCollection } from "@/collections"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -27,8 +26,7 @@ import { generateReceiptNumber } from "@/lib/receipt-number"
 import { useSession } from "@/lib/auth-client"
 import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
-import { recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
-import { queryKeys } from "@/hooks/query-keys"
+import { recordPaymentAction } from "@/actions/payment.actions"
 import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult, DepositLocation, ReceiptPaymentData } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
@@ -80,17 +78,17 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     [allActiveLoans]
   )
 
-  // Fetch balance for selected loan
-  const { data: balanceData } = useQuery({
-    queryKey: queryKeys.loans.balance(selectedLoan?.loanId ?? ""),
-    queryFn: async () => {
-      if (!selectedLoan?.loanId) return null
-      const r = await getLoanBalanceAction(selectedLoan.loanId)
-      return "error" in r ? null : r.data
-    },
-    enabled: !!selectedLoan?.loanId,
-    staleTime: 30_000,
-  })
+  // Fetch balance for selected loan via collection
+  const selectedLoanId = selectedLoan?.loanId ?? ""
+  const balanceColl = selectedLoanId ? getLoanBalanceCollection(selectedLoanId) : null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: balanceRows } = useLiveQuery(((q: any) =>
+    balanceColl
+      ? q.from({ b: balanceColl }).select(({ b }: any) => b)
+      : q.from({ l: loanCollection }).where(() => false)
+  ) as any, [selectedLoanId])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const balanceData = (balanceRows as any)?.[0] ?? null
 
   function resetForm() {
     setSelectedLoan(null)

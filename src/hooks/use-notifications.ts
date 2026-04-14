@@ -1,17 +1,12 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
-import { getUnreadCountAction } from "@/actions/notification.actions"
-import { queryKeys } from "./query-keys"
+import { useLiveQuery } from "@tanstack/react-db"
+import { notificationUnreadCountCollection } from "@/collections"
 
 export function useNotificationUnreadCount() {
-  return useQuery<number>({
-    queryKey: queryKeys.notifications.unreadCount(),
-    queryFn: async () => {
-      const result = await getUnreadCountAction()
-      if ("data" in result) return result.data ?? 0
-      return 0
-    },
-    refetchInterval: 60000,
-  })
+  const { data } = useLiveQuery((q) =>
+    q.from({ n: notificationUnreadCountCollection }).select(({ n }) => n)
+  )
+  const count = data?.[0]?.count ?? 0
+  return { data: count }
 }

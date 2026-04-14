@@ -1,6 +1,7 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
+import { creditorCollection, systemCapitalCollection, creditorMonthlyDueCollection } from "@/collections"
 import { useSession } from "@/lib/auth-client"
 import { ButtonLink } from "@/components/ui/button-link"
 import { KpiCard } from "@/components/dashboard/kpi-card"
@@ -10,8 +11,6 @@ import { formatCurrency } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { PermissionInfo } from "@/components/ui/permission-info"
-import { queryKeys } from "@/hooks/query-keys"
-import { listCreditorsAction, getSystemCapitalAction, getCreditorMonthlyInterestDueAction } from "@/actions/creditor.actions"
 import { usePermissions } from "@/hooks/use-permissions"
 
 const defaultCapital = {
@@ -22,41 +21,30 @@ const defaultCapital = {
 }
 
 export default function CreditorsPage() {
-  const { data: session } = useSession()
-  const { has } = usePermissions()
+  const { data: session, isPending: sessionPending } = useSession()
+  const { permissions, has } = usePermissions()
+  const permissionsLoaded = permissions.size > 0
   const isSupervisorOrAbove = has("creditor:read")
 
-  const { data: creditors = [], isLoading: creditorsLoading } = useQuery({
-    queryKey: queryKeys.creditors.all,
-    queryFn: async () => {
-      const result = await listCreditorsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-    enabled: !!session && isSupervisorOrAbove,
-  })
+  const { data: allCreditors, isLoading: creditorsLoading } = useLiveQuery((q) =>
+    q.from({ c: creditorCollection }).select(({ c }) => c)
+  )
+  const creditors = allCreditors ?? []
 
-  const { data: capital = defaultCapital, isLoading: capitalLoading } = useQuery({
-    queryKey: queryKeys.creditors.capital(),
-    queryFn: async () => {
-      const result = await getSystemCapitalAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-    enabled: !!session && isSupervisorOrAbove,
-  })
+  const { data: capitalRows, isLoading: capitalLoading } = useLiveQuery((q) =>
+    q.from({ c: systemCapitalCollection }).select(({ c }) => c)
+  )
+  const capital = capitalRows?.[0] ?? defaultCapital
 
-  const { data: monthlyDue = {}, isLoading: monthlyDueLoading } = useQuery({
-    queryKey: queryKeys.creditors.monthlyDue(),
-    queryFn: async () => {
-      const result = await getCreditorMonthlyInterestDueAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-    enabled: !!session && isSupervisorOrAbove,
-  })
+  const { data: monthlyDueRows, isLoading: monthlyDueLoading } = useLiveQuery((q) =>
+    q.from({ m: creditorMonthlyDueCollection }).select(({ m }) => m)
+  )
+  const monthlyDue = monthlyDueRows?.[0]?.data ?? {}
 
   const isLoading = creditorsLoading || capitalLoading || monthlyDueLoading
+
+  // Wait for permissions to load before checking access
+  if (sessionPending || !permissionsLoaded) return null
 
   if (!isSupervisorOrAbove) {
     return (

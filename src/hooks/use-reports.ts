@@ -1,67 +1,19 @@
 "use client"
 
-import { useQuery } from "@tanstack/react-query"
-import { queryKeys } from "./query-keys"
-import { unwrapAction } from "./query-utils"
+import { useLiveQuery } from "@tanstack/react-db"
 import {
-  getPortfolioReportAction,
-  getPnlReportAction,
-  getBalanceSheetReportAction,
-  getRetainedEarningsReportAction,
-  getTransactionReportDataAction,
-} from "@/actions/report.actions"
+  portfolioCollection,
+  transactionReportCollection,
+  getPnlCollection,
+  getBalanceSheetCollection,
+  getRetainedEarningsCollection,
+} from "@/collections"
 import type {
   PortfolioEntry,
   PnlData,
   BalanceSheetData,
   RetainedEarningsData,
 } from "@/types"
-
-const REPORT_STALE_TIME = 60_000
-
-export function usePortfolioReport() {
-  return useQuery<PortfolioEntry[]>({
-    queryKey: queryKeys.reports.portfolio(),
-    queryFn: async () => {
-      const result = await getPortfolioReportAction()
-      return unwrapAction<PortfolioEntry[]>(result)
-    },
-    staleTime: REPORT_STALE_TIME,
-  })
-}
-
-export function usePnlReport(period: string) {
-  return useQuery<PnlData>({
-    queryKey: queryKeys.reports.pnl(period),
-    queryFn: async () => {
-      const result = await getPnlReportAction({ period })
-      return unwrapAction<PnlData>(result)
-    },
-    staleTime: REPORT_STALE_TIME,
-  })
-}
-
-export function useBalanceSheetReport(period: string) {
-  return useQuery<BalanceSheetData>({
-    queryKey: queryKeys.reports.balanceSheet(period),
-    queryFn: async () => {
-      const result = await getBalanceSheetReportAction({ period })
-      return unwrapAction<BalanceSheetData>(result)
-    },
-    staleTime: REPORT_STALE_TIME,
-  })
-}
-
-export function useRetainedEarningsReport(period: string) {
-  return useQuery<RetainedEarningsData>({
-    queryKey: queryKeys.reports.retainedEarnings(period),
-    queryFn: async () => {
-      const result = await getRetainedEarningsReportAction({ period })
-      return unwrapAction<RetainedEarningsData>(result)
-    },
-    staleTime: REPORT_STALE_TIME,
-  })
-}
 
 export type TransactionReportData = {
   transactions: Array<{
@@ -76,13 +28,59 @@ export type TransactionReportData = {
   categories: [string, string][]
 }
 
+export function usePortfolioReport() {
+  const { data, isLoading } = useLiveQuery((q) =>
+    q.from({ r: portfolioCollection }).select(({ r }) => r)
+  )
+  const rows = data ?? []
+  // Strip _key from rows to return PortfolioEntry[]
+  const entries: PortfolioEntry[] = rows.map(({ _key, ...rest }) => rest)
+  return { data: entries, isLoading, error: null }
+}
+
+export function usePnlReport(period: string) {
+  const collection = getPnlCollection(period)
+  const { data, isLoading } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ r: collection as any }).select(({ r }: any) => r),
+    [period]
+  )
+  const row = data?.[0]
+  const pnlData: PnlData | undefined = row ? { ...row, _key: undefined } as unknown as PnlData : undefined
+  return { data: pnlData, isLoading, error: null }
+}
+
+export function useBalanceSheetReport(period: string) {
+  const collection = getBalanceSheetCollection(period)
+  const { data, isLoading } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ r: collection as any }).select(({ r }: any) => r),
+    [period]
+  )
+  const row = data?.[0]
+  const bsData: BalanceSheetData | undefined = row ? { ...row, _key: undefined } as unknown as BalanceSheetData : undefined
+  return { data: bsData, isLoading, error: null }
+}
+
+export function useRetainedEarningsReport(period: string) {
+  const collection = getRetainedEarningsCollection(period)
+  const { data, isLoading } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ r: collection as any }).select(({ r }: any) => r),
+    [period]
+  )
+  const row = data?.[0]
+  const reData: RetainedEarningsData | undefined = row ? { ...row, _key: undefined } as unknown as RetainedEarningsData : undefined
+  return { data: reData, isLoading, error: null }
+}
+
 export function useTransactionReportData() {
-  return useQuery<TransactionReportData>({
-    queryKey: queryKeys.reports.transactions(),
-    queryFn: async () => {
-      const result = await getTransactionReportDataAction()
-      return unwrapAction<TransactionReportData>(result)
-    },
-    staleTime: REPORT_STALE_TIME,
-  })
+  const { data, isLoading } = useLiveQuery((q) =>
+    q.from({ r: transactionReportCollection }).select(({ r }) => r)
+  )
+  const row = data?.[0]
+  const txData: TransactionReportData | undefined = row
+    ? { transactions: row.transactions, categories: row.categories }
+    : undefined
+  return { data: txData, isLoading, error: null }
 }

@@ -13,14 +13,12 @@ import {
   ShieldAlert,
   PlusCircle,
 } from "lucide-react"
-import { getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
-import { updatePaymentWithInput, deletePaymentWithReason } from "@/collections"
-import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction, getCurrentUserRoleAction, resolveUserNamesAction, getLoanCollateralAction } from "@/actions/loan.actions"
+import { updatePaymentWithInput, deletePaymentWithReason, currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection, getLoanBalanceCollection } from "@/collections"
+import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction } from "@/actions/rate-change-request.actions"
 import { useLiveQuery, eq } from "@tanstack/react-db"
 import { paymentCollection, rateChangeRequestCollection } from "@/collections"
-import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
 import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -58,22 +56,21 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const { has } = usePermissions()
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
-  // Fetch userRole via server action
-  const { data: userRole = "unassigned" as UserRole } = useQuery<UserRole>({
-    queryKey: ["current-user-role"],
-    queryFn: () => getCurrentUserRoleAction(),
-    staleTime: 60_000,
-  })
+  // Fetch userRole via collection
+  const { data: userRoleRows } = useLiveQuery((q) =>
+    q.from({ r: currentUserRoleCollection }).select(({ r }) => r)
+  )
+  const userRole: UserRole = userRoleRows?.[0]?.role ?? ("unassigned" as UserRole)
 
-  // Fetch collateral via server action
-  const { data: collateralData } = useQuery({
-    queryKey: [...queryKeys.loans.detail(loan.id), "collateral"],
-    queryFn: async () => {
-      const result = await getLoanCollateralAction(loan.id)
-      if ("error" in result) return null
-      return result.data
-    },
-  })
+  // Fetch collateral via collection
+  const collateralColl = getLoanCollateralCollection(loan.id)
+  const { data: collateralRows } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ c: collateralColl as any }).select(({ c }: any) => c),
+    [loan.id]
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const collateralData = (collateralRows as any)?.[0] ?? null
   const collateralNature = collateralData?.nature
   const collateralDescription = collateralData?.description ?? null
 
@@ -89,25 +86,27 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     () => [...new Set(payments.map((p) => p.recordedBy))],
     [payments]
   )
-  const { data: userNameMap = {} } = useQuery<Record<string, string>>({
-    queryKey: [...queryKeys.loans.detail(loan.id), "userNames", uniqueUserIds.join(",")],
-    queryFn: () => resolveUserNamesAction(uniqueUserIds),
-    enabled: uniqueUserIds.length > 0,
-  })
+  const userNameMapColl = getUserNameMapCollection(uniqueUserIds)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: userNameMapRows } = useLiveQuery(((q: any) =>
+    userNameMapColl
+      ? q.from({ u: userNameMapColl }).select(({ u }: any) => u)
+      : q.from({ p: paymentCollection }).where(() => false)
+  ) as any, [uniqueUserIds.join(",")])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const userNameMap: Record<string, string> = (userNameMapRows as any)?.[0]?.map ?? {}
 
   // Client-side query for payment portions — refreshes when payments change
   const activePaymentIds = payments.map((p) => p.id)
-  const { data: livePortions } = useQuery<PaymentPortionsMap>({
-    queryKey: [...queryKeys.payments.portions(loan.id), activePaymentIds.join(",")],
-    queryFn: async () => {
-      if (activePaymentIds.length === 0) return {}
-      const result = await getPaymentPortionsAction(activePaymentIds)
-      if ("error" in result) return {}
-      return result.data
-    },
-    enabled: activePaymentIds.length > 0,
-  })
-  const currentPortions = livePortions ?? {}
+  const portionsColl = getPaymentPortionsCollection(loan.id, activePaymentIds)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: portionsRows } = useLiveQuery(((q: any) =>
+    portionsColl
+      ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
+      : q.from({ p: paymentCollection }).where(() => false)
+  ) as any, [activePaymentIds.join(",")])
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const currentPortions: PaymentPortionsMap = (portionsRows as any)?.[0]?.portions ?? {}
 
   const {
     editingPayment, editAmount, editDate, editReason,
@@ -135,15 +134,14 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     [loan.id]
   )
 
-  const { data: balanceData } = useQuery({
-    queryKey: queryKeys.loans.balance(loan.id),
-    queryFn: async () => {
-      const result = await getLoanBalanceAction(loan.id)
-      if ("error" in result) return null
-      return result.data
-    },
-    enabled: loan.status === "active",
-  })
+  const balanceColl = getLoanBalanceCollection(loan.id)
+  const { data: balanceRows } = useLiveQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
+    [loan.id]
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const balanceData = (balanceRows as any)?.[0] ?? null
 
   // Prefetch record-payment data so the page loads instantly
   useEffect(() => {
