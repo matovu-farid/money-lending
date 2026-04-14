@@ -2,9 +2,10 @@
 
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client"
 import { createSyncStoragePersister } from "@tanstack/query-sync-storage-persister"
-import { QueryClient, useIsRestoring } from "@tanstack/react-query"
+import { useIsRestoring } from "@tanstack/react-query"
 import { useState } from "react"
 import dynamic from "next/dynamic"
+import { getQueryClient } from "@/lib/query-client"
 
 const ReactQueryDevtools = dynamic(
   () => import("@tanstack/react-query-devtools").then((mod) => mod.ReactQueryDevtools),
@@ -17,17 +18,7 @@ function PersistGate({ children }: { children: React.ReactNode }) {
 }
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            staleTime: 60 * 1000,
-            gcTime: 5 * 60 * 1000,
-          },
-        },
-      }),
-  )
+  const [queryClient] = useState(() => getQueryClient())
   const [persister] = useState(() =>
     createSyncStoragePersister({
       storage: typeof window !== "undefined" ? window.localStorage : undefined,
