@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import { cn } from "@/lib/utils"
 import {
   Table,
@@ -31,6 +32,9 @@ export type ResponsiveTableProps<T> = {
   emptyState?: React.ReactNode
 }
 
+const VIRTUALIZE_THRESHOLD = 50
+const ROW_HEIGHT = 48
+
 export function ResponsiveTable<T>({
   columns,
   rows,
@@ -42,47 +46,57 @@ export function ResponsiveTable<T>({
 
   const primaryCol = columns.find((c) => c.primary) ?? columns[0]
   const actionsCol = columns.find((c) => c.key === "actions")
+  const shouldVirtualize = rows.length > VIRTUALIZE_THRESHOLD
 
   return (
     <>
       {/* Desktop: standard table — hidden below md breakpoint */}
-      <div className="hidden md:block max-h-[calc(100vh-12rem)] overflow-y-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              {columns.map((col) => (
-                <TableHead
-                  key={col.key}
-                  className={cn("sticky top-0 bg-background z-10", col.align === "right" ? "text-right" : undefined)}
-                >
-                  {col.header}
-                </TableHead>
-              ))}
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((row) => {
-              const rowProps = getRowProps?.(row) ?? {}
-              const isClickable = !!rowProps.onClick
-              return (
-                <TableRow key={getRowKey(row)} {...rowProps}>
-                  {columns.map((col) => (
-                    <TableCell
-                      key={col.key}
-                      className={cn(
-                        col.align === "right" ? "text-right" : undefined,
-                        isClickable ? "cursor-pointer" : undefined
-                      )}
-                    >
-                      {col.render(row)}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
-      </div>
+      {shouldVirtualize ? (
+        <VirtualizedTable
+          columns={columns}
+          rows={rows}
+          getRowKey={getRowKey}
+          getRowProps={getRowProps}
+        />
+      ) : (
+        <div className="hidden md:block max-h-[calc(100vh-12rem)] overflow-y-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                {columns.map((col) => (
+                  <TableHead
+                    key={col.key}
+                    className={cn("sticky top-0 bg-background z-10", col.align === "right" ? "text-right" : undefined)}
+                  >
+                    {col.header}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => {
+                const rowProps = getRowProps?.(row) ?? {}
+                const isClickable = !!rowProps.onClick
+                return (
+                  <TableRow key={getRowKey(row)} {...rowProps}>
+                    {columns.map((col) => (
+                      <TableCell
+                        key={col.key}
+                        className={cn(
+                          col.align === "right" ? "text-right" : undefined,
+                          isClickable ? "cursor-pointer" : undefined
+                        )}
+                      >
+                        {col.render(row)}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
 
       {/* Mobile: stacked cards — hidden at md+ breakpoint */}
       <div className="md:hidden space-y-2">
@@ -145,5 +159,87 @@ export function ResponsiveTable<T>({
         })}
       </div>
     </>
+  )
+}
+
+function VirtualizedTable<T>({
+  columns,
+  rows,
+  getRowKey,
+  getRowProps,
+}: {
+  columns: Column<T>[]
+  rows: T[]
+  getRowKey: (row: T) => string
+  getRowProps?: (row: T) => RowProps
+}) {
+  const parentRef = React.useRef<HTMLDivElement>(null)
+
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ROW_HEIGHT,
+    overscan: 10,
+  })
+
+  return (
+    <div
+      ref={parentRef}
+      className="hidden md:block max-h-[calc(100vh-12rem)] overflow-y-auto"
+    >
+      <Table>
+        <TableHeader>
+          <TableRow>
+            {columns.map((col) => (
+              <TableHead
+                key={col.key}
+                className={cn("sticky top-0 bg-background z-10", col.align === "right" ? "text-right" : undefined)}
+              >
+                {col.header}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {virtualizer.getVirtualItems().length > 0 && (
+            <tr style={{ height: virtualizer.getVirtualItems()[0].start }} />
+          )}
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index]
+            const rowProps = getRowProps?.(row) ?? {}
+            const isClickable = !!rowProps.onClick
+            return (
+              <TableRow
+                key={getRowKey(row)}
+                data-index={virtualRow.index}
+                ref={virtualizer.measureElement}
+                {...rowProps}
+              >
+                {columns.map((col) => (
+                  <TableCell
+                    key={col.key}
+                    className={cn(
+                      col.align === "right" ? "text-right" : undefined,
+                      isClickable ? "cursor-pointer" : undefined
+                    )}
+                  >
+                    {col.render(row)}
+                  </TableCell>
+                ))}
+              </TableRow>
+            )
+          })}
+          {virtualizer.getVirtualItems().length > 0 && (
+            <tr
+              style={{
+                height:
+                  virtualizer.getTotalSize() -
+                  (virtualizer.getVirtualItems().at(-1)?.end ?? 0),
+              }}
+            />
+          )}
+        </TableBody>
+      </Table>
+    </div>
   )
 }

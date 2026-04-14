@@ -23,6 +23,7 @@ import BigNumber from "bignumber.js"
 import { daysBetween } from "@/lib/db/utils"
 
 export const recordPaymentAction = withAction<RecordPaymentInput, any>({
+  permission: "payment:create",
   action: async (session, input) => {
     if (!input.loanId?.trim()) {
       return { error: "Loan ID is required" }
@@ -157,10 +158,12 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
 })
 
 export const listPaymentsAction = withAction<ListPaymentsInput, any>({
+  permission: "payment:read",
   effect: (_session, input) => listPayments(input),
 })
 
 export const getPaymentsByLoanAction = withAction<string, any>({
+  permission: "payment:read",
   action: async (_session, loanId) => {
     if (!loanId?.trim()) {
       return { error: "Loan ID is required" }
@@ -180,6 +183,7 @@ export const getPaymentsByLoanAction = withAction<string, any>({
 })
 
 export const searchActiveLoansAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, query) => {
     const trimmed = query?.trim() ?? ""
     if (!trimmed) {
@@ -196,10 +200,12 @@ export const searchActiveLoansAction = withAction<string, any>({
 })
 
 export const getRecentlyCollectedLoansAction = withAction({
+  permission: "payment:read",
   effect: (session) => getRecentlyCollectedLoans(session.user.id, 5),
 })
 
 export const getLoanBalanceAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, loanId) => {
     if (!loanId?.trim()) {
       return { error: "Loan ID is required" }
@@ -445,6 +451,7 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
 })
 
 export const getPaymentPortionsAction = withAction<string[], any>({
+  permission: "payment:read",
   action: async (_session, paymentIds) => {
     if (!paymentIds || paymentIds.length === 0) {
       return { data: {} as Record<string, { interestPortion: string; principalPortion: string }> }

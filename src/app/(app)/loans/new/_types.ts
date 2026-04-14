@@ -14,6 +14,7 @@ export interface LoanFormValues {
 
 export interface ReceiptData {
   receiptNumber: string
+  loanId: string
   customerId: string
   customerName: string
   loanAmount: string

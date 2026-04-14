@@ -40,11 +40,11 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
     if (format === "pdf") {
       const { generateBalanceSheetPdf } = await import("@/services/export/pdf.service")
       const buffer = generateBalanceSheetPdf(bsData)
-      return { blob: new Blob([buffer], { type: "application/pdf" }), filename: `balance-sheet-${period}.pdf` }
+      return { blob: new Blob([buffer as BlobPart], { type: "application/pdf" }), filename: `balance-sheet-${period}.pdf` }
     }
     const { generateBalanceSheetExcel } = await import("@/services/export/excel.service")
     const buffer = await generateBalanceSheetExcel(bsData)
-    return { blob: new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `balance-sheet-${period}.xlsx` }
+    return { blob: new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `balance-sheet-${period}.xlsx` }
   }, [bsData, period])
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>

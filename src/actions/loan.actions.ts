@@ -48,6 +48,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
     const [row] = await db
       .select({
         id: loans.id,
+        customerId: loans.customerId,
         customerName: customers.fullName,
         startDate: loans.startDate,
       })
@@ -60,6 +61,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
     return {
       data: {
         loanId: row.id,
+        customerId: row.customerId,
         customerName: row.customerName,
         loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
         startDate: new Date(row.startDate).toISOString().slice(0, 10),

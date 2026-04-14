@@ -24,11 +24,11 @@ export function PnlClient({ period }: PnlClientProps) {
     if (format === "pdf") {
       const { generatePnlPdf } = await import("@/services/export/pdf.service")
       const buffer = generatePnlPdf(data)
-      return { blob: new Blob([buffer], { type: "application/pdf" }), filename: `pnl-${period}.pdf` }
+      return { blob: new Blob([buffer as BlobPart], { type: "application/pdf" }), filename: `pnl-${period}.pdf` }
     }
     const { generatePnlExcel } = await import("@/services/export/excel.service")
     const buffer = await generatePnlExcel(data)
-    return { blob: new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `pnl-${period}.xlsx` }
+    return { blob: new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `pnl-${period}.xlsx` }
   }, [data, period])
 
   if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>

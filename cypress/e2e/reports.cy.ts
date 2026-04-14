@@ -11,11 +11,13 @@ describe("Reports", () => {
     cy.contains("Financial reporting and analytics").should("be.visible")
   })
 
-  it("shows all 4 report cards", () => {
+  it("shows all 6 report cards", () => {
     cy.visit("/reports")
     cy.contains("Loan Portfolio", { timeout: 15000 }).should("be.visible")
     cy.contains("Profit & Loss").should("be.visible")
+    cy.contains("Retained Earnings").should("be.visible")
     cy.contains("Balance Sheet").should("be.visible")
+    cy.contains("Active Loans").should("be.visible")
     cy.contains("Transaction Log").should("be.visible")
   })
 
@@ -59,8 +61,28 @@ describe("Reports", () => {
     cy.visit("/reports")
     cy.contains("Active loans with days remaining", { timeout: 15000 }).should("be.visible")
     cy.contains("Monthly income and expense summary").should("be.visible")
+    cy.contains("Beginning balance, net income, and ending retained earnings").should("be.visible")
     cy.contains("Assets, liabilities, and equity").should("be.visible")
+    cy.contains("Active loans with principal, interest, contact info, and days overdue").should("be.visible")
     cy.contains("Full audit trail").should("be.visible")
+  })
+
+  it("navigates to Retained Earnings report", () => {
+    cy.visit("/reports")
+    cy.contains("Retained Earnings", { timeout: 15000 })
+      .closest("[data-slot=card]")
+      .contains("View Report")
+      .click()
+    cy.url().should("include", "/reports/retained-earnings")
+  })
+
+  it("navigates to Active Loans report", () => {
+    cy.visit("/reports")
+    cy.contains("Active Loans", { timeout: 15000 })
+      .closest("[data-slot=card]")
+      .contains("View Report")
+      .click()
+    cy.url().should("include", "/reports/active-loans")
   })
 
   context("at mobile viewport (390x844)", () => {

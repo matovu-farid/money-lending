@@ -1,13 +1,12 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { ArrowLeft } from "lucide-react"
-import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
-import { recordPaymentAction, getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
+import { generateClientId } from "@/lib/client-id"
+import { insertPaymentWithInput } from "@/collections/payments"
 import { useSession } from "@/lib/auth-client"
 import { generateReceiptNumber } from "@/lib/receipt-number"
 import { Button } from "@/components/ui/button"
@@ -25,14 +24,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog"
-import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { formatCurrency, formatDate, formatNumberWithCommas, todayDateString } from "@/lib/utils"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
+import type { PaymentWithCustomer, RecordPaymentInput } from "@/types/payment"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 interface BalanceData {
   outstandingPrincipal: string
@@ -42,6 +40,7 @@ interface BalanceData {
 
 interface RecordPaymentFormProps {
   loanId: string
+  customerId: string
   customerName: string
   loanReference: string
   loanStartDate: string
@@ -61,11 +60,9 @@ function BalanceSkeleton() {
   return <span className="inline-block h-4 w-24 rounded bg-muted-foreground/10 animate-pulse align-middle" />
 }
 
-export function RecordPaymentForm({ loanId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
+export function RecordPaymentForm({ loanId, customerId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
   const router = useRouter()
-  const queryClient = useQueryClient()
   const { data: session } = useSession()
-  const [isPending, startTransition] = useTransition()
   const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingData, setPendingData] = useState<PaymentFormValues | null>(null)
@@ -94,33 +91,52 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
     if (!pendingData) return
     setConfirmOpen(false)
 
-    startTransition(async () => {
-      const result = await recordPaymentAction({
-        loanId,
-        paymentDate: pendingData.paymentDate + "T12:00:00",
-        amount: pendingData.amount.trim(),
-        depositLocation: pendingData.depositLocation,
-        note: pendingData.note.trim() || undefined,
-      })
+    const id = generateClientId()
+    const now = new Date()
 
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
+    const optimistic: PaymentWithCustomer = {
+      id,
+      loanId,
+      customerId,
+      customerName,
+      paymentDate: new Date(pendingData.paymentDate + "T12:00:00"),
+      amount: pendingData.amount.trim(),
+      interestPortion: "0",
+      principalPortion: "0",
+      principalBalanceAfter: "0",
+      outstandingBalance: "0",
+      recordedBy: "",
+      recorderName: "",
+      depositLocation: pendingData.depositLocation,
+      createdAt: now,
+    }
 
-      toast.success("Payment recorded successfully")
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.payments.all }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.all }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all }),
-      ])
+    const input: RecordPaymentInput = {
+      id,
+      loanId,
+      paymentDate: pendingData.paymentDate + "T12:00:00",
+      amount: pendingData.amount.trim(),
+      depositLocation: pendingData.depositLocation,
+      note: pendingData.note.trim() || undefined,
+    }
 
-      setReceiptData({
-        payment: { ...result.data, depositLocationValue: pendingData.depositLocation },
-        receiptNumber: generateReceiptNumber(),
-      })
-      setPendingData(null)
+    insertPaymentWithInput(id, optimistic, input)
+    toast.success("Payment recorded successfully")
+
+    setReceiptData({
+      payment: {
+        ...optimistic,
+        depositLocationValue: pendingData.depositLocation,
+        allocation: {
+          interestPortion: "0",
+          principalPortion: "0",
+          principalBalanceAfter: "0",
+          outstandingBalanceAfter: "0",
+        },
+      } as unknown as ReceiptPaymentData,
+      receiptNumber: generateReceiptNumber(),
     })
+    setPendingData(null)
   }
 
   return (
@@ -207,7 +223,6 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
                 type="date"
                 min={loanStartDate}
                 max={todayDateString()}
-                disabled={isPending}
                 {...register("paymentDate", { required: "Payment date is required" })}
               />
               {errors.paymentDate && (
@@ -220,7 +235,6 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
               control={control}
               label="Amount (UGX)"
               required="Amount must be a valid number (e.g. 150000 or 150000.50)"
-              disabled={isPending}
               id="amount"
               presets={AMOUNT_PRESETS}
             />
@@ -229,7 +243,6 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
               name="depositLocation"
               control={control}
               label="Deposit Location"
-              disabled={isPending}
               id="depositLocation"
             />
 
@@ -238,22 +251,14 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
               <Textarea
                 id="note"
                 placeholder="Optional note"
-                disabled={isPending}
                 maxLength={2500}
                 {...register("note")}
               />
             </div>
 
             <div className="pt-2">
-              <Button type="submit" disabled={isPending} className="w-full sm:w-auto">
-                {isPending ? (
-                  <>
-                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                    Recording...
-                  </>
-                ) : (
-                  "Record Payment"
-                )}
+              <Button type="submit" className="w-full sm:w-auto">
+                Record Payment
               </Button>
             </div>
           </form>
@@ -309,15 +314,8 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmedSubmit} disabled={isPending}>
-              {isPending ? (
-                <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
-                  Recording...
-                </>
-              ) : (
-                "Confirm & Record"
-              )}
+            <Button onClick={handleConfirmedSubmit}>
+              Confirm &amp; Record
             </Button>
           </DialogFooter>
         </DrawerDialogContent>
@@ -328,26 +326,6 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
         open={receiptData !== null}
         onClose={() => {
           setReceiptData(null)
-          // Invalidate stale data so loan detail page loads with fresh data
-          queryClient.invalidateQueries({ queryKey: queryKeys.payments.byLoan(loanId) })
-          queryClient.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
-          queryClient.invalidateQueries({ queryKey: queryKeys.payments.portions(loanId) })
-          // Reset debounce keys so fresh data is fetched after invalidation
-          prefetchQueue.resetKey(`data:payments-by-loan-${loanId}`)
-          prefetchQueue.resetKey(`data:loan-balance-${loanId}`)
-          prefetchQueue.add(() =>
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.payments.byLoan(loanId),
-              queryFn: () => getPaymentsByLoanAction(loanId),
-            }), Priority.CRITICAL, `data:payments-by-loan-${loanId}`)
-          prefetchQueue.add(() =>
-            queryClient.prefetchQuery({
-              queryKey: queryKeys.loans.balance(loanId),
-              queryFn: () => getLoanBalanceAction(loanId),
-            }), Priority.CRITICAL, `data:loan-balance-${loanId}`)
-          prefetchQueue.add(
-            () => router.prefetch(`/loans/${loanId}`),
-            Priority.CRITICAL, `route:/loans/${loanId}`)
           router.push(`/loans/${loanId}`)
         }}
         title="Payment Receipt"

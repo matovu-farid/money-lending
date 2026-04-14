@@ -33,6 +33,7 @@ export const settleWithCollateralAction = withAction<SettleWithCollateralInput, 
 })
 
 export const checkCustomerActiveLoanAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, customerId) => {
     if (!customerId?.trim()) {
       return { data: null }

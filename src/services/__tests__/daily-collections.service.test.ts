@@ -68,7 +68,10 @@ const makeLoanWithCustomer = (overrides: Record<string, unknown> = {}) => ({
   startDate: new Date("2026-01-01T00:00:00.000Z"),
   interestRate: "0.1000",
   interestRateOverride: null,
+  penaltyWaived: false,
+  penaltyMultiplier: null,
   loanType: "perpetual",
+  termMonths: null,
   customerName: "John Doe",
   ...overrides,
 })
@@ -121,13 +124,22 @@ describe("daily-collections.service", () => {
   })
 
   describe("getDailyCollections", () => {
-    it("returns total and count for date with payments", async () => {
+    it("returns total and count for date with payments (via ledger portions)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger } = await import("@/services/ledger-queries.service")
 
-      const row1 = makePaymentRow({ amount: "150000.00" })
-      const row2 = makePaymentRow({ paymentId: "pay-2", amount: "150000.00" })
+      const row1 = makePaymentRow({ paymentId: "pay-1", amount: "150000" })
+      const row2 = makePaymentRow({ paymentId: "pay-2", amount: "150000" })
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
         chainedSelect([row1, row2])
+      )
+
+      // Return realistic portions so the primary ledger path is exercised
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([
+          ["pay-1", { interestPortion: "100000", principalPortion: "50000" }],
+          ["pay-2", { interestPortion: "100000", principalPortion: "50000" }],
+        ])
       )
 
       const { getDailyCollections } = await import(
@@ -136,9 +148,14 @@ describe("daily-collections.service", () => {
       const result = await Effect.runPromise(getDailyCollections("2026-03-23"))
 
       expect(result.date).toBe("2026-03-23")
+      // totalCollected = sum of (interest + principal) from ledger portions
+      // = (100000 + 50000) + (100000 + 50000) = 300000
       expect(result.totalCollected).toBe("300000")
       expect(result.paymentCount).toBe(2)
       expect(result.rows).toHaveLength(2)
+      // Verify rows have ledger-derived portions, not default zeros
+      expect(result.rows[0].interestPortion).toBe("100000")
+      expect(result.rows[0].principalPortion).toBe("50000")
     })
 
     it("returns zero totals for date with no payments", async () => {
@@ -159,14 +176,22 @@ describe("daily-collections.service", () => {
       expect(result.rows).toEqual([])
     })
 
-    it("sums amounts using BigNumber precision", async () => {
+    it("sums amounts using BigNumber precision via ledger portions", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger } = await import("@/services/ledger-queries.service")
 
-      // Use values that would lose precision with floating-point arithmetic
-      const row1 = makePaymentRow({ amount: "150000.50" })
-      const row2 = makePaymentRow({ paymentId: "pay-2", amount: "250000.75" })
+      const row1 = makePaymentRow({ paymentId: "pay-1", amount: "150001" })
+      const row2 = makePaymentRow({ paymentId: "pay-2", amount: "250000" })
       ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
         chainedSelect([row1, row2])
+      )
+
+      // Ledger portions that would lose precision with floating-point
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([
+          ["pay-1", { interestPortion: "100001", principalPortion: "50000" }],
+          ["pay-2", { interestPortion: "200000", principalPortion: "50000" }],
+        ])
       )
 
       const { getDailyCollections } = await import(
@@ -174,7 +199,7 @@ describe("daily-collections.service", () => {
       )
       const result = await Effect.runPromise(getDailyCollections("2026-03-23"))
 
-      // BigNumber precision: 150000.50 + 250000.75 = 400001.25 exactly
+      // BigNumber precision: (100001 + 50000) + (200000 + 50000) = 400001
       expect(result.totalCollected).toBe("400001")
     })
   })

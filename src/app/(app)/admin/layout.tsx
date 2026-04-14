@@ -6,10 +6,11 @@ import { useSession } from "@/lib/auth-client"
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const { isPending } = useSession()
-  const { has } = usePermissions()
+  const { permissions, has } = usePermissions()
   const router = useRouter()
 
-  if (isPending) return null
+  // Wait for both session and permissions to load
+  if (isPending || permissions.size === 0) return null
 
   if (!has("user:list")) {
     router.replace("/dashboard")

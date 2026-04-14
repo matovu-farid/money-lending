@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import BigNumber from "bignumber.js"
 import { calculateInterest, calculateDaysOverdue, calculateDailyRate } from "@/lib/interest/engine"
 import { Effect } from "effect"
+import { periodBoundsUTC } from "@/lib/date-utils"
 
 vi.mock("@/lib/db", () => ({
   db: { select: vi.fn(), insert: vi.fn() },
@@ -17,60 +18,93 @@ vi.mock("@/services/ledger-queries.service", () => ({
 }))
 
 vi.mock("@/lib/interest/overdue", () => ({
-  computeLoanOverdueInfo: vi.fn().mockReturnValue({ daysOverdue: 0, dailyRate: "0", unpaidInterest: "0" }),
+  computeLoanOverdueInfo: vi.fn().mockReturnValue({
+    daysOverdue: 0,
+    dailyRate: "0",
+    unpaidInterest: "0",
+    penaltyActive: false,
+    effectiveRate: "0.10",
+  }),
 }))
 
-describe("Report Service — P&L aggregation math", () => {
-  it("sums income categories and expense categories correctly (RPTS-02)", () => {
-    // Given transactions for Feb 2026:
-    //   Income: Interest Earned = 500,000; Share Capital = 1,000,000
-    //   Expenses: Rent = 200,000; Salaries = 300,000
-    // Expected:
-    //   totalIncome  = 1,500,000
-    //   totalExpenses = 500,000
-    //   netProfit    = 1,000,000
+/** Build a Drizzle-like chain that resolves to `rows` */
+function chainedSelect(rows: unknown[]) {
+  const terminal = {
+    then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) =>
+      Promise.resolve(rows).then(resolve, reject),
+    groupBy: vi.fn().mockResolvedValue(rows),
+  }
+  return {
+    from: vi.fn().mockReturnValue({
+      innerJoin: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue(terminal),
+      }),
+      where: vi.fn().mockReturnValue(terminal),
+    }),
+  }
+}
 
-    const incomeRows = [
-      { category: "Interest Earned", amount: "500000" },
-      { category: "Share Capital", amount: "1000000" },
-    ]
-    const expenseRows = [
-      { category: "Rent", amount: "200000" },
-      { category: "Salaries", amount: "300000" },
-    ]
-
-    const totalIncome = incomeRows.reduce(
-      (sum, row) => sum.plus(new BigNumber(row.amount)),
-      new BigNumber(0)
-    )
-    const totalExpenses = expenseRows.reduce(
-      (sum, row) => sum.plus(new BigNumber(row.amount)),
-      new BigNumber(0)
-    )
-    const netProfit = totalIncome.minus(totalExpenses)
-
-    expect(totalIncome.toFixed(2)).toBe("1500000.00")
-    expect(totalExpenses.toFixed(2)).toBe("500000.00")
-    expect(netProfit.toFixed(2)).toBe("1000000.00")
+describe("Report Service — getPnlData (real service, mocked DB)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
   })
 
-  it("returns zeros when no transactions exist for a period (RPTS-02)", () => {
-    const incomeRows: { category: string; amount: string }[] = []
-    const expenseRows: { category: string; amount: string }[] = []
+  it("aggregates income and expense categories from DB rows (RPTS-02)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
 
-    const totalIncome = incomeRows.reduce(
-      (sum, row) => sum.plus(new BigNumber(row.amount)),
-      new BigNumber(0)
+    // Mock DB to return transaction rows matching what getPnlData queries
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
+      chainedSelect([
+        { type: "credit", amount: "500000", categoryName: "Interest Earned", categoryType: "revenue" },
+        { type: "credit", amount: "50000", categoryName: "Issuance Fees", categoryType: "revenue" },
+        { type: "debit", amount: "200000", categoryName: "Rent", categoryType: "expense" },
+        { type: "debit", amount: "300000", categoryName: "Salaries", categoryType: "expense" },
+      ])
     )
-    const totalExpenses = expenseRows.reduce(
-      (sum, row) => sum.plus(new BigNumber(row.amount)),
-      new BigNumber(0)
-    )
-    const netProfit = totalIncome.minus(totalExpenses)
 
-    expect(totalIncome.toFixed(2)).toBe("0.00")
-    expect(totalExpenses.toFixed(2)).toBe("0.00")
-    expect(netProfit.toFixed(2)).toBe("0.00")
+    const { getPnlData } = await import("@/services/report.service")
+    const result = await Effect.runPromise(getPnlData("2026-02"))
+
+    expect(result.period).toBe("2026-02")
+    expect(result.totalIncome).toBe("550000")
+    expect(result.totalExpenses).toBe("500000")
+    expect(result.netProfit).toBe("50000")
+    expect(result.income).toHaveLength(2)
+    expect(result.expenses).toHaveLength(2)
+  })
+
+  it("handles reversals — DR to revenue subtracts income (RPTS-02)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
+      chainedSelect([
+        { type: "credit", amount: "100000", categoryName: "Interest Earned", categoryType: "revenue" },
+        { type: "debit", amount: "20000", categoryName: "Interest Earned", categoryType: "revenue" }, // reversal
+      ])
+    )
+
+    const { getPnlData } = await import("@/services/report.service")
+    const result = await Effect.runPromise(getPnlData("2026-02"))
+
+    // Net income = 100000 - 20000 = 80000
+    expect(result.totalIncome).toBe("80000")
+    expect(result.income).toHaveLength(1)
+    expect(result.income[0].amount).toBe("80000")
+  })
+
+  it("returns zeros when no transactions exist (RPTS-02)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
+      chainedSelect([])
+    )
+
+    const { getPnlData } = await import("@/services/report.service")
+    const result = await Effect.runPromise(getPnlData("2026-02"))
+
+    expect(result.totalIncome).toBe("0")
+    expect(result.totalExpenses).toBe("0")
+    expect(result.netProfit).toBe("0")
   })
 })
 
@@ -536,5 +570,38 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
 
     // loan-a at 60 days with no payments should be risk-flagged
     expect(result[0].riskFlag).toBe(true)
+  })
+})
+
+describe("Report Service — Period boundary construction (BUG-9/12)", () => {
+  it("periodBoundsUTC constructs UTC boundaries, not local time", () => {
+    const { periodStart, periodEnd } = periodBoundsUTC("2026-03")
+    // March 1 at UTC midnight
+    expect(periodStart.toISOString()).toBe("2026-03-01T00:00:00.000Z")
+    // March 31 at 23:59:59.999 UTC
+    expect(periodEnd.toISOString()).toBe("2026-03-31T23:59:59.999Z")
+  })
+
+  it("periodBoundsUTC handles February correctly", () => {
+    const { periodStart, periodEnd } = periodBoundsUTC("2025-02")
+    expect(periodStart.toISOString()).toBe("2025-02-01T00:00:00.000Z")
+    expect(periodEnd.toISOString()).toBe("2025-02-28T23:59:59.999Z")
+  })
+
+  it("periodBoundsUTC handles leap year February", () => {
+    const { periodEnd } = periodBoundsUTC("2024-02")
+    expect(periodEnd.toISOString()).toBe("2024-02-29T23:59:59.999Z")
+  })
+
+  it("periodBoundsUTC handles December year-end", () => {
+    const { periodStart, periodEnd } = periodBoundsUTC("2025-12")
+    expect(periodStart.toISOString()).toBe("2025-12-01T00:00:00.000Z")
+    expect(periodEnd.toISOString()).toBe("2025-12-31T23:59:59.999Z")
+  })
+
+  it("prior period boundary is exactly 1ms before periodStart", () => {
+    const { periodStart } = periodBoundsUTC("2026-03")
+    const priorEnd = new Date(periodStart.getTime() - 1)
+    expect(priorEnd.toISOString()).toBe("2026-02-28T23:59:59.999Z")
   })
 })

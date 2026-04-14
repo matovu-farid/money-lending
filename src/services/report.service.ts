@@ -22,6 +22,7 @@ import { formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./ledger-queries.service"
+import { periodBoundsUTC, asOfDateUTC } from "@/lib/date-utils"
 import { toLoanType, type PnlData, type BalanceSheetData, type PortfolioEntry, type RetainedEarningsData } from "@/types"
 
 export const getPnlData = (
@@ -29,9 +30,7 @@ export const getPnlData = (
 ): Effect.Effect<PnlData, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [year, month] = period.split("-").map(Number)
-      const periodStart = new Date(year, month - 1, 1)
-      const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
+      const { periodStart, periodEnd } = periodBoundsUTC(period)
 
       const incomeMap = new Map<string, BigNumber>()
       const expenseMap = new Map<string, BigNumber>()
@@ -110,9 +109,7 @@ export const getRetainedEarningsData = (
 ): Effect.Effect<RetainedEarningsData, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [year, month] = period.split("-").map(Number)
-      const periodStart = new Date(year, month - 1, 1)
-      const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
+      const { periodStart, periodEnd } = periodBoundsUTC(period)
 
       // Beginning balance: all income/expense transactions BEFORE this period
       const priorRows = await db
@@ -232,13 +229,7 @@ export const getBalanceSheetData = (
 ): Effect.Effect<BalanceSheetData, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      let asOfDate: Date
-      if (/^\d{4}-\d{2}$/.test(asOf)) {
-        const [year, month] = asOf.split("-").map(Number)
-        asOfDate = new Date(year, month, 0, 23, 59, 59, 999)
-      } else {
-        asOfDate = new Date(asOf + "T23:59:59.999Z")
-      }
+      const asOfDate = asOfDateUTC(asOf)
 
       // Single ledger query — group by category name, type, transaction type, and location
       const rows = await db
@@ -495,9 +486,7 @@ export const generateMonthlySnapshot = (
 ): Effect.Effect<void, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [year, month] = period.split("-").map(Number)
-      const periodStart = new Date(year, month - 1, 1)
-      const periodEnd = new Date(year, month, 0, 23, 59, 59, 999)
+      const { periodStart, periodEnd } = periodBoundsUTC(period)
 
       const existingSnapshots = await db
         .select({ type: financialSnapshots.type })

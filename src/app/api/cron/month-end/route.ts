@@ -2,6 +2,7 @@ import { Effect } from "effect"
 import { generateMonthlySnapshot } from "@/services/report.service"
 import { accrueInterestForLoans, accrueInterestForCreditors } from "@/services/transaction.service"
 import { NextResponse } from "next/server"
+import { periodBoundsUTC } from "@/lib/date-utils"
 
 export async function POST(request: Request) {
   // Fail-closed: reject if CRON_SECRET is not configured
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
   const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1)
   const period = `${lastMonth.getFullYear()}-${String(lastMonth.getMonth() + 1).padStart(2, "0")}`
 
-  const periodEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+  const { periodEnd } = periodBoundsUTC(period)
 
   try {
     // Accrue interest BEFORE generating snapshots so P&L and balance sheet

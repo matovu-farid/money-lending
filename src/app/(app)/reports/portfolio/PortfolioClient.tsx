@@ -28,7 +28,7 @@ export function PortfolioClient() {
         )
         const buffer = generatePortfolioPdf(data)
         return {
-          blob: new Blob([buffer], { type: "application/pdf" }),
+          blob: new Blob([buffer as BlobPart], { type: "application/pdf" }),
           filename: "portfolio-report.pdf",
         }
       }
@@ -37,7 +37,7 @@ export function PortfolioClient() {
       )
       const buffer = await generatePortfolioExcel(data)
       return {
-        blob: new Blob([buffer], {
+        blob: new Blob([buffer as BlobPart], {
           type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }),
         filename: "portfolio-report.xlsx",

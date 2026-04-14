@@ -8,6 +8,7 @@ import {
 } from "@/services/daily-collections.service"
 
 export const getDailyCollectionsAction = withAction<string, any>({
+  permission: "payment:read",
   action: async (_session, date) => {
     if (!date?.trim() || isNaN(Date.parse(date))) {
       return { error: "Invalid date" }
@@ -23,5 +24,6 @@ export const getDailyCollectionsAction = withAction<string, any>({
 })
 
 export const getLoansDueTodayAction = withAction({
+  permission: "loan:read",
   effect: () => getLoansDueToday(),
 })

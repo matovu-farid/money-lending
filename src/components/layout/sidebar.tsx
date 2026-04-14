@@ -36,7 +36,6 @@ import {
   getPortfolioReportAction,
   getPnlReportAction,
   getBalanceSheetReportAction,
-  getTransactionReportDataAction,
 } from "@/actions/report.actions"
 import { getCurrentMonth } from "@/lib/utils"
 import { useSidebarStore } from "@/lib/stores/sidebar"
@@ -77,9 +76,10 @@ function getNavGroups(has: (p: Permission) => boolean): NavGroup[] {
     topItems.push({ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard })
   }
 
-  const capitalItems: NavItem[] = [
-    { label: "Expenses", href: "/expenses", icon: Receipt },
-  ]
+  const capitalItems: NavItem[] = []
+  if (has("expense:read")) {
+    capitalItems.push({ label: "Expenses", href: "/expenses", icon: Receipt })
+  }
   if (has("fund-transfer:read")) {
     capitalItems.push({ label: "Fund Transfers", href: "/fund-transfers", icon: ArrowRightLeft })
   }
@@ -163,7 +163,6 @@ export function Sidebar({ onClose }: SidebarProps) {
 
     // NORMAL — Secondary pages
     prefetchQueue.add(() => router.prefetch("/creditors"), NORMAL, "route:/creditors")
-    prefetchQueue.add(() => router.prefetch("/expenses"), NORMAL, "route:/expenses")
     prefetchQueue.add(() => router.prefetch("/fund-transfers"), NORMAL, "route:/fund-transfers")
 
     prefetchQueue.add(() =>
@@ -187,19 +186,22 @@ export function Sidebar({ onClose }: SidebarProps) {
         staleTime,
       }), NORMAL, "data:creditors-capital")
 
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.expenses.list({}, 1),
-        queryFn: () => listExpenseTransactionsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), NORMAL, "data:expenses-list-1")
+    if (has("expense:read")) {
+      prefetchQueue.add(() => router.prefetch("/expenses"), NORMAL, "route:/expenses")
+      prefetchQueue.add(() =>
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.expenses.list({}, 1),
+          queryFn: () => listExpenseTransactionsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+          staleTime,
+        }), NORMAL, "data:expenses-list-1")
 
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.expenses.categories(),
-        queryFn: () => listExpenseCategoriesAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), NORMAL, "data:expenses-categories")
+      prefetchQueue.add(() =>
+        queryClient.prefetchQuery({
+          queryKey: queryKeys.expenses.categories(),
+          queryFn: () => listExpenseCategoriesAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
+          staleTime,
+        }), NORMAL, "data:expenses-categories")
+    }
 
     // LOW — Report data (prefetch so exports are instant)
     const currentMonth = getCurrentMonth()
@@ -222,12 +224,8 @@ export function Sidebar({ onClose }: SidebarProps) {
         queryFn: () => getBalanceSheetReportAction({ period: currentMonth }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
         staleTime,
       }), LOW, `data:reports-balance-sheet-${currentMonth}`)
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.reports.transactions(),
-        queryFn: () => getTransactionReportDataAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), LOW, "data:reports-transactions")
+    // Skip prefetching transaction report data — it fetches up to 10K rows
+    // and is only needed for client-side export, not page display.
 
     // LOW — Conditional pages
     if (has("activity:read")) {

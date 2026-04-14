@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest"
+import fc from "fast-check"
 import {
   ac,
   unassignedRole,
@@ -10,7 +11,8 @@ import {
   MANAGING_SUPERVISOR_ELEVATED,
   getPermissionsForRole,
 } from "../permissions"
-import type { Permission } from "@/types/common"
+import type { Permission, UserRole } from "@/types/common"
+import { ROLE_LEVELS } from "@/types/common"
 
 describe("ac (access control)", () => {
   it("exposes the full statement definitions", () => {
@@ -636,5 +638,137 @@ describe("authorize — connector modes", () => {
       expect(typeof result.error).toBe("string")
       expect(result.error.length).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("Property-Based: Permission Hierarchy", () => {
+  const ALL_ROLES: UserRole[] = ["unassigned", "loanOfficer", "supervisor", "admin", "superAdmin"]
+  const ROLE_ORDER = ALL_ROLES // index = privilege level
+
+  // Arbitrary: random role
+  const arbRole = fc.constantFrom(...ALL_ROLES)
+
+  // Arbitrary: random pair of roles where first has lower privilege
+  const arbRolePair = fc.tuple(
+    fc.integer({ min: 0, max: ALL_ROLES.length - 2 }),
+    fc.integer({ min: 1, max: ALL_ROLES.length - 1 }),
+  ).filter(([lo, hi]) => lo < hi)
+   .map(([lo, hi]) => [ROLE_ORDER[lo], ROLE_ORDER[hi]] as [UserRole, UserRole])
+
+  // Arbitrary: random permission from the catalog
+  const arbPermission = fc.constantFrom(...PERMISSIONS)
+
+  it("role monotonicity: higher role is strict superset of lower role", () => {
+    fc.assert(
+      fc.property(arbRolePair, ([lowerRole, higherRole]) => {
+        const lowerPerms = getPermissionsForRole(lowerRole)
+        const higherPerms = getPermissionsForRole(higherRole)
+        // Every permission in lowerPerms must be in higherPerms
+        for (const perm of lowerPerms) {
+          if (!higherPerms.has(perm)) return false
+        }
+        // Higher role must have strictly more permissions (except unassigned→unassigned edge)
+        if (lowerRole !== "unassigned" || higherRole !== "unassigned") {
+          if (higherPerms.size <= lowerPerms.size) return false
+        }
+        return true
+      }),
+      { numRuns: 200 }
+    )
+  })
+
+  it("unassigned has zero permissions", () => {
+    expect(getPermissionsForRole("unassigned").size).toBe(0)
+  })
+
+  it("superAdmin has every permission in the catalog", () => {
+    fc.assert(
+      fc.property(arbPermission, (perm) => {
+        return getPermissionsForRole("superAdmin").has(perm)
+      }),
+      { numRuns: PERMISSIONS.length } // test every permission
+    )
+  })
+
+  it("every permission in catalog is assigned to at least one role", () => {
+    fc.assert(
+      fc.property(arbPermission, (perm) => {
+        return ALL_ROLES.some((role) => getPermissionsForRole(role).has(perm))
+      }),
+      { numRuns: PERMISSIONS.length }
+    )
+  })
+
+  it("no role has permissions outside the catalog", () => {
+    fc.assert(
+      fc.property(arbRole, (role) => {
+        const perms = getPermissionsForRole(role)
+        for (const perm of perms) {
+          if (!PERMISSIONS.includes(perm)) return false
+        }
+        return true
+      }),
+      { numRuns: 50 }
+    )
+  })
+
+  it("getPermissionsForRole is deterministic", () => {
+    fc.assert(
+      fc.property(arbRole, (role) => {
+        const a = getPermissionsForRole(role)
+        const b = getPermissionsForRole(role)
+        return a === b // same Set reference (not just equal)
+      }),
+      { numRuns: 50 }
+    )
+  })
+
+  it("MANAGING_SUPERVISOR_ELEVATED is a subset of admin permissions", () => {
+    const adminPerms = getPermissionsForRole("admin")
+    for (const perm of MANAGING_SUPERVISOR_ELEVATED) {
+      expect(adminPerms.has(perm)).toBe(true)
+    }
+  })
+
+  it("MANAGING_SUPERVISOR_ELEVATED excludes creditor:*, role:*, delegation:*", () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...Array.from(MANAGING_SUPERVISOR_ELEVATED)),
+        (perm) => {
+          return !perm.startsWith("creditor:") && !perm.startsWith("role:") && !perm.startsWith("delegation:")
+        }
+      ),
+      { numRuns: MANAGING_SUPERVISOR_ELEVATED.size }
+    )
+  })
+
+  it("supervisor + MANAGING_SUPERVISOR_ELEVATED covers all admin perms except creditor/role/delegation", () => {
+    const supervisorPerms = getPermissionsForRole("supervisor")
+    const combined = new Set([...supervisorPerms, ...MANAGING_SUPERVISOR_ELEVATED])
+    const adminPerms = getPermissionsForRole("admin")
+
+    for (const perm of adminPerms) {
+      if (perm.startsWith("creditor:") || perm.startsWith("role:") || perm.startsWith("delegation:")) continue
+      expect(combined.has(perm)).toBe(true)
+    }
+  })
+
+  it("permission set sizes are strictly increasing across role hierarchy", () => {
+    const sizes = ALL_ROLES.map((role) => getPermissionsForRole(role).size)
+    for (let i = 1; i < sizes.length; i++) {
+      expect(sizes[i]).toBeGreaterThan(sizes[i - 1])
+    }
+  })
+
+  it("unknown role returns empty set", () => {
+    fc.assert(
+      fc.property(
+        fc.string({ minLength: 1, maxLength: 20 }).filter((s) => !ALL_ROLES.includes(s as UserRole) && s !== "__proto__" && s !== "constructor" && s !== "toString" && s !== "valueOf" && s !== "hasOwnProperty"),
+        (bogus) => {
+          return getPermissionsForRole(bogus as UserRole).size === 0
+        }
+      ),
+      { numRuns: 100 }
+    )
   })
 })

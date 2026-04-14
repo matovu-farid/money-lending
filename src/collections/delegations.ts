@@ -1,0 +1,50 @@
+"use client"
+
+import { createCollection } from "@tanstack/react-db"
+import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import {
+  listDelegationsAction,
+  createDelegationAction,
+  revokeDelegationAction,
+} from "@/actions/delegation.actions"
+import { getQueryClient } from "@/lib/query-client"
+
+/** Row shape returned by listDelegationsAction */
+export interface DelegationRow {
+  id: string
+  userId: string
+  userName: string | null
+  delegatedBy: string
+  createdAt: Date
+  revokedAt: Date | null
+  revokedBy: string | null
+}
+
+export const delegationCollection = createCollection(
+  queryCollectionOptions<DelegationRow>({
+    queryKey: ["delegations"],
+    queryClient: getQueryClient(),
+    queryFn: async (_ctx): Promise<Array<DelegationRow>> => {
+      const result = await listDelegationsAction()
+      if ("error" in result) {
+        throw new Error(result.error)
+      }
+      return result.data
+    },
+    getKey: (delegation) => delegation.id,
+    onInsert: async ({ transaction }) => {
+      const { modified } = transaction.mutations[0]
+      const result = await createDelegationAction({ userId: modified.userId })
+      if ("error" in result) {
+        throw new Error(result.error)
+      }
+    },
+    onDelete: async ({ transaction }) => {
+      const { original } = transaction.mutations[0]
+      const result = await revokeDelegationAction({ delegationId: original.id })
+      if ("error" in result) {
+        throw new Error(result.error)
+      }
+    },
+  })
+)

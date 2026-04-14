@@ -9,7 +9,8 @@ import * as schema from "@/lib/db/schema"
 export const testDb = db
 
 /**
- * Truncates all application tables in a single TRUNCATE statement.
+ * Truncates all application tables in a single TRUNCATE statement,
+ * then seeds test users so audit log FK constraints are satisfied.
  */
 export async function resetDb() {
   await db.execute(sql`
@@ -33,6 +34,25 @@ export async function resetDb() {
       "user"
     CASCADE
   `)
+  // Seed test users — required by audit_log FK on actor_id → user.id
+  await seedTestUser()
+}
+
+/**
+ * Seeds a test user so audit log FK constraints are satisfied.
+ * Call after resetDb() — must run before any service that writes audit logs.
+ */
+export async function seedTestUser() {
+  await db.insert(schema.user).values([
+    { id: "test-actor", name: "Test Actor", email: "test-actor@test.local", emailVerified: true },
+    { id: "integration-test-actor", name: "Integration Actor", email: "integration@test.local", emailVerified: true },
+    { id: "fuzz-test-actor", name: "Fuzz Actor", email: "fuzz@test.local", emailVerified: true },
+    { id: "actor-1", name: "Actor One", email: "actor-1@test.local", emailVerified: true },
+    { id: "admin-1", name: "Admin One", email: "admin-1@test.local", emailVerified: true },
+    { id: "admin-2", name: "Admin Two", email: "admin-2@test.local", emailVerified: true },
+    { id: "admin-3", name: "Admin Three", email: "admin-3@test.local", emailVerified: true },
+    { id: "admin-5", name: "Admin Five", email: "admin-5@test.local", emailVerified: true },
+  ]).onConflictDoNothing()
 }
 
 /**

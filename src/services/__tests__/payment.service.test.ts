@@ -38,7 +38,13 @@ vi.mock("@/services/ledger-queries.service", () => {
 })
 
 vi.mock("@/lib/interest/overdue", () => ({
-  computeLoanOverdueInfo: vi.fn().mockReturnValue({ daysOverdue: 0, dailyRate: "0", unpaidInterest: "0" }),
+  computeLoanOverdueInfo: vi.fn().mockReturnValue({
+    daysOverdue: 0,
+    dailyRate: "0",
+    unpaidInterest: "0",
+    penaltyActive: false,
+    effectiveRate: "0.10",
+  }),
 }))
 
 vi.mock("drizzle-orm", async () => {
@@ -51,7 +57,6 @@ const mockLoan = {
   customerId: "cust-1",
   principalAmount: "500000",
   issuanceFee: "0.00",
-
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-02-20T00:00:00.000Z"),
@@ -62,6 +67,19 @@ const mockLoan = {
   disbursementSource: "cash",
   loanType: "perpetual",
   termMonths: null,
+  penaltyWaived: false,
+  penaltyMultiplier: null,
+  penaltyWaivedBy: null,
+  penaltyWaivedAt: null,
+  rolledOverFrom: null,
+  rolloverAmount: null,
+  backdatedFrom: null,
+  backdatedBy: null,
+  backdatedAt: null,
+  backdateNote: null,
+  createdAt: new Date("2026-02-20T00:00:00.000Z"),
+  updatedAt: new Date("2026-02-20T00:00:00.000Z"),
+  deletedAt: null,
 }
 
 const mockPayment = {
@@ -293,7 +311,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([mockLoan]) }
-                return { orderBy: vi.fn().mockResolvedValue([]) }
+                return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) }
               }),
             }),
           }
@@ -333,7 +351,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([mockLoan]) }
-                return { orderBy: vi.fn().mockResolvedValue([]) }
+                return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) }
               }),
             }),
           }
@@ -373,7 +391,7 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([mockLoan]) }
-                return { orderBy: vi.fn().mockResolvedValue([]) }
+                return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) }
               }),
             }),
           }
@@ -548,6 +566,69 @@ describe("Payment Service", () => {
       expect(firstCallArgs.amount).toBe("50000.00")
       expect(firstCallArgs.description).toContain("Reversal")
       expect(firstCallArgs.loanId).toBe("loan-1")
+    })
+
+    it("editPayment: computes overdue info to determine effective rate (BUG-8)", async () => {
+      const { db: mockedDb } = await import("@/lib/db")
+      const { getPaymentPortionsFromLedger, getLoanBalanceFromLedger, getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/ledger-queries.service")
+      const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
+
+      ;(getPaymentPortionsFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["pay-1", { interestPortion: "50000", principalPortion: "100000" }]])
+      )
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new BigNumber("500000"))
+        .mockResolvedValueOnce(new BigNumber("300000"))
+      ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new Map([["loan-1", new BigNumber("500000")]]))
+      ;(getInterestEarnedFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValueOnce(new Map([["loan-1", new BigNumber("50000")]]))
+
+      const editedPayment = { ...mockPayment, amount: "200000", editReason: "Fix amount" }
+
+      let txSelectCount = 0
+      const mockTx = {
+        select: vi.fn().mockImplementation(() => {
+          txSelectCount++
+          const call = txSelectCount
+          return {
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockImplementation(() => {
+                if (call === 1) return Promise.resolve([{ ...mockPayment, deletedAt: null }])
+                if (call === 2) return { for: vi.fn().mockResolvedValue([mockLoan]) }
+                if (call === 3) return { orderBy: vi.fn().mockResolvedValue([editedPayment]) }
+                if (call === 4) return Promise.resolve([editedPayment])
+                return Promise.resolve([editedPayment])
+              }),
+            }),
+          }
+        }),
+        update: vi.fn().mockReturnValue({
+          set: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue(undefined),
+          }),
+        }),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([editedPayment]),
+          }),
+        }),
+      }
+      ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+        async (cb: any) => cb(mockTx)
+      )
+
+      // Clear the mock so we can check calls from just this test
+      ;(computeLoanOverdueInfo as ReturnType<typeof vi.fn>).mockClear()
+
+      const { editPayment } = await import("@/services/payment.service")
+      await Effect.runPromise(
+        editPayment({ paymentId: "pay-1", amount: "200000", reason: "Fix amount" }, "actor-1")
+      )
+
+      // BUG-8: editPayment must compute overdue info to get effective rate
+      // (previously it used getBaseRate which ignores penalty)
+      expect(computeLoanOverdueInfo).toHaveBeenCalled()
     })
 
     it("deletePayment: sets deleted_at, deleted_by, delete_reason and posts reversing entry (LOAN-07)", async () => {
@@ -906,7 +987,7 @@ describe("Payment Service", () => {
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockImplementation(() => {
               if (call === 1) return Promise.resolve([fixedLoan])
-              return { orderBy: vi.fn().mockResolvedValue([]) }
+              return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) }
             }),
           }),
         }

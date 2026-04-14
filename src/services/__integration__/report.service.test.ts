@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import {
   getPnlData,
   getBalanceSheetData,
+  getRetainedEarningsData,
   getPortfolioData,
   generateMonthlySnapshot,
 } from "@/services/report.service"
@@ -86,34 +87,32 @@ describe("Report Service — Integration", () => {
     it("returns correct income, expenses, and netProfit for a period with transactions", async () => {
       const cats = await getCategories()
 
-      // 2 income + 1 expense in Jan 2025
+      // 1 revenue income + 1 expense in Jan 2025 (Share Capital is equity, not revenue — excluded from P&L)
       await insertTransaction("credit", "50000.00", cats.interestEarned.id, new Date("2025-01-15T00:00:00.000Z"))
-      await insertTransaction("credit", "100000.00", cats.shareCapital.id, new Date("2025-01-20T00:00:00.000Z"))
       await insertTransaction("debit", "30000.00", cats.interestPayments.id, new Date("2025-01-25T00:00:00.000Z"))
 
       const result = await Effect.runPromise(getPnlData("2025-01"))
 
       expect(result.period).toBe("2025-01")
 
-      // Income
+      // Income — formatAmount returns toFixed(0) (UGX has no subunits)
       expect(result.income).toEqual(
         expect.arrayContaining([
-          { category: "Interest Earned", amount: "50000.00" },
-          { category: "Share Capital", amount: "100000.00" },
+          { category: "Interest Earned", amount: "50000" },
         ])
       )
-      expect(result.totalIncome).toBe("150000.00")
+      expect(result.totalIncome).toBe("50000")
 
       // Expenses
       expect(result.expenses).toEqual(
         expect.arrayContaining([
-          { category: "Interest Payments", amount: "30000.00" },
+          { category: "Interest Payments", amount: "30000" },
         ])
       )
-      expect(result.totalExpenses).toBe("30000.00")
+      expect(result.totalExpenses).toBe("30000")
 
       // Net profit
-      expect(result.netProfit).toBe("120000.00")
+      expect(result.netProfit).toBe("20000")
     })
 
     it("returns all zeros for an empty period", async () => {
@@ -123,9 +122,9 @@ describe("Report Service — Integration", () => {
       expect(result.period).toBe("2025-02")
       expect(result.income).toHaveLength(0)
       expect(result.expenses).toHaveLength(0)
-      expect(result.totalIncome).toBe("0.00")
-      expect(result.totalExpenses).toBe("0.00")
-      expect(result.netProfit).toBe("0.00")
+      expect(result.totalIncome).toBe("0")
+      expect(result.totalExpenses).toBe("0")
+      expect(result.netProfit).toBe("0")
     })
 
     it("excludes transactions from other months", async () => {
@@ -138,9 +137,9 @@ describe("Report Service — Integration", () => {
 
       const result = await Effect.runPromise(getPnlData("2025-01"))
 
-      expect(result.totalIncome).toBe("50000.00")
+      expect(result.totalIncome).toBe("50000")
       expect(result.income).toHaveLength(1)
-      expect(result.income[0].amount).toBe("50000.00")
+      expect(result.income[0].amount).toBe("50000")
     })
   })
 
@@ -355,6 +354,170 @@ describe("Report Service — Integration", () => {
       expect(rows).toHaveLength(2)
       const types = rows.map((r) => r.type).sort()
       expect(types).toEqual(["balance_sheet", "pnl"])
+    })
+  })
+
+  // =================================================================
+  // Retained Earnings Tests
+  // =================================================================
+
+  describe("getRetainedEarningsData", () => {
+    it("computes beginning balance from prior periods and net income for current period", async () => {
+      const cats = await getCategories()
+
+      // Dec 2024: income of 200k (becomes beginning balance for Jan 2025)
+      await insertTransaction("credit", "200000.00", cats.interestEarned.id, new Date("2024-12-15T00:00:00.000Z"))
+
+      // Jan 2025: income of 50k, expense of 30k → net income 20k
+      await insertTransaction("credit", "50000.00", cats.interestEarned.id, new Date("2025-01-15T00:00:00.000Z"))
+      await insertTransaction("debit", "30000.00", cats.interestPayments.id, new Date("2025-01-20T00:00:00.000Z"))
+
+      const result = await Effect.runPromise(getRetainedEarningsData("2025-01"))
+
+      expect(result.period).toBe("2025-01")
+      // Beginning balance = prior credits - prior debits = 200000 - 0 = 200000
+      expect(result.beginningBalance).toBe("200000")
+      // Net income = current credits - current debits = 50000 - 30000 = 20000
+      expect(result.netIncome).toBe("20000")
+      // Ending = 200000 + 20000 = 220000
+      expect(result.endingBalance).toBe("220000")
+    })
+
+    it("returns zeros for first period with no prior transactions", async () => {
+      const cats = await getCategories()
+
+      // Only one income transaction in Jan 2025
+      await insertTransaction("credit", "100000.00", cats.interestEarned.id, new Date("2025-01-15T00:00:00.000Z"))
+
+      const result = await Effect.runPromise(getRetainedEarningsData("2025-01"))
+
+      expect(result.beginningBalance).toBe("0")
+      expect(result.netIncome).toBe("100000")
+      expect(result.endingBalance).toBe("100000")
+    })
+  })
+
+  // =================================================================
+  // P&L Reversal Handling
+  // =================================================================
+
+  describe("getPnlData — reversal handling", () => {
+    it("DR to revenue category subtracts from income (not treated as expense)", async () => {
+      const cats = await getCategories()
+
+      // Original interest earned
+      await insertTransaction("credit", "100000.00", cats.interestEarned.id, new Date("2025-01-15T00:00:00.000Z"))
+      // Reversal — a debit to revenue should reduce income, not add expense
+      await insertTransaction("debit", "20000.00", cats.interestEarned.id, new Date("2025-01-16T00:00:00.000Z"))
+
+      const result = await Effect.runPromise(getPnlData("2025-01"))
+
+      // Net income should be 80k (not 100k income + 20k expense)
+      expect(result.totalIncome).toBe("80000")
+      expect(result.totalExpenses).toBe("0")
+      expect(result.netProfit).toBe("80000")
+      // Should still be one income category, not two
+      expect(result.income).toHaveLength(1)
+      expect(result.income[0].category).toBe("Interest Earned")
+      expect(result.income[0].amount).toBe("80000")
+    })
+
+    it("CR to expense category subtracts from expenses (not treated as income)", async () => {
+      const cats = await getCategories()
+
+      // Original expense
+      await insertTransaction("debit", "50000.00", cats.interestPayments.id, new Date("2025-01-10T00:00:00.000Z"))
+      // Reversal — credit to expense should reduce expense, not add income
+      await insertTransaction("credit", "10000.00", cats.interestPayments.id, new Date("2025-01-11T00:00:00.000Z"))
+
+      const result = await Effect.runPromise(getPnlData("2025-01"))
+
+      expect(result.totalIncome).toBe("0")
+      expect(result.totalExpenses).toBe("40000")
+      expect(result.netProfit).toBe("-40000")
+    })
+  })
+
+  // =================================================================
+  // Balance Sheet Identity: Assets = Liabilities + Equity
+  // =================================================================
+
+  describe("getBalanceSheetData — identity assertion", () => {
+    it("Assets = Liabilities + Equity after loan creation + payment", async () => {
+      const customer = await makeCustomer({ contact: "+256700000099" })
+      const loan = await Effect.runPromise(
+        createLoan(baseLoanInput(customer.id), ACTOR)
+      )
+
+      // Record a payment
+      await Effect.runPromise(
+        recordPayment(
+          {
+            loanId: loan.id,
+            paymentDate: new Date("2025-01-31T00:00:00.000Z").toISOString(),
+            amount: "200000.00",
+            depositLocation: "cash",
+          },
+          ACTOR
+        )
+      )
+
+      const result = await Effect.runPromise(getBalanceSheetData("2025-01"))
+
+      const totalAssets = Number(result.assets.totalAssets)
+      const totalLiabilities = Number(result.liabilities.totalCreditorBalances)
+        + Number(result.liabilities.interestPayable)
+      const totalEquity = Number(result.equity.totalEquity)
+
+      // The fundamental accounting identity
+      const diff = Math.abs(totalAssets - (totalLiabilities + totalEquity))
+      expect(diff).toBeLessThanOrEqual(1) // rounding tolerance
+    })
+  })
+
+  // =================================================================
+  // Month-Boundary Period Tests
+  // =================================================================
+
+  describe("getPnlData — period boundary precision", () => {
+    it("transaction at first millisecond of month is included", async () => {
+      const cats = await getCategories()
+
+      // Transaction at exactly midnight UTC on Jan 1
+      await insertTransaction("credit", "100000.00", cats.interestEarned.id, new Date("2025-01-01T00:00:00.000Z"))
+
+      const result = await Effect.runPromise(getPnlData("2025-01"))
+      expect(result.totalIncome).toBe("100000")
+    })
+
+    it("transaction at last moment of month is included", async () => {
+      const cats = await getCategories()
+
+      // Transaction at 23:59:59 UTC on Jan 31
+      await insertTransaction("credit", "100000.00", cats.interestEarned.id, new Date("2025-01-31T23:59:59.000Z"))
+
+      const result = await Effect.runPromise(getPnlData("2025-01"))
+      expect(result.totalIncome).toBe("100000")
+    })
+
+    it("transaction at first millisecond of next month is NOT included", async () => {
+      const cats = await getCategories()
+
+      // Transaction at midnight Feb 1 — should NOT appear in Jan
+      await insertTransaction("credit", "100000.00", cats.interestEarned.id, new Date("2025-02-01T00:00:00.000Z"))
+
+      const result = await Effect.runPromise(getPnlData("2025-01"))
+      expect(result.totalIncome).toBe("0")
+    })
+
+    it("Feb boundary in leap year includes Feb 29", async () => {
+      const cats = await getCategories()
+
+      // Transaction on Feb 29 2024 (leap year)
+      await insertTransaction("credit", "50000.00", cats.interestEarned.id, new Date("2024-02-29T12:00:00.000Z"))
+
+      const result = await Effect.runPromise(getPnlData("2024-02"))
+      expect(result.totalIncome).toBe("50000")
     })
   })
 })

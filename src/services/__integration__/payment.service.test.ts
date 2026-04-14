@@ -15,9 +15,16 @@ import {
 import { loans } from "@/lib/db/schema/loans"
 import { auditLog } from "@/lib/db/schema/audit"
 import { transactions } from "@/lib/db/schema/transactions"
-import { eq } from "drizzle-orm"
+import { transactionCategories } from "@/lib/db/schema/transaction-categories"
+import { eq, and } from "drizzle-orm"
 import { randomUUID } from "crypto"
 import { payments } from "@/lib/db/schema/payments"
+import BigNumber from "bignumber.js"
+import {
+  getLoanBalancesFromLedger,
+  getInterestEarnedFromLedger,
+  getPaymentPortionsFromLedger,
+} from "@/services/ledger-queries.service"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1051,6 +1058,209 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       const results = await Effect.runPromise(getRecentlyCollectedLoans(userId, 5))
       expect(results).toHaveLength(5)
+    })
+  })
+
+  // =========================================================================
+  // Multiple payments in same period (interestAlreadyPaidInPeriod dedup)
+  // =========================================================================
+
+  describe("multiple payments in same interest period", () => {
+    it("18. second payment in same period charges less interest than first", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000.00", "0.10")
+
+      // First payment: 30 days after start, pay exactly the interest (100k)
+      const pay1 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      // Second payment: same day — dedup should reduce interest charged
+      const pay2 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      // The second payment should have less interest than the first
+      // (interestAlreadyPaidInPeriod reduces what's owed)
+      const pay1Interest = Number(pay1.allocation.interestPortion)
+      const pay2Interest = Number(pay2.allocation.interestPortion)
+      expect(pay2Interest).toBeLessThan(pay1Interest)
+
+      // The second payment should have more principal than the first
+      const pay2Principal = Number(pay2.allocation.principalPortion)
+      expect(pay2Principal).toBeGreaterThan(0)
+
+      // Conservation: each payment's interest + principal = payment amount
+      expect(Math.abs(pay1Interest + Number(pay1.allocation.principalPortion) - 100000)).toBeLessThanOrEqual(1)
+      expect(Math.abs(pay2Interest + pay2Principal - 100000)).toBeLessThanOrEqual(1)
+    })
+
+    it("19. three rapid payments: conservation holds and later payments have lower interest", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000.00", "0.10")
+
+      // Pay 50k three times on same day
+      const pay1 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "50000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+      const pay2 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "50000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+      const pay3 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "50000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      // Conservation: each payment's interest + principal = 50000
+      for (const pay of [pay1, pay2, pay3]) {
+        const sum = Number(pay.allocation.interestPortion) + Number(pay.allocation.principalPortion)
+        expect(Math.abs(sum - 50000)).toBeLessThanOrEqual(1)
+      }
+
+      // Later payments should have decreasing interest (as more gets covered)
+      const interests = [pay1, pay2, pay3].map((p) => Number(p.allocation.interestPortion))
+      // At minimum, the third payment's interest should be <= the first
+      expect(interests[2]).toBeLessThanOrEqual(interests[0])
+    })
+  })
+
+  // =========================================================================
+  // Ledger consistency after edit/delete
+  // =========================================================================
+
+  describe("ledger consistency", () => {
+    it("20. ledger balance after payment matches allocation", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000", "0.10")
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      // Ledger balance should equal principal - principalPortion
+      const balances = await getLoanBalancesFromLedger([loan.id])
+      const ledgerBalance = balances.get(loan.id)!
+      const expectedBalance = new BigNumber("1000000").minus(new BigNumber(payment.allocation.principalPortion))
+      expect(ledgerBalance.minus(expectedBalance).abs().isLessThanOrEqualTo(1)).toBe(true)
+    })
+
+    it("21. interest earned from ledger matches sum of interest portions", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000", "0.10")
+
+      const pay1 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+      const pay2 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-03-02", amount: "150000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      const interestMap = await getInterestEarnedFromLedger([loan.id])
+      const ledgerInterest = interestMap.get(loan.id)!
+      const expectedInterest = new BigNumber(pay1.allocation.interestPortion)
+        .plus(new BigNumber(pay2.allocation.interestPortion))
+
+      expect(ledgerInterest.minus(expectedInterest).abs().isLessThanOrEqualTo(1)).toBe(true)
+    })
+
+    it("22. payment portions from ledger match allocation at recording time", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000", "0.10")
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      const portions = await getPaymentPortionsFromLedger([payment.id])
+      const portion = portions.get(payment.id)!
+
+      expect(portion.interestPortion).toBe(payment.allocation.interestPortion)
+      expect(portion.principalPortion).toBe(payment.allocation.principalPortion)
+    })
+
+    it("23. editPayment: ledger reflects new allocation after edit", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000", "0.10")
+
+      // Record initial payment
+      const payment = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "100000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      const balanceBefore = (await getLoanBalancesFromLedger([loan.id])).get(loan.id)!
+
+      // Edit to a larger amount — should change allocation
+      await Effect.runPromise(
+        editPayment(
+          { paymentId: payment.id, amount: "200000", reason: "correction" },
+          "test-actor"
+        )
+      )
+
+      const balanceAfter = (await getLoanBalancesFromLedger([loan.id])).get(loan.id)!
+
+      // Larger payment → more principal paid → lower balance
+      expect(balanceAfter.isLessThan(balanceBefore)).toBe(true)
+
+      // Portions should reflect the new amount
+      const portions = await getPaymentPortionsFromLedger([payment.id])
+      const portion = portions.get(payment.id)!
+      const total = new BigNumber(portion.interestPortion).plus(new BigNumber(portion.principalPortion))
+      // Total portions should equal the new payment amount (within rounding)
+      expect(total.minus(200000).abs().isLessThanOrEqualTo(1)).toBe(true)
+    })
+
+    it("24. deletePayment: ledger balance returns to pre-payment state", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "1000000", "0.10")
+
+      const balanceBeforePayment = (await getLoanBalancesFromLedger([loan.id])).get(loan.id)!
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      // Delete the payment
+      await Effect.runPromise(
+        deletePayment({ paymentId: payment.id, reason: "test" }, "test-actor")
+      )
+
+      const balanceAfterDelete = (await getLoanBalancesFromLedger([loan.id])).get(loan.id)!
+
+      // Balance should return to pre-payment value
+      expect(balanceAfterDelete.minus(balanceBeforePayment).abs().isLessThanOrEqualTo(1)).toBe(true)
     })
   })
 })

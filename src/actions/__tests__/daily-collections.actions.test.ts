@@ -5,6 +5,7 @@ import { Effect } from "effect"
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
+  checkPermission: vi.fn().mockResolvedValue(null),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") return (error as any)._tag

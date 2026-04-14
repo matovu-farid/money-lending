@@ -11,10 +11,12 @@ import { getLocationBalances } from "@/services/report.service"
 import type { CreateTransactionInput, CreateCategoryInput, UserRole } from "@/types"
 
 export const listExpenseTransactionsAction = withAction({
+  permission: "expense:read",
   effect: () => listTransactions({ type: "debit", manualOnly: true }, 1, 50),
 })
 
 export const listExpenseCategoriesAction = withAction({
+  permission: "expense:read",
   effect: () => listCategories("expense"),
 })
 

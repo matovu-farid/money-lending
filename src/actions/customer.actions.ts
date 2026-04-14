@@ -6,15 +6,17 @@ import { getErrorTag } from "@/lib/action-utils"
 import { validateFullName, validateNIN, validateUgandanPhone } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
-import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput, CustomerStatus } from "@/types"
+import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput } from "@/types"
 import { VALID_CUSTOMER_STATUSES } from "@/lib/constants"
 
 export const listCustomersAction = withAction({
+  permission: "customer:read",
   effect: () => listCustomers(),
   errors: { DatabaseError: "Database error" },
 })
 
 export const createCustomerAction = withAction<CreateCustomerInput, any>({
+  permission: "customer:create",
   action: async (_session, input) => {
     const nameErr = validateFullName(input.fullName)
     if (nameErr) return { error: nameErr }
@@ -40,6 +42,7 @@ export const createCustomerAction = withAction<CreateCustomerInput, any>({
 })
 
 export const getCustomerAction = withAction<string, any>({
+  permission: "customer:read",
   effect: (_session, id) => getCustomer(id),
   errors: { CustomerNotFound: "Customer not found" },
 })
@@ -52,12 +55,14 @@ export async function updateCustomerAction(
 }
 
 const updateCustomerWrapped = withAction<{ id: string; input: UpdateCustomerInput }, any>({
+  permission: "customer:update",
   effect: (_session, { id, input }) => updateCustomer(id, input),
   revalidate: (input) => ["/customers", `/customers/${input.id}`],
   errors: { CustomerNotFound: "Customer not found" },
 })
 
 export const searchCustomersAction = withAction<CustomerSearchParams, any>({
+  permission: "customer:read",
   effect: (_session, params) => searchCustomers(params),
   errors: { DatabaseError: "Database error" },
 })

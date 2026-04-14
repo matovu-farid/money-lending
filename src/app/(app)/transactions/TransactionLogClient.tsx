@@ -47,11 +47,11 @@ export function TransactionLogClient({
       if (format === "pdf") {
         const { generateTransactionsPdf } = await import("@/services/export/pdf.service")
         const buffer = generateTransactionsPdf(reportData.transactions, categoryMap)
-        downloadBlob(new Blob([buffer], { type: "application/pdf" }), "transaction-log.pdf")
+        downloadBlob(new Blob([buffer as BlobPart], { type: "application/pdf" }), "transaction-log.pdf")
       } else {
         const { generateTransactionsExcel } = await import("@/services/export/excel.service")
         const buffer = await generateTransactionsExcel(reportData.transactions, categoryMap)
-        downloadBlob(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "transaction-log.xlsx")
+        downloadBlob(new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "transaction-log.xlsx")
       }
     } catch {
       toast.error("Export failed. Please try again.")

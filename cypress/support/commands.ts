@@ -19,6 +19,23 @@ declare global {
 
       /** Dismiss the POS receipt modal that appears after loan creation */
       dismissReceiptModal(): Chainable<void>
+
+      /**
+       * Create a test user via better-auth testUtils and set session cookies.
+       * No UI registration, no password hashing, no rate limits.
+       * Returns { email, userId, role, cookies }.
+       */
+      createTestUser(opts: {
+        name: string
+        role: string
+        email?: string
+      }): Chainable<{ email: string; userId: string; role: string }>
+
+      /**
+       * Switch the browser session to a previously created test user.
+       * Clears existing cookies and sets the new user's session cookies.
+       */
+      loginAsTestUser(cookies: Array<{ name: string; value: string; domain?: string; path?: string }>): Chainable<void>
     }
   }
 }
@@ -89,5 +106,47 @@ Cypress.Commands.add("dismissReceiptModal", () => {
   cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
   cy.contains("button", "Close").click()
 })
+
+Cypress.Commands.add(
+  "createTestUser",
+  (opts: { name: string; role: string; email?: string }) => {
+    return cy.task("auth:createUser", opts).then((result: any) => {
+      // Store cookies for later use with loginAsTestUser
+      const userData = {
+        email: result.email,
+        userId: result.userId,
+        role: result.role,
+        _cookies: result.cookies,
+      }
+      // Set session cookies immediately so the user is logged in
+      cy.clearCookies()
+      for (const cookie of result.cookies) {
+        cy.setCookie(cookie.name, cookie.value, {
+          domain: cookie.domain || undefined,
+          path: cookie.path || "/",
+          httpOnly: cookie.httpOnly ?? true,
+          secure: cookie.secure ?? false,
+          sameSite: cookie.sameSite?.toLowerCase() || undefined,
+        })
+      }
+      return cy.wrap(userData)
+    })
+  }
+)
+
+Cypress.Commands.add(
+  "loginAsTestUser",
+  (cookies: Array<{ name: string; value: string; domain?: string; path?: string }>) => {
+    cy.clearCookies()
+    for (const cookie of cookies) {
+      cy.setCookie(cookie.name, cookie.value, {
+        domain: cookie.domain || undefined,
+        path: cookie.path || "/",
+        httpOnly: true,
+        secure: false,
+      })
+    }
+  }
+)
 
 export {}

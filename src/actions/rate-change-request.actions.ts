@@ -149,6 +149,7 @@ export async function listAllRequestsAction() {
 }
 
 export const listRequestsForLoanAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, loanId) => {
     if (!loanId?.trim()) {
       return { error: "Loan ID is required" }

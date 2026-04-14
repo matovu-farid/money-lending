@@ -1,7 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { resetDb, testDb } from "./setup"
+import { resetDb, testDb, seedCategories } from "./setup"
 import { Effect, Exit } from "effect"
-import { createLoan, getLoan, listLoans } from "@/services/loan.service"
+import { createLoan, getLoan, listLoans, deleteLoan } from "@/services/loan.service"
+import { recordPayment } from "@/services/payment.service"
+import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service"
+import { transactions } from "@/lib/db/schema/transactions"
+import { sql } from "drizzle-orm"
+import BigNumber from "bignumber.js"
 import { createCustomer, changeCustomerStatus } from "@/services/customer.service"
 import { auditLog } from "@/lib/db/schema/audit"
 import { collateral } from "@/lib/db/schema/collateral"
@@ -214,5 +219,153 @@ describe("Loan Service — Integration", () => {
     const customerIds = all.map((l) => l.customerId)
     expect(customerIds).toContain(customer1.id)
     expect(customerIds).toContain(customer2.id)
+  })
+
+  // =========================================================================
+  // deleteLoan — ledger reversal
+  // =========================================================================
+
+  describe("deleteLoan", () => {
+    it("soft-deletes the loan with metadata", async () => {
+      await seedCategories()
+      const customer = await makeCustomer({ contact: "+256700000010" })
+      const loan = await Effect.runPromise(
+        createLoan(baseLoanInput(customer.id), ACTOR_ID)
+      )
+
+      await Effect.runPromise(
+        deleteLoan({ loanId: loan.id, reason: "test deletion" }, ACTOR_ID)
+      )
+
+      const [deleted] = await testDb
+        .select()
+        .from(loans)
+        .where(eq(loans.id, loan.id))
+
+      expect(deleted.deletedAt).not.toBeNull()
+    })
+
+    it("all ledger entries net to zero after deletion", async () => {
+      await seedCategories()
+      const customer = await makeCustomer({ contact: "+256700000011" })
+      const loan = await Effect.runPromise(
+        createLoan(baseLoanInput(customer.id), ACTOR_ID)
+      )
+
+      // Delete the loan
+      await Effect.runPromise(
+        deleteLoan({ loanId: loan.id, reason: "test" }, ACTOR_ID)
+      )
+
+      // Sum all debits and credits for this loan — they should net to zero
+      const rows = await testDb
+        .select({
+          type: transactions.type,
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .where(eq(transactions.loanId, loan.id))
+        .groupBy(transactions.type)
+
+      let debits = new BigNumber(0)
+      let credits = new BigNumber(0)
+      for (const row of rows) {
+        if (row.type === "debit") debits = debits.plus(new BigNumber(row.total))
+        else credits = credits.plus(new BigNumber(row.total))
+      }
+      const net = debits.minus(credits).abs()
+      expect(net.isLessThanOrEqualTo(1)).toBe(true)
+    })
+
+    it("all ledger entries net to zero after loan with payments is deleted", async () => {
+      await seedCategories()
+      const customer = await makeCustomer({ contact: "+256700000012" })
+      const loan = await Effect.runPromise(
+        createLoan(baseLoanInput(customer.id), ACTOR_ID)
+      )
+
+      // Make a payment
+      await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-01-31", amount: "200000", depositLocation: "cash" },
+          ACTOR_ID
+        )
+      )
+
+      // Delete the loan (should reverse payment journals too)
+      await Effect.runPromise(
+        deleteLoan({ loanId: loan.id, reason: "test" }, ACTOR_ID)
+      )
+
+      const rows = await testDb
+        .select({
+          type: transactions.type,
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .where(eq(transactions.loanId, loan.id))
+        .groupBy(transactions.type)
+
+      let debits = new BigNumber(0)
+      let credits = new BigNumber(0)
+      for (const row of rows) {
+        if (row.type === "debit") debits = debits.plus(new BigNumber(row.total))
+        else credits = credits.plus(new BigNumber(row.total))
+      }
+      const net = debits.minus(credits).abs()
+      expect(net.isLessThanOrEqualTo(1)).toBe(true)
+    })
+
+    it("total transaction debits equal credits after deletion (net zero)", async () => {
+      await seedCategories()
+      const customer = await makeCustomer({ contact: "+256700000013" })
+      const loan = await Effect.runPromise(
+        createLoan(baseLoanInput(customer.id), ACTOR_ID)
+      )
+
+      await Effect.runPromise(
+        deleteLoan({ loanId: loan.id, reason: "test" }, ACTOR_ID)
+      )
+
+      // Check ALL transactions for this loan, not just Loans Receivable
+      const rows = await testDb
+        .select({
+          type: transactions.type,
+          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .where(eq(transactions.loanId, loan.id))
+        .groupBy(transactions.type)
+
+      let debits = new BigNumber(0)
+      let credits = new BigNumber(0)
+      for (const row of rows) {
+        if (row.type === "debit") debits = debits.plus(new BigNumber(row.total))
+        else credits = credits.plus(new BigNumber(row.total))
+      }
+      const net = debits.minus(credits).abs()
+      expect(net.isLessThanOrEqualTo(1)).toBe(true)
+    })
+
+    it("writes audit log entry with action loan.delete", async () => {
+      await seedCategories()
+      const customer = await makeCustomer({ contact: "+256700000014" })
+      const loan = await Effect.runPromise(
+        createLoan(baseLoanInput(customer.id), ACTOR_ID)
+      )
+
+      await Effect.runPromise(
+        deleteLoan({ loanId: loan.id, reason: "audit test" }, ACTOR_ID)
+      )
+
+      const logs = await testDb
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.entityId, loan.id))
+
+      const deleteEntry = logs.find((l) => l.action === "loan.delete")
+      expect(deleteEntry).toBeDefined()
+      expect(deleteEntry!.actorId).toBe(ACTOR_ID)
+    })
   })
 })

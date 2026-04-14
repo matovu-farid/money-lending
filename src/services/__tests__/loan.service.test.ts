@@ -57,7 +57,6 @@ const mockLoan = {
   customerId: "cust-1",
   principalAmount: "500000.00",
   issuanceFee: "50000.00",
-
   interestRate: "0.10",
   minInterestDays: 30,
   startDate: new Date("2026-03-19T00:00:00.000Z"),
@@ -68,6 +67,19 @@ const mockLoan = {
   disbursementSource: "cash",
   loanType: "perpetual",
   termMonths: null,
+  penaltyWaived: false,
+  penaltyMultiplier: null,
+  penaltyWaivedBy: null,
+  penaltyWaivedAt: null,
+  rolledOverFrom: null,
+  rolloverAmount: null,
+  backdatedFrom: null,
+  backdatedBy: null,
+  backdatedAt: null,
+  backdateNote: null,
+  createdAt: new Date("2026-03-19T00:00:00.000Z"),
+  updatedAt: new Date("2026-03-19T00:00:00.000Z"),
+  deletedAt: null,
 }
 
 const mockCollateral = {
