@@ -13,7 +13,8 @@ import {
   ShieldAlert,
   PlusCircle,
 } from "lucide-react"
-import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
+import { getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
+import { updatePaymentWithInput, deletePaymentWithReason } from "@/collections"
 import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction, getCurrentUserRoleAction, resolveUserNamesAction, getLoanCollateralAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
@@ -121,8 +122,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     reset,
   } = useLoanDetailStore()
 
-  const [isEditPending, startEditTransition] = useTransition()
-  const [isDeletePending, startDeleteTransition] = useTransition()
+  // Edit/delete are now synchronous collection ops — no pending state needed
+  const isEditPending = false
+  const isDeletePending = false
   const [isRateChangePending, startRateChangeTransition] = useTransition()
   const [isWaivingPenalty, startWaivePenaltyTransition] = useTransition()
   const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
@@ -208,57 +210,33 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
   function handleEditSubmit() {
     if (!editingPayment) return
-    startEditTransition(async () => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.loans.all })
-      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
-
-      const result = await editPaymentAction({
+    try {
+      const input = {
         paymentId: editingPayment.id,
         amount: editAmount.trim(),
         paymentDate: editDate ? editDate + "T12:00:00" : undefined,
         reason: editReason.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
       }
-
+      updatePaymentWithInput(editingPayment.id, input, (draft) => {
+        if (editAmount.trim()) draft.amount = editAmount.trim()
+        if (editDate) draft.paymentDate = new Date(editDate) as unknown as typeof draft.paymentDate
+      })
       toast.success("Payment updated")
       closePaymentEdit()
-
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-    })
+    } catch {
+      toast.error("Failed to update payment")
+    }
   }
 
   function handleDeleteSubmit() {
     if (!deletingPayment) return
-    const deletedId = deletingPayment.id
-    startDeleteTransition(async () => {
-      await queryClient.cancelQueries({ queryKey: queryKeys.payments.all })
-      await queryClient.cancelQueries({ queryKey: queryKeys.loans.all })
-
-      const result = await deletePaymentAction({
-        paymentId: deletedId,
-        reason: deleteReason.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
+    try {
+      deletePaymentWithReason(deletingPayment.id, deleteReason.trim())
       toast.success("Payment deleted")
       closePaymentDelete()
-
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-    })
+    } catch {
+      toast.error("Failed to delete payment")
+    }
   }
 
   function handleRateChangeSubmit() {
@@ -277,14 +255,12 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
       if (result.data.applied) {
         toast.success("Interest rate updated immediately")
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loan.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
       } else {
         toast.success(result.data.message)
-        queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.byLoan(loan.id) })
-        queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.pending() })
       }
 
+      // Refresh relevant queries so UI reflects the new state
+      router.refresh()
       closeRateChange()
     })
   }

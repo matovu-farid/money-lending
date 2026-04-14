@@ -1,12 +1,7 @@
 "use client"
 
 import { TransactionListClient } from "@/components/transactions/transaction-list-client"
-import {
-  recordExpenseAction,
-  deleteExpenseAction,
-  createExpenseCategoryAction,
-} from "@/actions/expense.actions"
-import { queryKeys } from "@/hooks/query-keys"
+import { createExpenseCategoryAction } from "@/actions/expense.actions"
 import type { TransactionRow, CategoryRow } from "@/types"
 
 interface ExpenseListClientProps {
@@ -20,10 +15,7 @@ export function ExpenseListClient({ transactions, categories }: ExpenseListClien
       transactions={transactions}
       categories={categories}
       variant="expense"
-      recordAction={recordExpenseAction}
-      deleteAction={deleteExpenseAction}
       createCategoryAction={createExpenseCategoryAction}
-      invalidateKeys={[queryKeys.expenses.all, queryKeys.dashboard.all]}
     />
   )
 }

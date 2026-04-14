@@ -2,8 +2,12 @@
 
 import { useMemo, useRef, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
+import {
+  expenseCollection, insertExpenseWithInput,
+  incomeCollection, insertIncomeWithInput,
+} from "@/collections"
+import { generateClientId } from "@/lib/client-id"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,16 +41,10 @@ interface TransactionListClientProps {
   categories: CategoryRow[]
   /** "income" or "expense" — drives labels and optimistic transaction type */
   variant: "income" | "expense"
-  /** Server action to record a transaction */
-  recordAction: (input: CreateTransactionInput) => Promise<Record<string, unknown>>
-  /** Server action to delete a transaction */
-  deleteAction: (id: string) => Promise<Record<string, unknown>>
   /** Server action to create a category */
   createCategoryAction: (input: CreateCategoryInput) => Promise<
     { error: string } | { data: { id: string; name: string; type: string; isDefault: boolean; [key: string]: unknown } }
   >
-  /** Query keys to invalidate on mutation */
-  invalidateKeys: readonly (readonly unknown[])[]
 }
 
 const LABELS = {
@@ -94,19 +92,17 @@ export function TransactionListClient({
   transactions: initialTransactions,
   categories: initialCategories,
   variant,
-  recordAction,
-  deleteAction,
   createCategoryAction,
-  invalidateKeys,
 }: TransactionListClientProps) {
-  const queryClient = useQueryClient()
   const labels = LABELS[variant]
   const idPrefix = variant === "income" ? "income" : "expense"
+  const collection = variant === "income" ? incomeCollection : expenseCollection
+  const insertWithInput = variant === "income" ? insertIncomeWithInput : insertExpenseWithInput
 
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
-  const [optimisticTransactions, setOptimisticTransactions] = useState<TransactionRow[]>([])
-  const [removedTransactionIds, setRemovedTransactionIds] = useState<Set<string>>(new Set())
+  const [isAddPending, setIsAddPending] = useState(false)
+  const [isDeletePending, setIsDeletePending] = useState(false)
   const [optimisticCategories, setOptimisticCategories] = useState<CategoryRow[]>([])
   const [_isCategoryPending, startCategoryTransition] = useTransition()
 
@@ -130,10 +126,7 @@ export function TransactionListClient({
   const watchedCategoryId = watch("categoryId")
   const watchedDate = watch("date")
 
-  const displayedTransactions = useMemo(() => {
-    const filtered = initialTransactions.filter(t => !removedTransactionIds.has(t.id))
-    return [...optimisticTransactions, ...filtered]
-  }, [initialTransactions, optimisticTransactions, removedTransactionIds])
+  const displayedTransactions = initialTransactions
 
   const displayedCategories = useMemo(
     () => [...initialCategories, ...optimisticCategories],
@@ -169,94 +162,59 @@ export function TransactionListClient({
     return displayedCategories.find((c) => c.id === watchedCategoryId)?.name ?? ""
   }, [watchedCategoryId, displayedCategories])
 
-  const addMutation = useMutation({
-    mutationFn: (input: CreateTransactionInput) => recordAction(input),
-    onMutate: async (input) => {
-      const category = displayedCategories.find((c) => c.id === input.categoryId)
-      const optimistic: TransactionRow= {
-        id: `optimistic-${Date.now()}`,
+  // Collection-based add and delete — no manual optimistic updates or invalidation needed
+
+  function onFormSubmit(data: TransactionFormValues) {
+    try {
+      setIsAddPending(true)
+      const id = generateClientId()
+      const category = displayedCategories.find((c) => c.id === data.categoryId)
+      const input: CreateTransactionInput = {
+        categoryId: data.categoryId,
+        amount: data.amount,
+        transactionDate: data.date,
+        notes: data.notes || undefined,
+        location: data.location,
+        backdateNote: data.backdateNote?.trim() || undefined,
+      }
+      const optimistic: TransactionRow = {
+        id,
         type: labels.txType,
-        amount: input.amount,
-        categoryId: input.categoryId,
+        amount: data.amount,
+        categoryId: data.categoryId,
         categoryName: category?.name ?? "Unknown",
-        description: input.notes ?? null,
-        transactionDate: new Date(input.transactionDate),
+        description: data.notes || null,
+        transactionDate: new Date(data.date),
         recordedBy: "",
         referenceType: null,
         referenceId: null,
         createdAt: new Date().toISOString() as unknown as Date,
         isOptimistic: true,
       }
-      setOptimisticTransactions((prev) => [optimistic, ...prev])
-      return { optimisticId: optimistic.id }
-    },
-    onError: (_err, _input, context) => {
-      if (context?.optimisticId) {
-        setOptimisticTransactions((prev) => prev.filter((t) => t.id !== context.optimisticId))
-      }
-      toast.error(labels.failRecord)
-    },
-    onSuccess: (result, _input, context) => {
-      if (context?.optimisticId) {
-        setOptimisticTransactions((prev) => prev.filter((t) => t.id !== context.optimisticId))
-      }
-      if (result && "error" in result) {
-        toast.error((result as { error: string }).error)
-        return
-      }
+      insertWithInput(id, optimistic, input)
       toast.success(labels.successRecord)
       setIsSheetOpen(false)
       reset()
       setCategoryQuery("")
-    },
-    onSettled: () => {
-      for (const key of invalidateKeys) {
-        queryClient.invalidateQueries({ queryKey: key })
-      }
-    },
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (transactionId: string) => deleteAction(transactionId),
-    onMutate: async (transactionId) => {
-      setRemovedTransactionIds((prev) => new Set(prev).add(transactionId))
-      setDeleteTarget(null)
-      return { transactionId }
-    },
-    onError: (_err, _id, context) => {
-      if (context?.transactionId) {
-        setRemovedTransactionIds((prev) => {
-          const next = new Set(prev)
-          next.delete(context.transactionId)
-          return next
-        })
-      }
-      toast.error(labels.failDelete)
-    },
-    onSuccess: () => {
-      toast.success(labels.successDelete)
-    },
-    onSettled: () => {
-      for (const key of invalidateKeys) {
-        queryClient.invalidateQueries({ queryKey: key })
-      }
-    },
-  })
-
-  function onFormSubmit(data: TransactionFormValues) {
-    addMutation.mutate({
-      categoryId: data.categoryId,
-      amount: data.amount,
-      transactionDate: data.date,
-      notes: data.notes || undefined,
-      location: data.location,
-      backdateNote: data.backdateNote?.trim() || undefined,
-    })
+    } catch {
+      toast.error(labels.failRecord)
+    } finally {
+      setIsAddPending(false)
+    }
   }
 
   function handleDelete() {
     if (!deleteTarget) return
-    deleteMutation.mutate(deleteTarget)
+    try {
+      setIsDeletePending(true)
+      collection.delete(deleteTarget)
+      toast.success(labels.successDelete)
+      setDeleteTarget(null)
+    } catch {
+      toast.error(labels.failDelete)
+    } finally {
+      setIsDeletePending(false)
+    }
   }
 
   function handleSelectCategory(cat: CategoryRow) {
@@ -295,7 +253,7 @@ export function TransactionListClient({
         <PageHeader title={labels.title} subtitle={labels.subtitle}>
           <Button
             onClick={() => { reset(); setIsSheetOpen(true) }}
-            disabled={addMutation.isPending}
+            disabled={isAddPending}
           >
             {labels.addButton}
           </Button>
@@ -336,7 +294,7 @@ export function TransactionListClient({
                   size="sm"
                   className="text-destructive hover:text-destructive"
                   onClick={() => setDeleteTarget(tx.id)}
-                  disabled={tx.isOptimistic || deleteMutation.isPending}
+                  disabled={tx.isOptimistic || isDeletePending}
                 >
                   Delete
                 </Button>
@@ -355,7 +313,7 @@ export function TransactionListClient({
               <p className="text-muted-foreground">{labels.emptyDescription}</p>
               <Button
                 onClick={() => { reset(); setIsSheetOpen(true) }}
-                disabled={addMutation.isPending}
+                disabled={isAddPending}
               >
                 {labels.addButton}
               </Button>
@@ -522,8 +480,8 @@ export function TransactionListClient({
               {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}
 
               <DialogFooter>
-                <Button type="submit" disabled={addMutation.isPending} className="w-full">
-                  {addMutation.isPending ? "Saving..." : labels.recordButton}
+                <Button type="submit" disabled={isAddPending} className="w-full">
+                  {isAddPending ? "Saving..." : labels.recordButton}
                 </Button>
               </DialogFooter>
             </form>
@@ -541,16 +499,16 @@ export function TransactionListClient({
               <Button
                 variant="outline"
                 onClick={() => setDeleteTarget(null)}
-                disabled={deleteMutation.isPending}
+                disabled={isDeletePending}
               >
                 {labels.keepButton}
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleDelete}
-                disabled={deleteMutation.isPending}
+                disabled={isDeletePending}
               >
-                {deleteMutation.isPending ? "Deleting..." : labels.deleteButton}
+                {isDeletePending ? "Deleting..." : labels.deleteButton}
               </Button>
             </DialogFooter>
           </DrawerDialogContent>

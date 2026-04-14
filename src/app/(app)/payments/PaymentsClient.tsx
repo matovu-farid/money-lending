@@ -1,9 +1,10 @@
 "use client"
 
-import { useEffect, useMemo } from "react"
+import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
+import { paymentCollection, updatePaymentWithInput } from "@/collections"
 import { toast } from "sonner"
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
@@ -26,7 +27,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { editPaymentAction, markPaymentWrongAction, listPaymentsAction } from "@/actions/payment.actions"
+import { markPaymentWrongAction } from "@/actions/payment.actions"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
@@ -38,11 +39,8 @@ import { useUrlFilters } from "@/hooks/use-url-filters"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DailyCollectionsTab } from "./DailyCollectionsTab"
 import { QuickRecordDialog } from "./QuickRecordDialog"
-import { usePayments } from "@/hooks/use-payments"
-import { queryKeys } from "@/hooks/query-keys"
 import { FilterPanel } from "@/components/ui/filter-panel"
 import { downloadBlob } from "@/lib/download"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
   const headers = ["Date", "Customer", "Amount", "Interest", "Principal", "Principal Balance"]
@@ -64,8 +62,9 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
 export function PaymentsClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const queryClient = useQueryClient()
   const { data: session } = useSession()
+  const [isEditPending, setIsEditPending] = useState(false)
+  const [isMarkWrongPending, startMarkWrongTransition] = useTransition()
 
   const activeTab = (searchParams.get("tab") as "list" | "daily") ?? "list"
 
@@ -105,97 +104,84 @@ export function PaymentsClient() {
     })
   const { customerName, dateFrom, dateTo, amountMin, amountMax } = filters
 
-  // Edit mutation — no optimistic update since ledger-derived portions can't be computed client-side
-  const editMutation = useMutation({
-    mutationFn: (input: { paymentId: string; amount?: string; paymentDate?: string; reason: string }) =>
-      editPaymentAction(input),
-    onError: () => {
-      toast.error("Failed to update payment")
-    },
-    onSuccess: (result) => {
-      if ("error" in result) {
-        toast.error(result.error ?? "Failed to update payment")
-        return
+  // Edit and markWrong — collection-based update and server action respectively
+
+
+  const pageSize = 25
+
+  // TanStack DB live query for all payments
+  const { data: allPayments, isLoading } = useLiveQuery((q) =>
+    q.from({ p: paymentCollection }).select(({ p }) => p)
+  )
+
+  // Client-side filtering
+  const filtered = useMemo(() => {
+    let result = allPayments ?? []
+    if (customerName) {
+      const term = customerName.toLowerCase()
+      result = result.filter((p) => p.customerName.toLowerCase().includes(term))
+    }
+    if (dateFrom) {
+      const from = new Date(dateFrom)
+      result = result.filter((p) => new Date(p.paymentDate) >= from)
+    }
+    if (dateTo) {
+      const to = new Date(dateTo)
+      result = result.filter((p) => new Date(p.paymentDate) <= to)
+    }
+    if (amountMin) {
+      const min = parseFloat(amountMin)
+      if (!isNaN(min)) result = result.filter((p) => parseFloat(p.amount) >= min)
+    }
+    if (amountMax) {
+      const max = parseFloat(amountMax)
+      if (!isNaN(max)) result = result.filter((p) => parseFloat(p.amount) <= max)
+    }
+    return result
+  }, [allPayments, customerName, dateFrom, dateTo, amountMin, amountMax])
+
+  const total = filtered.length
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize)
+  const isError = false
+
+  function handleEditSubmit() {
+    if (!selectedPayment) return
+    try {
+      setIsEditPending(true)
+      const input = {
+        paymentId: selectedPayment.id,
+        amount: editAmount || undefined,
+        paymentDate: editDate || undefined,
+        reason: editReason,
       }
+      updatePaymentWithInput(selectedPayment.id, input, (draft) => {
+        if (editAmount) draft.amount = editAmount
+        if (editDate) draft.paymentDate = new Date(editDate) as unknown as typeof draft.paymentDate
+      })
       toast.success("Payment updated")
       closeEdit()
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-    },
-  })
+    } catch {
+      toast.error("Failed to update payment")
+    } finally {
+      setIsEditPending(false)
+    }
+  }
 
-  // Mark as wrong mutation
-  const markWrongMutation = useMutation({
-    mutationFn: (input: { paymentId: string; reason: string }) =>
-      markPaymentWrongAction(input.paymentId, input.reason),
-    onSuccess: (result) => {
+  function handleMarkWrongSubmit() {
+    if (!markWrongTarget) return
+    startMarkWrongTransition(async () => {
+      const result = await markPaymentWrongAction(markWrongTarget.id, markWrongReason)
       if ("error" in result) {
         toast.error(result.error ?? "Failed to mark payment as wrong")
         return
       }
       toast.success("Payment marked as wrong")
       closeMarkWrong()
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-    },
-  })
-
-
-  // TanStack Query for paginated data
-  const filterParams = useMemo(() => ({
-    dateFrom: dateFrom || undefined,
-    dateTo: dateTo || undefined,
-    amountMin: amountMin || undefined,
-    amountMax: amountMax || undefined,
-    customerName: customerName || undefined,
-  }), [dateFrom, dateTo, amountMin, amountMax, customerName])
-
-  const { data, isLoading, isError } = usePayments(filterParams, page)
-
-  const rows = data?.rows ?? []
-  const total = data?.total ?? 0
-
-  function handleEditSubmit() {
-    if (!selectedPayment) return
-    editMutation.mutate({
-      paymentId: selectedPayment.id,
-      amount: editAmount || undefined,
-      paymentDate: editDate || undefined,
-      reason: editReason,
     })
   }
 
-  function handleMarkWrongSubmit() {
-    if (!markWrongTarget) return
-    markWrongMutation.mutate({
-      paymentId: markWrongTarget.id,
-      reason: markWrongReason,
-    })
-  }
-
-  const pageSize = 25
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
-
-  // Prefetch next page for instant pagination
-  useEffect(() => {
-    if (page * pageSize < total) {
-      prefetchQueue.add(() =>
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.payments.list(filterParams, page + 1),
-          queryFn: () => listPaymentsAction({ ...filterParams, page: page + 1, pageSize }).then(
-            (r) => ("data" in r ? r.data : undefined)
-          ),
-          staleTime: 30_000,
-        }), Priority.NORMAL, `data:payments-list-${page + 1}`)
-    }
-  }, [page, total, filterParams, queryClient])
 
   const paymentColumns: Column<PaymentWithCustomer>[] = [
     {
@@ -451,7 +437,7 @@ export function PaymentsClient() {
           </div>
         )
       ) : (
-        <>
+        <div className="transition-opacity">
           <ResponsiveTable
             columns={paymentColumns}
             rows={rows}
@@ -485,7 +471,7 @@ export function PaymentsClient() {
               </div>
             </div>
           )}
-        </>
+        </div>
       )}
 
         </TabsContent>
@@ -544,9 +530,9 @@ export function PaymentsClient() {
           <DialogFooter>
             <Button
               onClick={handleEditSubmit}
-              disabled={editMutation.isPending || !editReason.trim()}
+              disabled={isEditPending || !editReason.trim()}
             >
-              {editMutation.isPending ? "Saving..." : "Save changes"}
+              {isEditPending ? "Saving..." : "Save changes"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>
@@ -608,10 +594,10 @@ export function PaymentsClient() {
             </Button>
             <Button
               variant="default"
-              disabled={!markWrongReason.trim() || markWrongMutation.isPending}
+              disabled={!markWrongReason.trim() || isMarkWrongPending}
               onClick={handleMarkWrongSubmit}
             >
-              {markWrongMutation.isPending ? "Marking..." : "Mark as Wrong"}
+              {isMarkWrongPending ? "Marking..." : "Mark as Wrong"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>

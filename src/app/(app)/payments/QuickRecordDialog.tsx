@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -43,7 +43,6 @@ interface QuickRecordFormValues {
 }
 
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
-  const queryClient = useQueryClient()
   const { data: session } = useSession()
   const [selectedLoan, setSelectedLoan] = useState<ActiveLoanSearchResult | null>(null)
   const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
@@ -147,12 +146,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
         payment: { ...result.data, depositLocationValue: pendingData.depositLocation },
         receiptNumber: generateReceiptNumber(),
       })
-      queryClient.invalidateQueries({ queryKey: queryKeys.payments.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.recentLoans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loansDueToday.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+      // Data sync handled by TanStack DB collections — no manual invalidation needed
     })
   }
 

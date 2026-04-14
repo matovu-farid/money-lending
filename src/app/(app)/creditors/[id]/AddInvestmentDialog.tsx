@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -17,7 +16,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { queryKeys } from "@/hooks/query-keys"
 import { todayDateString } from "@/lib/utils"
 
 interface Props {
@@ -31,7 +29,6 @@ interface InvestmentFormValues {
 }
 
 export function AddInvestmentDialog({ creditorId }: Props) {
-  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -74,8 +71,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         toast.success("Investment added successfully")
         setOpen(false)
         resetForm()
-        queryClient.invalidateQueries({ queryKey: queryKeys.creditors.all })
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+        // Data sync handled by TanStack DB creditor collection
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to add investment")
       }

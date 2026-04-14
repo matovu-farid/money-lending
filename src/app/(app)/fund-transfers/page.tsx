@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
+import { fundTransferCollection, insertFundTransferWithInput } from "@/collections"
 import { useForm, Controller } from "react-hook-form"
 import { Loader2, ArrowRightLeft, PlusCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -9,8 +10,8 @@ import { useSession } from "@/lib/auth-client"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
-import { createFundTransferAction, createCapitalInjectionAction, listFundTransfersAction } from "@/actions/fund-transfer.actions"
-import { queryKeys } from "@/hooks/query-keys"
+import { createCapitalInjectionAction } from "@/actions/fund-transfer.actions"
+import { generateClientId } from "@/lib/client-id"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -43,6 +44,7 @@ import {
 import { Card, CardContent } from "@/components/ui/card"
 import { formatCurrency, formatDate } from "@/lib/utils"
 import type { DepositLocation } from "@/types"
+import type { FundTransfer } from "@/types/fund-transfer"
 
 interface TransferFormValues {
   fromLocation: DepositLocation
@@ -62,20 +64,14 @@ export default function FundTransfersPage() {
   const { has } = usePermissions()
   const isAdmin = has("fund-transfer:create")
 
-  const queryClient = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
-  const { data: transfers = [], isLoading } = useQuery({
-    queryKey: queryKeys.fundTransfers.all,
-    queryFn: async () => {
-      const result = await listFundTransfersAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
-    },
-    enabled: !!session && isAdmin,
-  })
+  const { data: allTransfers, isLoading } = useLiveQuery((q) =>
+    q.from({ ft: fundTransferCollection }).select(({ ft }) => ft)
+  )
+  const transfers = allTransfers ?? []
 
   const {
     control,
@@ -118,7 +114,7 @@ export default function FundTransfersPage() {
       toast.success("Capital injection recorded")
       injectionForm.reset()
       setInjectionDialogOpen(false)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.fundTransfers.all })
+      // Data sync handled by TanStack DB fund transfer collection
     })
   }
 
@@ -128,24 +124,33 @@ export default function FundTransfersPage() {
       return
     }
 
-    startTransition(async () => {
-      const result = await createFundTransferAction({
-        fromLocation: data.fromLocation,
-        toLocation: data.toLocation,
-        amount: data.amount.trim(),
-        note: data.note.trim() || undefined,
-      })
+    const id = generateClientId()
+    const input = {
+      id,
+      fromLocation: data.fromLocation,
+      toLocation: data.toLocation,
+      amount: data.amount.trim(),
+      note: data.note.trim() || undefined,
+    }
+    const optimistic: FundTransfer = {
+      id,
+      transferType: "internal",
+      fromLocation: data.fromLocation,
+      toLocation: data.toLocation,
+      amount: data.amount.trim(),
+      transferredBy: session?.user?.id ?? "",
+      note: data.note.trim() || null,
+      createdAt: new Date(),
+    }
 
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
+    try {
+      insertFundTransferWithInput(id, optimistic, input)
       toast.success("Fund transfer recorded")
       reset()
       setDialogOpen(false)
-      await queryClient.invalidateQueries({ queryKey: queryKeys.fundTransfers.all })
-    })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to record transfer")
+    }
   }
 
   if (!session) {

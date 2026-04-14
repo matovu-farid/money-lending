@@ -1,13 +1,15 @@
 "use client"
 
-import { useTransition } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { useState, useTransition } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { assignRole } from "@/actions/user.actions"
-import { createDelegationAction, revokeDelegationAction, listDelegationsAction } from "@/actions/delegation.actions"
+import { delegationCollection, type DelegationRow } from "@/collections"
+import { generateClientId } from "@/lib/client-id"
 import { Button } from "@/components/ui/button"
-import { useAdminUsers, type AdminUser } from "@/hooks/use-admin-users"
+import { useAdminUsers } from "@/hooks/use-admin-users"
 import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -52,57 +54,56 @@ export default function AdminPage() {
 
   const { data: users = [], isLoading, isFetching } = useAdminUsers(!!session && canViewUsers)
 
-  const { data: delegationsResult } = useQuery({
-    queryKey: ["delegations"],
-    queryFn: () => listDelegationsAction(),
-    enabled: has("delegation:read"),
-  })
+  // Live delegation collection — optimistic insert/delete handled by TanStack DB
+  const { data: allDelegations = [] } = useLiveQuery((q) =>
+    q.from({ d: delegationCollection }).select(({ d }) => d)
+  )
+  const activeDelegations = allDelegations.filter((d) => !d.revokedAt)
+  const pastDelegations = allDelegations.filter((d) => d.revokedAt)
 
-  const allDelegations = (delegationsResult && "data" in delegationsResult && delegationsResult.data) ? delegationsResult.data : []
-  const activeDelegations = allDelegations.filter((d: any) => !d.revokedAt)
-  const pastDelegations = allDelegations.filter((d: any) => d.revokedAt)
+  const [isDelegating, setIsDelegating] = useState(false)
+  const [isRevoking, setIsRevoking] = useState(false)
 
-  const delegateMutation = useMutation({
-    mutationFn: (userId: string) => createDelegationAction({ userId }),
-    onSuccess: (result) => {
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-      queryClient.invalidateQueries({ queryKey: ["delegations"] })
-      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
+  function handleDelegate(userId: string) {
+    try {
+      setIsDelegating(true)
+      const id = generateClientId()
+      delegationCollection.insert({
+        id,
+        userId,
+        userName: null,
+        delegatedBy: session?.user?.name ?? "",
+        createdAt: new Date(),
+        revokedAt: null,
+        revokedBy: null,
+      })
       toast.success("Delegation created")
-    },
-  })
-
-  const revokeMutation = useMutation({
-    mutationFn: (delegationId: string) => revokeDelegationAction({ delegationId }),
-    onSuccess: (result) => {
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-      queryClient.invalidateQueries({ queryKey: ["delegations"] })
       queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
+    } catch {
+      toast.error("Failed to create delegation")
+    } finally {
+      setIsDelegating(false)
+    }
+  }
+
+  function handleRevoke(delegationId: string) {
+    try {
+      setIsRevoking(true)
+      delegationCollection.delete(delegationId)
       toast.success("Delegation revoked")
-    },
-  })
+      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
+    } catch {
+      toast.error("Failed to revoke delegation")
+    } finally {
+      setIsRevoking(false)
+    }
+  }
 
   function handleRoleChange(userId: string, newRole: UserRole) {
     startTransition(async () => {
-      // Snapshot previous state for rollback
-      const previous = queryClient.getQueryData<AdminUser[]>(queryKeys.adminUsers.list())
-
-      // Optimistically update the user's role in cache
-      queryClient.setQueryData<AdminUser[]>(queryKeys.adminUsers.list(), (old) =>
-        old?.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
-      )
-
       const result = await assignRole({ userId, role: newRole })
 
       if ("error" in result) {
-        // Rollback on error
-        queryClient.setQueryData(queryKeys.adminUsers.list(), previous)
         toast.error(result.error)
         return
       }
@@ -219,18 +220,18 @@ export default function AdminPage() {
                               : userRole.charAt(0).toUpperCase() + userRole.slice(1)}
                         </span>
                       )}
-                      {user.role === "supervisor" && has("delegation:create") && !activeDelegations.some((d: any) => d.userId === user.id) && (
+                      {user.role === "supervisor" && has("delegation:create") && !activeDelegations.some((d) => d.userId === user.id) && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => delegateMutation.mutate(user.id)}
-                          disabled={delegateMutation.isPending}
+                          onClick={() => handleDelegate(user.id)}
+                          disabled={isDelegating}
                           className="ml-2"
                         >
                           Delegate
                         </Button>
                       )}
-                      {user.role === "supervisor" && activeDelegations.some((d: any) => d.userId === user.id) && (
+                      {user.role === "supervisor" && activeDelegations.some((d) => d.userId === user.id) && (
                         <Badge variant="default" className="ml-2">Managing Supervisor</Badge>
                       )}
                     </div>
@@ -268,7 +269,7 @@ export default function AdminPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {activeDelegations.map((d: any) => (
+                {activeDelegations.map((d) => (
                   <TableRow key={d.id}>
                     <TableCell className="font-medium">{d.userName}</TableCell>
                     <TableCell>{d.delegatedBy}</TableCell>
@@ -280,8 +281,8 @@ export default function AdminPage() {
                         <Button
                           variant="destructive"
                           size="sm"
-                          onClick={() => revokeMutation.mutate(d.id)}
-                          disabled={revokeMutation.isPending}
+                          onClick={() => handleRevoke(d.id)}
+                          disabled={isRevoking}
                         >
                           Revoke
                         </Button>
@@ -308,7 +309,7 @@ export default function AdminPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pastDelegations.map((d: any) => (
+                  {pastDelegations.map((d) => (
                     <TableRow key={d.id}>
                       <TableCell className="font-medium">{d.userName}</TableCell>
                       <TableCell>{d.delegatedBy}</TableCell>

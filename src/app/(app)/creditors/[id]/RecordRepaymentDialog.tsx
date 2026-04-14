@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -23,7 +22,6 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
-import { queryKeys } from "@/hooks/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { formatCurrency, todayDateString } from "@/lib/utils"
 import type { CreditorInvestment } from "@/types"
@@ -41,7 +39,6 @@ interface RepaymentFormValues {
 }
 
 export function RecordRepaymentDialog({ creditorId, investments, outstandingBalance }: Props) {
-  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
 
@@ -87,8 +84,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
         toast.success("Repayment recorded successfully")
         setOpen(false)
         resetForm()
-        queryClient.invalidateQueries({ queryKey: queryKeys.creditors.all })
-        queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
+        // Data sync handled by TanStack DB creditor collection
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to record repayment")
       }
