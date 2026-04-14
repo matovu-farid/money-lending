@@ -10,6 +10,7 @@ export type CreditorRepayment = InferSelectModel<typeof creditorRepayments>
 export type NewCreditorRepayment = InferInsertModel<typeof creditorRepayments>
 
 export interface CreateCreditorInput {
+  id?: string
   name: string
   contact: string
   address: string
@@ -22,6 +23,7 @@ export interface UpdateCreditorInput {
 }
 
 export interface AddInvestmentInput {
+  id?: string
   creditorId: string
   amount: string
   interestRateMonthly: string
@@ -30,6 +32,7 @@ export interface AddInvestmentInput {
 }
 
 export interface RecordCreditorRepaymentInput {
+  id?: string
   investmentId: string
   amount: string
   repaymentDate: string

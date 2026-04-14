@@ -42,6 +42,7 @@ export interface CollateralInput {
 
 // --- Loan input types ---
 export interface CreateLoanInput {
+  id?: string
   customerId: string
   principalAmount: string   // string for NUMERIC precision -- no float
   issuanceFee: string        // string NUMERIC, minimum "50000"

@@ -9,6 +9,7 @@ import {
   CreditorNotFound,
   InvestmentNotFound,
 } from "@/lib/errors";
+import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
 import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/auto-post.service";
 import { getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger, getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service";
@@ -45,6 +46,7 @@ export const createCreditor = (
         const [creditor] = await tx
           .insert(creditors)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             name: input.name,
             contact: input.contact,
             address: input.address,
@@ -64,7 +66,12 @@ export const createCreditor = (
       });
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  });
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => createCreditor({ ...input, id: undefined }, actorId)
+    )
+  );
 
 export const updateCreditor = (
   id: string,
@@ -157,6 +164,7 @@ export const addInvestment = (
         const [investment] = await tx
           .insert(creditorInvestments)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             creditorId: input.creditorId,
             amount: input.amount,
             interestRateMonthly: input.interestRateMonthly,
@@ -191,7 +199,12 @@ export const addInvestment = (
         return new CreditorNotFound({ id: e.id });
       return new DatabaseError({ cause: e });
     },
-  });
+  }).pipe(
+    Effect.catchIf(
+      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
+      () => addInvestment({ ...input, id: undefined }, actorId)
+    )
+  );
 
 export const recordCreditorRepayment = (
   input: RecordCreditorRepaymentInput,
@@ -246,6 +259,7 @@ export const recordCreditorRepayment = (
         const [repayment] = await tx
           .insert(creditorRepayments)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             investmentId: input.investmentId,
             repaymentDate: new Date(input.repaymentDate),
             amount: input.amount,
@@ -304,7 +318,12 @@ export const recordCreditorRepayment = (
         return new InvestmentNotFound({ id: e.id });
       return new DatabaseError({ cause: e });
     },
-  });
+  }).pipe(
+    Effect.catchIf(
+      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
+      () => recordCreditorRepayment({ ...input, id: undefined }, actorId)
+    )
+  );
 
 export const getCreditorDashboard = (
   creditorId: string,

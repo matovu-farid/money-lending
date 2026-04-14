@@ -8,6 +8,7 @@ export type NewCustomer = InferInsertModel<typeof customers>
 export type CustomerStatus = "active" | "blacklisted" | "inactive"
 
 export interface CreateCustomerInput {
+  id?: string
   fullName: string
   nin: string
   contact: string

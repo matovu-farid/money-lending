@@ -7,6 +7,7 @@ import { user } from "@/lib/db/schema/auth"
 import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql, inArray } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
+import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
@@ -15,6 +16,7 @@ import { autoPostInterestEarned, autoPostPrincipalRepayment } from "./auto-post.
 import { getLoanBalanceFromLedger, getLoanBalancesFromLedger, getInterestEarnedFromLedger, getPaymentPortionsFromLedger } from "./ledger-queries.service"
 import BigNumber from "bignumber.js"
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils"
+import { localDateString } from "@/lib/utils"
 import {
   toLoanType,
   type RecordPaymentInput,
@@ -105,8 +107,10 @@ export const recordPayment = (
         }
 
         // Reject future-dated payments — payments can only be recorded for today or earlier
-        const paymentDateOnly = new Date(input.paymentDate).toISOString().slice(0, 10)
-        const todayOnly = new Date().toISOString().slice(0, 10)
+        // Use localDateString to avoid UTC-shift: toISOString() returns UTC date which
+        // can differ from the local calendar day in UTC+ timezones (BUG-7).
+        const paymentDateOnly = localDateString(new Date(input.paymentDate))
+        const todayOnly = localDateString(new Date())
         if (paymentDateOnly > todayOnly) {
           throw { _tag: "ValidationError", message: "Payment date cannot be in the future", field: "paymentDate" }
         }
@@ -136,7 +140,9 @@ export const recordPayment = (
           ? ledgerBalance.toFixed(0)
           : loan.principalAmount
 
-        // Compute penalty status from overdue info
+        // Compute penalty status from overdue info as of the PAYMENT date, not today.
+        // Using new Date() would apply today's penalty status to backdated payments,
+        // incorrectly bumping the rate for historical payments.
         const overdueInfo = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
           baseRate,
@@ -148,6 +154,7 @@ export const recordPayment = (
           outstandingBalance: principalBalanceBefore,
           penaltyWaived: loan.penaltyWaived,
           loan,
+          asOf: new Date(input.paymentDate),
         })
         const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
 
@@ -223,6 +230,7 @@ export const recordPayment = (
         const [newPayment] = await tx
           .insert(payments)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             loanId: input.loanId,
             paymentDate: new Date(input.paymentDate),
             amount: input.amount,
@@ -285,7 +293,12 @@ export const recordPayment = (
       if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
       return new DatabaseError({ cause: e })
     },
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
+      () => recordPayment({ ...input, id: undefined }, actorId)
+    )
+  )
 
 export const editPayment = (
   input: EditPaymentInput,
@@ -317,9 +330,9 @@ export const editPayment = (
           throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
         }
 
-        // Reject future-dated payments
-        const editDateOnly = newPaymentDate.toISOString().slice(0, 10)
-        const editTodayOnly = new Date().toISOString().slice(0, 10)
+        // Reject future-dated payments — use local date to avoid UTC-shift (BUG-7)
+        const editDateOnly = localDateString(newPaymentDate)
+        const editTodayOnly = localDateString(new Date())
         if (editDateOnly > editTodayOnly) {
           throw { _tag: "ValidationError", message: "Payment date cannot be in the future", field: "paymentDate" }
         }
@@ -376,7 +389,9 @@ export const editPayment = (
         await tx.update(payments).set(updates).where(eq(payments.id, input.paymentId))
 
         // 3. Recompute allocation with new amount/date
-        const monthlyRateDecimal = getBaseRate(loan)
+        // BUG-8 fix: compute overdue info to get effective rate (with penalty if applicable),
+        // consistent with recordPayment which uses getEffectiveRate via overdueInfo.
+        const baseRate = getBaseRate(loan)
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
         const loanType = loan.loanType ?? "perpetual"
 
@@ -408,6 +423,30 @@ export const editPayment = (
           if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0)
           principalBalanceBefore = runningBalance.toFixed(0)
         }
+
+        // Compute overdue info to get effective rate (with penalty if applicable)
+        const [editBalanceMap, editInterestMap] = await Promise.all([
+          getLoanBalancesFromLedger([payment.loanId], undefined, tx),
+          getInterestEarnedFromLedger([payment.loanId]),
+        ])
+        const editLedgerBalance = editBalanceMap.get(payment.loanId) ?? new BigNumber(0)
+        const editOutstandingBalance = editBalanceMap.has(payment.loanId)
+          ? editLedgerBalance.toFixed(0)
+          : loan.principalAmount
+
+        const overdueInfo = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          baseRate,
+          startDate: new Date(loan.startDate),
+          loanType: toLoanType(loan.loanType),
+          termMonths: loan.termMonths,
+          totalInterestPaid: formatAmount(editInterestMap.get(payment.loanId) ?? new BigNumber(0)),
+          paymentCount: activePayments.filter((p) => p.id !== input.paymentId).length,
+          outstandingBalance: editOutstandingBalance,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
+        })
+        const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
 
         // Compute interest already paid by earlier payments in the same period
         // (excluding the payment being edited, since its journals were reversed above)

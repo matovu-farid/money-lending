@@ -9,6 +9,7 @@ export type NewTransaction = InferInsertModel<typeof transactions>
 export type FinancialSnapshot = InferSelectModel<typeof financialSnapshots>
 
 export interface CreateTransactionInput {
+  id?: string
   categoryId: string
   amount: string
   transactionDate: string

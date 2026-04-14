@@ -6,6 +6,7 @@ export type Payment = InferSelectModel<typeof payments>
 export type NewPayment = InferInsertModel<typeof payments>
 
 export interface RecordPaymentInput {
+  id?: string
   loanId: string
   paymentDate: string  // ISO 8601
   amount: string       // NUMERIC string

@@ -23,8 +23,9 @@ import {
   DatabaseError,
   TransactionNotFound,
 } from "@/lib/errors"
+import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
-import { calculateInterest, formatAmount } from "@/lib/interest/engine"
+import { calculateInterest, formatAmount, computeSegmentedInterest } from "@/lib/interest/engine"
 import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import {
@@ -36,6 +37,7 @@ import {
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
   getCreditorBalancesFromLedger,
+  getPaymentPortionsFromLedger,
 } from "./ledger-queries.service"
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
@@ -142,6 +144,7 @@ export const recordExpense = (
         const [debitTx] = await tx
           .insert(transactions)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             type: "debit", amount: input.amount, categoryId: input.categoryId,
             description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
             recordedBy: actorId, journalGroupId: groupId,
@@ -160,7 +163,12 @@ export const recordExpense = (
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => recordExpense({ ...input, id: undefined }, actorId)
+    )
+  )
 
 export const recordIncome = (
   input: CreateTransactionInput,
@@ -181,6 +189,7 @@ export const recordIncome = (
         const [creditTx] = await tx
           .insert(transactions)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             type: "credit", amount: input.amount, categoryId: input.categoryId,
             description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
             recordedBy: actorId, journalGroupId: groupId,
@@ -192,7 +201,12 @@ export const recordIncome = (
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => recordIncome({ ...input, id: undefined }, actorId)
+    )
+  )
 
 export const listTransactions = (
   filters: TransactionLogFilters,
@@ -576,7 +590,7 @@ export const accrueInterestForLoans = (
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
 
       const loanIds = activeLoans.map((l) => l.id)
-      const [ledgerBalances, interestEarnedBatch, paymentCountRows] = await Promise.all([
+      const [ledgerBalances, interestEarnedBatch, paymentCountRows, allPaymentRows] = await Promise.all([
         getLoanBalancesFromLedger(loanIds),
         getInterestEarnedFromLedger(loanIds),
         loanIds.length > 0
@@ -585,8 +599,33 @@ export const accrueInterestForLoans = (
               .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
               .groupBy(payments.loanId)
           : Promise.resolve([]),
+        // Fetch all active payments for segmented interest calculation (BUG-11)
+        loanIds.length > 0
+          ? db.select({ id: payments.id, loanId: payments.loanId, paymentDate: payments.paymentDate })
+              .from(payments)
+              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+              .orderBy(asc(payments.paymentDate))
+          : Promise.resolve([]),
       ])
       const paymentCountMap = new Map(paymentCountRows.map((r) => [r.loanId, r.cnt]))
+
+      // Batch-fetch principal portions from ledger for segmented interest (BUG-11)
+      const allPaymentIds = allPaymentRows.map((p) => p.id)
+      const allPortions = allPaymentIds.length > 0
+        ? await getPaymentPortionsFromLedger(allPaymentIds)
+        : new Map<string, { interestPortion: string; principalPortion: string }>()
+
+      // Group payments by loan with their principal portions
+      const paymentsByLoan = new Map<string, { date: Date; principalPortion: string }[]>()
+      for (const p of allPaymentRows) {
+        const portion = allPortions.get(p.id)
+        const principalPortion = portion?.principalPortion ?? "0"
+        if (new BigNumber(principalPortion).isGreaterThan(0)) {
+          const existing = paymentsByLoan.get(p.loanId) ?? []
+          existing.push({ date: new Date(p.paymentDate), principalPortion })
+          paymentsByLoan.set(p.loanId, existing)
+        }
+      }
 
       let entriesPosted = 0
 
@@ -610,13 +649,17 @@ export const accrueInterestForLoans = (
           loan,
         })
         const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive)
-        const totalDaysElapsed = accrualDaysBetween(new Date(loan.startDate), asOfDate)
 
-        if (!outstandingBalanceBN || outstandingBalanceBN.isEqualTo(0)) {
-          console.warn(`[accrueInterestForLoans] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
-        }
-        const principalForAccrual = outstandingBalance
-        const totalInterestAccrued = calculateInterest(principalForAccrual, effectiveRate, totalDaysElapsed, 0)
+        // BUG-11 fix: compute interest segment-by-segment using the actual balance
+        // during each period, instead of applying current balance to all past periods.
+        const loanPayments = paymentsByLoan.get(loan.id) ?? []
+        const totalInterestAccrued = computeSegmentedInterest({
+          principalAmount: loan.principalAmount,
+          monthlyRateDecimal: effectiveRate,
+          startDate: new Date(loan.startDate),
+          asOfDate,
+          principalPayments: loanPayments,
+        })
 
         // Net Interest Earned from ledger = cash interest + accruals - reversals
         const totalInterestEarned = interestEarnedBatch.get(loan.id) ?? new BigNumber(0)
@@ -630,7 +673,13 @@ export const accrueInterestForLoans = (
           let penaltyAmount: BigNumber
 
           if (overdueInfo.penaltyActive) {
-            const totalAtBaseRate = calculateInterest(principalForAccrual, baseRate, totalDaysElapsed, 0)
+            const totalAtBaseRate = computeSegmentedInterest({
+              principalAmount: loan.principalAmount,
+              monthlyRateDecimal: baseRate,
+              startDate: new Date(loan.startDate),
+              asOfDate,
+              principalPayments: loanPayments,
+            })
             const baseTarget = totalAtBaseRate.minus(totalInterestEarned)
             baseAmount = BigNumber.max(baseTarget, 0)
             penaltyAmount = target.minus(baseAmount)

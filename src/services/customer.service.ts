@@ -6,6 +6,7 @@ import { payments } from "@/lib/db/schema/payments"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, ilike, inArray, and, count, isNull, desc } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
+import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
 import { formatAmount } from "@/lib/interest/engine"
@@ -22,6 +23,7 @@ export const createCustomer = (
       db
         .insert(customers)
         .values({
+          ...(input.id ? { id: input.id } : {}),
           fullName: input.fullName,
           nin: input.nin,
           contact: input.contact,
@@ -30,7 +32,12 @@ export const createCustomer = (
         .returning()
         .then((rows) => rows[0]),
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => createCustomer({ ...input, id: undefined })
+    )
+  )
 
 export const getCustomer = (
   id: string

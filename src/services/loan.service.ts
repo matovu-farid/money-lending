@@ -17,6 +17,7 @@ import {
   IncompleteLoanRequirements,
   ValidationError,
 } from "@/lib/errors"
+import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { postJournalEntry } from "./transaction.service"
 import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, autoPostInterestEarned, autoPostPrincipalRepayment } from "./auto-post.service"
@@ -98,9 +99,8 @@ export const createLoan = (
       const startDate = new Date(input.startDate)
 
       return await db.transaction(async (tx) => {
-        const [loan] = await tx
-          .insert(loans)
-          .values({
+        const loanValues = {
+            ...(input.id ? { id: input.id } : {}),
             customerId: input.customerId,
             principalAmount: input.rollover
               ? new BigNumber(input.principalAmount)
@@ -112,7 +112,7 @@ export const createLoan = (
             interestRate: input.interestRate,
             minInterestDays: input.minInterestDays,
             startDate,
-            status: "active",
+            status: "active" as const,
             interestRateOverride: input.interestRateOverride ?? null,
             minPeriodOverride: input.minPeriodOverride ?? null,
             issuedBy: actorId,
@@ -131,7 +131,11 @@ export const createLoan = (
               backdatedAt: new Date(),
               backdateNote: input.backdateNote,
             } : {}),
-          })
+          }
+
+        const [loan] = await tx
+          .insert(loans)
+          .values(loanValues)
           .returning()
 
         const [coll] = await tx
@@ -253,7 +257,12 @@ export const createLoan = (
         return new IncompleteLoanRequirements({ missing: e.missing })
       return new DatabaseError({ cause: e })
     },
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
+      () => createLoan({ ...input, id: undefined }, actorId)
+    )
+  )
 
 export const getLoan = (
   id: string

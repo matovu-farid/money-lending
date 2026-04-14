@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { fundTransfers } from "@/lib/db/schema/fund-transfers"
 import { desc } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
+import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { autoPostFundTransfer, autoPostCapitalInjection } from "./auto-post.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput, FundTransfer } from "@/types"
@@ -17,6 +18,7 @@ export const createFundTransfer = (
         const [transfer] = await tx
           .insert(fundTransfers)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             fromLocation: input.fromLocation,
             toLocation: input.toLocation,
             amount: input.amount,
@@ -48,7 +50,12 @@ export const createFundTransfer = (
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => createFundTransfer({ ...input, id: undefined }, actorId)
+    )
+  )
 
 export const createCapitalInjection = (
   input: CreateCapitalInjectionInput,
@@ -60,6 +67,7 @@ export const createCapitalInjection = (
         const [transfer] = await tx
           .insert(fundTransfers)
           .values({
+            ...(input.id ? { id: input.id } : {}),
             transferType: "capital_injection",
             fromLocation: null,
             toLocation: input.toLocation,
@@ -90,7 +98,12 @@ export const createCapitalInjection = (
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => createCapitalInjection({ ...input, id: undefined }, actorId)
+    )
+  )
 
 export const listFundTransfers = (): Effect.Effect<FundTransfer[], DatabaseError> =>
   Effect.tryPromise({

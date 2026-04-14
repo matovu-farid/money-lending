@@ -6,6 +6,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
+import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { autoPostRateChangeAdjustment } from "./auto-post.service"
 import { shortId } from "@/lib/utils"
@@ -35,6 +36,7 @@ export const createRateChangeRequest = (
       const [request] = await db
         .insert(rateChangeRequests)
         .values({
+          ...(input.id ? { id: input.id } : {}),
           loanId: input.loanId,
           requestedRate: input.requestedRate,
           currentRate,
@@ -51,7 +53,12 @@ export const createRateChangeRequest = (
       if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
       return new DatabaseError({ cause: e })
     },
-  })
+  }).pipe(
+    Effect.catchIf(
+      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
+      () => createRateChangeRequest({ ...input, id: undefined }, requestedBy, requiredApproverRole, currentRate)
+    )
+  )
 
 export const applyRateChangeImmediately = (
   loanId: string,

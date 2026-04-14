@@ -6,6 +6,7 @@ export type FundTransfer = InferSelectModel<typeof fundTransfers>
 export type NewFundTransfer = InferInsertModel<typeof fundTransfers>
 
 export interface CreateFundTransferInput {
+  id?: string
   fromLocation: DepositLocation
   toLocation: DepositLocation
   amount: string       // NUMERIC string
@@ -13,6 +14,7 @@ export interface CreateFundTransferInput {
 }
 
 export interface CreateCapitalInjectionInput {
+  id?: string
   toLocation: DepositLocation
   amount: string       // NUMERIC string
   note?: string

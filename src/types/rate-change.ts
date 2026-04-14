@@ -7,6 +7,7 @@ export type NewRateChangeRequest = InferInsertModel<typeof rateChangeRequests>
 export type RateChangeStatus = "pending" | "approved" | "rejected"
 
 export interface CreateRateChangeRequestInput {
+  id?: string
   loanId: string
   requestedRate: string  // decimal string e.g. "0.08" for 8%/month
 }
