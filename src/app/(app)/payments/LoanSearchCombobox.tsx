@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Clock, Search, X } from "lucide-react"
+import { useLiveQuery } from "@tanstack/react-db"
+import { loanCollection } from "@/collections"
 import { Input } from "@/components/ui/input"
-import { Spinner } from "@/components/ui/spinner"
-import { useSearchActiveLoans } from "@/hooks/use-search-active-loans"
 import { formatNumberWithCommas, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
 
@@ -27,7 +27,28 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
   const sideOffset = 4
 
   const isSearchMode = query.trim().length >= 2
-  const { data: results = [], isLoading: isSearching } = useSearchActiveLoans(query)
+  const { data: allLoans } = useLiveQuery((q) =>
+    q.from({ loan: loanCollection }).select(({ loan }) => loan)
+  )
+  const results: ActiveLoanSearchResult[] = useMemo(() => {
+    if (!isSearchMode) return []
+    const q = query.toLowerCase()
+    return (allLoans ?? [])
+      .filter(
+        (loan) =>
+          loan.status === "active" &&
+          (loan.customerName.toLowerCase().includes(q) ||
+            loan.id.includes(q))
+      )
+      .slice(0, 10)
+      .map((loan) => ({
+        loanId: loan.id,
+        customerId: loan.customerId,
+        customerName: loan.customerName,
+        principalAmount: loan.principalAmount,
+      }))
+  }, [allLoans, query, isSearchMode])
+  const isSearching = false
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value
@@ -128,10 +149,6 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
                 ))}
               </ul>
             </>
-          ) : isSearching ? (
-            <div className="flex items-center justify-center gap-2 py-4 text-sm text-muted-foreground">
-              <Spinner>Searching...</Spinner>
-            </div>
           ) : !isSearchMode ? (
             <p className="py-4 px-3 text-sm text-muted-foreground">
               Type at least 2 characters to search

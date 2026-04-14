@@ -3,9 +3,10 @@
 import { useState, useMemo, useCallback, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
+import { loanCollection } from "@/collections"
 import { Plus, ChevronRight, Loader2 } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
-import { useLoans } from "@/hooks/use-loans"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
@@ -44,10 +45,12 @@ function criticalityRank(entry: LoanListEntry): number {
 export default function LoansPage() {
   const router = useRouter()
   const queryClient = useQueryClient()
-  const { data, isLoading, error: queryError, dataUpdatedAt } = useLoans()
+  const { data, isLoading } = useLiveQuery((q) =>
+    q.from({ loan: loanCollection }).select(({ loan }) => loan)
+  )
   const entries = data ?? []
-  const error = queryError?.message ?? null
-  const calculatedAt = dataUpdatedAt ? new Date(dataUpdatedAt) : new Date()
+  const error: string | null = null
+  const calculatedAt = new Date()
 
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all")
   const [isExporting, setIsExporting] = useState(false)

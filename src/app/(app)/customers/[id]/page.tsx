@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLiveQuery, eq } from "@tanstack/react-db";
-import { customerCollection, loanCollection } from "@/collections";
+import { customerCollection, loanCollection, paymentCollection } from "@/collections";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -14,7 +14,6 @@ import {
 } from "@/actions/customer.actions";
 import { getLoanPaymentContextAction } from "@/actions/loan.actions";
 import { getPaymentPortionsAction, getLoanBalanceAction } from "@/actions/payment.actions";
-import { useLoanPayments } from "@/hooks/use-payments";
 import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
@@ -68,13 +67,13 @@ interface LoanWithOverdue {
 
 function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { data: rawPayments, isLoading: loadingPayments } = useLoanPayments(
-    item.loan.id,
-    expanded,
+  const { data: rawPayments, isLoading: loadingPayments } = useLiveQuery(
+    (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, item.loan.id)),
+    [item.loan.id]
   );
   const payments = Array.isArray(rawPayments) ? rawPayments : [];
 
-  const activePaymentIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id);
+  const activePaymentIds = payments.map((p) => p.id);
   const { data: portionsData } = useQuery<PaymentPortionsMap>({
     queryKey: [...queryKeys.payments.portions(item.loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
@@ -177,59 +176,33 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
                       <TableRow
                         key={payment.id}
                         data-testid="data-row"
-                        className={cn(payment.deletedAt && "opacity-60")}
                       >
-                        <TableCell
-                          className={cn(
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
+                        <TableCell>
                           {formatDate(payment.paymentDate)}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-mono tabular-nums",
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
+                        <TableCell className="text-right font-mono tabular-nums">
                           {formatCurrency(payment.amount)}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-mono tabular-nums",
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
+                        <TableCell className="text-right font-mono tabular-nums">
                           {formatCurrency(portionsData?.[payment.id]?.interestPortion ?? "0.00")}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-mono tabular-nums",
-                            payment.deletedAt &&
-                              "line-through text-muted-foreground",
-                          )}
-                        >
+                        <TableCell className="text-right font-mono tabular-nums">
                           {formatCurrency(portionsData?.[payment.id]?.principalPortion ?? "0.00")}
                         </TableCell>
                         <TableCell>
-                          {!payment.deletedAt && (
-                            <PaymentReceiptButton
-                              data={{
-                                paymentDate: payment.paymentDate,
-                                customerName,
-                                loanReference: `LOAN-${shortId(item.loan.id).toUpperCase()}`,
-                                amountPaid: payment.amount,
-                                interestPortion: portionsData?.[payment.id]?.interestPortion ?? "0.00",
-                                principalPortion: portionsData?.[payment.id]?.principalPortion ?? "0.00",
-                                balanceAfter: "0.00",
-                                depositLocation: payment.depositLocation,
-                                officerName: "Officer",
-                              }}
-                            />
-                          )}
+                          <PaymentReceiptButton
+                            data={{
+                              paymentDate: payment.paymentDate,
+                              customerName,
+                              loanReference: `LOAN-${shortId(item.loan.id).toUpperCase()}`,
+                              amountPaid: payment.amount,
+                              interestPortion: portionsData?.[payment.id]?.interestPortion ?? "0.00",
+                              principalPortion: portionsData?.[payment.id]?.principalPortion ?? "0.00",
+                              balanceAfter: "0.00",
+                              depositLocation: payment.depositLocation,
+                              officerName: "Officer",
+                            }}
+                          />
                         </TableCell>
                       </TableRow>
                     ))}

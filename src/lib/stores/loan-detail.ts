@@ -1,16 +1,16 @@
 import { create } from "zustand"
 import { devtools } from "zustand/middleware"
-import type { Payment } from "@/types"
+import type { PaymentWithCustomer } from "@/types"
 
 interface LoanDetailState {
   // Payment edit dialog
-  editingPayment: Payment | null
+  editingPayment: PaymentWithCustomer | null
   editAmount: string
   editDate: string
   editReason: string
 
   // Payment delete dialog
-  deletingPayment: Payment | null
+  deletingPayment: PaymentWithCustomer | null
   deleteReason: string
 
   // Loan edit dialog
@@ -38,14 +38,14 @@ interface LoanDetailState {
 
 interface LoanDetailActions {
   // Payment edit
-  openPaymentEdit: (payment: Payment) => void
+  openPaymentEdit: (payment: PaymentWithCustomer) => void
   closePaymentEdit: () => void
   setEditAmount: (v: string) => void
   setEditDate: (v: string) => void
   setEditReason: (v: string) => void
 
   // Payment delete
-  openPaymentDelete: (payment: Payment) => void
+  openPaymentDelete: (payment: PaymentWithCustomer) => void
   closePaymentDelete: () => void
   setDeleteReason: (v: string) => void
 

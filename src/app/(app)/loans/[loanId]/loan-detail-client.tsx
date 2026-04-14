@@ -17,12 +17,13 @@ import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymen
 import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction, getCurrentUserRoleAction, resolveUserNamesAction, getLoanCollateralAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
-import { useLoanPayments } from "@/hooks/use-payments"
+import { useLiveQuery, eq } from "@tanstack/react-db"
+import { paymentCollection } from "@/collections"
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
 import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
-import type { Loan, Payment, PaymentPortionsMap } from "@/types"
+import type { Loan, PaymentPortionsMap } from "@/types"
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
@@ -75,8 +76,11 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const collateralNature = collateralData?.nature
   const collateralDescription = collateralData?.description ?? null
 
-  // Use TanStack Query for payments so subsequent navigations are cached
-  const { data: rawPayments } = useLoanPayments(loan.id, true)
+  // Use TanStack DB collection for payments — live, reactive, cached
+  const { data: rawPayments } = useLiveQuery(
+    (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, loan.id)),
+    [loan.id]
+  )
   const payments = Array.isArray(rawPayments) ? rawPayments : []
 
   // Resolve recordedBy user IDs to names
@@ -91,7 +95,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   })
 
   // Client-side query for payment portions — refreshes when payments change
-  const activePaymentIds = payments.filter((p) => p.deletedAt === null && !p.markedWrong).map((p) => p.id)
+  const activePaymentIds = payments.map((p) => p.id)
   const { data: livePortions } = useQuery<PaymentPortionsMap>({
     queryKey: [...queryKeys.payments.portions(loan.id), activePaymentIds.join(",")],
     queryFn: async () => {
@@ -163,8 +167,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   }, [loan.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
 
-  const activePayments = payments
-    .filter((p) => p.deletedAt === null)
+  const activePayments = [...payments]
     .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
   // Use ledger-derived balance from server; fall back to principalAmount
   const outstandingBalance = ledgerBalance ?? loan.principalAmount
@@ -192,7 +195,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     let balance = new BigNumber(loan.principalAmount)
     // Use non-deleted payments sorted by date
     const sorted = payments
-      .filter((p) => p.deletedAt === null && !p.markedWrong)
       .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime() || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
     for (const p of sorted) {
       const principal = currentPortions[p.id]?.principalPortion ?? "0"
@@ -530,7 +532,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       {loan.status === "active" && (
         <SimulatorPanel
           loan={loan}
-          payments={payments.filter(p => !p.deletedAt)}
+          payments={payments}
           ledgerBalance={balanceData?.outstandingPrincipal ?? ledgerBalance}
           totalInterestPaid={Object.values(currentPortions).reduce(
             (sum, p) => sum.plus(p.interestPortion), new BigNumber(0)

@@ -6,7 +6,6 @@ import {
   Banknote,
   UserCircle,
 } from "lucide-react"
-import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -23,12 +22,12 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
-import type { Payment, PaymentPortionsMap } from "@/types"
+import type { PaymentWithCustomer, PaymentPortionsMap } from "@/types"
 import { cn, formatDate, formatCurrency, shortId } from "@/lib/utils"
 
 export interface PaymentTableProps {
-  payments: Payment[]
-  activePayments: Payment[]
+  payments: PaymentWithCustomer[]
+  activePayments: PaymentWithCustomer[]
   loanId: string
   loanRef: string
   loanStatus: string
@@ -37,8 +36,8 @@ export interface PaymentTableProps {
   currentPortions: PaymentPortionsMap
   runningBalanceMap: Record<string, string>
   outstandingBalance: string
-  onEditPayment: (payment: Payment) => void
-  onDeletePayment: (payment: Payment) => void
+  onEditPayment: (payment: PaymentWithCustomer) => void
+  onDeletePayment: (payment: PaymentWithCustomer) => void
 }
 
 export function PaymentTable({
@@ -101,72 +100,66 @@ export function PaymentTable({
               </TableHeader>
               <TableBody>
                 {payments.map((payment) => {
-                  const isDeleted = payment.deletedAt !== null
-                  const cellClass = isDeleted ? "opacity-50 line-through" : ""
                   const recorderName = userNameMap[payment.recordedBy] ?? shortId(payment.recordedBy)
                   return (
-                    <TableRow key={payment.id} data-testid="data-row" className={isDeleted ? "bg-muted/20" : ""}>
-                      <TableCell className={cn("font-mono tabular-nums text-sm", cellClass)}>
+                    <TableRow key={payment.id} data-testid="data-row">
+                      <TableCell className="font-mono tabular-nums text-sm">
                         {formatDate(payment.paymentDate)}
                       </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                      <TableCell className="text-right font-mono tabular-nums text-sm">
                         {formatCurrency(payment.amount)}
                       </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                      <TableCell className="text-right font-mono tabular-nums text-sm">
                         {formatCurrency(currentPortions[payment.id]?.interestPortion ?? "0.00")}
                       </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
+                      <TableCell className="text-right font-mono tabular-nums text-sm">
                         {formatCurrency(currentPortions[payment.id]?.principalPortion ?? "0.00")}
                       </TableCell>
-                      <TableCell className={cn("text-right font-mono tabular-nums text-sm", cellClass)}>
-                        {payment.markedWrong ? "—" : formatCurrency(runningBalanceMap[payment.id] ?? outstandingBalance)}
+                      <TableCell className="text-right font-mono tabular-nums text-sm">
+                        {formatCurrency(runningBalanceMap[payment.id] ?? outstandingBalance)}
                       </TableCell>
-                      <TableCell className={cn("text-sm", cellClass)}>
+                      <TableCell className="text-sm">
                         <div className="flex items-center gap-1.5">
                           <UserCircle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="truncate max-w-[120px]">{recorderName}</span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        {isDeleted ? (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0">Deleted</Badge>
-                        ) : (
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              aria-label="Payment actions"
-                              className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
+                        <DropdownMenu>
+                          <DropdownMenuTrigger
+                            aria-label="Payment actions"
+                            className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <PaymentReceiptButton
+                              variant="dropdown-item"
+                              data={{
+                                paymentDate: payment.paymentDate,
+                                customerName: customerName ?? "—",
+                                loanReference: loanRef,
+                                amountPaid: payment.amount,
+                                interestPortion: currentPortions[payment.id]?.interestPortion ?? "0.00",
+                                principalPortion: currentPortions[payment.id]?.principalPortion ?? "0.00",
+                                balanceAfter: runningBalanceMap[payment.id] ?? outstandingBalance,
+                                depositLocation: payment.depositLocation,
+                                officerName: userNameMap[payment.recordedBy] ?? "Officer",
+                              }}
+                            />
+                            <DropdownMenuItem
+                              onClick={() => onEditPayment(payment)}
                             >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <PaymentReceiptButton
-                                variant="dropdown-item"
-                                data={{
-                                  paymentDate: payment.paymentDate,
-                                  customerName: customerName ?? "—",
-                                  loanReference: loanRef,
-                                  amountPaid: payment.amount,
-                                  interestPortion: currentPortions[payment.id]?.interestPortion ?? "0.00",
-                                  principalPortion: currentPortions[payment.id]?.principalPortion ?? "0.00",
-                                  balanceAfter: runningBalanceMap[payment.id] ?? outstandingBalance,
-                                  depositLocation: payment.depositLocation,
-                                  officerName: userNameMap[payment.recordedBy] ?? "Officer",
-                                }}
-                              />
-                              <DropdownMenuItem
-                                onClick={() => onEditPayment(payment)}
-                              >
-                                Edit Payment
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() => onDeletePayment(payment)}
-                                variant="destructive"
-                              >
-                                Delete Payment
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        )}
+                              Edit Payment
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onDeletePayment(payment)}
+                              variant="destructive"
+                            >
+                              Delete Payment
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
                     </TableRow>
                   )

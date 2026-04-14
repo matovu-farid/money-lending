@@ -11,7 +11,7 @@ import {
 } from "@/lib/interest"
 import type { PaymentAllocation } from "@/lib/interest"
 import BigNumber from "bignumber.js"
-import type { Loan, Payment } from "@/types"
+import type { Loan, PaymentWithCustomer } from "@/types"
 import { formatCurrency } from "@/lib/utils"
 import { Card, CardContent } from "@/components/ui/card"
 import { MoneyInput } from "@/components/ui/money-input"
@@ -20,7 +20,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 
 interface SimulatorPanelProps {
   loan: Loan
-  payments: Payment[]
+  payments: PaymentWithCustomer[]
   ledgerBalance: string | null
   totalInterestPaid?: string
 }
