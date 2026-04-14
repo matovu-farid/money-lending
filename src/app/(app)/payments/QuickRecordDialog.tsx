@@ -1,9 +1,11 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
 import { useQuery } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
+import { loanCollection } from "@/collections"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -25,7 +27,7 @@ import { generateReceiptNumber } from "@/lib/receipt-number"
 import { useSession } from "@/lib/auth-client"
 import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
-import { getRecentlyCollectedLoansAction, recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
+import { recordPaymentAction, getLoanBalanceAction } from "@/actions/payment.actions"
 import { queryKeys } from "@/hooks/query-keys"
 import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult, DepositLocation, ReceiptPaymentData } from "@/types"
@@ -64,15 +66,19 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     },
   })
 
-  const { data: recentLoans = [] } = useQuery({
-    queryKey: queryKeys.recentLoans.list(),
-    queryFn: async () => {
-      const r = await getRecentlyCollectedLoansAction()
-      return "error" in r ? [] : r.data
-    },
-    staleTime: 0,
-    enabled: open,
-  })
+  // Get active loans from collection, sorted by last payment activity
+  const { data: allActiveLoans = [] } = useLiveQuery(
+    (q) => q.from({ l: loanCollection }),
+    []
+  )
+  const recentLoans = useMemo(
+    () => allActiveLoans
+      .filter((l) => l.status === "active" && l.lastPaymentDate)
+      .sort((a, b) => new Date(b.lastPaymentDate!).getTime() - new Date(a.lastPaymentDate!).getTime())
+      .slice(0, 5)
+      .map((l) => ({ loanId: l.id, customerName: l.customerName ?? "Unknown", paymentDate: new Date(l.lastPaymentDate!) })),
+    [allActiveLoans]
+  )
 
   // Fetch balance for selected loan
   const { data: balanceData } = useQuery({

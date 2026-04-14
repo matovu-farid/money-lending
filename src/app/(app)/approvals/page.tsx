@@ -1,11 +1,13 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
-import { listAllRequestsAction, reviewRateChangeRequestAction } from "@/actions/rate-change-request.actions"
+import { reviewRateChangeRequestAction } from "@/actions/rate-change-request.actions"
+import { rateChangeRequestCollection } from "@/collections"
 import { queryKeys } from "@/hooks/query-keys"
 import type { Permission } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -43,15 +45,10 @@ export default function ApprovalsPage() {
   const { has } = usePermissions()
   const isSupervisorOrAbove = has("rate-change:approve-standard")
 
-  const { data: requests = [], isLoading } = useQuery({
-    queryKey: queryKeys.rateChangeRequests.pending(),
-    queryFn: async () => {
-      const result = await listAllRequestsAction()
-      if ("error" in result) return []
-      return result.data
-    },
-    enabled: !!session && isSupervisorOrAbove,
-  })
+  const { data: requests = [], isLoading } = useLiveQuery(
+    (q) => q.from({ r: rateChangeRequestCollection }),
+    []
+  )
 
   const [reviewingRequest, setReviewingRequest] = useState<RateChangeRequestWithLoan | null>(null)
   const [reviewAction, setReviewAction] = useState<"approved" | "rejected">("approved")

@@ -17,9 +17,9 @@ import { getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/paymen
 import { updatePaymentWithInput, deletePaymentWithReason } from "@/collections"
 import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction, getCurrentUserRoleAction, resolveUserNamesAction, getLoanCollateralAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
-import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
+import { requestRateChangeAction } from "@/actions/rate-change-request.actions"
 import { useLiveQuery, eq } from "@tanstack/react-db"
-import { paymentCollection } from "@/collections"
+import { paymentCollection, rateChangeRequestCollection } from "@/collections"
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
 import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
@@ -129,15 +129,11 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const [isWaivingPenalty, startWaivePenaltyTransition] = useTransition()
   const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
 
-  // Fetch pending rate change requests for this loan
-  const { data: rateChangeRequests = [] } = useQuery({
-    queryKey: queryKeys.rateChangeRequests.byLoan(loan.id),
-    queryFn: async () => {
-      const result = await listRequestsForLoanAction(loan.id)
-      if ("error" in result) return []
-      return result.data
-    },
-  })
+  // Fetch rate change requests for this loan from collection
+  const { data: rateChangeRequests = [] } = useLiveQuery(
+    (q) => q.from({ r: rateChangeRequestCollection }).where(({ r }) => eq(r.loanId, loan.id)),
+    [loan.id]
+  )
 
   const { data: balanceData } = useQuery({
     queryKey: queryKeys.loans.balance(loan.id),

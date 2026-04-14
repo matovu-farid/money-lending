@@ -2,17 +2,19 @@
 
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useForm } from "react-hook-form"
-import { getCustomerAction } from "@/actions/customer.actions"
-import { getCollateralNaturesAction, getCustomerLoansWithOverdueAction, getLoanCollateralAction, getLocationBalancesAction } from "@/actions/loan.actions"
+import { customerCollection } from "@/collections"
+import { getCollateralNaturesAction, getLoanCollateralAction, getLocationBalancesAction } from "@/actions/loan.actions"
 import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
-import { useCreateLoan } from "@/hooks/use-create-loan"
+import { generateClientId } from "@/lib/client-id"
+import { insertLoanWithInput } from "@/collections"
 import { useSession } from "@/lib/auth-client"
-import { queryKeys } from "@/hooks/query-keys"
+
 import { calculateLoanSummary } from "@/lib/interest"
 import { generateReceiptNumber } from "@/lib/receipt-number"
-import type { CollateralInput, LoanType } from "@/types"
+import type { CollateralInput, CreateLoanInput, LoanType, LoanListEntry } from "@/types"
 import { toast } from "sonner"
 import { PageHeader } from "@/components/ui/page-header"
 import BigNumber from "bignumber.js"
@@ -22,7 +24,6 @@ import { useNewLoanFormStore } from "@/lib/stores/new-loan-form"
 import { todayDateString } from "@/lib/utils"
 import type { UserRole } from "@/types"
 import type { LoanFormValues, ReceiptData } from "./_types"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { StepIndicator } from "./_components/step-indicator"
 import { LoanDetailsStep } from "./_components/loan-details-step"
 import { CollateralStep } from "./_components/collateral-step"
@@ -31,10 +32,9 @@ import { ReviewStep } from "./_components/review-step"
 
 function NewLoanPageInner() {
   const searchParams = useSearchParams()
-  const queryClient = useQueryClient()
   const router = useRouter()
-  const createLoan = useCreateLoan()
   const { data: session } = useSession()
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const userRole = (session?.user?.role ?? "unassigned") as UserRole
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
@@ -113,7 +113,7 @@ function NewLoanPageInner() {
   const disbursementSource = watch("disbursementSource")
   const backdateNote = watch("backdateNote")
 
-  const isPending = createLoan.isPending
+  const isPending = isSubmitting
 
   // --- Data queries ---
 
@@ -131,22 +131,11 @@ function NewLoanPageInner() {
     },
   })
 
-  const cachedCustomer = prefilledCustomerId
-    ? queryClient.getQueryData<{ fullName: string }>(queryKeys.customers.detail(prefilledCustomerId))
-    : undefined
-  const { data: customerName = null } = useQuery({
-    queryKey: queryKeys.customers.detail(prefilledCustomerId),
-    queryFn: async () => {
-      const result = await getCustomerAction(prefilledCustomerId)
-      if ("data" in result && result.data) {
-        return result.data
-      }
-      return null
-    },
-    enabled: !!prefilledCustomerId,
-    initialData: cachedCustomer,
-    select: (data) => data?.fullName ?? null,
-  })
+  const { data: matchedCustomers } = useLiveQuery(
+    (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, prefilledCustomerId)),
+    [prefilledCustomerId]
+  )
+  const customerName = matchedCustomers?.[0]?.fullName ?? null
 
   const { data: activeLoanData } = useQuery({
     queryKey: ["active-loan-check", customerId],
@@ -246,6 +235,8 @@ function NewLoanPageInner() {
   // --- Submit ---
 
   function onSubmit(data: LoanFormValues) {
+    setIsSubmitting(true)
+
     const collateral: CollateralInput = {
       nature: data.collateralNature,
       description: data.collateralDescription.trim(),
@@ -259,50 +250,96 @@ function NewLoanPageInner() {
         }
       : undefined
 
-    createLoan.mutate(
-      {
-        customerId: data.customerId,
-        principalAmount: data.principalAmount,
-        issuanceFee: rolloverData ? "0" : data.issuanceFee,
-        interestRate: (parseFloat(data.interestRateDisplay) / 100).toFixed(10),
-        minInterestDays: 30,
-        startDate: new Date(data.startDate).toISOString(),
-        collateral,
-        disbursementSource: data.disbursementSource,
-        loanType,
-        termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined,
-        rollover: rolloverData,
-        backdateNote: data.backdateNote?.trim() || undefined,
-      },
-      {
-        onSuccess: (result) => {
-          if (!("error" in result)) {
-            setReceiptData({
-              receiptNumber: generateReceiptNumber(),
-              customerId: data.customerId,
-              customerName: customerName ?? "Customer",
-              loanAmount: data.principalAmount,
-              issuanceFee: rolloverData ? "0" : data.issuanceFee,
-              interestRate: `${data.interestRateDisplay}%`,
-              collateralNature: data.collateralNature,
-              collateralDescription: data.collateralDescription.trim(),
-              disbursementSource: data.disbursementSource,
-              date: new Date(data.startDate).toISOString(),
-              ...(rolloverData ? {
-                rolloverAmount: new BigNumber(rolloverData.carriedPrincipal)
-                  .plus(new BigNumber(rolloverData.carriedInterest))
-                  .toFixed(0),
-                totalNewPrincipal: new BigNumber(data.principalAmount)
-                  .plus(new BigNumber(rolloverData.carriedPrincipal))
-                  .plus(new BigNumber(rolloverData.carriedInterest))
-                  .toFixed(0),
-              } : {}),
-            })
-            draft.clear()
-          }
-        },
-      }
-    )
+    const id = generateClientId()
+    const interestRate = (parseFloat(data.interestRateDisplay) / 100).toFixed(10)
+    const fee = rolloverData ? "0" : data.issuanceFee
+
+    // Build optimistic LoanListEntry from form data
+    const optimistic: LoanListEntry = {
+      id,
+      customerId: data.customerId,
+      customerName: customerName ?? "Customer",
+      customerContact: null,
+      principalAmount: effectivePrincipal || data.principalAmount,
+      issuanceFee: fee,
+      interestRate,
+      minInterestDays: 30,
+      interestRateOverride: null,
+      minPeriodOverride: null,
+      startDate: new Date(data.startDate),
+      status: "active",
+      issuedBy: session?.user?.id ?? "",
+      disbursementSource: data.disbursementSource,
+      loanType: loanType ?? "perpetual",
+      termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : null,
+      penaltyMultiplier: "0.1000",
+      penaltyWaived: false,
+      penaltyWaivedBy: null,
+      penaltyWaivedAt: null,
+      rolledOverFrom: rolloverData?.fromLoanId ?? null,
+      rolloverAmount: rolloverData
+        ? new BigNumber(rolloverData.carriedPrincipal)
+            .plus(new BigNumber(rolloverData.carriedInterest))
+            .toFixed(0)
+        : null,
+      backdatedFrom: null,
+      backdatedBy: null,
+      backdatedAt: null,
+      backdateNote: data.backdateNote?.trim() || null,
+      deletedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      // LoanListEntry extra fields
+      daysOverdue: 0,
+      outstandingBalance: effectivePrincipal || data.principalAmount,
+      dailyRate: "0",
+      lastPaymentDate: null,
+      unpaidInterest: "0",
+    }
+
+    const formInput: CreateLoanInput = {
+      id,
+      customerId: data.customerId,
+      principalAmount: data.principalAmount,
+      issuanceFee: fee,
+      interestRate,
+      minInterestDays: 30,
+      startDate: new Date(data.startDate).toISOString(),
+      collateral,
+      disbursementSource: data.disbursementSource,
+      loanType,
+      termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined,
+      rollover: rolloverData,
+      backdateNote: data.backdateNote?.trim() || undefined,
+    }
+
+    // Insert into collection (queues server action) and show receipt immediately
+    insertLoanWithInput(id, optimistic, formInput)
+
+    setReceiptData({
+      receiptNumber: generateReceiptNumber(),
+      loanId: id,
+      customerId: data.customerId,
+      customerName: customerName ?? "Customer",
+      loanAmount: data.principalAmount,
+      issuanceFee: fee,
+      interestRate: `${data.interestRateDisplay}%`,
+      collateralNature: data.collateralNature,
+      collateralDescription: data.collateralDescription.trim(),
+      disbursementSource: data.disbursementSource,
+      date: new Date(data.startDate).toISOString(),
+      ...(rolloverData ? {
+        rolloverAmount: new BigNumber(rolloverData.carriedPrincipal)
+          .plus(new BigNumber(rolloverData.carriedInterest))
+          .toFixed(0),
+        totalNewPrincipal: new BigNumber(data.principalAmount)
+          .plus(new BigNumber(rolloverData.carriedPrincipal))
+          .plus(new BigNumber(rolloverData.carriedInterest))
+          .toFixed(0),
+      } : {}),
+    })
+    draft.clear()
+    setIsSubmitting(false)
   }
 
   return (
@@ -374,25 +411,13 @@ function NewLoanPageInner() {
       <PosReceiptModal
         open={receiptData !== null}
         onClose={() => {
-          const customerId = receiptData?.customerId
+          const cId = receiptData?.customerId
+          const loanId = receiptData?.loanId
           setReceiptData(null)
-          if (customerId) {
-            prefetchQueue.add(() =>
-              queryClient.prefetchQuery({
-                queryKey: queryKeys.customers.detail(customerId),
-                queryFn: () => getCustomerAction(customerId),
-                staleTime: 30_000,
-              }), Priority.CRITICAL, `data:customer-detail-${customerId}`)
-            prefetchQueue.add(() =>
-              queryClient.prefetchQuery({
-                queryKey: queryKeys.loans.byCustomer(customerId),
-                queryFn: () => getCustomerLoansWithOverdueAction(customerId),
-                staleTime: 30_000,
-              }), Priority.CRITICAL, `data:loans-by-customer-${customerId}`)
-            prefetchQueue.add(
-              () => router.prefetch(`/customers/${customerId}`),
-              Priority.CRITICAL, `route:/customers/${customerId}`)
-            router.push(`/customers/${customerId}`)
+          if (loanId) {
+            router.push(`/loans/${loanId}`)
+          } else if (cId) {
+            router.push(`/customers/${cId}`)
           }
         }}
         title="Loan Disbursement Receipt"

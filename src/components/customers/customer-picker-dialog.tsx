@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useCallback, useRef, useEffect } from "react"
+import { useState, useCallback, useRef, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQueryClient } from "@tanstack/react-query"
+import { useLiveQuery } from "@tanstack/react-db"
 import { Search, Loader2 } from "lucide-react"
 import { searchCustomersAction, getCustomerAction } from "@/actions/customer.actions"
+import { customerCollection } from "@/collections"
 import { queryKeys } from "@/hooks/query-keys"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import { Input } from "@/components/ui/input"
@@ -25,17 +27,15 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Fetch 3 most recent customers (cached by TanStack Query, prefetchable)
-  const { data: recentCustomers = [] } = useQuery({
-    queryKey: queryKeys.customers.recent(),
-    queryFn: async () => {
-      const res = await searchCustomersAction({ page: 0, pageSize: 3, sortByRecent: true })
-      if ("data" in res && res.data) return res.data.rows
-      return []
-    },
-    enabled: open,
-    staleTime: 30_000,
-  })
+  // Fetch all customers from collection, then derive 3 most recent
+  const { data: allCustomers = [] } = useLiveQuery(
+    (q) => q.from({ c: customerCollection }),
+    []
+  )
+  const recentCustomers = useMemo(
+    () => [...allCustomers].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 3),
+    [allCustomers]
+  )
 
   // Reset state when dialog opens
   useEffect(() => {
