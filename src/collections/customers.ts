@@ -25,6 +25,7 @@ export const customerCollection = createCollection(
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input: CreateCustomerInput = {
+        id: modified.id,
         fullName: modified.fullName,
         nin: modified.nin,
         contact: modified.contact,
