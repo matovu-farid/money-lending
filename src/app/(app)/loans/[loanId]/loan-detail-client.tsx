@@ -14,13 +14,13 @@ import {
   PlusCircle,
 } from "lucide-react"
 import { editPaymentAction, deletePaymentAction, getLoanBalanceAction, getPaymentPortionsAction } from "@/actions/payment.actions"
-import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction } from "@/actions/loan.actions"
+import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction, getCurrentUserRoleAction, resolveUserNamesAction, getLoanCollateralAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { requestRateChangeAction, listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
 import { useLoanPayments } from "@/hooks/use-payments"
 import { useQuery } from "@tanstack/react-query"
 import { queryKeys } from "@/hooks/query-keys"
-import type { UserRole, RateChangeRequest } from "@/types"
+import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, Payment, PaymentPortionsMap } from "@/types"
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
@@ -41,27 +41,54 @@ import { DeletePaymentDialog } from "./delete-payment-dialog"
 import { RateChangeDialog } from "./rate-change-dialog"
 
 interface LoanDetailClientProps {
-  loan: Loan
-  initialPayments: Payment[]
+  loanEntry: LoanListEntry
   customerName: string | null
-  userNameMap: Record<string, string>
-  ledgerBalance: string | null
-  paymentPortions: PaymentPortionsMap
-  userRole: UserRole
-  collateralNature?: string
-  collateralDescription?: string | null
-  daysOverdue: number
 }
 
-export function LoanDetailClient({ loan, initialPayments, customerName, userNameMap, ledgerBalance, paymentPortions, userRole, collateralNature, collateralDescription, daysOverdue }: LoanDetailClientProps) {
+export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientProps) {
+  // LoanListEntry extends Loan, so we can use it directly as a Loan
+  const loan: Loan = loanEntry
+  const daysOverdue = loanEntry.daysOverdue
+  const ledgerBalance: string | null = loanEntry.outstandingBalance
+
   const router = useRouter()
   const queryClient = useQueryClient()
   const { has } = usePermissions()
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
+  // Fetch userRole via server action
+  const { data: userRole = "unassigned" as UserRole } = useQuery<UserRole>({
+    queryKey: ["current-user-role"],
+    queryFn: () => getCurrentUserRoleAction(),
+    staleTime: 60_000,
+  })
+
+  // Fetch collateral via server action
+  const { data: collateralData } = useQuery({
+    queryKey: [...queryKeys.loans.detail(loan.id), "collateral"],
+    queryFn: async () => {
+      const result = await getLoanCollateralAction(loan.id)
+      if ("error" in result) return null
+      return result.data
+    },
+  })
+  const collateralNature = collateralData?.nature
+  const collateralDescription = collateralData?.description ?? null
+
   // Use TanStack Query for payments so subsequent navigations are cached
-  const { data: rawPayments } = useLoanPayments(loan.id, true, initialPayments)
-  const payments = Array.isArray(rawPayments) ? rawPayments : (Array.isArray(initialPayments) ? initialPayments : [])
+  const { data: rawPayments } = useLoanPayments(loan.id, true)
+  const payments = Array.isArray(rawPayments) ? rawPayments : []
+
+  // Resolve recordedBy user IDs to names
+  const uniqueUserIds = useMemo(
+    () => [...new Set(payments.map((p) => p.recordedBy))],
+    [payments]
+  )
+  const { data: userNameMap = {} } = useQuery<Record<string, string>>({
+    queryKey: [...queryKeys.loans.detail(loan.id), "userNames", uniqueUserIds.join(",")],
+    queryFn: () => resolveUserNamesAction(uniqueUserIds),
+    enabled: uniqueUserIds.length > 0,
+  })
 
   // Client-side query for payment portions — refreshes when payments change
   const activePaymentIds = payments.filter((p) => p.deletedAt === null && !p.markedWrong).map((p) => p.id)
@@ -74,9 +101,8 @@ export function LoanDetailClient({ loan, initialPayments, customerName, userName
       return result.data
     },
     enabled: activePaymentIds.length > 0,
-    initialData: paymentPortions,
   })
-  const currentPortions = livePortions ?? paymentPortions
+  const currentPortions = livePortions ?? {}
 
   const {
     editingPayment, editAmount, editDate, editReason,

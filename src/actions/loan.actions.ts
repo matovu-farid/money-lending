@@ -23,9 +23,10 @@ import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/servic
 import { getLocationBalances } from "@/services/report.service"
 import { formatAmount } from "@/lib/interest/engine"
 import { VALID_DEPOSIT_LOCATIONS, VALID_LOAN_TYPES } from "@/lib/constants"
-import { shortId } from "@/lib/utils"
+import { shortId, localDateString } from "@/lib/utils"
 
 export const getLocationBalancesAction = withAction({
+  permission: "reports:read",
   effect: () => getLocationBalances(),
 })
 
@@ -42,6 +43,7 @@ export async function getCollateralNaturesAction(): Promise<string[]> {
 }
 
 export const getLoanPaymentContextAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, loanId) => {
     const [row] = await db
       .select({
@@ -67,6 +69,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
 })
 
 export const getLoanCollateralAction = withAction<string, { data: { nature: string; description: string | null } | null }>({
+  permission: "loan:read",
   action: async (_session, loanId) => {
     const [record] = await db.select({
       nature: collateral.nature,
@@ -78,6 +81,7 @@ export const getLoanCollateralAction = withAction<string, { data: { nature: stri
 })
 
 export const getLoanReceiptDataAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, loanId) => {
     const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
     if (!loan) return { error: "Loan not found" }
@@ -114,6 +118,7 @@ export const getLoanReceiptDataAction = withAction<string, any>({
 })
 
 export const listLoansAction = withAction({
+  permission: "loan:read",
   effect: () => listLoans(),
 })
 
@@ -121,6 +126,20 @@ export async function getCurrentUserRoleAction(): Promise<UserRole> {
   const session = await getSession()
   if (!session) return "unassigned" as UserRole
   return (session.user.role ?? "unassigned") as UserRole
+}
+
+/** Resolve an array of user IDs to a { [id]: name } map. */
+export async function resolveUserNamesAction(userIds: string[]): Promise<Record<string, string>> {
+  const session = await getSession()
+  if (!session || userIds.length === 0) return {}
+  const unique = [...new Set(userIds)]
+  const rows = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(inArray(user.id, unique))
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.id] = r.name
+  return map
 }
 
 // Loan editing is permanently disabled to preserve system integrity.
@@ -170,18 +189,22 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Start date is required" }
   }
 
-  // Backdate validation: compare start date to today (date-only, ignoring time)
-  const startDateObj = new Date(input.startDate)
-  const todayStart = new Date()
-  todayStart.setHours(0, 0, 0, 0)
-  const startDateNorm = new Date(startDateObj)
-  startDateNorm.setHours(0, 0, 0, 0)
+  // Backdate validation: compare start date to today using local date strings
+  // to avoid UTC-shift bugs where new Date("2026-04-13") parses as UTC midnight
+  // which can be a different calendar day in UTC+ timezones (BUG-10).
+  const startDateStr = localDateString(new Date(input.startDate))
+  const todayStr = localDateString(new Date())
 
-  if (startDateNorm.getTime() > todayStart.getTime()) {
+  if (startDateStr > todayStr) {
     return { error: "Start date cannot be in the future" }
   }
 
-  const daysDiff = Math.round((todayStart.getTime() - startDateNorm.getTime()) / (1000 * 60 * 60 * 24))
+  // Use date-only components to compute day difference, avoiding DST/timezone drift
+  const [sy, sm, sd] = startDateStr.split("-").map(Number)
+  const [ty, tm, td] = todayStr.split("-").map(Number)
+  const startNoon = new Date(sy, sm - 1, sd, 12, 0, 0)
+  const todayNoon = new Date(ty, tm - 1, td, 12, 0, 0)
+  const daysDiff = Math.round((todayNoon.getTime() - startNoon.getTime()) / (1000 * 60 * 60 * 24))
   const isBackdated = daysDiff > 0
 
   if (isBackdated) {
@@ -365,6 +388,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
 }
 
 export const getCustomerLoansWithOverdueAction = withAction<string, any>({
+  permission: "loan:read",
   action: async (_session, customerId) => {
     try {
       const customerLoans = await db
@@ -411,6 +435,7 @@ export const getCustomerLoansWithOverdueAction = withAction<string, any>({
 })
 
 export const listLoansWithOverdueAction = withAction({
+  permission: "loan:read",
   action: async () => {
     try {
       const allLoans = await Effect.runPromise(listLoans())
@@ -422,6 +447,7 @@ export const listLoansWithOverdueAction = withAction({
 })
 
 export const exportLoansExcelAction = withAction<"all" | "critical" | "at-risk" | "early" | undefined, any>({
+  permission: "reports:read",
   action: async (_session, filter) => {
     try {
       const allLoans = await Effect.runPromise(listLoans())
@@ -457,6 +483,7 @@ export const exportLoansExcelAction = withAction<"all" | "critical" | "at-risk" 
 })
 
 export const listActiveLoansWithOverdueAction = withAction({
+  permission: "loan:read",
   action: async () => {
     try {
       const allLoans = await Effect.runPromise(listLoans())

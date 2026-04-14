@@ -1,145 +1,74 @@
-import { Effect } from "effect"
-import { notFound } from "next/navigation"
-import { getLoan } from "@/services/loan.service"
-import { getPaymentsForLoan } from "@/services/payment.service"
-import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { getBaseRate } from "@/lib/interest/effective-rate"
-import BigNumber from "bignumber.js"
-import { toLoanType, type PaymentPortionsMap, type UserRole } from "@/types"
-import { db } from "@/lib/db"
-import { customers } from "@/lib/db/schema/customers"
-import { user } from "@/lib/db/schema/auth"
-import { collateral } from "@/lib/db/schema/collateral"
-import { eq, inArray } from "drizzle-orm"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+"use client"
+
+import { use, useEffect } from "react"
+import { useRouter } from "next/navigation"
+import { useLiveQuery, eq } from "@tanstack/react-db"
+import { loanCollection, customerCollection } from "@/collections"
+import { toast } from "sonner"
 import { LoanDetailClient } from "./loan-detail-client"
 
-export default async function LoanDetailPage({
+export default function LoanDetailPage({
   params,
 }: {
   params: Promise<{ loanId: string }>
 }) {
-  const { loanId } = await params
+  const { loanId } = use(params)
+  const router = useRouter()
 
-  // Fetch loan (404 if not found)
-  const loanResult = await Effect.runPromise(
-    getLoan(loanId).pipe(Effect.either)
+  // Read loan from loanCollection — instant if optimistic data exists
+  const { data: loans, isLoading: loanLoading } = useLiveQuery(
+    (q) =>
+      q
+        .from({ loan: loanCollection })
+        .where(({ loan }) => eq(loan.id, loanId)),
+    [loanId]
   )
+  const loanEntry = loans?.[0] ?? null
 
-  if (loanResult._tag === "Left") {
-    notFound()
-  }
-
-  const loan = loanResult.right
-
-  // Fetch payments (all, including soft-deleted for display)
-  const paymentsResult = await Effect.runPromise(
-    getPaymentsForLoan(loanId).pipe(Effect.either)
+  // Read customer from customerCollection for the name
+  const customerId = loanEntry?.customerId
+  const { data: customersData } = useLiveQuery(
+    (q) =>
+      customerId
+        ? q
+            .from({ c: customerCollection })
+            .where(({ c }) => eq(c.id, customerId))
+        : null,
+    [customerId]
   )
+  const customerName = customersData?.[0]?.fullName ?? loanEntry?.customerName ?? null
 
-  const payments = paymentsResult._tag === "Right" ? paymentsResult.right : []
-
-  // Fetch payment portions from ledger
-  let paymentPortions: PaymentPortionsMap = {}
-  try {
-    const activePaymentIds = payments.filter((p) => p.deletedAt === null).map((p) => p.id)
-    if (activePaymentIds.length > 0) {
-      const portionsMap = await getPaymentPortionsFromLedger(activePaymentIds)
-      paymentPortions = Object.fromEntries(portionsMap)
+  // Rollback handling: loan disappeared from collection after optimistic insert rolled back
+  useEffect(() => {
+    if (!loanLoading && !loanEntry) {
+      toast.error("Loan not found")
+      router.replace("/loans")
     }
-  } catch {
-    // Non-critical — client will show 0.00 for portions
+  }, [loanLoading, loanEntry, router])
+
+  if (loanLoading) {
+    return (
+      <div className="p-8 space-y-6 max-w-6xl mx-auto animate-pulse">
+        <div className="h-8 w-64 bg-muted rounded" />
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-32 bg-muted rounded-xl" />
+          ))}
+        </div>
+        <div className="h-64 bg-muted rounded-xl" />
+      </div>
+    )
   }
 
-  // Fetch ledger-derived outstanding balance
-  let ledgerBalance: string | null = null
-  try {
-    const balance = await getLoanBalanceFromLedger(loanId)
-    ledgerBalance = balance.toFixed(0)
-  } catch {
-    // Non-critical — client will fall back to payments-chain balance
+  if (!loanEntry) {
+    // Will redirect via useEffect above
+    return null
   }
-
-  // Compute daysOverdue for penalty derivation
-  let daysOverdue = 0
-  if (loan.status === "active") {
-    try {
-      const interestMap = await getInterestEarnedFromLedger([loan.id])
-      const totalInterestPaid = interestMap.get(loan.id) ?? new BigNumber(0)
-      const activePayments = payments.filter((p) => p.deletedAt === null && !p.markedWrong)
-      const outstandingBalance = ledgerBalance ?? loan.principalAmount
-      const baseRate = getBaseRate(loan)
-      const info = computeLoanOverdueInfo({
-        principalAmount: loan.principalAmount,
-        baseRate,
-        startDate: new Date(loan.startDate),
-        loanType: toLoanType(loan.loanType),
-        termMonths: loan.termMonths,
-        totalInterestPaid: totalInterestPaid.toFixed(0),
-        paymentCount: activePayments.length,
-        outstandingBalance,
-        penaltyWaived: loan.penaltyWaived,
-        loan,
-      })
-      daysOverdue = info.daysOverdue
-    } catch {
-      // Non-critical — penalty badge won't show
-    }
-  }
-
-  // Fetch customer name for display
-  let customerName: string | null = null
-  try {
-    const [customer] = await db
-      .select({ fullName: customers.fullName })
-      .from(customers)
-      .where(eq(customers.id, loan.customerId))
-    customerName = customer?.fullName ?? null
-  } catch {
-    // Non-critical — page still renders without customer name
-  }
-
-  // Resolve recordedBy user IDs to names
-  const userNameMap: Record<string, string> = {}
-  const uniqueUserIds = [...new Set(payments.map((p) => p.recordedBy))]
-  if (uniqueUserIds.length > 0) {
-    try {
-      const users = await db
-        .select({ id: user.id, name: user.name })
-        .from(user)
-        .where(inArray(user.id, uniqueUserIds))
-      for (const u of users) {
-        userNameMap[u.id] = u.name
-      }
-    } catch {
-      // Non-critical — falls back to truncated ID
-    }
-  }
-
-  // Fetch collateral for this loan
-  const [loanCollateral] = await db
-    .select()
-    .from(collateral)
-    .where(eq(collateral.loanId, loan.id))
-
-  // Determine user role for role-gated UI (e.g. settle with collateral)
-  const session = await auth.api.getSession({ headers: await headers() })
-  const role = ((session?.user?.role ?? "unassigned") as UserRole)
 
   return (
     <LoanDetailClient
-      loan={loan}
-      initialPayments={payments}
+      loanEntry={loanEntry}
       customerName={customerName}
-      userNameMap={userNameMap}
-      ledgerBalance={ledgerBalance}
-      paymentPortions={paymentPortions}
-      userRole={role}
-      collateralNature={loanCollateral?.nature}
-      collateralDescription={loanCollateral?.description}
-      daysOverdue={daysOverdue}
     />
   )
 }
