@@ -15,7 +15,7 @@ export const customerCollection = createCollection(
     queryKey: ["customers"],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<Customer>> => {
-      const result = await searchCustomersAction({ page: 1, pageSize: 10000 })
+      const result = await searchCustomersAction({ page: 0, pageSize: 10000 })
       if ("error" in result) {
         throw new Error(result.error)
       }
