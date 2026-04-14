@@ -1,16 +1,12 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
 import Link from "next/link"
-import { useCustomers } from "@/hooks/use-customers"
-import { getCustomerAction } from "@/actions/customer.actions"
-import { getCustomerLoansWithOverdueAction } from "@/actions/loan.actions"
-import { queryKeys } from "@/hooks/query-keys"
-import { unwrapAction } from "@/hooks/query-utils"
+import { useLiveQuery } from "@tanstack/react-db"
+import { customerCollection } from "@/collections"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
-import type { CustomerSearchParams, Customer } from "@/types"
+import type { CustomerSearchParams } from "@/types"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -24,13 +20,31 @@ const PAGE_SIZE = 20
 
 export default function CustomersPage() {
   const router = useRouter()
-  const queryClient = useQueryClient()
   const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useState<CustomerSearchParams>({})
 
-  const { data, isLoading, error } = useCustomers(searchParams, page)
-  const customers = data?.rows ?? []
-  const total = data?.total ?? 0
+  const { data: allCustomers, isLoading } = useLiveQuery((q) =>
+    q.from({ c: customerCollection }).select(({ c }) => c)
+  )
+
+  // Client-side filtering
+  const filtered = useMemo(() => {
+    let result = allCustomers ?? []
+    if (searchParams.name) {
+      const term = searchParams.name.toLowerCase()
+      result = result.filter((c) =>
+        c.fullName.toLowerCase().includes(term)
+      )
+    }
+    if (searchParams.status?.length) {
+      result = result.filter((c) => searchParams.status!.includes(c.status))
+    }
+    return result
+  }, [allCustomers, searchParams])
+
+  // Client-side pagination
+  const customers = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const total = filtered.length
 
   const handleSearch = useCallback((params: CustomerSearchParams) => {
     setPage(0)
@@ -44,81 +58,10 @@ export default function CustomersPage() {
 
   const handlePrefetch = useCallback((customerId: string) => {
     if (customerId.startsWith("optimistic-")) return
-    const staleTime = 30_000
     prefetchQueue.add(
       () => router.prefetch(`/customers/${customerId}`),
       Priority.CRITICAL, `route:/customers/${customerId}`)
-    prefetchQueue.add(
-      () => queryClient.prefetchQuery({
-        queryKey: queryKeys.customers.detail(customerId),
-        queryFn: async () => {
-          const result = await getCustomerAction(customerId)
-          return unwrapAction(result as { data: Customer } | { error: string })
-        },
-        staleTime,
-      }), Priority.CRITICAL, `data:customer-detail-${customerId}`)
-    prefetchQueue.add(
-      () => queryClient.prefetchQuery({
-        queryKey: queryKeys.loans.byCustomer(customerId),
-        queryFn: async () => {
-          const result = await getCustomerLoansWithOverdueAction(customerId)
-          if (!("data" in result) || !result.data) return []
-          return result.data.map((item: any) => ({
-            loan: item,
-            daysOverdue: item.daysOverdue,
-          }))
-        },
-        staleTime,
-      }), Priority.CRITICAL, `data:loans-by-customer-${customerId}`)
-  }, [queryClient, router])
-
-  // Background prefetch each customer's detail + loans via the global queue
-  const customerIds = customers
-    .filter((c) => !c.id.startsWith("optimistic-"))
-    .map((c) => c.id)
-    .join(",")
-  useEffect(() => {
-    if (!customerIds) return
-    const ids = customerIds.split(",")
-    const staleTime = 30_000
-
-    const timer = setTimeout(() => {
-      for (const id of ids) {
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.customers.detail(id),
-            queryFn: async () => {
-              const result = await getCustomerAction(id)
-              return unwrapAction(result as { data: Customer } | { error: string })
-            },
-            staleTime,
-          }), Priority.LOW, `data:customer-detail-${id}`)
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.loans.byCustomer(id),
-            queryFn: async () => {
-              const result = await getCustomerLoansWithOverdueAction(id)
-              if (!("data" in result) || !result.data) return []
-              return result.data.map((item: any) => ({
-                loan: item,
-                daysOverdue: item.daysOverdue,
-              }))
-            },
-            staleTime,
-          }), Priority.LOW, `data:loans-by-customer-${id}`)
-      }
-    }, 1_000)
-
-    return () => clearTimeout(timer)
-  }, [customerIds, queryClient])
-
-  if (error) {
-    return (
-      <div className="p-4 md:p-6">
-        <p className="text-destructive">Error: {error.message}</p>
-      </div>
-    )
-  }
+  }, [router])
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -157,7 +100,7 @@ export default function CustomersPage() {
           )}
         </div>
       ) : (
-        <>
+        <div className="transition-opacity">
           <ResponsiveTable
             columns={[
               {
@@ -225,7 +168,7 @@ export default function CustomersPage() {
               </Button>
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

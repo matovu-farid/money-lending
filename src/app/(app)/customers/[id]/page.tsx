@@ -3,17 +3,17 @@
 import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLiveQuery, eq } from "@tanstack/react-db";
+import { customerCollection, loanCollection } from "@/collections";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Banknote, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import {
-  updateCustomerAction,
   changeCustomerStatusAction,
 } from "@/actions/customer.actions";
-import { getCustomerLoansWithOverdueAction, getLoanPaymentContextAction } from "@/actions/loan.actions";
+import { getLoanPaymentContextAction } from "@/actions/loan.actions";
 import { getPaymentPortionsAction, getLoanBalanceAction } from "@/actions/payment.actions";
-import { useCustomer } from "@/hooks/use-customer";
 import { useLoanPayments } from "@/hooks/use-payments";
 import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
@@ -253,26 +253,23 @@ export default function CustomerProfilePage() {
   const queryClient = useQueryClient();
   const customerId = params.id as string;
 
-  const {
-    data: customer,
-    isLoading: customerLoading,
-    isError: notFound,
-  } = useCustomer(customerId);
+  // Read customer from customerCollection
+  const { data: customersData, isLoading: customerLoading } = useLiveQuery(
+    (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, customerId)),
+    [customerId]
+  );
+  const customer = customersData?.[0] ?? null;
+  const notFound = !customerLoading && !customer;
 
-  const { data: rawLoanItems, isLoading: loansLoading } = useQuery<
-    LoanWithOverdue[]
-  >({
-    queryKey: queryKeys.loans.byCustomer(customerId),
-    queryFn: async () => {
-      const result = await getCustomerLoansWithOverdueAction(customerId);
-      if (!("data" in result) || !result.data) return [];
-      return result.data.map((item: any) => ({
-        loan: item,
-        daysOverdue: item.daysOverdue,
-      }));
-    },
-  });
-  const loanItems = Array.isArray(rawLoanItems) ? rawLoanItems : [];
+  // Read loans from loanCollection, filtered by customer
+  const { data: customerLoans, isLoading: loansLoading } = useLiveQuery(
+    (q) => q.from({ loan: loanCollection }).where(({ loan }) => eq(loan.customerId, customerId)),
+    [customerId]
+  );
+  const loanItems: LoanWithOverdue[] = (customerLoans ?? []).map((entry) => ({
+    loan: entry as unknown as Loan,
+    daysOverdue: entry.daysOverdue,
+  }));
 
   const [editing, setEditing] = useState(false);
   const {
@@ -327,38 +324,18 @@ export default function CustomerProfilePage() {
   function onEditSubmit(data: EditFormValues) {
     if (!customer) return;
     startEditTransition(async () => {
-      const detailKey = queryKeys.customers.detail(customerId);
-      const previous = queryClient.getQueryData<Customer>(detailKey);
-
-      queryClient.setQueryData<Customer>(detailKey, (old) =>
-        old
-          ? {
-              ...old,
-              fullName: data.fullName.trim(),
-              nin: data.nin.trim(),
-              contact: data.contact.trim(),
-              address: data.address.trim(),
-            }
-          : old,
-      );
-
-      const result = await updateCustomerAction(customerId, {
-        fullName: data.fullName.trim(),
-        nin: data.nin.trim(),
-        contact: data.contact.trim(),
-        address: data.address.trim(),
-      });
-
-      if ("error" in result) {
-        queryClient.setQueryData(detailKey, previous);
-        toast.error(result.error);
-        return;
+      try {
+        customerCollection.update(customerId, (draft) => {
+          draft.fullName = data.fullName.trim();
+          draft.nin = data.nin.trim();
+          draft.contact = data.contact.trim();
+          draft.address = data.address.trim();
+        });
+        setEditing(false);
+        toast.success("Customer updated successfully");
+      } catch (err: any) {
+        toast.error(err?.message ?? "Failed to update customer");
       }
-
-      queryClient.setQueryData(detailKey, result.data);
-      queryClient.invalidateQueries({ queryKey: queryKeys.customers.all });
-      setEditing(false);
-      toast.success("Customer updated successfully");
     });
   }
 
@@ -373,25 +350,20 @@ export default function CustomerProfilePage() {
   function handleStatusConfirm() {
     if (!customer || !pendingStatus || statusReason.trim().length < 10) return;
     startStatusTransition(async () => {
-      const detailKey = queryKeys.customers.detail(customerId);
-      const previous = queryClient.getQueryData<Customer>(detailKey);
-
-      queryClient.setQueryData<Customer>(detailKey, (old) =>
-        old ? { ...old, status: pendingStatus } : old,
-      );
-
+      // Status changes go through the server action (audit trail + reason)
       const result = await changeCustomerStatusAction({
         customerId: customer.id,
         newStatus: pendingStatus,
         reason: statusReason,
       });
       if ("error" in result) {
-        queryClient.setQueryData(detailKey, previous);
         toast.error(result.error);
         return;
       }
-      queryClient.setQueryData(detailKey, result.data);
-      queryClient.invalidateQueries({ queryKey: queryKeys.customers.all });
+      // Update collection optimistically to reflect new status
+      customerCollection.update(customerId, (draft) => {
+        draft.status = pendingStatus;
+      });
       setStatusDialogOpen(false);
       toast.success(
         `${customer.fullName}'s status updated to ${customerStatusLabel(pendingStatus)}.`,
