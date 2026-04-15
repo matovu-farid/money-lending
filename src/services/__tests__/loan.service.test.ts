@@ -1055,7 +1055,9 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockResolvedValue([loanWithCustomer]),
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([loanWithCustomer]),
+            }),
           }),
         }),
       }),
@@ -1075,7 +1077,9 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           where: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockRejectedValue(new Error("connection refused")),
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockRejectedValue(new Error("connection refused")),
+            }),
           }),
         }),
       }),

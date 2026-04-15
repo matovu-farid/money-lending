@@ -278,7 +278,9 @@ describe("Fund Transfer Service", () => {
     const transfers = [mockTransfer, mockCapitalInjection]
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue(transfers),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue(transfers),
+        }),
       }),
     })
 
@@ -294,7 +296,9 @@ describe("Fund Transfer Service", () => {
 
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue([]),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([]),
+        }),
       }),
     })
 
@@ -309,7 +313,9 @@ describe("Fund Transfer Service", () => {
 
     ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
       from: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockRejectedValue(new Error("Query failed")),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockRejectedValue(new Error("Query failed")),
+        }),
       }),
     })
 

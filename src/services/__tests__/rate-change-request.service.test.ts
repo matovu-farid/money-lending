@@ -189,7 +189,9 @@ describe("Rate Change Request Service", () => {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
           innerJoin: vi.fn().mockReturnValue({
-            orderBy: vi.fn().mockResolvedValue([dbRow]),
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([dbRow]),
+            }),
           }),
         }),
       }),

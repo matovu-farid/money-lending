@@ -416,7 +416,9 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
-        orderBy: vi.fn().mockResolvedValue([creditorA, creditorB]),
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([creditorA, creditorB]),
+        }),
       }),
     })
 

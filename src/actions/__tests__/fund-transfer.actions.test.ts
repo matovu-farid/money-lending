@@ -68,6 +68,7 @@ describe("Fund Transfer Actions", () => {
     const validInput = {
       fromLocation: "cash",
       toLocation: "bank",
+      toSubLocationId: "bank-acc-1",
       amount: "500000",
     }
 

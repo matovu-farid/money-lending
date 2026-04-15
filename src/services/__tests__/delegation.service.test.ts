@@ -232,7 +232,8 @@ describe("Delegation Service — Unit", () => {
       },
     ]
 
-    const mockOrderBy = vi.fn().mockResolvedValue(rows)
+    const mockLimit = vi.fn().mockResolvedValue(rows)
+    const mockOrderBy = vi.fn().mockReturnValue({ limit: mockLimit })
     const mockLeftJoin = vi.fn().mockReturnValue({ orderBy: mockOrderBy })
     const mockFrom = vi.fn().mockReturnValue({ leftJoin: mockLeftJoin })
     mockDb.select.mockReturnValue({ from: mockFrom })
