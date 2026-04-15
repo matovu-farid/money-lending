@@ -11,12 +11,15 @@ import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { useBalanceSheetReport } from "@/hooks/use-reports"
+import { bankAccountCollection } from "@/collections"
+import { useLiveQuery } from "@tanstack/react-db"
 interface BalanceSheetClientProps {
   period: string
 }
 
 export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
   const { data } = useBalanceSheetReport(period)
+  const { data: bankAccountsList } = useLiveQuery((q) => q.from({ bankAccountCollection }))
 
   const bsData: BalanceSheetData = data ?? {
     asOf: period,
@@ -109,12 +112,26 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
                       {formatCurrency(bsData.assets.cashBalance)}
                     </td>
                   </tr>
-                  <tr>
-                    <td className="py-1.5 pl-6">Bank</td>
-                    <td className="py-1.5 text-right font-mono tabular-nums">
-                      {formatCurrency(bsData.assets.bankBalance)}
-                    </td>
-                  </tr>
+                  {Object.keys(bsData.assets.bankAccountBalances ?? {}).length > 0 ? (
+                    Object.entries(bsData.assets.bankAccountBalances!).map(([accountId, balance]) => {
+                      const account = bankAccountsList?.find((a) => a.id === accountId)
+                      return (
+                        <tr key={accountId}>
+                          <td className="py-1.5 pl-6">{account?.name ?? "Bank Account"}</td>
+                          <td className="py-1.5 text-right font-mono tabular-nums">
+                            {formatCurrency(balance)}
+                          </td>
+                        </tr>
+                      )
+                    })
+                  ) : (
+                    <tr>
+                      <td className="py-1.5 pl-6">Bank</td>
+                      <td className="py-1.5 text-right font-mono tabular-nums">
+                        {formatCurrency(bsData.assets.bankBalance)}
+                      </td>
+                    </tr>
+                  )}
                   <tr className="border-b">
                     <td className="py-1.5 pl-6">Strong Room</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">
