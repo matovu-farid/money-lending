@@ -39,6 +39,9 @@
   ],
   "exclude": [
     "node_modules",
-    "cypress"
+    "cypress",
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/services/__integration__/**"
   ]
 }
