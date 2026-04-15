@@ -13,13 +13,16 @@ import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { useBalanceSheetReport } from "@/hooks/use-reports"
 import { bankAccountCollection } from "@/collections"
 import { useLiveQuery } from "@tanstack/react-db"
+
 interface BalanceSheetClientProps {
   period: string
 }
 
 export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
   const { data } = useBalanceSheetReport(period)
-  const { data: bankAccountsList } = useLiveQuery((q) => q.from({ bankAccountCollection }))
+  const { data: bankAccountsList } = useLiveQuery((q) =>
+    q.from({ ba: bankAccountCollection }).select(({ ba }) => ba)
+  )
 
   const bsData: BalanceSheetData = data ?? {
     asOf: period,
