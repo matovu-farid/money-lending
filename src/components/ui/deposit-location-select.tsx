@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
+import { BankAccountSelect } from "./bank-account-select"
 
 interface DepositLocationSelectProps<T extends FieldValues> {
   name: Path<T>
@@ -17,6 +18,8 @@ interface DepositLocationSelectProps<T extends FieldValues> {
   label?: string
   disabled?: boolean
   id?: string
+  subLocationName?: Path<T>
+  bankAccountBalances?: Record<string, string>
 }
 
 /**
@@ -29,6 +32,8 @@ function DepositLocationSelect<T extends FieldValues>({
   label = "Source Location",
   disabled,
   id = "deposit-location",
+  subLocationName,
+  bankAccountBalances,
 }: DepositLocationSelectProps<T>) {
   return (
     <div className="space-y-1.5">
@@ -55,6 +60,14 @@ function DepositLocationSelect<T extends FieldValues>({
             </Select>
             {fieldState.error?.message && (
               <p className="text-sm text-destructive">{fieldState.error.message}</p>
+            )}
+            {field.value === "bank" && subLocationName && (
+              <BankAccountSelect
+                name={subLocationName}
+                control={control}
+                disabled={disabled}
+                bankAccountBalances={bankAccountBalances}
+              />
             )}
           </>
         )}
