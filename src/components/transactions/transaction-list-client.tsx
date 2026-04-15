@@ -2,10 +2,13 @@
 
 import { useMemo, useRef, useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
+import { useLiveQuery } from "@tanstack/react-db"
+import BigNumber from "bignumber.js"
 import { toast } from "sonner"
 import {
   expenseCollection, insertExpenseWithInput,
   incomeCollection, insertIncomeWithInput,
+  locationBalancesCollection,
 } from "@/collections"
 import { generateClientId } from "@/lib/client-id"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
@@ -24,6 +27,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { MoneyInput } from "@/components/ui/money-input"
 import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
+import { usePermissions } from "@/hooks/use-permissions"
 import { PageHeader } from "@/components/ui/page-header"
 import type { CreateCategoryInput, CreateTransactionInput, TransactionRow, CategoryRow, DepositLocation } from "@/types"
 
@@ -34,6 +38,7 @@ interface TransactionFormValues {
   notes: string
   backdateNote: string
   location: DepositLocation
+  subLocationId: string
 }
 
 interface TransactionListClientProps {
@@ -98,6 +103,8 @@ export function TransactionListClient({
   const idPrefix = variant === "income" ? "income" : "expense"
   const collection = variant === "income" ? incomeCollection : expenseCollection
   const insertWithInput = variant === "income" ? insertIncomeWithInput : insertExpenseWithInput
+  const { has } = usePermissions()
+  const canManageFunds = has("fund-transfer:create")
 
   const [isSheetOpen, setIsSheetOpen] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
@@ -120,11 +127,33 @@ export function TransactionListClient({
     control,
     formState: { errors },
   } = useForm<TransactionFormValues>({
-    defaultValues: { date: "", categoryId: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation },
+    defaultValues: { date: todayDateString(), categoryId: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation, subLocationId: "" },
   })
 
   const watchedCategoryId = watch("categoryId")
   const watchedDate = watch("date")
+  const watchedAmount = watch("amount")
+  const watchedLocation = watch("location")
+
+  // Fetch location balances for expense insufficient-funds validation
+  const { data: locationBalancesRows } = useLiveQuery((q) =>
+    q.from({ l: locationBalancesCollection }).select(({ l }) => l)
+  )
+  const lbRow = locationBalancesRows?.[0]
+  const locationBalances: Record<"cash" | "bank" | "strong_room", string> | null = lbRow
+    ? { cash: lbRow.cash, bank: lbRow.bank, strong_room: lbRow.strong_room }
+    : null
+
+  // Check if current expense amount exceeds available funds at selected location
+  const insufficientFundsLocation = useMemo(() => {
+    if (variant !== "expense" || !locationBalances || !watchedAmount || !watchedLocation) return null
+    const available = new BigNumber(locationBalances[watchedLocation as keyof typeof locationBalances] ?? "0")
+    const needed = new BigNumber(watchedAmount || "0")
+    if (needed.isGreaterThan(0) && available.isLessThan(needed)) {
+      return watchedLocation === "strong_room" ? "Strong Room" : watchedLocation === "bank" ? "Bank" : "Cash on Hand"
+    }
+    return null
+  }, [variant, locationBalances, watchedAmount, watchedLocation])
 
   const displayedTransactions = initialTransactions
 
@@ -170,11 +199,13 @@ export function TransactionListClient({
       const id = generateClientId()
       const category = displayedCategories.find((c) => c.id === data.categoryId)
       const input: CreateTransactionInput = {
+        id,
         categoryId: data.categoryId,
         amount: data.amount,
         transactionDate: data.date,
         notes: data.notes || undefined,
         location: data.location,
+        subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
         backdateNote: data.backdateNote?.trim() || undefined,
       }
       const optimistic: TransactionRow = {
@@ -252,7 +283,7 @@ export function TransactionListClient({
       <div className="space-y-4">
         <PageHeader title={labels.title} subtitle={labels.subtitle}>
           <Button
-            onClick={() => { reset(); setIsSheetOpen(true) }}
+            onClick={() => { reset({ date: todayDateString(), categoryId: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation, subLocationId: "" }); setCategoryQuery(""); setIsSheetOpen(true) }}
             disabled={isAddPending}
           >
             {labels.addButton}
@@ -294,7 +325,7 @@ export function TransactionListClient({
                   size="sm"
                   className="text-destructive hover:text-destructive"
                   onClick={() => setDeleteTarget(tx.id)}
-                  disabled={tx.isOptimistic || isDeletePending}
+                  disabled={isDeletePending}
                 >
                   Delete
                 </Button>
@@ -305,7 +336,7 @@ export function TransactionListClient({
           getRowKey={(tx) => tx.id}
           getRowProps={(tx) => ({
             "data-testid": "data-row",
-            className: tx.isOptimistic ? "opacity-50" : "",
+            className: "",
           })}
           emptyState={
             <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
@@ -475,12 +506,26 @@ export function TransactionListClient({
                 name="location"
                 control={control}
                 id={`${idPrefix}-location`}
+                subLocationName="subLocationId"
               />
+
+              {insufficientFundsLocation && (
+                <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+                  <p className="text-sm text-destructive">
+                    Insufficient funds in {insufficientFundsLocation}.{" "}
+                    {canManageFunds ? (
+                      <><a href="/fund-transfers" className="underline font-medium">Transfer or inject funds</a> before recording this expense.</>
+                    ) : (
+                      "Ask your supervisor to transfer or inject funds before recording this expense."
+                    )}
+                  </p>
+                </div>
+              )}
 
               {errors.root && <p className="text-sm text-destructive">{errors.root.message}</p>}
 
               <DialogFooter>
-                <Button type="submit" disabled={isAddPending} className="w-full">
+                <Button type="submit" disabled={isAddPending || !!insufficientFundsLocation} className="w-full">
                   {isAddPending ? "Saving..." : labels.recordButton}
                 </Button>
               </DialogFooter>

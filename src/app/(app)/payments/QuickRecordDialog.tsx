@@ -42,6 +42,7 @@ interface QuickRecordFormValues {
   amount: string
   paymentDate: string
   depositLocation: DepositLocation
+  subLocationId: string
 }
 
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
@@ -63,6 +64,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       amount: "",
       paymentDate: format(new Date(), "yyyy-MM-dd"),
       depositLocation: "cash",
+      subLocationId: "",
     },
   })
 
@@ -95,6 +97,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       amount: "",
       paymentDate: format(new Date(), "yyyy-MM-dd"),
       depositLocation: "cash",
+      subLocationId: "",
     })
     setReceiptData(null)
     setConfirmStep(false)
@@ -154,6 +157,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       paymentDate: pendingData.paymentDate + "T12:00:00",
       amount: pendingData.amount,
       depositLocation: pendingData.depositLocation,
+      subLocationId: pendingData.depositLocation === "bank" ? pendingData.subLocationId || undefined : undefined,
     }
 
     // Compute receipt allocation from available balance data
@@ -316,6 +320,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   label="Deposit Location"
                   disabled={!selectedLoan || isPending}
                   id="quick-record-deposit-location"
+                  subLocationName="subLocationId"
                 />
 
                 {/* Payment date */}

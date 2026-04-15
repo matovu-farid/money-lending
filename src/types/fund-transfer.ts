@@ -9,6 +9,8 @@ export interface CreateFundTransferInput {
   id?: string
   fromLocation: DepositLocation
   toLocation: DepositLocation
+  fromSubLocationId?: string
+  toSubLocationId?: string
   amount: string       // NUMERIC string
   note?: string
 }
@@ -16,6 +18,7 @@ export interface CreateFundTransferInput {
 export interface CreateCapitalInjectionInput {
   id?: string
   toLocation: DepositLocation
+  toSubLocationId?: string
   amount: string       // NUMERIC string
   note?: string
 }

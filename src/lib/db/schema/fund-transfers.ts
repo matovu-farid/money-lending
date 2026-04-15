@@ -1,4 +1,5 @@
 import { pgTable, uuid, numeric, timestamp, text, pgEnum } from "drizzle-orm/pg-core"
+import { bankAccounts } from "./bank-accounts"
 
 export const depositLocationEnum = pgEnum("deposit_location", [
   "cash",
@@ -16,6 +17,8 @@ export const fundTransfers = pgTable("fund_transfers", {
   transferType: transferTypeEnum("transfer_type").default("internal").notNull(),
   fromLocation: depositLocationEnum("from_location"),
   toLocation: depositLocationEnum("to_location"),
+  fromSubLocationId: uuid("from_sub_location_id").references(() => bankAccounts.id, { onDelete: "restrict" }),
+  toSubLocationId: uuid("to_sub_location_id").references(() => bankAccounts.id, { onDelete: "restrict" }),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   transferredBy: text("transferred_by").notNull(),
   note: text("note"),

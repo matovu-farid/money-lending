@@ -2,6 +2,7 @@ import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index, boolea
 import { sql } from "drizzle-orm"
 import { customers } from "./customers"
 import { depositLocationEnum } from "./fund-transfers"
+import { bankAccounts } from "./bank-accounts"
 
 export const loanStatusEnum = pgEnum("loan_status", [
   "pending",
@@ -30,6 +31,7 @@ export const loans = pgTable("loans", {
   minPeriodOverride: integer("min_period_override"),
   issuedBy: text("issued_by").notNull(),
   disbursementSource: depositLocationEnum("disbursement_source").notNull(),
+  subLocationId: uuid("sub_location_id").references(() => bankAccounts.id, { onDelete: "restrict" }),
   loanType: loanTypeEnum("loan_type").notNull().default("perpetual"),
   termMonths: integer("term_months"),
   penaltyMultiplier: numeric("penalty_multiplier", { precision: 5, scale: 4 }).notNull().default("0.1000"),

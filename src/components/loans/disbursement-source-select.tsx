@@ -12,6 +12,7 @@ import {
 import { DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
 import type { UserRole } from "@/types"
 import { ROLE_LEVELS } from "@/types"
+import { BankAccountSelect } from "@/components/ui/bank-account-select"
 
 interface DisbursementSourceSelectProps<T extends FieldValues> {
   name: Path<T>
@@ -23,6 +24,8 @@ interface DisbursementSourceSelectProps<T extends FieldValues> {
   disabled?: boolean
   id?: string
   userRole?: UserRole
+  subLocationName?: Path<T>
+  bankAccountBalances?: Record<string, string>
 }
 
 function DisbursementSourceSelect<T extends FieldValues>({
@@ -33,6 +36,8 @@ function DisbursementSourceSelect<T extends FieldValues>({
   disabled,
   id = "disbursementSource",
   userRole,
+  subLocationName,
+  bankAccountBalances,
 }: DisbursementSourceSelectProps<T>) {
   return (
     <div className="space-y-1">
@@ -88,6 +93,15 @@ function DisbursementSourceSelect<T extends FieldValues>({
                     ? "Not enough funds at this source. Add funds via Fund Transfers before disbursing this loan."
                     : "Not enough funds at this source. Ask a supervisor to add funds before this loan can be disbursed."}
                 </p>
+              )}
+              {field.value === "bank" && subLocationName && (
+                <BankAccountSelect
+                  name={subLocationName}
+                  control={control}
+                  disabled={disabled}
+                  bankAccountBalances={bankAccountBalances}
+                  showBalances={true}
+                />
               )}
             </>
           )

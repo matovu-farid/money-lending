@@ -236,6 +236,7 @@ export const recordPayment = (
             amount: input.amount,
             recordedBy: actorId,
             depositLocation: input.depositLocation,
+            subLocationId: input.subLocationId ?? null,
           })
           .returning()
 
@@ -262,6 +263,7 @@ export const recordPayment = (
             paymentDate: input.paymentDate,
             actorId,
             depositLocation: input.depositLocation,
+            subLocationId: input.subLocationId,
           })
         }
 
@@ -273,6 +275,7 @@ export const recordPayment = (
             paymentDate: input.paymentDate,
             actorId,
             depositLocation: input.depositLocation,
+            subLocationId: input.subLocationId,
           })
         }
 

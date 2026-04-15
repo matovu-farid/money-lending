@@ -53,11 +53,15 @@ export const recordExpenseAction = withAction<CreateTransactionInput, { success:
       }
     }
 
+    if (input.location === "bank" && !input.subLocationId) {
+      return { error: "Please select a bank account" }
+    }
+
     // Check sufficient funds at expense location
     const location = input.location || "cash"
     try {
       const balances = await Effect.runPromise(getLocationBalances())
-      const available = new BigNumber(balances[location as keyof typeof balances] ?? "0")
+      const available = new BigNumber(balances[location as "cash" | "bank" | "strong_room"] ?? "0")
       const amount = new BigNumber(input.amount)
       if (available.isLessThan(amount)) {
         const loc = location === "strong_room" ? "Strong Room" : location === "bank" ? "Bank" : "Cash on Hand"
@@ -67,7 +71,7 @@ export const recordExpenseAction = withAction<CreateTransactionInput, { success:
         const action = isLoanOfficer
           ? "Ask your supervisor to transfer or inject funds before recording this expense."
           : "Transfer or inject funds first."
-        return { error: `Insufficient funds in ${loc}. Available: UGX ${available.toFormat(0)}, required: UGX ${amount.toFormat(0)}. ${action}` }
+        return { error: `Insufficient funds in ${loc}. ${action}` }
       }
     } catch {
       return { error: "Unable to verify fund balances. Please try again." }

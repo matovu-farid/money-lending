@@ -21,6 +21,12 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
     if (input.fromLocation === input.toLocation) {
       return { error: "Source and destination must be different" }
     }
+    if (input.fromLocation === "bank" && !input.fromSubLocationId) {
+      return { error: "Please select a bank account for the source" }
+    }
+    if (input.toLocation === "bank" && !input.toSubLocationId) {
+      return { error: "Please select a bank account for the destination" }
+    }
     const amountErr = validatePositiveDecimal(input.amount, "Amount")
     if (amountErr) return { error: amountErr }
 
@@ -41,6 +47,9 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
   action: async (session, input) => {
     if (!input.toLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.toLocation)) {
       return { error: "Invalid deposit location" }
+    }
+    if (input.toLocation === "bank" && !input.toSubLocationId) {
+      return { error: "Please select a bank account" }
     }
     const amountErr = validatePositiveDecimal(input.amount, "Amount")
     if (amountErr) return { error: amountErr }

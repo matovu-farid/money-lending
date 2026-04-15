@@ -49,6 +49,11 @@ export const queryKeys = {
     all: ["fund-transfers"] as const,
   },
 
+  // ── Bank Accounts ────────────────────────────────────────────────────
+  bankAccounts: {
+    all: ["bank-accounts"] as const,
+  },
+
   // ── Creditors ────────────────────────────────────────────────────────
   creditors: {
     all: ["creditors"] as const,

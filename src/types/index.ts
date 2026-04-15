@@ -1,5 +1,6 @@
 // Domain type modules — re-exported for backward compatibility.
 // Prefer importing from the specific domain module directly.
+export * from "./bank-account"
 export * from "./common"
 export * from "./customer"
 export * from "./loan"

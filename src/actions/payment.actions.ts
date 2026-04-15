@@ -37,6 +37,9 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
     if (!input.depositLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.depositLocation)) {
       return { error: "Deposit location is required (cash, bank, or strong_room)" }
     }
+    if (input.depositLocation === "bank" && !input.subLocationId) {
+      return { error: "Please select a bank account" }
+    }
 
     try {
       const data = await Effect.runPromise(recordPayment(input, session.user.id))

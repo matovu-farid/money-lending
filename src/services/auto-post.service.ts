@@ -49,7 +49,7 @@ async function getOrCreateCategory(
 
 export async function autoPostInterestEarned(
   tx: DrizzleTransaction,
-  params: { amount: string; loanId: string; paymentId: string; paymentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; loanId: string; paymentId: string; paymentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Cash", type: "asset" },
@@ -58,13 +58,14 @@ export async function autoPostInterestEarned(
     description: `Interest earned - loan ${params.loanId} payment ${params.paymentId}`,
     transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
+    debitSubLocationId: params.subLocationId,
     loanId: params.loanId,
   })
 }
 
 export async function autoPostInterestExpense(
   tx: DrizzleTransaction,
-  params: { amount: string; investmentId: string; repaymentId?: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; investmentId: string; repaymentId?: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Interest Payments", type: "expense" },
@@ -73,12 +74,13 @@ export async function autoPostInterestExpense(
     description: `Interest paid - investment ${params.investmentId}`,
     transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
     creditDepositLocation: params.sourceLocation,
+    creditSubLocationId: params.subLocationId,
   })
 }
 
 export async function autoPostPrincipalDisbursement(
   tx: DrizzleTransaction,
-  params: { amount: string; loanId: string; transactionDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; loanId: string; transactionDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Loans Receivable", type: "asset" },
@@ -87,6 +89,7 @@ export async function autoPostPrincipalDisbursement(
     description: `Principal disbursed - loan ${shortId(params.loanId).toUpperCase()}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     creditDepositLocation: params.depositLocation,
+    creditSubLocationId: params.subLocationId,
     loanId: params.loanId,
   })
 }
@@ -135,7 +138,7 @@ export async function autoPostRolloverPrincipalTransfer(
 
 export async function autoPostPrincipalRepayment(
   tx: DrizzleTransaction,
-  params: { amount: string; loanId: string; paymentId: string; paymentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; loanId: string; paymentId: string; paymentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Cash", type: "asset" },
@@ -144,6 +147,7 @@ export async function autoPostPrincipalRepayment(
     description: `Principal repaid - loan ${shortId(params.loanId).toUpperCase()} payment ${shortId(params.paymentId).toUpperCase()}`,
     transactionDate: new Date(params.paymentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
+    debitSubLocationId: params.subLocationId,
     loanId: params.loanId,
   })
 }
@@ -164,7 +168,7 @@ export async function autoPostPrincipalRecovery(
 
 export async function autoPostCreditorInvestment(
   tx: DrizzleTransaction,
-  params: { amount: string; investmentId: string; investmentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; investmentId: string; investmentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Cash", type: "asset" },
@@ -173,12 +177,13 @@ export async function autoPostCreditorInvestment(
     description: `Creditor investment received - ${shortId(params.investmentId).toUpperCase()}`,
     transactionDate: new Date(params.investmentDate), recordedBy: params.actorId,
     debitDepositLocation: params.depositLocation,
+    debitSubLocationId: params.subLocationId,
   })
 }
 
 export async function autoPostCreditorPrincipalRepaid(
   tx: DrizzleTransaction,
-  params: { amount: string; investmentId: string; repaymentId?: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room" }
+  params: { amount: string; investmentId: string; repaymentId?: string; repaymentDate: string; actorId: string; sourceLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Creditor Investment", type: "liability" },
@@ -187,6 +192,7 @@ export async function autoPostCreditorPrincipalRepaid(
     description: `Creditor principal repaid - investment ${shortId(params.investmentId).toUpperCase()}`,
     transactionDate: new Date(params.repaymentDate), recordedBy: params.actorId,
     creditDepositLocation: params.sourceLocation,
+    creditSubLocationId: params.subLocationId,
   })
 }
 
@@ -209,7 +215,7 @@ export async function autoPostRateChangeAdjustment(
 
 export async function autoPostFundTransfer(
   tx: DrizzleTransaction,
-  params: { amount: string; transferId: string; fromLocation: "cash" | "bank" | "strong_room"; toLocation: "cash" | "bank" | "strong_room"; transactionDate: string; actorId: string }
+  params: { amount: string; transferId: string; fromLocation: "cash" | "bank" | "strong_room"; toLocation: "cash" | "bank" | "strong_room"; transactionDate: string; actorId: string; fromSubLocationId?: string; toSubLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Cash", type: "asset" },
@@ -218,12 +224,14 @@ export async function autoPostFundTransfer(
     description: `Fund transfer from ${params.fromLocation} to ${params.toLocation}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     debitDepositLocation: params.toLocation, creditDepositLocation: params.fromLocation,
+    debitSubLocationId: params.toSubLocationId,
+    creditSubLocationId: params.fromSubLocationId,
   })
 }
 
 export async function autoPostCapitalInjection(
   tx: DrizzleTransaction,
-  params: { amount: string; transferId: string; toLocation: "cash" | "bank" | "strong_room"; transactionDate: string; actorId: string }
+  params: { amount: string; transferId: string; toLocation: "cash" | "bank" | "strong_room"; transactionDate: string; actorId: string; subLocationId?: string }
 ): Promise<void> {
   await postJournalEntry(tx, {
     debitCategory: { name: "Cash", type: "asset" },
@@ -232,5 +240,6 @@ export async function autoPostCapitalInjection(
     description: `Capital injection to ${params.toLocation}`,
     transactionDate: new Date(params.transactionDate), recordedBy: params.actorId,
     debitDepositLocation: params.toLocation,
+    debitSubLocationId: params.subLocationId,
   })
 }

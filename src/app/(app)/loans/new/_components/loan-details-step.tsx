@@ -1,3 +1,4 @@
+import React, { useEffect } from "react"
 import type { UseFormRegister, Control, FieldErrors } from "react-hook-form"
 import type { LoanType } from "@/types"
 import Link from "next/link"
@@ -11,6 +12,7 @@ import { DisbursementSourceSelect } from "@/components/loans/disbursement-source
 import { RolloverBanner } from "@/components/loans/rollover-banner"
 import type { LoanFormValues } from "../_types"
 import { todayDateString } from "@/lib/utils"
+import { PERPETUAL_LOAN_MIN_AMOUNT } from "@/lib/constants"
 import type { UserRole } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 
@@ -96,6 +98,8 @@ export function LoanDetailsStep({
           loanType={loanType}
           setLoanType={setLoanType}
           disabled={!!activeLoanData}
+          principalAmount={principalAmount}
+          userRole={userRole}
         />
 
         {loanType !== "perpetual" && (
@@ -120,6 +124,9 @@ export function LoanDetailsStep({
           required="Principal amount is required"
           id="principalAmount"
         />
+        {userRole === "loanOfficer" && parseFloat(principalAmount?.replace(/,/g, "") || "0") > 4_000_000 && (
+          <p className="text-sm text-destructive">Loan officers cannot issue more than 4,000,000 UGX.</p>
+        )}
 
         {!activeLoanData && (
           <MoneyInput
@@ -146,6 +153,7 @@ export function LoanDetailsStep({
           locationBalances={locationBalances}
           amount={principalAmount}
           userRole={userRole}
+          subLocationName="subLocationId"
         />
 
         <div className="flex gap-3 pt-2">
@@ -162,11 +170,40 @@ function LoanTypeSelector({
   loanType,
   setLoanType,
   disabled,
+  principalAmount,
+  userRole,
 }: {
   loanType: LoanType
   setLoanType: (t: LoanType) => void
   disabled: boolean
+  principalAmount: string
+  userRole: UserRole
 }) {
+  const amount = parseFloat(principalAmount?.replace(/,/g, "") || "0")
+  const perpetualAllowed = amount >= PERPETUAL_LOAN_MIN_AMOUNT
+  const reducingBalanceAllowed = userRole !== "loanOfficer"
+
+  const allOptions: { value: LoanType; label: string }[] = [
+    { value: "perpetual", label: "Perpetual" },
+    { value: "fixed_rate", label: "Fixed Rate" },
+    { value: "reducing_balance", label: "Reducing Balance" },
+  ]
+
+  const availableOptions = allOptions.filter((o) => {
+    if (o.value === "perpetual" && !perpetualAllowed) return false
+    if (o.value === "reducing_balance" && !reducingBalanceAllowed) return false
+    return true
+  })
+
+  // Auto-switch if current selection is no longer available
+  useEffect(() => {
+    if (disabled) return
+    const isCurrentAvailable = availableOptions.some((o) => o.value === loanType)
+    if (!isCurrentAvailable) {
+      setLoanType(availableOptions[0]?.value ?? "fixed_rate")
+    }
+  }, [perpetualAllowed, reducingBalanceAllowed, loanType, disabled]) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
@@ -176,6 +213,7 @@ function LoanTypeSelector({
             <div>
               <p className="font-semibold">Perpetual</p>
               <p className="text-muted-foreground">No fixed end date. Interest accrues daily on the remaining balance (reducing balance). As the borrower pays, the balance drops and so does the daily interest. Minimum 30-day interest period applies.</p>
+              <p className="text-muted-foreground text-xs mt-1">Available for loans of 2,000,000 UGX and above.</p>
             </div>
             <div>
               <p className="font-semibold">Fixed Rate</p>
@@ -184,16 +222,13 @@ function LoanTypeSelector({
             <div>
               <p className="font-semibold">Reducing Balance</p>
               <p className="text-muted-foreground">Interest is calculated on the remaining principal each month. As principal is paid down, interest decreases. Monthly installments start higher and decrease over time.</p>
+              <p className="text-muted-foreground text-xs mt-1">Requires Supervisor or above role.</p>
             </div>
           </div>
         </InfoPopover>
       </div>
       <div className="flex gap-4">
-        {[
-          { value: "perpetual" as const, label: "Perpetual" },
-          { value: "fixed_rate" as const, label: "Fixed Rate" },
-          { value: "reducing_balance" as const, label: "Reducing Balance" },
-        ].map((option) => (
+        {availableOptions.map((option) => (
           <label key={option.value} className={`flex items-center gap-2 ${disabled ? "opacity-50" : "cursor-pointer"}`}>
             <input
               type="radio"
@@ -208,6 +243,16 @@ function LoanTypeSelector({
           </label>
         ))}
       </div>
+      {!perpetualAllowed && amount > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Perpetual loans require a minimum of 2,000,000 UGX.
+        </p>
+      )}
+      {!reducingBalanceAllowed && (
+        <p className="text-xs text-muted-foreground">
+          Reducing Balance is available to Supervisors and above.
+        </p>
+      )}
     </div>
   )
 }

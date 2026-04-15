@@ -7,6 +7,7 @@ export interface LoanFormValues {
   startDate: string
   interestRateDisplay: string
   disbursementSource: DepositLocation
+  subLocationId: string
   collateralNature: string
   collateralDescription: string
   backdateNote: string

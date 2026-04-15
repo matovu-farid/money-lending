@@ -180,7 +180,12 @@ export const getRetainedEarningsData = (
  * Returns { cash, bank, strong_room } as formatted decimal strings.
  */
 export const getLocationBalances = (): Effect.Effect<
-  Record<"cash" | "bank" | "strong_room", string>,
+  {
+    cash: string
+    bank: string
+    strong_room: string
+    bankAccounts: Record<string, string>
+  },
   DatabaseError
 > =>
   Effect.tryPromise({
@@ -189,6 +194,7 @@ export const getLocationBalances = (): Effect.Effect<
         .select({
           txType: transactions.type,
           depositLocation: transactions.depositLocation,
+          subLocationId: transactions.subLocationId,
           total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
         })
         .from(transactions)
@@ -197,13 +203,15 @@ export const getLocationBalances = (): Effect.Effect<
           eq(transactions.categoryId, transactionCategories.id)
         )
         .where(eq(transactionCategories.name, "Cash"))
-        .groupBy(transactions.type, transactions.depositLocation)
+        .groupBy(transactions.type, transactions.depositLocation, transactions.subLocationId)
 
       const balances = {
         cash: new BigNumber(0),
         bank: new BigNumber(0),
         strong_room: new BigNumber(0),
       }
+
+      const bankAccountBalances: Record<string, BigNumber> = {}
 
       for (const row of rows) {
         const amount = new BigNumber(row.total)
@@ -213,12 +221,22 @@ export const getLocationBalances = (): Effect.Effect<
             ? balances[loc].plus(amount)
             : balances[loc].minus(amount)
         }
+        // Track per-bank-account balance
+        if (loc === "bank" && row.subLocationId) {
+          const existing = bankAccountBalances[row.subLocationId] ?? new BigNumber(0)
+          bankAccountBalances[row.subLocationId] = row.txType === "debit"
+            ? existing.plus(amount)
+            : existing.minus(amount)
+        }
       }
 
       return {
         cash: formatAmount(balances.cash),
         bank: formatAmount(balances.bank),
         strong_room: formatAmount(balances.strong_room),
+        bankAccounts: Object.fromEntries(
+          Object.entries(bankAccountBalances).map(([id, bal]) => [id, formatAmount(bal)])
+        ),
       }
     },
     catch: (e) => new DatabaseError({ cause: e }),
@@ -238,6 +256,7 @@ export const getBalanceSheetData = (
           categoryType: transactionCategories.type,
           txType: transactions.type,
           depositLocation: transactions.depositLocation,
+          subLocationId: transactions.subLocationId,
           total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
         })
         .from(transactions)
@@ -250,7 +269,8 @@ export const getBalanceSheetData = (
           transactionCategories.name,
           transactionCategories.type,
           transactions.type,
-          transactions.depositLocation
+          transactions.depositLocation,
+          transactions.subLocationId
         )
 
       // Build balances from ledger using normal balance rules
@@ -259,6 +279,7 @@ export const getBalanceSheetData = (
         bank: new BigNumber(0),
         strong_room: new BigNumber(0),
       }
+      const bankAccountBalances: Record<string, BigNumber> = {}
       let totalLoansOutstanding = new BigNumber(0)
       let seizedCollateralValue = new BigNumber(0)
       let totalCreditorBalances = new BigNumber(0)
@@ -277,6 +298,12 @@ export const getBalanceSheetData = (
             locationBalances[loc] = isDebit
               ? locationBalances[loc].plus(amount)
               : locationBalances[loc].minus(amount)
+          }
+          if (loc === "bank" && row.subLocationId) {
+            const existing = bankAccountBalances[row.subLocationId] ?? new BigNumber(0)
+            bankAccountBalances[row.subLocationId] = isDebit
+              ? existing.plus(amount)
+              : existing.minus(amount)
           }
         } else if (row.categoryName === "Loans Receivable") {
           totalLoansOutstanding = isDebit
@@ -383,6 +410,9 @@ export const getBalanceSheetData = (
           interestReceivable: formatAmount(interestReceivable),
           seizedCollateralValue: formatAmount(seizedCollateralValue),
           totalAssets: formatAmount(totalAssets),
+          bankAccountBalances: Object.fromEntries(
+            Object.entries(bankAccountBalances).map(([id, bal]) => [id, formatAmount(bal)])
+          ),
         },
         liabilities: {
           totalCreditorBalances: formatAmount(totalCreditorBalances),

@@ -248,7 +248,7 @@ export async function createLoanAction(input: CreateLoanInput) {
   if (freshAmount.isGreaterThan(0)) {
     try {
       const balances = await Effect.runPromise(getLocationBalances())
-      const available = new BigNumber(balances[input.disbursementSource as keyof typeof balances])
+      const available = new BigNumber(balances[input.disbursementSource as "cash" | "bank" | "strong_room"])
       if (available.isLessThan(freshAmount)) {
         const loc = input.disbursementSource === "strong_room" ? "Strong Room" : input.disbursementSource === "bank" ? "Bank" : "Cash on Hand"
         const isLoanOfficer = !perms.has("fund-transfer:create")
@@ -260,6 +260,12 @@ export async function createLoanAction(input: CreateLoanInput) {
     } catch {
       return { error: "Unable to verify fund balances. Please try again." }
     }
+  }
+
+  // Loan officers cannot issue more than 4,000,000 UGX
+  const MAX_LOAN_OFFICER_AMOUNT = 4_000_000
+  if (role === "loanOfficer" && new BigNumber(input.principalAmount).isGreaterThan(MAX_LOAN_OFFICER_AMOUNT)) {
+    return { error: `Loan officers cannot issue more than ${formatAmount(new BigNumber(MAX_LOAN_OFFICER_AMOUNT))} UGX. Request a supervisor to issue this loan.` }
   }
 
   // Validate loanType
@@ -407,6 +413,7 @@ export const getCustomerLoansWithOverdueAction = withAction<string, any>({
           minPeriodOverride: loans.minPeriodOverride,
           issuedBy: loans.issuedBy,
           disbursementSource: loans.disbursementSource,
+          subLocationId: loans.subLocationId,
           loanType: loans.loanType,
           termMonths: loans.termMonths,
           penaltyMultiplier: loans.penaltyMultiplier,
