@@ -94,6 +94,8 @@ export async function postJournalEntry(
     recordedBy: string
     debitDepositLocation?: "cash" | "bank" | "strong_room"
     creditDepositLocation?: "cash" | "bank" | "strong_room"
+    debitSubLocationId?: string
+    creditSubLocationId?: string
     loanId?: string
   }
 ): Promise<string> {
@@ -113,6 +115,7 @@ export async function postJournalEntry(
     transactionDate: params.transactionDate,
     recordedBy: params.recordedBy,
     depositLocation: params.debitDepositLocation ?? null,
+    subLocationId: params.debitSubLocationId ?? null,
     journalGroupId,
   })
 
@@ -127,6 +130,7 @@ export async function postJournalEntry(
     transactionDate: params.transactionDate,
     recordedBy: params.recordedBy,
     depositLocation: params.creditDepositLocation ?? null,
+    subLocationId: params.creditSubLocationId ?? null,
     journalGroupId,
   })
 
@@ -155,7 +159,7 @@ export const recordExpense = (
         await tx.insert(transactions).values({
           type: "credit", amount: input.amount, categoryId: cashCategoryId,
           description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
-          recordedBy: actorId, depositLocation: input.location, journalGroupId: groupId,
+          recordedBy: actorId, depositLocation: input.location, subLocationId: input.subLocationId ?? null, journalGroupId: groupId,
         })
 
         await writeAuditLog(tx, { actorId, action: "transaction.create", entityType: "transaction", entityId: debitTx.id, beforeValue: null, afterValue: debitTx })
@@ -183,7 +187,7 @@ export const recordIncome = (
         await tx.insert(transactions).values({
           type: "debit", amount: input.amount, categoryId: cashCategoryId,
           description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
-          recordedBy: actorId, depositLocation: input.location, journalGroupId: groupId,
+          recordedBy: actorId, depositLocation: input.location, subLocationId: input.subLocationId ?? null, journalGroupId: groupId,
         })
 
         const [creditTx] = await tx

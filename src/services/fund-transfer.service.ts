@@ -24,6 +24,8 @@ export const createFundTransfer = (
             amount: input.amount,
             transferredBy: actorId,
             note: input.note?.trim() || null,
+            fromSubLocationId: input.fromSubLocationId ?? null,
+            toSubLocationId: input.toSubLocationId ?? null,
           })
           .returning()
 
@@ -44,6 +46,8 @@ export const createFundTransfer = (
           toLocation: input.toLocation,
           transactionDate: transfer.createdAt.toISOString(),
           actorId,
+          fromSubLocationId: input.fromSubLocationId,
+          toSubLocationId: input.toSubLocationId,
         })
 
         return transfer
@@ -74,6 +78,7 @@ export const createCapitalInjection = (
             amount: input.amount,
             transferredBy: actorId,
             note: input.note?.trim() || null,
+            toSubLocationId: input.toSubLocationId ?? null,
           })
           .returning()
 
@@ -92,6 +97,7 @@ export const createCapitalInjection = (
           toLocation: input.toLocation,
           transactionDate: transfer.createdAt.toISOString(),
           actorId,
+          subLocationId: input.toSubLocationId,
         })
 
         return transfer
