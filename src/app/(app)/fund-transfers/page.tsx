@@ -2,9 +2,17 @@
 
 import { Suspense, useState, useTransition } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections"
+import {
+  fundTransferCollection,
+  insertFundTransferWithInput,
+  insertCapitalInjectionWithInput,
+  bankAccountCollection,
+  insertBankAccountWithInput,
+  updateBankAccountWithInput,
+  locationBalancesCollection,
+} from "@/collections"
 import { useForm, Controller } from "react-hook-form"
-import { Loader2, ArrowRightLeft, PlusCircle } from "lucide-react"
+import { Loader2, ArrowRightLeft, PlusCircle, MoreHorizontal, Building2 } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -13,11 +21,13 @@ import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/c
 import { generateClientId } from "@/lib/client-id"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { MoneyInput } from "@/components/ui/money-input"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import {
   Dialog,
   DialogContent,
@@ -25,6 +35,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import {
   Select,
   SelectContent,
@@ -40,20 +56,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency, formatDate } from "@/lib/utils"
-import type { DepositLocation } from "@/types"
+import type { DepositLocation, BankAccount } from "@/types"
 import type { FundTransfer } from "@/types/fund-transfer"
 
 interface TransferFormValues {
   fromLocation: DepositLocation
   toLocation: DepositLocation
+  fromSubLocationId: string
+  toSubLocationId: string
   amount: string
   note: string
 }
 
 interface InjectionFormValues {
   toLocation: DepositLocation
+  toSubLocationId: string
   amount: string
   note: string
 }
@@ -70,12 +89,28 @@ function LoadingSkeleton() {
 function FundTransfersContent({ session }: { session: { user: { id: string } } }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
+  const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false)
   const [isPending] = useTransition()
+  const { has } = usePermissions()
+  const isAdmin = has("fund-transfer:create")
+
+  const bankAccountForm = useForm<{ name: string }>({ defaultValues: { name: "" } })
 
   const { data: allTransfers } = useLiveSuspenseQuery((q) =>
     q.from({ ft: fundTransferCollection }).select(({ ft }) => ft)
   )
   const transfers = allTransfers ?? []
+
+  const { data: allBankAccounts } = useLiveSuspenseQuery((q) =>
+    q.from({ ba: bankAccountCollection }).select(({ ba }) => ba)
+  )
+  const bankAccountsList = allBankAccounts ?? []
+
+  const { data: locationBalanceRows } = useLiveSuspenseQuery((q) =>
+    q.from({ lb: locationBalancesCollection }).select(({ lb }) => lb)
+  )
+  const locationBalances = locationBalanceRows?.[0] ?? null
+  const bankAccountBalances = (locationBalances as any)?.bankAccounts ?? {}
 
   const {
     control,
@@ -87,6 +122,8 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     defaultValues: {
       fromLocation: "cash",
       toLocation: "bank",
+      fromSubLocationId: "",
+      toSubLocationId: "",
       amount: "",
       note: "",
     },
@@ -97,10 +134,31 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   const injectionForm = useForm<InjectionFormValues>({
     defaultValues: {
       toLocation: "cash",
+      toSubLocationId: "",
       amount: "",
       note: "",
     },
   })
+
+  function onCreateBankAccount(data: { name: string }) {
+    const id = generateClientId()
+    const input = { id, name: data.name.trim() }
+    const optimistic: BankAccount = {
+      id,
+      name: data.name.trim(),
+      isActive: true,
+      createdBy: session.user.id,
+      createdAt: new Date(),
+    }
+    try {
+      insertBankAccountWithInput(id, optimistic, input)
+      toast.success("Bank account created")
+      bankAccountForm.reset()
+      setBankAccountDialogOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create bank account")
+    }
+  }
 
   function onInjectionSubmit(data: InjectionFormValues) {
     const id = generateClientId()
@@ -109,6 +167,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       toLocation: data.toLocation,
       amount: data.amount.trim(),
       note: data.note.trim() || undefined,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
     }
     const optimistic: FundTransfer = {
       id,
@@ -116,7 +175,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       fromLocation: null,
       toLocation: data.toLocation,
       fromSubLocationId: null,
-      toSubLocationId: null,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
       amount: data.amount.trim(),
       transferredBy: session.user.id,
       note: data.note.trim() || null,
@@ -146,14 +205,16 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       toLocation: data.toLocation,
       amount: data.amount.trim(),
       note: data.note.trim() || undefined,
+      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : undefined,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
     }
     const optimistic: FundTransfer = {
       id,
       transferType: "internal",
       fromLocation: data.fromLocation,
       toLocation: data.toLocation,
-      fromSubLocationId: null,
-      toSubLocationId: null,
+      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : null,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
       amount: data.amount.trim(),
       transferredBy: session.user.id,
       note: data.note.trim() || null,
@@ -234,6 +295,15 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 )}
               </div>
 
+              {injectionForm.watch("toLocation") === "bank" && (
+                <BankAccountSelect
+                  name="toSubLocationId"
+                  control={injectionForm.control}
+                  label="Bank Account"
+                  bankAccountBalances={bankAccountBalances}
+                />
+              )}
+
               <MoneyInput
                 name="amount"
                 control={injectionForm.control}
@@ -312,6 +382,15 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 )}
               </div>
 
+              {fromLocation === "bank" && (
+                <BankAccountSelect
+                  name="fromSubLocationId"
+                  control={control}
+                  label="From Bank Account"
+                  bankAccountBalances={bankAccountBalances}
+                />
+              )}
+
               <div className="space-y-1">
                 <Label htmlFor="toLocation">To</Label>
                 <Controller
@@ -338,6 +417,15 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                   <p className="text-sm text-destructive">{errors.toLocation.message}</p>
                 )}
               </div>
+
+              {watch("toLocation") === "bank" && (
+                <BankAccountSelect
+                  name="toSubLocationId"
+                  control={control}
+                  label="To Bank Account"
+                  bankAccountBalances={bankAccountBalances}
+                />
+              )}
 
               <MoneyInput
                 name="amount"
@@ -381,6 +469,144 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
         </Dialog>
         </div>
       </div>
+
+      {/* Bank Accounts section */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between pb-3">
+          <CardTitle className="flex items-center gap-2 text-base font-semibold">
+            <Building2 className="h-4 w-4" />
+            Bank Accounts
+          </CardTitle>
+          {isAdmin && (
+            <Dialog open={bankAccountDialogOpen} onOpenChange={setBankAccountDialogOpen}>
+              <DialogTrigger
+                render={
+                  <Button size="sm" variant="outline">
+                    <PlusCircle className="mr-2 h-3.5 w-3.5" />
+                    New Account
+                  </Button>
+                }
+              />
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Bank Account</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={bankAccountForm.handleSubmit(onCreateBankAccount)} className="space-y-4">
+                  <div className="space-y-1">
+                    <Label htmlFor="bankAccountName">Account Name</Label>
+                    <Controller
+                      name="name"
+                      control={bankAccountForm.control}
+                      rules={{ required: "Account name is required" }}
+                      render={({ field, fieldState }) => (
+                        <>
+                          <Input
+                            id="bankAccountName"
+                            placeholder="e.g. Stanbic Business Account"
+                            {...field}
+                          />
+                          {fieldState.error?.message && (
+                            <p className="text-sm text-destructive">{fieldState.error.message}</p>
+                          )}
+                        </>
+                      )}
+                    />
+                  </div>
+                  <Button type="submit" className="w-full">
+                    Create Account
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
+        </CardHeader>
+        <CardContent className="p-0">
+          {bankAccountsList.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground text-sm px-4">
+              No bank accounts configured yet. Create one to start tracking per-account balances.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead>Status</TableHead>
+                  {isAdmin && <TableHead className="w-10" />}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bankAccountsList.map((account) => {
+                  const balance = bankAccountBalances[account.id]
+                  return (
+                    <TableRow key={account.id}>
+                      <TableCell className="font-medium">{account.name}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {balance != null ? formatCurrency(balance) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        {account.isActive ? (
+                          <Badge variant="outline" className="rounded-full bg-emerald-50 text-emerald-700 border-emerald-200">
+                            Active
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="rounded-full bg-muted text-muted-foreground">
+                            Inactive
+                          </Badge>
+                        )}
+                      </TableCell>
+                      {isAdmin && (
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              aria-label="Account actions"
+                              className="flex h-7 w-7 items-center justify-center rounded-md hover:bg-muted transition-colors"
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  const newName = prompt("New account name:", account.name)
+                                  if (newName && newName.trim() && newName.trim() !== account.name) {
+                                    updateBankAccountWithInput(
+                                      { id: account.id, name: newName.trim() },
+                                      (draft) => {
+                                        draft.name = newName.trim()
+                                      }
+                                    )
+                                    toast.success("Account renamed")
+                                  }
+                                }}
+                              >
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onSelect={() => {
+                                  const nextActive = !account.isActive
+                                  updateBankAccountWithInput(
+                                    { id: account.id, isActive: nextActive },
+                                    (draft) => {
+                                      draft.isActive = nextActive
+                                    }
+                                  )
+                                  toast.success(nextActive ? "Account reactivated" : "Account deactivated")
+                                }}
+                              >
+                                {account.isActive ? "Deactivate" : "Reactivate"}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-0">
