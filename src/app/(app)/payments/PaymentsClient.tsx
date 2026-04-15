@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { paymentCollection, updatePaymentWithInput } from "@/collections"
 import { toast } from "sonner"
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
@@ -110,7 +110,7 @@ export function PaymentsClient() {
   const pageSize = 25
 
   // TanStack DB live query for all payments
-  const { data: allPayments, isLoading } = useLiveQuery((q) =>
+  const { data: allPayments } = useLiveSuspenseQuery((q) =>
     q.from({ p: paymentCollection }).select(({ p }) => p)
   )
 
@@ -140,6 +140,7 @@ export function PaymentsClient() {
     return result
   }, [allPayments, customerName, dateFrom, dateTo, amountMin, amountMax])
 
+  const isLoading = false
   const total = filtered.length
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize)
   const isError = false

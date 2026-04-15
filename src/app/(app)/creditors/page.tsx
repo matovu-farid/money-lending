@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { creditorCollection, systemCapitalCollection, creditorMonthlyDueCollection } from "@/collections"
 import { useSession } from "@/lib/auth-client"
 import { ButtonLink } from "@/components/ui/button-link"
@@ -26,22 +26,22 @@ export default function CreditorsPage() {
   const permissionsLoaded = permissions.size > 0
   const isSupervisorOrAbove = has("creditor:read")
 
-  const { data: allCreditors, isLoading: creditorsLoading } = useLiveQuery((q) =>
+  const { data: allCreditors } = useLiveSuspenseQuery((q) =>
     q.from({ c: creditorCollection }).select(({ c }) => c)
   )
   const creditors = allCreditors ?? []
 
-  const { data: capitalRows, isLoading: capitalLoading } = useLiveQuery((q) =>
+  const { data: capitalRows } = useLiveSuspenseQuery((q) =>
     q.from({ c: systemCapitalCollection }).select(({ c }) => c)
   )
   const capital = capitalRows?.[0] ?? defaultCapital
 
-  const { data: monthlyDueRows, isLoading: monthlyDueLoading } = useLiveQuery((q) =>
+  const { data: monthlyDueRows } = useLiveSuspenseQuery((q) =>
     q.from({ m: creditorMonthlyDueCollection }).select(({ m }) => m)
   )
   const monthlyDue = monthlyDueRows?.[0]?.data ?? {}
 
-  const isLoading = creditorsLoading || capitalLoading || monthlyDueLoading
+  const isLoading = false
 
   // Wait for permissions to load before checking access
   if (sessionPending || !permissionsLoaded) return null

@@ -31,6 +31,7 @@ import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
 import type { PaymentWithCustomer, RecordPaymentInput } from "@/types/payment"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
+import BigNumber from "bignumber.js"
 
 interface BalanceData {
   outstandingPrincipal: string
@@ -120,6 +121,14 @@ export function RecordPaymentForm({ loanId, customerId, customerName, loanRefere
       note: pendingData.note.trim() || undefined,
     }
 
+    // Compute receipt allocation from available balance data
+    const paidAmt = new BigNumber(pendingData.amount.trim())
+    const accrued = new BigNumber(balanceData?.accruedInterest ?? "0")
+    const totalBefore = new BigNumber(balanceData?.totalBalance ?? "0")
+    const interestPaid = BigNumber.min(paidAmt, accrued)
+    const principalPaid = paidAmt.minus(interestPaid)
+    const balanceAfter = BigNumber.max(totalBefore.minus(paidAmt), new BigNumber(0))
+
     insertPaymentWithInput(id, optimistic, input)
     toast.success("Payment recorded successfully")
 
@@ -128,10 +137,10 @@ export function RecordPaymentForm({ loanId, customerId, customerName, loanRefere
         ...optimistic,
         depositLocationValue: pendingData.depositLocation,
         allocation: {
-          interestPortion: "0",
-          principalPortion: "0",
-          principalBalanceAfter: "0",
-          outstandingBalanceAfter: "0",
+          interestPortion: interestPaid.toFixed(0),
+          principalPortion: principalPaid.toFixed(0),
+          principalBalanceAfter: balanceAfter.toFixed(0),
+          outstandingBalanceAfter: totalBefore.toFixed(0),
         },
       } as unknown as ReceiptPaymentData,
       receiptNumber: generateReceiptNumber(),

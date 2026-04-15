@@ -1,10 +1,11 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
-import { getUnreadCountAction, getNotificationsAction } from "@/actions/notification.actions"
+import { queryCollectionOptions } from "@/lib/collection-options"
+import { getUnreadCountAction, getNotificationsAction, markAsReadAction } from "@/actions/notification.actions"
 import type { Notification } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 // --- Unread count (singleton) ---
 
@@ -12,7 +13,7 @@ export type UnreadCountRow = { _key: string; count: number }
 
 export const notificationUnreadCountCollection = createCollection(
   queryCollectionOptions<UnreadCountRow>({
-    queryKey: ["notifications", "unread-count"],
+    queryKey: [...queryKeys.notifications.unreadCount],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<UnreadCountRow>> => {
       const result = await getUnreadCountAction()
@@ -29,7 +30,7 @@ export type NotificationRow = Notification
 
 export const notificationListCollection = createCollection(
   queryCollectionOptions<NotificationRow>({
-    queryKey: ["notifications", "list"],
+    queryKey: [...queryKeys.notifications.list],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<NotificationRow>> => {
       const result = await getNotificationsAction()
@@ -37,5 +38,12 @@ export const notificationListCollection = createCollection(
       return []
     },
     getKey: (row) => row.id,
+    onUpdate: async ({ transaction }) => {
+      const { original, changes } = transaction.mutations[0]
+      if (changes.isRead === true) {
+        const result = await markAsReadAction(original.id)
+        if (!("data" in result)) throw new Error("Failed to mark as read")
+      }
+    },
   })
 )

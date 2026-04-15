@@ -127,7 +127,7 @@ export const listLoansAction = withAction({
 export async function getCurrentUserRoleAction(): Promise<UserRole> {
   const session = await getSession()
   if (!session) return "unassigned" as UserRole
-  return (session.user.role ?? "unassigned") as UserRole
+  return getUserRole(session)
 }
 
 /** Resolve an array of user IDs to a { [id]: name } map. */

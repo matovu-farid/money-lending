@@ -3,8 +3,8 @@
 import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
-import { useLiveQuery } from "@tanstack/react-db"
-import { loanCollection, getLoanBalanceCollection } from "@/collections"
+import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
+import { loanCollection, getLoanBalanceCollection, insertPaymentWithInput } from "@/collections"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -26,10 +26,12 @@ import { generateReceiptNumber } from "@/lib/receipt-number"
 import { useSession } from "@/lib/auth-client"
 import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
-import { recordPaymentAction } from "@/actions/payment.actions"
+import { generateClientId } from "@/lib/client-id"
+import type { PaymentWithCustomer, RecordPaymentInput, ReceiptPaymentData } from "@/types"
 import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
-import type { ActiveLoanSearchResult, DepositLocation, ReceiptPaymentData } from "@/types"
+import type { ActiveLoanSearchResult, DepositLocation } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
+import BigNumber from "bignumber.js"
 
 interface QuickRecordDialogProps {
   open: boolean
@@ -46,7 +48,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   const { data: session } = useSession()
   const [selectedLoan, setSelectedLoan] = useState<ActiveLoanSearchResult | null>(null)
   const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
-  const [isPending, startTransition] = useTransition()
+  const [isPending] = useTransition()
   const [confirmStep, setConfirmStep] = useState(false)
   const [pendingData, setPendingData] = useState<QuickRecordFormValues | null>(null)
 
@@ -65,7 +67,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   })
 
   // Get active loans from collection, sorted by last payment activity
-  const { data: allActiveLoans = [] } = useLiveQuery(
+  const { data: allActiveLoans = [] } = useLiveSuspenseQuery(
     (q) => q.from({ l: loanCollection }),
     []
   )
@@ -80,15 +82,12 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
 
   // Fetch balance for selected loan via collection
   const selectedLoanId = selectedLoan?.loanId ?? ""
-  const balanceColl = selectedLoanId ? getLoanBalanceCollection(selectedLoanId) : null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: balanceRows } = useLiveQuery(((q: any) =>
-    balanceColl
-      ? q.from({ b: balanceColl }).select(({ b }: any) => b)
-      : q.from({ l: loanCollection }).where(() => false)
-  ) as any, [selectedLoanId])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const balanceData = (balanceRows as any)?.[0] ?? null
+  const balanceColl = getLoanBalanceCollection(selectedLoanId)
+  const { data: balanceRows } = useLiveQuery(
+    (q) => q.from({ b: balanceColl }).select(({ b }) => b),
+    [selectedLoanId]
+  )
+  const balanceData = balanceRows?.[0] ?? null
 
   function resetForm() {
     setSelectedLoan(null)
@@ -129,28 +128,57 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     if (!selectedLoan || !pendingData) return
     setConfirmStep(false)
 
-    startTransition(async () => {
-      const result = await recordPaymentAction({
-        loanId: selectedLoan.loanId,
-        amount: pendingData.amount,
-        paymentDate: new Date(pendingData.paymentDate + "T12:00:00").toISOString(),
-        depositLocation: pendingData.depositLocation,
-      })
+    const id = generateClientId()
+    const now = new Date()
 
-      if ("error" in result) {
-        toast.error(
-          result.error === "Loan not found"
-            ? "Loan not found. It may have been deleted."
-            : result.error ?? "Failed to record payment. Please try again."
-        )
-        return
-      }
+    const optimistic: PaymentWithCustomer = {
+      id,
+      loanId: selectedLoan.loanId,
+      customerId: selectedLoan.customerId,
+      customerName: selectedLoan.customerName,
+      paymentDate: new Date(pendingData.paymentDate + "T12:00:00"),
+      amount: pendingData.amount,
+      interestPortion: "0",
+      principalPortion: "0",
+      principalBalanceAfter: "0",
+      outstandingBalance: "0",
+      recordedBy: session?.user?.id ?? "",
+      recorderName: session?.user?.name ?? "",
+      depositLocation: pendingData.depositLocation,
+      createdAt: now,
+    }
 
-      setReceiptData({
-        payment: { ...result.data, depositLocationValue: pendingData.depositLocation },
-        receiptNumber: generateReceiptNumber(),
-      })
-      // Data sync handled by TanStack DB collections — no manual invalidation needed
+    const input: RecordPaymentInput = {
+      id,
+      loanId: selectedLoan.loanId,
+      paymentDate: pendingData.paymentDate + "T12:00:00",
+      amount: pendingData.amount,
+      depositLocation: pendingData.depositLocation,
+    }
+
+    // Compute receipt allocation from available balance data
+    const paidAmt = new BigNumber(pendingData.amount)
+    const accrued = new BigNumber(balanceData?.accruedInterest ?? "0")
+    const totalBefore = new BigNumber(balanceData?.totalBalance ?? "0")
+    const interestPaid = BigNumber.min(paidAmt, accrued)
+    const principalPaid = paidAmt.minus(interestPaid)
+    const balanceAfter = BigNumber.max(totalBefore.minus(paidAmt), new BigNumber(0))
+
+    insertPaymentWithInput(id, optimistic, input)
+    toast.success("Payment recorded successfully")
+
+    setReceiptData({
+      payment: {
+        ...optimistic,
+        depositLocationValue: pendingData.depositLocation,
+        allocation: {
+          interestPortion: interestPaid.toFixed(0),
+          principalPortion: principalPaid.toFixed(0),
+          principalBalanceAfter: balanceAfter.toFixed(0),
+          outstandingBalanceAfter: totalBefore.toFixed(0),
+        },
+      } as unknown as ReceiptPaymentData,
+      receiptNumber: generateReceiptNumber(),
     })
   }
 

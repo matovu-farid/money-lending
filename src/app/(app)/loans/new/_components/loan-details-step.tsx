@@ -145,6 +145,7 @@ export function LoanDetailsStep({
           control={control}
           locationBalances={locationBalances}
           amount={principalAmount}
+          userRole={userRole}
         />
 
         <div className="flex gap-3 pt-2">

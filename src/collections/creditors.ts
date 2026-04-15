@@ -1,7 +1,7 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   listCreditorsAction,
   createCreditorAction,
@@ -9,10 +9,11 @@ import {
 } from "@/actions/creditor.actions"
 import type { Creditor, CreateCreditorInput, UpdateCreditorInput } from "@/types/creditor"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 export const creditorCollection = createCollection(
   queryCollectionOptions<Creditor>({
-    queryKey: ["creditors"],
+    queryKey: [...queryKeys.creditors.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<Creditor>> => {
       const result = await listCreditorsAction()

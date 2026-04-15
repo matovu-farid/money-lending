@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveSuspenseQuery, eq } from "@tanstack/react-db"
 import { loanCollection, customerCollection, getLoanBalanceCollection } from "@/collections"
 import { shortId } from "@/lib/utils"
 import { RecordPaymentForm } from "./record-payment-form"
@@ -10,26 +10,28 @@ export default function RecordPaymentPage() {
   const { loanId } = useParams<{ loanId: string }>()
 
   // Get loan from collection
-  const { data: loans, isLoading: loanLoading } = useLiveQuery(
+  const { data: loans } = useLiveSuspenseQuery(
     (q) => q.from({ l: loanCollection }).where(({ l }) => eq(l.id, loanId)),
     [loanId]
   )
   const loan = loans?.[0] ?? null
 
   // Get customer name from collection
-  const { data: customers } = useLiveQuery(
+  const loanLoading = false
+  const { data: customers } = useLiveSuspenseQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, loan?.customerId ?? "")),
     [loan?.customerId]
   )
   const customerName = customers?.[0]?.fullName ?? ""
 
   const balanceColl = getLoanBalanceCollection(loanId)
-  const { data: balanceRows, isLoading: balanceLoading } = useLiveQuery(
+  const { data: balanceRows } = useLiveSuspenseQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
     [loanId]
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const balanceLoading = false
   const balanceData = (balanceRows as any)?.[0] ?? null
 
   if (loanLoading) {

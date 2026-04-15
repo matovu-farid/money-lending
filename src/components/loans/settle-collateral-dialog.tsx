@@ -1,12 +1,9 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
+import { useState } from "react"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert } from "lucide-react"
-import { settleWithCollateralAction } from "@/actions/settlement.actions"
-import { queryKeys } from "@/hooks/query-keys"
+import { settleLoanWithCollateral } from "@/collections"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -35,10 +32,8 @@ export function SettleCollateralDialog({
   collateralNature,
   collateralDescription,
 }: SettleCollateralDialogProps) {
-  const router = useRouter()
-  const queryClient = useQueryClient()
   const [reason, setReason] = useState("")
-  const [isPending, startTransition] = useTransition()
+  const isPending = false
 
   const totalWriteOff = (
     parseFloat(outstandingPrincipal) + parseFloat(accruedInterest)
@@ -50,26 +45,10 @@ export function SettleCollateralDialog({
       return
     }
 
-    startTransition(async () => {
-      const result = await settleWithCollateralAction({
-        loanId,
-        reason: reason.trim(),
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      toast.success("Loan settled with collateral")
-      onOpenChange(false)
-      setReason("")
-
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.detail(loanId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.all })
-      router.refresh()
-    })
+    settleLoanWithCollateral(loanId, reason.trim())
+    toast.success("Loan settled with collateral")
+    onOpenChange(false)
+    setReason("")
   }
 
   return (

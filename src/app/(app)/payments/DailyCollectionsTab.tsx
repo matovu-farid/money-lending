@@ -15,7 +15,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Card, CardContent } from "@/components/ui/card"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { useDailyCollections, useLoansDueToday } from "@/hooks/use-daily-collections"
@@ -34,8 +33,8 @@ export function DailyCollectionsTab() {
   // Sync selectedDate with URL param on browser back/forward navigation
   useEffect(() => { setSelectedDate(dateParam) }, [dateParam])
 
-  const { data: collections, isLoading: collectionsLoading, isError: collectionsError } = useDailyCollections(selectedDate)
-  const { data: dueLoans, isLoading: dueLoading, isError: dueError } = useLoansDueToday()
+  const { data: collections } = useDailyCollections(selectedDate)
+  const { data: dueLoans } = useLoansDueToday()
 
   function navigateDate(delta: -1 | 1) {
     const current = new Date(selectedDate + "T12:00:00")
@@ -119,71 +118,27 @@ export function DailyCollectionsTab() {
 
       {/* Summary Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
-        {collectionsLoading ? (
-          <>
-            {[1, 2, 3].map((i) => (
-              <Card key={i}>
-                <CardContent className="pt-6">
-                  <div className="animate-pulse bg-muted rounded h-8 w-24" />
-                  <div className="animate-pulse bg-muted rounded h-4 w-16 mt-2" />
-                </CardContent>
-              </Card>
-            ))}
-          </>
-        ) : (
-          <>
-            <KpiCard
-              label="Total Collected"
-              value={`UGX ${formatNumberWithCommas(totalCollected)}`}
-              icon={Banknote}
-            />
-            <KpiCard
-              label="Payments"
-              value={String(paymentCount)}
-              icon={FileText}
-            />
-            <KpiCard
-              label="Average Payment"
-              value={avgPayment ? `UGX ${formatNumberWithCommas(avgPayment)}` : "\u2014"}
-              icon={BarChart3}
-            />
-          </>
-        )}
+        <KpiCard
+          label="Total Collected"
+          value={`UGX ${formatNumberWithCommas(totalCollected)}`}
+          icon={Banknote}
+        />
+        <KpiCard
+          label="Payments"
+          value={String(paymentCount)}
+          icon={FileText}
+        />
+        <KpiCard
+          label="Average Payment"
+          value={avgPayment ? `UGX ${formatNumberWithCommas(avgPayment)}` : "\u2014"}
+          icon={BarChart3}
+        />
       </div>
 
       {/* Collections Breakdown Section */}
       <div className="mt-8">
         <h2 className="text-xl font-semibold">Collections on {formattedDate}</h2>
-        {collectionsError && (
-          <p className="text-sm text-destructive mt-1">
-            Could not load collections. Refresh the page to try again.
-          </p>
-        )}
-        {collectionsLoading ? (
-          <Table className="mt-4">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Customer</TableHead>
-                <TableHead>Loan Ref</TableHead>
-                <TableHead>Amount (UGX)</TableHead>
-                <TableHead>Interest</TableHead>
-                <TableHead>Principal</TableHead>
-                <TableHead>Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[1, 2, 3].map((i) => (
-                <TableRow key={i}>
-                  {[1, 2, 3, 4, 5, 6].map((j) => (
-                    <TableCell key={j}>
-                      <div className="animate-pulse bg-muted rounded h-4 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (collections?.rows?.length ?? 0) === 0 ? (
+        {(collections?.rows?.length ?? 0) === 0 ? (
           <div className="py-12 text-center">
             <p className="text-lg font-medium">No collections on this date</p>
             <p className="text-sm text-muted-foreground mt-1">
@@ -241,35 +196,7 @@ export function DailyCollectionsTab() {
         <p className="text-sm text-muted-foreground mt-1">
           Active loans with no payment in 30 or more days
         </p>
-        {dueError && (
-          <p className="text-sm text-destructive mt-1">
-            Could not load due loans. Refresh the page to try again.
-          </p>
-        )}
-        {dueLoading ? (
-          <Table className="mt-4">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Customer</TableHead>
-                <TableHead>Loan Ref</TableHead>
-                <TableHead>Principal Balance</TableHead>
-                <TableHead>Days Since Last Payment</TableHead>
-                <TableHead>Last Payment</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {[1, 2, 3].map((i) => (
-                <TableRow key={i}>
-                  {[1, 2, 3, 4, 5].map((j) => (
-                    <TableCell key={j}>
-                      <div className="animate-pulse bg-muted rounded h-4 w-full" />
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        ) : (dueLoans?.length ?? 0) === 0 ? (
+        {(dueLoans?.length ?? 0) === 0 ? (
           <div className="py-12 text-center">
             <p className="text-lg font-medium">All loans are up to date</p>
             <p className="text-sm text-muted-foreground mt-1">

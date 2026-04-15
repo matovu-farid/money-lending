@@ -1,6 +1,7 @@
+import { after } from "next/server"
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
-import { admin } from "better-auth/plugins"
+import { admin, testUtils } from "better-auth/plugins"
 import { Resend } from "resend"
 import { db } from "./db"
 import { ac, superAdminRole, adminRole, supervisorRole, loanOfficerRole, unassignedRole } from "./permissions"
@@ -12,12 +13,15 @@ export const pendingVerifications = new Map<string, string>()
 
 const isTest = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
 const isCypress = process.env.CYPRESS === "true"
+console.log("[Email Debug] Module loaded", { isTest, isCypress, NODE_ENV: process.env.NODE_ENV, sendOnSignUp: !isTest })
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const emailFrom = process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>"
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg" }),
+  // Disable rate limiting in test/Cypress mode to prevent 429s
+  ...(isCypress ? { rateLimit: { enabled: false } } : {}),
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: !isTest,
@@ -35,17 +39,31 @@ export const auth = betterAuth({
     sendOnSignUp: !isTest,
     autoSignInAfterVerification: true,
     sendVerificationEmail: async ({ user, url }) => {
+      console.log("[Email Debug] sendVerificationEmail called", {
+        email: user.email,
+        isTest,
+        isCypress,
+        NODE_ENV: process.env.NODE_ENV,
+        CYPRESS: process.env.CYPRESS,
+      })
       if (isTest || isCypress) {
+        console.log("[Email Debug] SKIPPED — isTest or isCypress is true")
         // Store URL for Cypress test retrieval via /api/test/verification-url
         pendingVerifications.set(user.email, url)
         return
       }
-      await resend.emails.send({
-        from: emailFrom,
-        to: user.email,
-        subject: "Verify your email address",
-        react: VerifyEmailTemplate({ url }),
-      })
+      console.log("[Email Debug] Proceeding to send email via Resend")
+      try {
+        const result = await resend.emails.send({
+          from: emailFrom,
+          to: user.email,
+          subject: "Verify your email address",
+          react: VerifyEmailTemplate({ url }),
+        })
+        console.log("[Email Debug] Resend response:", JSON.stringify(result))
+      } catch (err) {
+        console.error("[Email Debug] Resend error:", err)
+      }
     },
   },
   session: {
@@ -66,11 +84,11 @@ export const auth = betterAuth({
           // newly created user already exists in the table, so count === 1
           // means this is the first user.
           const { sql } = await import("drizzle-orm")
-          const result = await db.execute(sql`SELECT count(*)::int AS cnt FROM "user"`)
-          const rows = result as unknown as Array<{ cnt: number }>
-          const count = rows[0]?.cnt ?? 0
+          const others = await db.execute(
+            sql`SELECT 1 FROM "user" WHERE "id" != ${user.id} LIMIT 1`
+          ) as unknown as Array<Record<string, unknown>>
 
-          if (Number(count) === 1) {
+          if (others.length === 0) {
             // This is the first user -- promote to superAdmin.
             // Update directly via Drizzle since we are inside a databaseHook
             // and calling auth.api.setRole here could cause recursion or
@@ -84,6 +102,7 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    ...(isTest ? [testUtils()] : []),
     admin({
       ac,
       roles: {

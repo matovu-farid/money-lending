@@ -18,7 +18,7 @@ export async function getSession() {
 /**
  * Extract the user's role from a session, defaulting to "unassigned".
  */
-export function getUserRole(session: { user: { role?: string | null } }): UserRole {
+export function getUserRole(session: { user: Record<string, unknown> }): UserRole {
   return (session.user.role ?? "unassigned") as UserRole
 }
 
@@ -27,7 +27,7 @@ export function getUserRole(session: { user: { role?: string | null } }): UserRo
  * Returns an error string if forbidden, or null if permitted.
  */
 export function requireRole(
-  session: { user: { role?: string | null } },
+  session: { user: Record<string, unknown> },
   minRole: UserRole,
   message?: string,
 ): string | null {
@@ -70,7 +70,7 @@ export async function getEffectivePermissions(
  * Returns an error string if forbidden, or null if permitted.
  */
 export async function checkPermission(
-  session: { user: { id: string; role?: string | null } },
+  session: { user: { id: string } & Record<string, unknown> },
   permission: Permission,
   message?: string,
 ): Promise<string | null> {

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
 import {
   LayoutDashboard,
   Users,
@@ -22,25 +21,7 @@ import { cn } from "@/lib/utils"
 import type { Permission } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { signOut, useSession } from "@/lib/auth-client"
-import { queryKeys } from "@/hooks/query-keys"
-import { getDashboardAction } from "@/actions/dashboard.actions"
-import { listPaymentsAction } from "@/actions/payment.actions"
-import { searchCustomersAction } from "@/actions/customer.actions"
-import { listLoansWithOverdueAction } from "@/actions/loan.actions"
-import { listAllRequestsAction } from "@/actions/rate-change-request.actions"
-import { listFundTransfersAction } from "@/actions/fund-transfer.actions"
-import { listCreditorsAction, getSystemCapitalAction } from "@/actions/creditor.actions"
-import { getActivitiesAction } from "@/actions/activity.actions"
-import { listExpenseTransactionsAction, listExpenseCategoriesAction } from "@/actions/expense.actions"
-import {
-  getPortfolioReportAction,
-  getPnlReportAction,
-  getBalanceSheetReportAction,
-} from "@/actions/report.actions"
-import { getCurrentMonth } from "@/lib/utils"
 import { useSidebarStore } from "@/lib/stores/sidebar"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
-import { usePrefetchAwareLink } from "@/hooks/use-prefetch-navigate"
 import { Button } from "@/components/ui/button"
 import {
   Tooltip,
@@ -114,177 +95,37 @@ export function Sidebar({ onClose }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
   const { data: session } = useSession()
-  const queryClient = useQueryClient()
   const prefetchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const { onLinkClick } = usePrefetchAwareLink()
 
   const user = session?.user
   const { has } = usePermissions()
 
-  // Prefetch all pages via the global priority queue on mount
+  // Prefetch routes on mount
   useEffect(() => {
-    const staleTime = 30_000
-    const { HIGH, NORMAL, LOW } = Priority
-
-    // HIGH — Core operations pages (user will visit these first)
     if (has("dashboard:read")) {
-      prefetchQueue.add(() => router.prefetch("/dashboard"), HIGH, "route:/dashboard")
-      prefetchQueue.add(() =>
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.dashboard.kpis(),
-          queryFn: () => getDashboardAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-          staleTime,
-        }), HIGH, "data:dashboard-kpis")
+      router.prefetch("/dashboard")
     }
-    prefetchQueue.add(() => router.prefetch("/customers"), HIGH, "route:/customers")
-    prefetchQueue.add(() => router.prefetch("/loans"), HIGH, "route:/loans")
-    prefetchQueue.add(() => router.prefetch("/payments"), HIGH, "route:/payments")
-
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.customers.search({}, 0),
-        queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), HIGH, "data:customers-search-0")
-
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.loans.all,
-        queryFn: () => listLoansWithOverdueAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), HIGH, "data:loans-all")
-
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.payments.list({}, 1),
-        queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), HIGH, "data:payments-list-1")
-
-    // NORMAL — Secondary pages
-    prefetchQueue.add(() => router.prefetch("/creditors"), NORMAL, "route:/creditors")
-    prefetchQueue.add(() => router.prefetch("/fund-transfers"), NORMAL, "route:/fund-transfers")
-
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.fundTransfers.all,
-        queryFn: () => listFundTransfersAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), NORMAL, "data:fund-transfers-all")
-
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.creditors.all,
-        queryFn: () => listCreditorsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), NORMAL, "data:creditors-all")
-
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.creditors.capital(),
-        queryFn: () => getSystemCapitalAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), NORMAL, "data:creditors-capital")
-
+    router.prefetch("/customers")
+    router.prefetch("/loans")
+    router.prefetch("/payments")
+    router.prefetch("/creditors")
+    router.prefetch("/fund-transfers")
     if (has("expense:read")) {
-      prefetchQueue.add(() => router.prefetch("/expenses"), NORMAL, "route:/expenses")
-      prefetchQueue.add(() =>
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.expenses.list({}, 1),
-          queryFn: () => listExpenseTransactionsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-          staleTime,
-        }), NORMAL, "data:expenses-list-1")
-
-      prefetchQueue.add(() =>
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.expenses.categories(),
-          queryFn: () => listExpenseCategoriesAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-          staleTime,
-        }), NORMAL, "data:expenses-categories")
+      router.prefetch("/expenses")
     }
-
-    // LOW — Report data (prefetch so exports are instant)
-    const currentMonth = getCurrentMonth()
-    prefetchQueue.add(() => router.prefetch("/reports"), LOW, "route:/reports")
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.reports.portfolio(),
-        queryFn: () => getPortfolioReportAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), LOW, "data:reports-portfolio")
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.reports.pnl(currentMonth),
-        queryFn: () => getPnlReportAction({ period: currentMonth }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), LOW, `data:reports-pnl-${currentMonth}`)
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.reports.balanceSheet(currentMonth),
-        queryFn: () => getBalanceSheetReportAction({ period: currentMonth }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-        staleTime,
-      }), LOW, `data:reports-balance-sheet-${currentMonth}`)
-    // Skip prefetching transaction report data — it fetches up to 10K rows
-    // and is only needed for client-side export, not page display.
-
-    // LOW — Conditional pages
-    if (has("activity:read")) {
-      prefetchQueue.add(
-        () => queryClient.prefetchQuery({
-          queryKey: queryKeys.activities.list({ actorId: "", entityType: "", dateFrom: "", dateTo: "" }, 1),
-          queryFn: () => getActivitiesAction({ page: 1, pageSize: 25 }).then((r) => ("data" in r ? r.data : Promise.reject(r.error))),
-          staleTime,
-        }), LOW, "data:activities-list-1")
-    }
+    router.prefetch("/reports")
     if (has("rate-change:approve-standard")) {
-      prefetchQueue.add(() => router.prefetch("/approvals"), LOW, "route:/approvals")
-      prefetchQueue.add(() =>
-        queryClient.prefetchQuery({
-          queryKey: queryKeys.rateChangeRequests.pending(),
-          queryFn: () => listAllRequestsAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-          staleTime,
-        }), LOW, "data:rate-change-requests-pending")
+      router.prefetch("/approvals")
     }
-  }, [router, queryClient, has])
+  }, [router, has])
 
-  // Prefetch TanStack Query data on hover — uses CRITICAL priority via the queue
-  // so dedup and debounce apply, and idle scheduling is respected
+  // Prefetch route on hover with debounce
   const handlePrefetch = useCallback((href: string) => {
     clearTimeout(prefetchTimerRef.current)
     prefetchTimerRef.current = setTimeout(() => {
-      const staleTime = 30_000
-      prefetchQueue.add(() => router.prefetch(href), Priority.CRITICAL, `route:${href}`)
-      if (href === "/dashboard") {
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.dashboard.kpis(),
-            queryFn: () => getDashboardAction().then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-            staleTime,
-          }), Priority.CRITICAL, "data:dashboard-kpis")
-      } else if (href === "/payments") {
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.payments.list({}, 1),
-            queryFn: () => listPaymentsAction({ page: 1, pageSize: 25 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-            staleTime,
-          }), Priority.CRITICAL, "data:payments-list-1")
-      } else if (href === "/customers") {
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.customers.search({}, 0),
-            queryFn: () => searchCustomersAction({ page: 0, pageSize: 20 }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data }),
-            staleTime,
-          }), Priority.CRITICAL, "data:customers-search-0")
-      } else if (href === "/loans") {
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.customers.recent(),
-            queryFn: () => searchCustomersAction({ page: 0, pageSize: 3, sortByRecent: true }).then((r) => { if ("error" in r) throw new Error(r.error); return r.data?.rows ?? [] }),
-            staleTime,
-          }), Priority.CRITICAL, "data:customers-recent")
-      }
+      router.prefetch(href)
     }, 100)
-  }, [queryClient, router])
+  }, [router])
 
   const cancelPrefetch = useCallback(() => {
     clearTimeout(prefetchTimerRef.current)
@@ -348,7 +189,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                       ) : (
                         <Link
                           href={item.href}
-                          onClick={() => { onLinkClick(); onClose?.() }}
+                          onClick={() => { onClose?.() }}
                           onMouseEnter={() => handlePrefetch(item.href)}
                           onFocus={() => handlePrefetch(item.href)}
                           onMouseLeave={cancelPrefetch}

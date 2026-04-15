@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { expenseCollection, expenseCategoryCollection } from "@/collections"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -9,11 +9,11 @@ export default function ExpensesPage() {
   const { has } = usePermissions()
   const canViewExpenses = has("expense:read")
 
-  const { data: allExpenses, isLoading: transactionsLoading } = useLiveQuery((q) =>
+  const { data: allExpenses } = useLiveSuspenseQuery((q) =>
     q.from({ e: expenseCollection }).select(({ e }) => e)
   )
 
-  const { data: rawCategories, isLoading: categoriesLoading } = useLiveQuery((q) =>
+  const { data: rawCategories } = useLiveSuspenseQuery((q) =>
     q.from({ c: expenseCategoryCollection }).select(({ c }) => c)
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,7 +30,7 @@ export default function ExpensesPage() {
     )
   }
 
-  const isLoading = transactionsLoading || categoriesLoading
+  const isLoading = false
 
   if (isLoading) {
     return (

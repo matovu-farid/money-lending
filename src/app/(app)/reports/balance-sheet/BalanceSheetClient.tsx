@@ -11,14 +11,12 @@ import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { useBalanceSheetReport } from "@/hooks/use-reports"
-import { Loader2 } from "lucide-react"
-
 interface BalanceSheetClientProps {
   period: string
 }
 
 export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
-  const { data, isLoading } = useBalanceSheetReport(period)
+  const { data } = useBalanceSheetReport(period)
 
   const bsData: BalanceSheetData = data ?? {
     asOf: period,
@@ -46,8 +44,6 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
     const buffer = await generateBalanceSheetExcel(bsData)
     return { blob: new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `balance-sheet-${period}.xlsx` }
   }, [bsData, period])
-
-  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
 
   const totalCurrentAssets = new BigNumber(bsData.assets.cashBalance)
     .plus(bsData.assets.bankBalance)

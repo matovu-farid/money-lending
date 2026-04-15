@@ -30,17 +30,23 @@ export function stripCommas(value: string): string {
 }
 
 /**
- * Today's date as a YYYY-MM-DD string in the user's local timezone.
- * Avoids the UTC-shift bug where `new Date().toISOString().split("T")[0]`
- * returns yesterday when the local time is past midnight but still the
- * previous day in UTC.
+ * Extract the YYYY-MM-DD string from a Date using local time components.
+ * Avoids the UTC-shift bug where `date.toISOString().slice(0,10)` returns
+ * a different calendar day when local time is ahead of UTC.
  */
-export function todayDateString(): string {
-  const d = new Date()
+export function localDateString(d: Date): string {
   const y = d.getFullYear()
   const m = String(d.getMonth() + 1).padStart(2, "0")
   const day = String(d.getDate()).padStart(2, "0")
   return `${y}-${m}-${day}`
+}
+
+/**
+ * Today's date as a YYYY-MM-DD string in the server's local timezone.
+ * Uses localDateString internally.
+ */
+export function todayDateString(): string {
+  return localDateString(new Date())
 }
 
 /**

@@ -78,8 +78,8 @@ export function ActivitiesClient() {
       defaults: { actorId: "", entityType: "", dateFrom: "", dateTo: "" },
     })
 
-  const { data, isLoading, isError } = useActivities(filters, page)
-  const { data: adminUsers } = useAdminUsers(has("activity:read"))
+  const { data } = useActivities(filters, page)
+  const { data: adminUsers } = useAdminUsers()
 
   const items = data?.items ?? []
   const total = data?.total ?? 0
@@ -212,17 +212,7 @@ export function ActivitiesClient() {
         )}
       </FilterPanel>
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
-          ))}
-        </div>
-      ) : isError ? (
-        <p className="text-muted-foreground p-6">
-          Failed to load activities. Refresh the page or contact support if the problem persists.
-        </p>
-      ) : total === 0 ? (
+      {total === 0 ? (
         <div className="py-16 flex flex-col items-center text-center">
           <p className="text-lg font-medium">
             {hasFilters ? "No activities found." : "No team activity recorded yet."}

@@ -1,7 +1,7 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   listPaymentsAction,
   recordPaymentAction,
@@ -12,9 +12,9 @@ import type {
   PaymentWithCustomer,
   RecordPaymentInput,
   EditPaymentInput,
-  DeletePaymentInput,
 } from "@/types/payment"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
@@ -36,10 +36,10 @@ const pendingDeleteReasons = new Map<string, string>()
 
 export const paymentCollection = createCollection(
   queryCollectionOptions<PaymentWithCustomer>({
-    queryKey: ["payments"],
+    queryKey: [...queryKeys.payments.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<PaymentWithCustomer>> => {
-      const result = await listPaymentsAction({ page: 1, pageSize: 100 })
+      const result = await listPaymentsAction({ page: 1, pageSize: 10000 })
       if ("error" in result) {
         throw new Error(result.error)
       }
@@ -52,11 +52,24 @@ export const paymentCollection = createCollection(
       if (!input) {
         throw new Error("Missing payment input for optimistic insert")
       }
-      pendingInsertInputs.delete(modified.id)
       const result = await recordPaymentAction(input)
       if ("error" in result) {
         throw new Error(result.error)
       }
+      pendingInsertInputs.delete(modified.id)
+      // Invalidate all derived data affected by a new payment
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(input.loanId) })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
     },
     onUpdate: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -64,11 +77,25 @@ export const paymentCollection = createCollection(
       if (!input) {
         throw new Error("Missing payment update input for optimistic update")
       }
-      pendingUpdateInputs.delete(original.id)
       const result = await editPaymentAction(input)
       if ("error" in result) {
         throw new Error(result.error)
       }
+      pendingUpdateInputs.delete(original.id)
+      // Invalidate all derived data affected by a payment edit
+      const qc = getQueryClient()
+      const loanId = (original as PaymentWithCustomer).loanId
+      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -76,7 +103,6 @@ export const paymentCollection = createCollection(
       if (!reason) {
         throw new Error("Missing payment delete reason for optimistic delete")
       }
-      pendingDeleteReasons.delete(original.id)
       const result = await deletePaymentAction({
         paymentId: original.id,
         reason,
@@ -84,6 +110,21 @@ export const paymentCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      pendingDeleteReasons.delete(original.id)
+      // Invalidate all derived data affected by a payment deletion
+      const qc = getQueryClient()
+      const loanId = (original as PaymentWithCustomer).loanId
+      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
     },
   })
 )

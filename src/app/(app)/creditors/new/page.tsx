@@ -8,6 +8,8 @@ import { ArrowLeft, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { createCreditorAction, addInvestmentAction } from "@/actions/creditor.actions"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -90,6 +92,12 @@ export default function NewCreditorPage() {
           return
         }
 
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+        qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
         router.push("/creditors")
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to register creditor")

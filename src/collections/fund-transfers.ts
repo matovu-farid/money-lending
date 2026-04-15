@@ -1,13 +1,15 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   listFundTransfersAction,
   createFundTransferAction,
+  createCapitalInjectionAction,
 } from "@/actions/fund-transfer.actions"
-import type { FundTransfer, CreateFundTransferInput } from "@/types/fund-transfer"
+import type { FundTransfer, CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types/fund-transfer"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
@@ -15,10 +17,11 @@ import { getQueryClient } from "@/lib/query-client"
  * (fromLocation, toLocation, amount, note) that don't map 1:1 to FundTransfer columns.
  */
 const pendingInsertInputs = new Map<string, CreateFundTransferInput>()
+const pendingInjectionInputs = new Map<string, CreateCapitalInjectionInput>()
 
 export const fundTransferCollection = createCollection(
   queryCollectionOptions<FundTransfer>({
-    queryKey: ["fund-transfers"],
+    queryKey: [...queryKeys.fundTransfers.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<FundTransfer>> => {
       const result = await listFundTransfersAction()
@@ -30,15 +33,29 @@ export const fundTransferCollection = createCollection(
     getKey: (transfer) => transfer.id,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
-      const input = pendingInsertInputs.get(modified.id)
-      if (!input) {
-        throw new Error("Missing fund transfer input for optimistic insert")
+      const injectionInput = pendingInjectionInputs.get(modified.id)
+      if (injectionInput) {
+        const result = await createCapitalInjectionAction(injectionInput)
+        if ("error" in result) {
+          throw new Error(result.error)
+        }
+        pendingInjectionInputs.delete(modified.id)
+      } else {
+        const input = pendingInsertInputs.get(modified.id)
+        if (!input) {
+          throw new Error("Missing fund transfer input for optimistic insert")
+        }
+        const result = await createFundTransferAction(input)
+        if ("error" in result) {
+          throw new Error(result.error)
+        }
+        pendingInsertInputs.delete(modified.id)
       }
-      pendingInsertInputs.delete(modified.id)
-      const result = await createFundTransferAction(input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
     },
   })
 )
@@ -54,5 +71,14 @@ export function insertFundTransferWithInput(
   input: CreateFundTransferInput
 ) {
   pendingInsertInputs.set(id, input)
+  fundTransferCollection.insert(optimistic)
+}
+
+export function insertCapitalInjectionWithInput(
+  id: string,
+  optimistic: FundTransfer,
+  input: CreateCapitalInjectionInput
+) {
+  pendingInjectionInputs.set(id, input)
   fundTransferCollection.insert(optimistic)
 }

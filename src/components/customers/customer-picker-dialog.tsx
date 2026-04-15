@@ -2,16 +2,13 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { Search, Loader2 } from "lucide-react"
-import { searchCustomersAction, getCustomerAction } from "@/actions/customer.actions"
+import { searchCustomersAction } from "@/actions/customer.actions"
 import { customerCollection } from "@/collections"
-import { queryKeys } from "@/hooks/query-keys"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import { Input } from "@/components/ui/input"
 import type { Customer } from "@/types"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 interface CustomerPickerDialogProps {
   open: boolean
@@ -20,7 +17,6 @@ interface CustomerPickerDialogProps {
 
 export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialogProps) {
   const router = useRouter()
-  const queryClient = useQueryClient()
   const [query, setQuery] = useState("")
   const [searchResults, setSearchResults] = useState<Customer[]>([])
   const [searching, setSearching] = useState(false)
@@ -28,7 +24,7 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Fetch all customers from collection, then derive 3 most recent
-  const { data: allCustomers = [] } = useLiveQuery(
+  const { data: allCustomers = [] } = useLiveSuspenseQuery(
     (q) => q.from({ c: customerCollection }),
     []
   )
@@ -73,15 +69,6 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
   }, [])
 
   function handleSelect(customer: Customer) {
-    prefetchQueue.add(
-      () => router.prefetch(`/loans/new?customerId=${customer.id}`),
-      Priority.CRITICAL, `route:/loans/new?customerId=${customer.id}`)
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.customers.detail(customer.id),
-        queryFn: () => getCustomerAction(customer.id),
-        staleTime: 30_000,
-      }), Priority.CRITICAL, `data:customer-detail-${customer.id}`)
     onOpenChange(false)
     router.push(`/loans/new?customerId=${customer.id}`)
   }

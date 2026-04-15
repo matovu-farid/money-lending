@@ -10,6 +10,8 @@ import {
   SelectTrigger,
 } from "@/components/ui/select"
 import { DEPOSIT_LOCATION_OPTIONS } from "@/lib/constants"
+import type { UserRole } from "@/types"
+import { ROLE_LEVELS } from "@/types"
 
 interface DisbursementSourceSelectProps<T extends FieldValues> {
   name: Path<T>
@@ -20,6 +22,7 @@ interface DisbursementSourceSelectProps<T extends FieldValues> {
   amount: string
   disabled?: boolean
   id?: string
+  userRole?: UserRole
 }
 
 function DisbursementSourceSelect<T extends FieldValues>({
@@ -29,6 +32,7 @@ function DisbursementSourceSelect<T extends FieldValues>({
   amount,
   disabled,
   id = "disbursementSource",
+  userRole,
 }: DisbursementSourceSelectProps<T>) {
   return (
     <div className="space-y-1">
@@ -39,7 +43,7 @@ function DisbursementSourceSelect<T extends FieldValues>({
         rules={{
           required: "Disbursement source is required",
           validate: (v) => {
-            if (v === "cash" || !locationBalances || !amount) return true
+            if (!locationBalances || !amount) return true
             const available = new BigNumber(locationBalances[v as keyof typeof locationBalances] ?? "0")
             const needed = new BigNumber(amount || "0")
             if (needed.isGreaterThan(0) && available.isLessThan(needed)) {
@@ -50,8 +54,9 @@ function DisbursementSourceSelect<T extends FieldValues>({
         }}
         render={({ field, fieldState }) => {
           const needed = new BigNumber(amount || "0")
-          const cashBalance = locationBalances ? new BigNumber(locationBalances.cash ?? "0") : null
-          const cashShortfall = cashBalance !== null && needed.isGreaterThan(0) && cashBalance.isLessThan(needed)
+          const canManageFunds = userRole && ROLE_LEVELS[userRole] >= ROLE_LEVELS.supervisor
+          const selectedBalance = locationBalances ? new BigNumber(locationBalances[field.value as keyof typeof locationBalances] ?? "0") : null
+          const isInsufficient = selectedBalance !== null && needed.isGreaterThan(0) && selectedBalance.isLessThan(needed)
           return (
             <>
               <Select
@@ -65,7 +70,7 @@ function DisbursementSourceSelect<T extends FieldValues>({
                 <SelectContent>
                   {DEPOSIT_LOCATION_OPTIONS.map((opt) => {
                     const balance = locationBalances ? new BigNumber(locationBalances[opt.value] ?? "0") : null
-                    const insufficient = opt.value !== "cash" && balance !== null && needed.isGreaterThan(0) && balance.isLessThan(needed)
+                    const insufficient = balance !== null && needed.isGreaterThan(0) && balance.isLessThan(needed)
                     return (
                       <SelectItem key={opt.value} value={opt.value} disabled={insufficient}>
                         {opt.label}
@@ -77,9 +82,11 @@ function DisbursementSourceSelect<T extends FieldValues>({
               {fieldState.error?.message && (
                 <p className="text-sm text-destructive">{fieldState.error.message}</p>
               )}
-              {field.value === "cash" && cashShortfall && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Cash on hand is below the disbursement amount. The difference will be added as a capital injection automatically.
+              {isInsufficient && !fieldState.error?.message && (
+                <p className="text-sm text-destructive mt-1">
+                  {canManageFunds
+                    ? "Not enough funds at this source. Add funds via Fund Transfers before disbursing this loan."
+                    : "Not enough funds at this source. Ask a supervisor to add funds before this loan can be disbursed."}
                 </p>
               )}
             </>

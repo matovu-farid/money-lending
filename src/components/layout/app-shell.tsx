@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { TopBar } from "@/components/layout/top-bar"
 import { Sidebar } from "@/components/layout/sidebar"
 import { BottomTabBar } from "@/components/layout/bottom-tab-bar"
@@ -15,15 +15,21 @@ export function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="flex flex-col h-screen">
-      <TopBar />
+      <Suspense>
+        <TopBar />
+      </Suspense>
 
       <div className="flex flex-1 overflow-hidden">
         <div className="hidden md:flex">
-          <Sidebar />
+          <Suspense>
+            <Sidebar />
+          </Suspense>
         </div>
 
         <main className="flex-1 overflow-auto bg-background p-4 md:p-6 main-content-pb md:pb-6">
-          {children}
+          <Suspense>
+            {children}
+          </Suspense>
         </main>
       </div>
 

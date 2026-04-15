@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback } from "react"
-import { Loader2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import {
   Table,
@@ -16,7 +15,7 @@ import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { usePortfolioReport } from "@/hooks/use-reports"
 
 export function PortfolioClient() {
-  const { data, isLoading } = usePortfolioReport()
+  const { data } = usePortfolioReport()
   const entries = data ?? []
 
   const onExport = useCallback(
@@ -45,14 +44,6 @@ export function PortfolioClient() {
     },
     [data],
   )
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    )
-  }
 
   return (
     <div className="space-y-4">

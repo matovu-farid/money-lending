@@ -1,8 +1,8 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useLiveQuery } from "@tanstack/react-db"
-import { fundTransferCollection, insertFundTransferWithInput } from "@/collections"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections"
 import { useForm, Controller } from "react-hook-form"
 import { Loader2, ArrowRightLeft, PlusCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -10,7 +10,6 @@ import { useSession } from "@/lib/auth-client"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
-import { createCapitalInjectionAction } from "@/actions/fund-transfer.actions"
 import { generateClientId } from "@/lib/client-id"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -66,11 +65,12 @@ export default function FundTransfersPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
-  const [isPending, startTransition] = useTransition()
+  const [isPending] = useTransition()
 
-  const { data: allTransfers, isLoading } = useLiveQuery((q) =>
+  const { data: allTransfers } = useLiveSuspenseQuery((q) =>
     q.from({ ft: fundTransferCollection }).select(({ ft }) => ft)
   )
+  const isLoading = false
   const transfers = allTransfers ?? []
 
   const {
@@ -99,23 +99,32 @@ export default function FundTransfersPage() {
   })
 
   function onInjectionSubmit(data: InjectionFormValues) {
-    startTransition(async () => {
-      const result = await createCapitalInjectionAction({
-        toLocation: data.toLocation,
-        amount: data.amount.trim(),
-        note: data.note.trim() || undefined,
-      })
+    const id = generateClientId()
+    const input = {
+      id,
+      toLocation: data.toLocation,
+      amount: data.amount.trim(),
+      note: data.note.trim() || undefined,
+    }
+    const optimistic: FundTransfer = {
+      id,
+      transferType: "capital_injection",
+      fromLocation: null,
+      toLocation: data.toLocation,
+      amount: data.amount.trim(),
+      transferredBy: session?.user?.id ?? "",
+      note: data.note.trim() || null,
+      createdAt: new Date(),
+    }
 
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
+    try {
+      insertCapitalInjectionWithInput(id, optimistic, input)
       toast.success("Capital injection recorded")
       injectionForm.reset()
       setInjectionDialogOpen(false)
-      // Data sync handled by TanStack DB fund transfer collection
-    })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to record injection")
+    }
   }
 
   function onSubmit(data: TransferFormValues) {

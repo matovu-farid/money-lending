@@ -1,5 +1,5 @@
 export { customerCollection } from "./customers"
-export { loanCollection, insertLoanWithInput } from "./loans"
+export { loanCollection, insertLoanWithInput, settleLoanWithCollateral } from "./loans"
 export {
   paymentCollection,
   insertPaymentWithInput,
@@ -9,17 +9,13 @@ export {
 export { expenseCollection, insertExpenseWithInput } from "./expenses"
 export { incomeCollection, insertIncomeWithInput } from "./income"
 export { creditorCollection } from "./creditors"
-export { fundTransferCollection, insertFundTransferWithInput } from "./fund-transfers"
+export { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "./fund-transfers"
 export {
   rateChangeRequestCollection,
   insertRateChangeRequestWithInput,
+  reviewRateChangeRequest,
 } from "./rate-change-requests"
 export { delegationCollection, type DelegationRow } from "./delegations"
-export {
-  settlementCollection,
-  insertSettlementWithInput,
-  type SettlementRow,
-} from "./settlements"
 
 // --- New read-only collections ---
 export {

@@ -1,7 +1,7 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   getCollateralNaturesAction,
   getLocationBalancesAction,
@@ -12,7 +12,9 @@ import {
 import { getPaymentPortionsAction } from "@/actions/payment.actions"
 import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 import type { UserRole, PaymentPortionsMap } from "@/types"
+import { boundedSet } from "@/lib/bounded-map"
 
 // --- Collateral natures (no params, singleton array) ---
 
@@ -20,7 +22,7 @@ export type CollateralNatureRow = { _key: string; nature: string }
 
 export const collateralNaturesCollection = createCollection(
   queryCollectionOptions<CollateralNatureRow>({
-    queryKey: ["collateral-natures"],
+    queryKey: [...queryKeys.collateralNatures.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<CollateralNatureRow>> => {
       const natures = await getCollateralNaturesAction()
@@ -41,7 +43,7 @@ export type LocationBalancesRow = {
 
 export const locationBalancesCollection = createCollection(
   queryCollectionOptions<LocationBalancesRow>({
-    queryKey: ["location-balances"],
+    queryKey: [...queryKeys.locationBalances.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<LocationBalancesRow>> => {
       const result = await getLocationBalancesAction()
@@ -58,7 +60,7 @@ export type UserRoleRow = { _key: string; role: UserRole }
 
 export const currentUserRoleCollection = createCollection(
   queryCollectionOptions<UserRoleRow>({
-    queryKey: ["current-user-role"],
+    queryKey: [...queryKeys.auth.currentUserRole],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<UserRoleRow>> => {
       const role = await getCurrentUserRoleAction()
@@ -72,25 +74,43 @@ export const currentUserRoleCollection = createCollection(
 
 export type UserNameMapRow = { _key: string; map: Record<string, string> }
 
-const userNameMapCollections = new Map<string, any>()
+const MAX_LOAN_EXTRAS_CACHED = 50
+
+function createUserNameMapCollection(userIds: string[]) {
+  const key = userIds.sort().join(",")
+  return createCollection(
+    queryCollectionOptions<UserNameMapRow>({
+      queryKey: [...queryKeys.userNames.byIds(key)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<UserNameMapRow>> => {
+        const map = await resolveUserNamesAction(userIds)
+        return [{ _key: "singleton", map }]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+    })
+  )
+}
+
+type UserNameMapCollectionType = ReturnType<typeof createUserNameMapCollection>
+const userNameMapCollections = new Map<string, UserNameMapCollectionType>()
+
+const emptyUserNameMapCollection = createCollection(
+  queryCollectionOptions<UserNameMapRow>({
+    queryKey: [...queryKeys.userNames.byIds("__empty__")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<UserNameMapRow>> => [{ _key: "singleton", map: {} }],
+    getKey: (row) => row._key,
+  })
+)
 
 export function getUserNameMapCollection(userIds: string[]) {
   const key = userIds.sort().join(",")
-  if (!key) return null
+  if (!key) return emptyUserNameMapCollection
   let collection = userNameMapCollections.get(key)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<UserNameMapRow>({
-        queryKey: ["user-names", key],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<UserNameMapRow>> => {
-          const map = await resolveUserNamesAction(userIds)
-          return [{ _key: "singleton", map }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    userNameMapCollections.set(key, collection)
+    collection = createUserNameMapCollection(userIds)
+    boundedSet(userNameMapCollections, key, collection, MAX_LOAN_EXTRAS_CACHED)
   }
   return collection
 }
@@ -99,52 +119,81 @@ export function getUserNameMapCollection(userIds: string[]) {
 
 export type LoanCollateralRow = { _key: string; nature: string; description: string | null }
 
-const loanCollateralCollections = new Map<string, any>()
+function createLoanCollateralCollection(loanId: string) {
+  return createCollection(
+    queryCollectionOptions<LoanCollateralRow>({
+      queryKey: [...queryKeys.loans.collateral(loanId)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<LoanCollateralRow>> => {
+        const result = await getLoanCollateralAction(loanId)
+        if ("error" in result || !result.data) return []
+        return [{ ...result.data, _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+    })
+  )
+}
+
+type LoanCollateralCollectionType = ReturnType<typeof createLoanCollateralCollection>
+const loanCollateralCollections = new Map<string, LoanCollateralCollectionType>()
 
 export function getLoanCollateralCollection(loanId: string) {
   let collection = loanCollateralCollections.get(loanId)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<LoanCollateralRow>({
-        queryKey: ["loans", loanId, "collateral"],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<LoanCollateralRow>> => {
-          const result = await getLoanCollateralAction(loanId)
-          if ("error" in result || !result.data) return []
-          return [{ ...result.data, _key: "singleton" }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    loanCollateralCollections.set(loanId, collection)
+    collection = createLoanCollateralCollection(loanId)
+    boundedSet(loanCollateralCollections, loanId, collection, MAX_LOAN_EXTRAS_CACHED)
   }
   return collection
 }
 
 // --- Active loan check for customer (parameterized) ---
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ActiveLoanCheckRow = { _key: string; data: any }
+import type { Loan } from "@/types"
 
-const activeLoanCheckCollections = new Map<string, any>()
+export type ActiveLoanCheckData = {
+  loan: Loan
+  customerName: string
+  outstandingPrincipal: string
+  accruedInterest: string
+} | null
+
+export type ActiveLoanCheckRow = { _key: string; data: ActiveLoanCheckData }
+
+function createActiveLoanCheckCollection(customerId: string) {
+  return createCollection(
+    queryCollectionOptions<ActiveLoanCheckRow>({
+      queryKey: [...queryKeys.loans.activeLoanCheck(customerId)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<ActiveLoanCheckRow>> => {
+        const result = await checkCustomerActiveLoanAction(customerId)
+        if ("error" in result || !result.data) return []
+        return [{ _key: "singleton", data: result.data }]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+    })
+  )
+}
+
+type ActiveLoanCheckCollectionType = ReturnType<typeof createActiveLoanCheckCollection>
+const activeLoanCheckCollections = new Map<string, ActiveLoanCheckCollectionType>()
+
+const emptyActiveLoanCheckCollection = createCollection(
+  queryCollectionOptions<ActiveLoanCheckRow>({
+    queryKey: [...queryKeys.loans.activeLoanCheck("__empty__")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<ActiveLoanCheckRow>> => [{ _key: "singleton", data: null }],
+    getKey: (row) => row._key,
+  })
+)
 
 export function getActiveLoanCheckCollection(customerId: string) {
-  if (!customerId) return null
+  if (!customerId) return emptyActiveLoanCheckCollection
   let collection = activeLoanCheckCollections.get(customerId)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<ActiveLoanCheckRow>({
-        queryKey: ["active-loan-check", customerId],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<ActiveLoanCheckRow>> => {
-          const result = await checkCustomerActiveLoanAction(customerId)
-          if ("error" in result || !result.data) return []
-          return [{ _key: "singleton", data: result.data }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    activeLoanCheckCollections.set(customerId, collection)
+    collection = createActiveLoanCheckCollection(customerId)
+    boundedSet(activeLoanCheckCollections, customerId, collection, MAX_LOAN_EXTRAS_CACHED)
   }
   return collection
 }
@@ -153,30 +202,41 @@ export function getActiveLoanCheckCollection(customerId: string) {
 
 export type PaymentPortionsRow = { _key: string; portions: PaymentPortionsMap }
 
-const paymentPortionsCollections = new Map<string, any>()
+function createPaymentPortionsCollection(loanId: string, paymentIds: string[]) {
+  return createCollection(
+    queryCollectionOptions<PaymentPortionsRow>({
+      queryKey: [...queryKeys.payments.portions(loanId, paymentIds.join(","))],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<PaymentPortionsRow>> => {
+        const result = await getPaymentPortionsAction(paymentIds)
+        if ("error" in result) return [{ _key: "singleton", portions: {} }]
+        return [{ _key: "singleton", portions: result.data }]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+    })
+  )
+}
+
+type PaymentPortionsCollectionType = ReturnType<typeof createPaymentPortionsCollection>
+const paymentPortionsCollections = new Map<string, PaymentPortionsCollectionType>()
+
+const emptyPaymentPortionsCollection = createCollection(
+  queryCollectionOptions<PaymentPortionsRow>({
+    queryKey: [...queryKeys.payments.portions("__empty__", "")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<PaymentPortionsRow>> => [{ _key: "singleton", portions: {} }],
+    getKey: (row) => row._key,
+  })
+)
 
 export function getPaymentPortionsCollection(loanId: string, paymentIds: string[]) {
-  if (paymentIds.length === 0) return null
+  if (paymentIds.length === 0) return emptyPaymentPortionsCollection
   const key = `${loanId}:${paymentIds.sort().join(",")}`
   let collection = paymentPortionsCollections.get(key)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<PaymentPortionsRow>({
-        queryKey: ["payments", "portions", loanId, paymentIds.join(",")],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<PaymentPortionsRow>> => {
-          const result = await getPaymentPortionsAction(paymentIds)
-          if ("error" in result) return [{ _key: "singleton", portions: {} }]
-          return [{ _key: "singleton", portions: result.data }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    paymentPortionsCollections.set(key, collection)
+    collection = createPaymentPortionsCollection(loanId, paymentIds)
+    boundedSet(paymentPortionsCollections, key, collection, MAX_LOAN_EXTRAS_CACHED)
   }
   return collection
 }
-
-// --- Expense categories (no params) ---
-
-export type ExpenseCategoryRow = { _key: string; id: string; name: string }

@@ -71,6 +71,7 @@ export async function listDelegations() {
     .from(delegations)
     .leftJoin(user, eq(delegations.userId, user.id))
     .orderBy(desc(delegations.createdAt))
+    .limit(100)
 
   return rows
 }

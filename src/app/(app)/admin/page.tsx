@@ -1,16 +1,13 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useState } from "react"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
-import { assignRole } from "@/actions/user.actions"
-import { delegationCollection, type DelegationRow } from "@/collections"
+import { delegationCollection, adminUserCollection, type DelegationRow } from "@/collections"
 import { generateClientId } from "@/lib/client-id"
 import { Button } from "@/components/ui/button"
 import { useAdminUsers } from "@/hooks/use-admin-users"
-import { queryKeys } from "@/hooks/query-keys"
 import { ROLE_LEVELS, type UserRole } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import {
@@ -44,18 +41,16 @@ function getRoleOptions(actorRole: UserRole): UserRole[] {
 
 export default function AdminPage() {
   const { data: session } = useSession()
-  const queryClient = useQueryClient()
-  const [, startTransition] = useTransition()
 
   const { has } = usePermissions()
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
   const canViewUsers = has("user:list")
 
-  const { data: users = [], isLoading, isFetching } = useAdminUsers(!!session && canViewUsers)
+  const { data: users = [] } = useAdminUsers()
 
   // Live delegation collection — optimistic insert/delete handled by TanStack DB
-  const { data: allDelegations = [] } = useLiveQuery((q) =>
+  const { data: allDelegations = [] } = useLiveSuspenseQuery((q) =>
     q.from({ d: delegationCollection }).select(({ d }) => d)
   )
   const activeDelegations = allDelegations.filter((d) => !d.revokedAt)
@@ -78,7 +73,6 @@ export default function AdminPage() {
         revokedBy: null,
       })
       toast.success("Delegation created")
-      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
     } catch {
       toast.error("Failed to create delegation")
     } finally {
@@ -91,7 +85,6 @@ export default function AdminPage() {
       setIsRevoking(true)
       delegationCollection.delete(delegationId)
       toast.success("Delegation revoked")
-      queryClient.invalidateQueries({ queryKey: ["effective-permissions"] })
     } catch {
       toast.error("Failed to revoke delegation")
     } finally {
@@ -100,22 +93,13 @@ export default function AdminPage() {
   }
 
   function handleRoleChange(userId: string, newRole: UserRole) {
-    startTransition(async () => {
-      const result = await assignRole({ userId, role: newRole })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      // Revalidate to get server truth
-      queryClient.invalidateQueries({ queryKey: queryKeys.adminUsers.all })
-      toast.success(`Role updated to ${newRole}`)
+    adminUserCollection.update(userId, (draft) => {
+      draft.role = newRole
     })
+    toast.success(`Role updated to ${newRole}`)
   }
 
-  const loading = canViewUsers ? (isLoading && isFetching) : !session
-  if (!session || loading) {
+  if (!session) {
     return (
       <div className="p-4 md:p-6">
         <p className="text-muted-foreground">Loading...</p>

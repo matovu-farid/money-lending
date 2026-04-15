@@ -5,6 +5,8 @@ import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { recordCreditorRepaymentAction } from "@/actions/creditor.actions"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -84,7 +86,12 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
         toast.success("Repayment recorded successfully")
         setOpen(false)
         resetForm()
-        // Data sync handled by TanStack DB creditor collection
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+        qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to record repayment")
       }

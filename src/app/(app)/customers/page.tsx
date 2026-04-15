@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { customerCollection } from "@/collections"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
 import type { CustomerSearchParams } from "@/types"
@@ -14,7 +14,6 @@ import { cn } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { customerStatusVariant, customerStatusLabel } from "@/lib/status"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 const PAGE_SIZE = 20
 
@@ -23,7 +22,7 @@ export default function CustomersPage() {
   const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useState<CustomerSearchParams>({})
 
-  const { data: allCustomers, isLoading } = useLiveQuery((q) =>
+  const { data: allCustomers } = useLiveSuspenseQuery((q) =>
     q.from({ c: customerCollection }).select(({ c }) => c)
   )
 
@@ -56,11 +55,11 @@ export default function CustomersPage() {
     setSearchParams({})
   }, [])
 
+  const isLoading = false
+
   const handlePrefetch = useCallback((customerId: string) => {
     if (customerId.startsWith("optimistic-")) return
-    prefetchQueue.add(
-      () => router.prefetch(`/customers/${customerId}`),
-      Priority.CRITICAL, `route:/customers/${customerId}`)
+    router.prefetch(`/customers/${customerId}`)
   }, [router])
 
   return (

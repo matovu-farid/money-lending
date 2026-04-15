@@ -1,37 +1,46 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   getDailyCollectionsAction,
   getLoansDueTodayAction,
 } from "@/actions/daily-collections.actions"
 import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
+import { boundedSet } from "@/lib/bounded-map"
 
 // --- Daily collections by date (parameterized) ---
 
 export type DailyCollectionsRow = DailyCollectionsSummary & { _key: string }
 
-const dailyCollectionsMap = new Map<string, any>()
+const MAX_DAILY_CACHED = 15
+
+function createDailyCollection(date: string) {
+  return createCollection(
+    queryCollectionOptions<DailyCollectionsRow>({
+      queryKey: [...queryKeys.dailyCollections.date(date)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<DailyCollectionsRow>> => {
+        const result = await getDailyCollectionsAction(date)
+        const data = result as { data: DailyCollectionsSummary } | { error: string }
+        if ("error" in data) throw new Error(data.error)
+        return [{ ...data.data, _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+    })
+  )
+}
+
+type DailyCollectionType = ReturnType<typeof createDailyCollection>
+const dailyCollectionsMap = new Map<string, DailyCollectionType>()
 
 export function getDailyCollectionsCollection(date: string) {
   let collection = dailyCollectionsMap.get(date)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<DailyCollectionsRow>({
-        queryKey: ["daily-collections", date],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<DailyCollectionsRow>> => {
-          const result = await getDailyCollectionsAction(date)
-          const data = result as { data: DailyCollectionsSummary } | { error: string }
-          if ("error" in data) throw new Error(data.error)
-          return [{ ...data.data, _key: "singleton" }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    dailyCollectionsMap.set(date, collection)
+    collection = createDailyCollection(date)
+    boundedSet(dailyCollectionsMap, date, collection, MAX_DAILY_CACHED)
   }
   return collection
 }
@@ -42,7 +51,7 @@ export type LoanDueTodayRow = LoanDueToday & { _key: string }
 
 export const loansDueTodayCollection = createCollection(
   queryCollectionOptions<LoanDueTodayRow>({
-    queryKey: ["loans-due-today"],
+    queryKey: [...queryKeys.loans.dueToday],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<LoanDueTodayRow>> => {
       const result = await getLoansDueTodayAction()

@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback } from "react"
-import { Loader2 } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -17,7 +16,7 @@ interface PnlClientProps {
 }
 
 export function PnlClient({ period }: PnlClientProps) {
-  const { data, isLoading } = usePnlReport(period)
+  const { data } = usePnlReport(period)
 
   const onExport = useCallback(async (format: "pdf" | "excel") => {
     if (!data) throw new Error("No data")
@@ -30,8 +29,6 @@ export function PnlClient({ period }: PnlClientProps) {
     const buffer = await generatePnlExcel(data)
     return { blob: new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), filename: `pnl-${period}.xlsx` }
   }, [data, period])
-
-  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
 
   const pnlData: PnlData = data ?? { period, income: [], totalIncome: "0", expenses: [], totalExpenses: "0", netProfit: "0" }
   const hasData = pnlData.income.length > 0 || pnlData.expenses.length > 0

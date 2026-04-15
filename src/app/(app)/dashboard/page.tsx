@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { useSession } from "@/lib/auth-client"
@@ -18,11 +18,10 @@ export default function DashboardPage() {
   const { has } = usePermissions()
   const isAdmin = has("settings:read")
 
-  const { data, isLoading: loading, error: queryError } = useDashboard()
+  const { data } = useDashboard()
   const kpis = data?.kpis ?? null
-  const error = queryError?.message ?? null
 
-  const { data: activityRows, isLoading: activityLoading } = useLiveQuery((q) =>
+  const { data: activityRows } = useLiveSuspenseQuery((q) =>
     q.from({ a: dashboardActivityCollection }).select(({ a }) => a)
   )
 
@@ -32,17 +31,13 @@ export default function DashboardPage() {
     <div className="space-y-8">
       <PageHeader title="Dashboard" subtitle="Portfolio health at a glance" />
 
-      {error && (
-        <p className="text-sm text-destructive">{error}</p>
-      )}
-
       {/* KPI Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <KpiCard
           label="Loans Outstanding"
           value={formatCurrency(kpis?.loansOutstanding ?? "0")}
           icon={Banknote}
-          loading={loading}
+          loading={false}
           labelExtra={
             <InfoPopover>
               <p className="font-semibold text-sm mb-1">Loans Outstanding</p>
@@ -59,7 +54,7 @@ export default function DashboardPage() {
           label="Active Borrowers"
           value={String(kpis?.activeBorrowers ?? 0)}
           icon={Users}
-          loading={loading}
+          loading={false}
           labelExtra={
             <InfoPopover>
               <p className="font-semibold text-sm mb-1">Active Borrowers</p>
@@ -74,7 +69,7 @@ export default function DashboardPage() {
           value={String(kpis?.overdueCount ?? 0)}
           icon={AlertTriangle}
           valueClassName={kpis && kpis.overdueCount > 0 ? "text-destructive" : undefined}
-          loading={loading}
+          loading={false}
           labelExtra={
             <InfoPopover>
               <p className="font-semibold text-sm mb-1">Overdue Count</p>
@@ -96,7 +91,7 @@ export default function DashboardPage() {
               label="Repayments Collected"
               value={formatCurrency(kpis?.repaymentsCollected ?? "0")}
               icon={CreditCard}
-              loading={loading}
+              loading={false}
               labelExtra={
                 <InfoPopover>
                   <p className="font-semibold text-sm mb-1">Repayments Collected</p>
@@ -110,7 +105,7 @@ export default function DashboardPage() {
               label="Interest Earned"
               value={formatCurrency(kpis?.interestEarned ?? "0")}
               icon={TrendingUp}
-              loading={loading}
+              loading={false}
               labelExtra={
                 <InfoPopover>
                   <p className="font-semibold text-sm mb-1">Interest Earned</p>
@@ -127,7 +122,7 @@ export default function DashboardPage() {
               label="Cash Available"
               value={formatCurrency(kpis?.capitalInSystem ?? "0")}
               icon={Landmark}
-              loading={loading}
+              loading={false}
               labelExtra={
                 <InfoPopover>
                   <p className="font-semibold text-sm mb-1">Cash Available</p>
@@ -155,18 +150,7 @@ export default function DashboardPage() {
           )}
         </CardHeader>
         <CardContent className="p-0">
-          {activityLoading ? (
-            <div className="space-y-0">
-              {[1, 2, 3].map((i) => (
-                <div key={i} className="flex items-center gap-3 px-6 py-4 border-b last:border-b-0">
-                  <div className="flex-1 space-y-1">
-                    <div className="h-4 w-48 rounded bg-muted-foreground/10 animate-pulse" />
-                    <div className="h-3 w-24 rounded bg-muted-foreground/10 animate-pulse" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : activity.length === 0 ? (
+          {activity.length === 0 ? (
             <p className="text-muted-foreground text-center py-8 px-6">
               No recent activity
             </p>

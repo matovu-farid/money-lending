@@ -1,11 +1,11 @@
 "use client"
 
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { permissionsCollection } from "@/collections"
 import type { Permission } from "@/types"
 
 export function usePermissions() {
-  const { data } = useLiveQuery((q) =>
+  const { data } = useLiveSuspenseQuery((q) =>
     q.from({ p: permissionsCollection }).select(({ p }) => p)
   )
   const permissions = (data?.[0]?.permissions ?? []) as Permission[]

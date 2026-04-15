@@ -2,8 +2,7 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useQueryClient } from "@tanstack/react-query";
-import { useLiveQuery, eq } from "@tanstack/react-db";
+import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db";
 import { customerCollection, loanCollection, paymentCollection, getPaymentPortionsCollection } from "@/collections";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
@@ -12,12 +11,8 @@ import { Banknote, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import {
   changeCustomerStatusAction,
 } from "@/actions/customer.actions";
-import { getLoanPaymentContextAction } from "@/actions/loan.actions";
-import { getLoanBalanceAction } from "@/actions/payment.actions";
-import { queryKeys } from "@/hooks/query-keys";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue";
 import type { Customer, Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -67,7 +62,7 @@ interface LoanWithOverdue {
 
 function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { data: rawPayments, isLoading: loadingPayments } = useLiveQuery(
+  const { data: rawPayments } = useLiveSuspenseQuery(
     (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, item.loan.id)),
     [item.loan.id]
   );
@@ -76,10 +71,11 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
   const activePaymentIds = payments.map((p) => p.id);
   const portionsColl = expanded ? getPaymentPortionsCollection(item.loan.id, activePaymentIds) : null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const loadingPayments = false
   const { data: portionsRows } = useLiveQuery(((q: any) =>
     portionsColl
       ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
-      : q.from({ p: paymentCollection }).where(() => false)
+      : undefined
   ) as any, [activePaymentIds.join(","), expanded]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const portionsData: PaymentPortionsMap = (portionsRows as any)?.[0]?.portions ?? {};
@@ -222,22 +218,23 @@ type EditFormValues = CustomerFormValues;
 export default function CustomerProfilePage() {
   const params = useParams();
   const router = useRouter();
-  const queryClient = useQueryClient();
   const customerId = params.id as string;
 
   // Read customer from customerCollection
-  const { data: customersData, isLoading: customerLoading } = useLiveQuery(
+  const { data: customersData } = useLiveSuspenseQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, customerId)),
     [customerId]
   );
+  const customerLoading = false
   const customer = customersData?.[0] ?? null;
   const notFound = !customerLoading && !customer;
 
   // Read loans from loanCollection, filtered by customer
-  const { data: customerLoans, isLoading: loansLoading } = useLiveQuery(
+  const { data: customerLoans } = useLiveSuspenseQuery(
     (q) => q.from({ loan: loanCollection }).where(({ loan }) => eq(loan.customerId, customerId)),
     [customerId]
   );
+  const loansLoading = false
   const loanItems: LoanWithOverdue[] = (customerLoans ?? []).map((entry) => ({
     loan: entry as unknown as Loan,
     daysOverdue: entry.daysOverdue,
@@ -265,18 +262,8 @@ export default function CustomerProfilePage() {
   useEffect(() => {
     if (!activeLoan) return;
     const loanId = activeLoan.loan.id;
-    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}/payments/new`), Priority.NORMAL, `route:/loans/${loanId}/payments/new`);
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.loans.paymentContext(loanId),
-        queryFn: () => getLoanPaymentContextAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
-      }), Priority.NORMAL, `data:loan-payment-context-${loanId}`);
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.loans.balance(loanId),
-        queryFn: () => getLoanBalanceAction(loanId).then((r) => ("error" in r ? undefined : r.data)),
-      }), Priority.NORMAL, `data:loan-balance-${loanId}`);
-  }, [activeLoan, router, queryClient]);
+    router.prefetch(`/loans/${loanId}/payments/new`);
+  }, [activeLoan, router]);
 
   function handleEditStart() {
     if (!customer) return;

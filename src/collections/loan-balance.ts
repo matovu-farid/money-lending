@@ -1,9 +1,11 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import { getLoanBalanceAction } from "@/actions/payment.actions"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
+import { boundedSet } from "@/lib/bounded-map"
 
 export type LoanBalanceRow = {
   _key: string
@@ -12,24 +14,44 @@ export type LoanBalanceRow = {
   totalBalance: string
 }
 
-const loanBalanceCollections = new Map<string, any>()
+const MAX_LOAN_BALANCE_CACHED = 50
+
+function createLoanBalanceCollection(loanId: string) {
+  return createCollection(
+    queryCollectionOptions<LoanBalanceRow>({
+      queryKey: [...queryKeys.loans.balance(loanId)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<LoanBalanceRow>> => {
+        const result = await getLoanBalanceAction(loanId)
+        if ("error" in result) throw new Error(result.error)
+        return [{ ...result.data, _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+    })
+  )
+}
+
+type LoanBalanceCollectionType = ReturnType<typeof createLoanBalanceCollection>
+const loanBalanceCollections = new Map<string, LoanBalanceCollectionType>()
+
+const emptyLoanBalanceCollection = createCollection(
+  queryCollectionOptions<LoanBalanceRow>({
+    queryKey: [...queryKeys.loans.balance("__empty__")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<LoanBalanceRow>> => [
+      { _key: "singleton", outstandingPrincipal: "0", accruedInterest: "0", totalBalance: "0" },
+    ],
+    getKey: (row) => row._key,
+  })
+)
 
 export function getLoanBalanceCollection(loanId: string) {
+  if (!loanId) return emptyLoanBalanceCollection
   let collection = loanBalanceCollections.get(loanId)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<LoanBalanceRow>({
-        queryKey: ["loans", loanId, "balance"],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<LoanBalanceRow>> => {
-          const result = await getLoanBalanceAction(loanId)
-          if ("error" in result) throw new Error(result.error)
-          return [{ ...result.data, _key: "singleton" }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    loanBalanceCollections.set(loanId, collection)
+    collection = createLoanBalanceCollection(loanId)
+    boundedSet(loanBalanceCollections, loanId, collection, MAX_LOAN_BALANCE_CACHED)
   }
   return collection
 }

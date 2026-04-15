@@ -112,6 +112,7 @@ export const listFundTransfers = (): Effect.Effect<FundTransfer[], DatabaseError
         .select()
         .from(fundTransfers)
         .orderBy(desc(fundTransfers.createdAt))
+        .limit(200)
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })

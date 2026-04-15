@@ -1,10 +1,11 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import { getDashboardAction, getDashboardActivityAction } from "@/actions/dashboard.actions"
 import type { DashboardKPIs } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 export interface DashboardData {
   kpis: DashboardKPIs
@@ -14,7 +15,7 @@ export type DashboardRow = DashboardData & { _key: string }
 
 export const dashboardCollection = createCollection(
   queryCollectionOptions<DashboardRow>({
-    queryKey: ["dashboard", "kpis"],
+    queryKey: [...queryKeys.dashboard.kpis],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<DashboardRow>> => {
       const result = await getDashboardAction()
@@ -26,8 +27,8 @@ export const dashboardCollection = createCollection(
   })
 )
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ActivityItem = any
+import type { ActivityItem } from "@/types/activity"
+export type { ActivityItem }
 
 export type DashboardActivityRow = {
   _key: string
@@ -37,7 +38,7 @@ export type DashboardActivityRow = {
 
 export const dashboardActivityCollection = createCollection(
   queryCollectionOptions<DashboardActivityRow>({
-    queryKey: ["dashboard", "activity"],
+    queryKey: [...queryKeys.dashboard.activity],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<DashboardActivityRow>> => {
       const result = await getDashboardActivityAction() as { data: { items: ActivityItem[]; total: number } } | { error: string }

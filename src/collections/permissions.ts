@@ -1,15 +1,16 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import { getEffectivePermissionsAction } from "@/actions/user.actions"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 export type PermissionsRow = { _key: string; permissions: string[] }
 
 export const permissionsCollection = createCollection(
   queryCollectionOptions<PermissionsRow>({
-    queryKey: ["effective-permissions"],
+    queryKey: [...queryKeys.auth.effectivePermissions],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<PermissionsRow>> => {
       const permissions = await getEffectivePermissionsAction()

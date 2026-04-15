@@ -1,4 +1,5 @@
 import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index, boolean } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import { customers } from "./customers"
 import { depositLocationEnum } from "./fund-transfers"
 
@@ -46,4 +47,6 @@ export const loans = pgTable("loans", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
 }, (table) => [
   index("idx_loans_customer_id").on(table.customerId),
+  index("idx_loans_status").on(table.status),
+  index("idx_loans_active").on(table.customerId, table.status).where(sql`deleted_at IS NULL`),
 ])

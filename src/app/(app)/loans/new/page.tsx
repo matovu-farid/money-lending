@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
 import { useForm } from "react-hook-form"
 import { customerCollection, collateralNaturesCollection, locationBalancesCollection, getActiveLoanCheckCollection, getLoanCollateralCollection } from "@/collections"
 import { generateClientId } from "@/lib/client-id"
@@ -114,12 +114,12 @@ function NewLoanPageInner() {
 
   // --- Data queries ---
 
-  const { data: knownNaturesRows } = useLiveQuery((q) =>
+  const { data: knownNaturesRows } = useLiveSuspenseQuery((q) =>
     q.from({ n: collateralNaturesCollection }).select(({ n }) => n)
   )
   const knownNatures = (knownNaturesRows ?? []).map((r) => r.nature)
 
-  const { data: locationBalancesRows } = useLiveQuery((q) =>
+  const { data: locationBalancesRows } = useLiveSuspenseQuery((q) =>
     q.from({ l: locationBalancesCollection }).select(({ l }) => l)
   )
   const lbRow = locationBalancesRows?.[0]
@@ -127,7 +127,7 @@ function NewLoanPageInner() {
     ? { cash: lbRow.cash, bank: lbRow.bank, strong_room: lbRow.strong_room }
     : null
 
-  const { data: matchedCustomers } = useLiveQuery(
+  const { data: matchedCustomers } = useLiveSuspenseQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, prefilledCustomerId)),
     [prefilledCustomerId]
   )
@@ -136,7 +136,7 @@ function NewLoanPageInner() {
   const activeLoanCheckColl = customerId ? getActiveLoanCheckCollection(customerId) : null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: activeLoanCheckRows } = useLiveQuery(((q: any) =>
-    activeLoanCheckColl ? q.from({ a: activeLoanCheckColl }).select(({ a }: any) => a) : q.from({ c: customerCollection }).where(() => false)
+    activeLoanCheckColl ? q.from({ a: activeLoanCheckColl }).select(({ a }: any) => a) : undefined
   ) as any, [customerId])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeLoanData = (activeLoanCheckRows as any)?.[0]?.data ?? null
@@ -145,7 +145,7 @@ function NewLoanPageInner() {
   const activeLoanCollateralColl = activeLoanId ? getLoanCollateralCollection(activeLoanId) : null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: activeLoanCollateralRows } = useLiveQuery(((q: any) =>
-    activeLoanCollateralColl ? q.from({ c: activeLoanCollateralColl }).select(({ c }: any) => c) : q.from({ c: customerCollection }).where(() => false)
+    activeLoanCollateralColl ? q.from({ c: activeLoanCollateralColl }).select(({ c }: any) => c) : undefined
   ) as any, [activeLoanId])
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const activeLoanCollateral = (activeLoanCollateralRows as any)?.[0] ?? null

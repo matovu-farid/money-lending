@@ -1,14 +1,10 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useState, Suspense } from "react"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
-import { useSession } from "@/lib/auth-client"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
-import { reviewRateChangeRequestAction } from "@/actions/rate-change-request.actions"
-import { rateChangeRequestCollection } from "@/collections"
-import { queryKeys } from "@/hooks/query-keys"
+import { rateChangeRequestCollection, reviewRateChangeRequest } from "@/collections"
 import type { Permission } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
@@ -37,15 +33,64 @@ import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { approvalStatusBadgeVariant } from "@/lib/status"
 import Link from "next/link"
 
-export default function ApprovalsPage() {
-  const { data: session } = useSession()
-  const queryClient = useQueryClient()
-  const [isPending, startTransition] = useTransition()
+function LoadingSkeleton() {
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="space-y-1">
+        <div className="h-7 w-36 rounded-md bg-muted-foreground/10 animate-pulse" />
+        <div className="h-4 w-64 rounded-md bg-muted-foreground/10 animate-pulse" />
+      </div>
+      <div className="space-y-3">
+        <div className="h-5 w-40 rounded-md bg-muted-foreground/10 animate-pulse" />
+        <div className="rounded-xl border border-border overflow-hidden">
+          <div className="bg-muted/50 h-10" />
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex items-center gap-4 px-4 py-3 border-t border-border">
+              <div className="h-4 w-20 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-4 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse ml-auto" />
+              <div className="h-4 w-16 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-4 w-16 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-6 w-20 rounded-full bg-muted-foreground/10 animate-pulse" />
+              <div className="h-4 w-20 rounded bg-muted-foreground/10 animate-pulse" />
+              <div className="h-8 w-16 rounded bg-muted-foreground/10 animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
+export default function ApprovalsPage() {
   const { has } = usePermissions()
   const isSupervisorOrAbove = has("rate-change:approve-standard")
 
-  const { data: requests = [], isLoading } = useLiveQuery(
+  if (!isSupervisorOrAbove) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="supervisor" action="Review rate change approvals" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Supervisor or higher permissions to view approvals.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <ApprovalsContent has={has} />
+    </Suspense>
+  )
+}
+
+function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
+  const [isPending, setIsPending] = useState(false)
+
+  const { data: requests = [] } = useLiveSuspenseQuery(
     (q) => q.from({ r: rateChangeRequestCollection }),
     []
   )
@@ -67,68 +112,13 @@ export default function ApprovalsPage() {
 
   function handleReviewSubmit() {
     if (!reviewingRequest) return
-    startTransition(async () => {
-      const result = await reviewRateChangeRequestAction({
-        requestId: reviewingRequest.id,
-        action: reviewAction,
-        reviewNote: reviewNote.trim() || undefined,
-      })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      toast.success(reviewAction === "approved" ? "Rate change approved and applied" : "Rate change request rejected")
-      closeReviewDialog()
-
-      queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
-      queryClient.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.pendingCount() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.loans.all })
+    reviewRateChangeRequest(reviewingRequest.id, {
+      requestId: reviewingRequest.id,
+      action: reviewAction,
+      reviewNote: reviewNote.trim() || undefined,
     })
-  }
-
-  if (!session || (isLoading && !requests.length)) {
-    return (
-      <div className="p-4 md:p-6 space-y-6">
-        <div className="space-y-1">
-          <div className="h-7 w-36 rounded-md bg-muted-foreground/10 animate-pulse" />
-          <div className="h-4 w-64 rounded-md bg-muted-foreground/10 animate-pulse" />
-        </div>
-        <div className="space-y-3">
-          <div className="h-5 w-40 rounded-md bg-muted-foreground/10 animate-pulse" />
-          <div className="rounded-xl border border-border overflow-hidden">
-            <div className="bg-muted/50 h-10" />
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="flex items-center gap-4 px-4 py-3 border-t border-border">
-                <div className="h-4 w-20 rounded bg-muted-foreground/10 animate-pulse" />
-                <div className="h-4 w-28 rounded bg-muted-foreground/10 animate-pulse" />
-                <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse ml-auto" />
-                <div className="h-4 w-16 rounded bg-muted-foreground/10 animate-pulse" />
-                <div className="h-4 w-16 rounded bg-muted-foreground/10 animate-pulse" />
-                <div className="h-6 w-20 rounded-full bg-muted-foreground/10 animate-pulse" />
-                <div className="h-4 w-20 rounded bg-muted-foreground/10 animate-pulse" />
-                <div className="h-8 w-16 rounded bg-muted-foreground/10 animate-pulse" />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (!isSupervisorOrAbove) {
-    return (
-      <div className="p-4 md:p-6 space-y-2">
-        <div className="flex items-center gap-2">
-          <PermissionInfo requiredRole="supervisor" action="Review rate change approvals" locked />
-          <p className="text-destructive font-medium">Access denied.</p>
-        </div>
-        <p className="text-muted-foreground text-sm">
-          You need Supervisor or higher permissions to view approvals.
-        </p>
-      </div>
-    )
+    toast.success(reviewAction === "approved" ? "Rate change approved and applied" : "Rate change request rejected")
+    closeReviewDialog()
   }
 
   const pendingRequests = requests.filter((r: RateChangeRequestWithLoan) => r.status === "pending")

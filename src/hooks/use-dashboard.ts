@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { dashboardCollection } from "@/collections"
 import type { DashboardKPIs } from "@/types"
 
@@ -9,12 +9,12 @@ export interface DashboardData {
 }
 
 export function useDashboard() {
-  const { data, isLoading } = useLiveQuery((q) =>
+  const { data } = useLiveSuspenseQuery((q) =>
     q.from({ d: dashboardCollection }).select(({ d }) => d)
   )
   const row = data?.[0]
   const dashboardData: DashboardData | undefined = row
     ? { kpis: row.kpis }
     : undefined
-  return { data: dashboardData, isLoading, error: isLoading ? null : (dashboardData ? null : new Error("No data")) }
+  return { data: dashboardData }
 }

@@ -109,6 +109,48 @@ export function calculateDaysOverdue(
 }
 
 /**
+ * Computes total accrued interest by walking payment history segment by segment.
+ * Each segment uses the actual outstanding balance during that period.
+ * This avoids BUG-11 where using only the current balance for the entire period
+ * under-accrues when the balance was higher earlier.
+ *
+ * Pure function — no DB calls.
+ */
+export function computeSegmentedInterest(params: {
+  principalAmount: string
+  monthlyRateDecimal: string
+  startDate: Date
+  asOfDate: Date
+  /** Principal-reducing payments in chronological order */
+  principalPayments: { date: Date; principalPortion: string }[]
+}): BigNumber {
+  const { principalAmount, monthlyRateDecimal, startDate, asOfDate, principalPayments } = params
+  const dailyRate = calculateDailyRate(monthlyRateDecimal)
+  let balance = new BigNumber(principalAmount)
+  let totalInterest = new BigNumber(0)
+  let segmentStart = startDate
+
+  // Walk each payment that reduced principal
+  for (const payment of principalPayments) {
+    if (payment.date > asOfDate) break
+    const days = Math.floor((payment.date.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24))
+    if (days > 0) {
+      totalInterest = totalInterest.plus(balance.multipliedBy(dailyRate).multipliedBy(days))
+    }
+    balance = BigNumber.max(balance.minus(new BigNumber(payment.principalPortion)), 0)
+    segmentStart = payment.date
+  }
+
+  // Final segment: from last payment (or start) to asOfDate
+  const remainingDays = Math.floor((asOfDate.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24))
+  if (remainingDays > 0) {
+    totalInterest = totalInterest.plus(balance.multipliedBy(dailyRate).multipliedBy(remainingDays))
+  }
+
+  return totalInterest
+}
+
+/**
  * Formats a BigNumber amount to 2 decimal places for display and storage.
  */
 export function formatAmount(amount: BigNumber): string {

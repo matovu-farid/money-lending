@@ -1,9 +1,10 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import { getSystemCapitalAction, getCreditorMonthlyInterestDueAction } from "@/actions/creditor.actions"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 // --- System capital (singleton) ---
 
@@ -17,7 +18,7 @@ export type SystemCapitalRow = {
 
 export const systemCapitalCollection = createCollection(
   queryCollectionOptions<SystemCapitalRow>({
-    queryKey: ["creditors", "capital"],
+    queryKey: [...queryKeys.creditors.capital],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<SystemCapitalRow>> => {
       const result = await getSystemCapitalAction()
@@ -34,7 +35,7 @@ export type MonthlyDueRow = { _key: string; data: Record<string, string> }
 
 export const creditorMonthlyDueCollection = createCollection(
   queryCollectionOptions<MonthlyDueRow>({
-    queryKey: ["creditors", "monthly-due"],
+    queryKey: [...queryKeys.creditors.monthlyDue],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<MonthlyDueRow>> => {
       const result = await getCreditorMonthlyInterestDueAction()

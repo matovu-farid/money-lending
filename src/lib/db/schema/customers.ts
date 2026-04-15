@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, pgEnum, index } from "drizzle-orm/pg-core"
 
 export const customerStatusEnum = pgEnum("customer_status", [
   "active",
@@ -15,4 +15,7 @@ export const customers = pgTable("customers", {
   status: customerStatusEnum("status").notNull().default("active"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-})
+}, (table) => [
+  index("idx_customers_full_name").on(table.fullName),
+  index("idx_customers_status").on(table.status),
+])

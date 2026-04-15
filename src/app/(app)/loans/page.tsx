@@ -1,9 +1,8 @@
 "use client"
 
-import { useState, useMemo, useCallback, useEffect } from "react"
+import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { loanCollection } from "@/collections"
 import { Plus, ChevronRight, Loader2 } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
@@ -14,11 +13,7 @@ import { Button } from "@/components/ui/button"
 import type { LoanListEntry } from "@/types"
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 import { exportLoansExcelAction } from "@/actions/loan.actions"
-import { getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
-import { listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
-import { queryKeys } from "@/hooks/query-keys"
 import { toast } from "sonner"
 import { Download } from "lucide-react"
 import { downloadBase64 } from "@/lib/download"
@@ -44,10 +39,10 @@ function criticalityRank(entry: LoanListEntry): number {
 
 export default function LoansPage() {
   const router = useRouter()
-  const queryClient = useQueryClient()
-  const { data, isLoading } = useLiveQuery((q) =>
+  const { data } = useLiveSuspenseQuery((q) =>
     q.from({ loan: loanCollection }).select(({ loan }) => loan)
   )
+  const isLoading = false
   const entries = data ?? []
   const error: string | null = null
   const calculatedAt = new Date()
@@ -130,39 +125,9 @@ export default function LoansPage() {
     }
   }, [activeFilter, critical, atRisk, early, sortedEntries])
 
-  const enqueueLoanPrefetch = useCallback((loanId: string, priority: (typeof Priority)[keyof typeof Priority] = Priority.LOW) => {
-    const staleTime = 60_000
-    prefetchQueue.add(() => router.prefetch(`/loans/${loanId}`), priority, `route:/loans/${loanId}`)
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.payments.byLoan(loanId),
-        queryFn: () => getPaymentsByLoanAction(loanId),
-        staleTime,
-      }), priority, `data:payments-by-loan-${loanId}`)
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.loans.balance(loanId),
-        queryFn: () => getLoanBalanceAction(loanId),
-        staleTime,
-      }), priority, `data:loan-balance-${loanId}`)
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
-        queryFn: () => listRequestsForLoanAction(loanId),
-        staleTime,
-      }), priority, `data:rate-change-requests-loan-${loanId}`)
-  }, [queryClient, router])
-
-  // Background prefetch all visible loans via the global queue at LOW priority
-  useEffect(() => {
-    if (!entries.length) return
-    const id = setTimeout(() => {
-      for (const entry of entries) {
-        enqueueLoanPrefetch(entry.id, Priority.LOW)
-      }
-    }, 1_500)
-    return () => { clearTimeout(id); prefetchQueue.clear() }
-  }, [entries, enqueueLoanPrefetch])
+  const handleLoanPrefetch = useCallback((loanId: string) => {
+    router.prefetch(`/loans/${loanId}`)
+  }, [router])
 
   const handleRowClick = useCallback((loanId: string) => {
     setNavigatingTo(loanId)
@@ -515,8 +480,8 @@ export default function LoansPage() {
                 "data-testid": "data-row",
                 className: `cursor-pointer hover:bg-muted/50 ${navigatingTo === e.id ? "opacity-70" : ""}`,
                 onClick: () => handleRowClick(e.id),
-                onMouseEnter: () => enqueueLoanPrefetch(e.id, Priority.CRITICAL),
-                onFocus: () => enqueueLoanPrefetch(e.id, Priority.CRITICAL),
+                onMouseEnter: () => handleLoanPrefetch(e.id),
+                onFocus: () => handleLoanPrefetch(e.id),
                 role: "button",
                 "aria-label": `View loan for ${e.customerName}`,
               })}

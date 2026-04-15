@@ -1,7 +1,7 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   getPortfolioReportAction,
   getPnlReportAction,
@@ -16,6 +16,8 @@ import type {
   RetainedEarningsData,
 } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
+import { boundedSet } from "@/lib/bounded-map"
 
 // --- Portfolio (no params) ---
 
@@ -23,7 +25,7 @@ export type PortfolioRow = PortfolioEntry & { _key: string }
 
 export const portfolioCollection = createCollection(
   queryCollectionOptions<PortfolioRow>({
-    queryKey: ["reports", "portfolio"],
+    queryKey: [...queryKeys.reports.portfolio],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<PortfolioRow>> => {
       const result = await getPortfolioReportAction()
@@ -56,7 +58,7 @@ export type TransactionReportRow = TransactionReportData & { _key: string }
 
 export const transactionReportCollection = createCollection(
   queryCollectionOptions<TransactionReportRow>({
-    queryKey: ["reports", "transactions"],
+    queryKey: [...queryKeys.reports.transactions],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<TransactionReportRow>> => {
       const result = await getTransactionReportDataAction()
@@ -73,72 +75,89 @@ export const transactionReportCollection = createCollection(
 
 export type PnlRow = PnlData & { _key: string }
 
-const pnlCollections = new Map<string, any>()
+const MAX_REPORT_CACHED = 10
+
+function createPnlCollection(period: string) {
+  return createCollection(
+    queryCollectionOptions<PnlRow>({
+      queryKey: [...queryKeys.reports.pnl(period)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<PnlRow>> => {
+        const result = await getPnlReportAction({ period })
+        if ("error" in result) throw new Error(result.error)
+        return [{ ...(result.data as PnlData), _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+    })
+  )
+}
+
+type PnlCollectionType = ReturnType<typeof createPnlCollection>
+const pnlCollections = new Map<string, PnlCollectionType>()
 
 export function getPnlCollection(period: string) {
   let collection = pnlCollections.get(period)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<PnlRow>({
-        queryKey: ["reports", "pnl", period],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<PnlRow>> => {
-          const result = await getPnlReportAction({ period })
-          if ("error" in result) throw new Error(result.error)
-          return [{ ...(result.data as PnlData), _key: "singleton" }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    pnlCollections.set(period, collection)
+    collection = createPnlCollection(period)
+    boundedSet(pnlCollections, period, collection, MAX_REPORT_CACHED)
   }
   return collection
 }
 
 export type BalanceSheetRow = BalanceSheetData & { _key: string }
 
-const balanceSheetCollections = new Map<string, any>()
+function createBalanceSheetCollection(period: string) {
+  return createCollection(
+    queryCollectionOptions<BalanceSheetRow>({
+      queryKey: [...queryKeys.reports.balanceSheet(period)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<BalanceSheetRow>> => {
+        const result = await getBalanceSheetReportAction({ period })
+        if ("error" in result) throw new Error(result.error)
+        return [{ ...(result.data as BalanceSheetData), _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+    })
+  )
+}
+
+type BalanceSheetCollectionType = ReturnType<typeof createBalanceSheetCollection>
+const balanceSheetCollections = new Map<string, BalanceSheetCollectionType>()
 
 export function getBalanceSheetCollection(period: string) {
   let collection = balanceSheetCollections.get(period)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<BalanceSheetRow>({
-        queryKey: ["reports", "balance-sheet", period],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<BalanceSheetRow>> => {
-          const result = await getBalanceSheetReportAction({ period })
-          if ("error" in result) throw new Error(result.error)
-          return [{ ...(result.data as BalanceSheetData), _key: "singleton" }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    balanceSheetCollections.set(period, collection)
+    collection = createBalanceSheetCollection(period)
+    boundedSet(balanceSheetCollections, period, collection, MAX_REPORT_CACHED)
   }
   return collection
 }
 
 export type RetainedEarningsRow = RetainedEarningsData & { _key: string }
 
-const retainedEarningsCollections = new Map<string, any>()
+function createRetainedEarningsCollection(period: string) {
+  return createCollection(
+    queryCollectionOptions<RetainedEarningsRow>({
+      queryKey: [...queryKeys.reports.retainedEarnings(period)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<RetainedEarningsRow>> => {
+        const result = await getRetainedEarningsReportAction({ period })
+        if ("error" in result) throw new Error(result.error)
+        return [{ ...(result.data as RetainedEarningsData), _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+    })
+  )
+}
+
+type RetainedEarningsCollectionType = ReturnType<typeof createRetainedEarningsCollection>
+const retainedEarningsCollections = new Map<string, RetainedEarningsCollectionType>()
 
 export function getRetainedEarningsCollection(period: string) {
   let collection = retainedEarningsCollections.get(period)
   if (!collection) {
-    collection = createCollection(
-      queryCollectionOptions<RetainedEarningsRow>({
-        queryKey: ["reports", "retained-earnings", period],
-        queryClient: getQueryClient(),
-        queryFn: async (_ctx): Promise<Array<RetainedEarningsRow>> => {
-          const result = await getRetainedEarningsReportAction({ period })
-          if ("error" in result) throw new Error(result.error)
-          return [{ ...(result.data as RetainedEarningsData), _key: "singleton" }]
-        },
-        getKey: (row) => row._key,
-      })
-    )
-    retainedEarningsCollections.set(period, collection)
+    collection = createRetainedEarningsCollection(period)
+    boundedSet(retainedEarningsCollections, period, collection, MAX_REPORT_CACHED)
   }
   return collection
 }

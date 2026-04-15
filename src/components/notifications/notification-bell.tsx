@@ -2,8 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useQueryClient } from "@tanstack/react-query"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { Bell } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -12,93 +11,62 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import {
-  markAsReadAction,
-  markAllAsReadAction,
-} from "@/actions/notification.actions"
-import { getPaymentsByLoanAction, getLoanBalanceAction } from "@/actions/payment.actions"
-import { listRequestsForLoanAction } from "@/actions/rate-change-request.actions"
+import { markAllAsReadAction } from "@/actions/notification.actions"
 import { useNotificationUnreadCount } from "@/hooks/use-notifications"
-import { notificationListCollection } from "@/collections"
-import { queryKeys } from "@/hooks/query-keys"
+import { notificationListCollection, notificationUnreadCountCollection } from "@/collections"
 import type { Notification } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
 
 export function NotificationBell() {
   const router = useRouter()
-  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
 
-  // Fetch unread count with polling every 60s
+  // Fetch unread count from collection
   const { data: unreadCount = 0 } = useNotificationUnreadCount()
 
   // Fetch full notification list from collection
-  const { data: notificationRows, isLoading: loadingNotifications } = useLiveQuery((q) =>
+  const { data: notificationRows } = useLiveSuspenseQuery((q) =>
     q.from({ n: notificationListCollection }).select(({ n }) => n)
   )
   const notifications: Notification[] = (notificationRows ?? []) as Notification[]
 
   function handleOpenChange(isOpen: boolean) {
     setOpen(isOpen)
-    if (isOpen) {
-      queryClient.invalidateQueries({ queryKey: [...queryKeys.notifications.all, "list"] })
-    }
   }
-
-  const notificationsListKey = [...queryKeys.notifications.all, "list"]
 
   async function handleMarkAsRead(notification: Notification) {
     if (notification.isRead) return
 
-    const result = await markAsReadAction(notification.id)
-    if ("data" in result) {
-      queryClient.setQueryData<Notification[]>(notificationsListKey, (prev) =>
-        prev?.map((n) => (n.id === notification.id ? { ...n, isRead: true } : n))
-      )
-      queryClient.setQueryData(
-        queryKeys.notifications.unreadCount(),
-        (prev: number) => Math.max(0, (prev ?? 0) - 1)
-      )
+    // Optimistic update via collection
+    notificationListCollection.update(notification.id, (draft) => {
+      draft.isRead = true
+    })
+    notificationUnreadCountCollection.update("singleton", (draft) => {
+      draft.count = Math.max(0, draft.count - 1)
+    })
 
-      // Navigate to the relevant detail page based on reference type
-      if (notification.referenceType === "loan" && notification.referenceId) {
-        const loanId = notification.referenceId
-        const staleTime = 30_000
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.payments.byLoan(loanId),
-            queryFn: () => getPaymentsByLoanAction(loanId),
-            staleTime,
-          }), Priority.CRITICAL, `data:payments-by-loan-${loanId}`)
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.loans.balance(loanId),
-            queryFn: () => getLoanBalanceAction(loanId),
-            staleTime,
-          }), Priority.CRITICAL, `data:loan-balance-${loanId}`)
-        prefetchQueue.add(() =>
-          queryClient.prefetchQuery({
-            queryKey: queryKeys.rateChangeRequests.byLoan(loanId),
-            queryFn: () => listRequestsForLoanAction(loanId),
-            staleTime,
-          }), Priority.CRITICAL, `data:rate-change-requests-loan-${loanId}`)
-        prefetchQueue.add(
-          () => router.prefetch(`/loans/${loanId}`),
-          Priority.CRITICAL, `route:/loans/${loanId}`)
-        router.push(`/loans/${loanId}`)
-      }
-      setOpen(false)
+    // Navigate to the relevant detail page based on reference type
+    if (notification.referenceType === "loan" && notification.referenceId) {
+      router.push(`/loans/${notification.referenceId}`)
     }
+    setOpen(false)
   }
 
   async function handleMarkAllAsRead() {
+    // Mark all as read on server
     const result = await markAllAsReadAction()
     if ("data" in result) {
-      queryClient.setQueryData<Notification[]>(notificationsListKey, (prev) =>
-        prev?.map((n) => ({ ...n, isRead: true }))
-      )
-      queryClient.setQueryData(queryKeys.notifications.unreadCount(), 0)
+      // Update each notification in the collection
+      notifications.forEach((n) => {
+        if (!n.isRead) {
+          notificationListCollection.update(n.id, (draft) => {
+            draft.isRead = true
+          })
+        }
+      })
+      notificationUnreadCountCollection.update("singleton", (draft) => {
+        draft.count = 0
+      })
     }
   }
 
@@ -144,20 +112,13 @@ export function NotificationBell() {
 
         {/* Notification list */}
         <div className="max-h-80 overflow-y-auto">
-          {loadingNotifications && (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              Loading...
-            </div>
-          )}
-
-          {!loadingNotifications && notifications.length === 0 && (
+          {notifications.length === 0 && (
             <div className="py-8 text-center text-sm text-muted-foreground">
               No alerts at this time.
             </div>
           )}
 
-          {!loadingNotifications &&
-            notifications.map((notification) => (
+          {notifications.map((notification) => (
               <button
                 key={notification.id}
                 onClick={() => handleMarkAsRead(notification)}

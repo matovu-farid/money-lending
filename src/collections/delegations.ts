@@ -1,13 +1,14 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   listDelegationsAction,
   createDelegationAction,
   revokeDelegationAction,
 } from "@/actions/delegation.actions"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 /** Row shape returned by listDelegationsAction */
 export interface DelegationRow {
@@ -22,7 +23,7 @@ export interface DelegationRow {
 
 export const delegationCollection = createCollection(
   queryCollectionOptions<DelegationRow>({
-    queryKey: ["delegations"],
+    queryKey: [...queryKeys.delegations.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<DelegationRow>> => {
       const result = await listDelegationsAction()

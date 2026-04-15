@@ -291,6 +291,115 @@ describe("computeLoanOverdueInfo — Term Loans (fixed_rate)", () => {
   })
 })
 
+describe("computeLoanOverdueInfo — Perpetual: BUG-2 outstanding balance", () => {
+  it("uses outstanding balance (not original principal) for interest accrual", () => {
+    // Loan: 1M principal, 10%/month, 60 days elapsed
+    // Borrower has paid down 500k of principal, so outstandingBalance = 500k
+    // Interest should accrue on 500k, not 1M
+    // Correct: 500k * (0.10/30) * 60 = 100,000
+    // Buggy:   1M  * (0.10/30) * 60 = 200,000
+    // If borrower paid 100k interest, correct daysOverdue = 0, buggy = ~30
+    const result = computeLoanOverdueInfo({
+      principalAmount: "1000000",
+      baseRate: "0.10",
+      startDate: daysAgo(60),
+      loanType: "perpetual",
+      termMonths: null,
+      totalInterestPaid: "100000",
+      paymentCount: 2,
+      outstandingBalance: "500000",
+      penaltyWaived: false,
+      loan: baseLoan,
+    })
+    // With outstanding balance = 500k, interest accrued over 60 days = 100k
+    // Paid 100k → 0 days overdue
+    expect(result.daysOverdue).toBe(0)
+    expect(result.unpaidInterest).toBe("0")
+    expect(result.penaltyActive).toBe(false)
+  })
+
+  it("does not falsely trigger penalty when principal has been partially repaid", () => {
+    // 1M loan, 50% principal repaid, 90 days elapsed
+    // Outstanding = 500k, interest accrued = 500k * 0.10/30 * 90 = 150k
+    // If borrower paid 150k interest → 0 days overdue, no penalty
+    const result = computeLoanOverdueInfo({
+      principalAmount: "1000000",
+      baseRate: "0.10",
+      startDate: daysAgo(90),
+      loanType: "perpetual",
+      termMonths: null,
+      totalInterestPaid: "150000",
+      paymentCount: 3,
+      outstandingBalance: "500000",
+      penaltyWaived: false,
+      loan: baseLoan,
+    })
+    expect(result.daysOverdue).toBe(0)
+    expect(result.penaltyActive).toBe(false)
+  })
+})
+
+describe("computeLoanOverdueInfo — Term Loans: BUG-3 month boundary", () => {
+  it("loan starting Jan 31 counts 1 month elapsed by Feb 28", () => {
+    // Loan starts Jan 31 2025. On Feb 28 2025, one full month has elapsed.
+    // With 0 payments, expectedPayments = 1, missed = 1, daysOverdue = 30
+    const startDate = new Date(2025, 0, 31) // Jan 31
+    const asOf = new Date(2025, 1, 28) // Feb 28
+    const result = computeLoanOverdueInfo({
+      principalAmount: "1000000",
+      baseRate: "0.10",
+      startDate,
+      loanType: "fixed_rate",
+      termMonths: 12,
+      totalInterestPaid: "0",
+      paymentCount: 0,
+      outstandingBalance: "1000000",
+      penaltyWaived: false,
+      loan: baseLoan,
+      asOf,
+    })
+    expect(result.daysOverdue).toBe(30)
+  })
+
+  it("loan starting Mar 31 counts 1 month elapsed by Apr 30", () => {
+    const startDate = new Date(2025, 2, 31) // Mar 31
+    const asOf = new Date(2025, 3, 30) // Apr 30
+    const result = computeLoanOverdueInfo({
+      principalAmount: "1000000",
+      baseRate: "0.10",
+      startDate,
+      loanType: "fixed_rate",
+      termMonths: 12,
+      totalInterestPaid: "0",
+      paymentCount: 0,
+      outstandingBalance: "1000000",
+      penaltyWaived: false,
+      loan: baseLoan,
+      asOf,
+    })
+    expect(result.daysOverdue).toBe(30)
+  })
+
+  it("loan starting Jan 29 in leap year counts 1 month by Feb 29", () => {
+    const startDate = new Date(2024, 0, 29) // Jan 29 2024 (leap year)
+    const asOf = new Date(2024, 1, 29) // Feb 29
+    const result = computeLoanOverdueInfo({
+      principalAmount: "1000000",
+      baseRate: "0.10",
+      startDate,
+      loanType: "fixed_rate",
+      termMonths: 12,
+      totalInterestPaid: "0",
+      paymentCount: 0,
+      outstandingBalance: "1000000",
+      penaltyWaived: false,
+      loan: baseLoan,
+      asOf,
+    })
+    expect(result.daysOverdue).toBe(30)
+  })
+})
+
 describe("computeLoanOverdueInfo — Term Loans (reducing_balance)", () => {
   it("uses outstanding balance for reducing_balance interest", () => {
     // reducing_balance: monthly interest = outstandingBalance * baseRate

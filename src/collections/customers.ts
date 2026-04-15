@@ -1,7 +1,7 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   searchCustomersAction,
   createCustomerAction,
@@ -9,10 +9,11 @@ import {
 } from "@/actions/customer.actions"
 import type { Customer, CreateCustomerInput, UpdateCustomerInput } from "@/types/customer"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 export const customerCollection = createCollection(
   queryCollectionOptions<Customer>({
-    queryKey: ["customers"],
+    queryKey: [...queryKeys.customers.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<Customer>> => {
       const result = await searchCustomersAction({ page: 0, pageSize: 10000 })

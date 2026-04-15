@@ -1,24 +1,23 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@tanstack/query-db-collection"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   listLoansWithOverdueAction,
   createLoanAction,
 } from "@/actions/loan.actions"
+import { settleWithCollateralAction } from "@/actions/settlement.actions"
 import type { LoanListEntry, CreateLoanInput } from "@/types/loan"
+import type { SettleWithCollateralInput } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
-/**
- * Side-channel map: stores the original form input keyed by client-generated ID.
- * The onInsert handler reads from here because CreateLoanInput has fields
- * (collateral, rollover, backdateNote, etc.) that aren't part of LoanListEntry.
- */
 const pendingInputs = new Map<string, CreateLoanInput>()
+const pendingSettlements = new Map<string, SettleWithCollateralInput>()
 
 export const loanCollection = createCollection(
   queryCollectionOptions<LoanListEntry>({
-    queryKey: ["loans"],
+    queryKey: [...queryKeys.loans.all],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<LoanListEntry>> => {
       const result = await listLoansWithOverdueAction()
@@ -28,26 +27,58 @@ export const loanCollection = createCollection(
       return result.data
     },
     getKey: (loan) => loan.id,
+    onUpdate: async ({ transaction }) => {
+      const { original } = transaction.mutations[0]
+      const settleInput = pendingSettlements.get(original.id)
+      if (settleInput) {
+        const result = await settleWithCollateralAction(settleInput)
+        if ("error" in result) throw new Error(result.error)
+        pendingSettlements.delete(original.id)
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+        qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+        qc.invalidateQueries({ queryKey: queryKeys.loans.dueToday })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      }
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input = pendingInputs.get(modified.id)
       if (!input) {
         throw new Error("Missing loan input for optimistic insert")
       }
-      pendingInputs.delete(modified.id)
       const result = await createLoanAction(input)
       if ("error" in result) {
         throw new Error(result.error)
       }
+      pendingInputs.delete(modified.id)
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+      qc.invalidateQueries({ queryKey: queryKeys.loans.dueToday })
+      qc.invalidateQueries({ queryKey: queryKeys.customers.all })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
     },
   })
 )
 
-/**
- * Insert a loan with its full form input.
- * Call this instead of loanCollection.insert() directly so the onInsert
- * handler can access the original CreateLoanInput via the side-channel map.
- */
+export function settleLoanWithCollateral(
+  loanId: string,
+  reason: string
+) {
+  pendingSettlements.set(loanId, { loanId, reason })
+  loanCollection.update(loanId, (draft) => {
+    draft.status = "fully_paid"
+  })
+}
+
 export function insertLoanWithInput(
   id: string,
   optimistic: LoanListEntry,

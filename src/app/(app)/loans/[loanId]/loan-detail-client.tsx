@@ -3,8 +3,6 @@
 import { useTransition, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { prefetchQueue, Priority } from "@/lib/prefetch-queue"
-import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
   ArrowLeft,
@@ -13,14 +11,16 @@ import {
   ShieldAlert,
   PlusCircle,
 } from "lucide-react"
-import { updatePaymentWithInput, deletePaymentWithReason, currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection, getLoanBalanceCollection } from "@/collections"
-import { waivePenaltyAction, adjustPenaltyMultiplierAction, getLoanPaymentContextAction } from "@/actions/loan.actions"
+import { updatePaymentWithInput, deletePaymentWithReason, currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection, getLoanBalanceCollection, insertRateChangeRequestWithInput } from "@/collections"
+import { waivePenaltyAction, adjustPenaltyMultiplierAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
-import { requestRateChangeAction } from "@/actions/rate-change-request.actions"
-import { useLiveQuery, eq } from "@tanstack/react-db"
+import { generateClientId } from "@/lib/client-id"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
+import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
 import { paymentCollection, rateChangeRequestCollection } from "@/collections"
-import { queryKeys } from "@/hooks/query-keys"
 import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
+import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
@@ -52,19 +52,18 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const ledgerBalance: string | null = loanEntry.outstandingBalance
 
   const router = useRouter()
-  const queryClient = useQueryClient()
   const { has } = usePermissions()
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
   // Fetch userRole via collection
-  const { data: userRoleRows } = useLiveQuery((q) =>
+  const { data: userRoleRows } = useLiveSuspenseQuery((q) =>
     q.from({ r: currentUserRoleCollection }).select(({ r }) => r)
   )
   const userRole: UserRole = userRoleRows?.[0]?.role ?? ("unassigned" as UserRole)
 
   // Fetch collateral via collection
   const collateralColl = getLoanCollateralCollection(loan.id)
-  const { data: collateralRows } = useLiveQuery(
+  const { data: collateralRows } = useLiveSuspenseQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q) => q.from({ c: collateralColl as any }).select(({ c }: any) => c),
     [loan.id]
@@ -75,7 +74,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const collateralDescription = collateralData?.description ?? null
 
   // Use TanStack DB collection for payments — live, reactive, cached
-  const { data: rawPayments } = useLiveQuery(
+  const { data: rawPayments } = useLiveSuspenseQuery(
     (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, loan.id)),
     [loan.id]
   )
@@ -87,26 +86,20 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     [payments]
   )
   const userNameMapColl = getUserNameMapCollection(uniqueUserIds)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: userNameMapRows } = useLiveQuery(((q: any) =>
-    userNameMapColl
-      ? q.from({ u: userNameMapColl }).select(({ u }: any) => u)
-      : q.from({ p: paymentCollection }).where(() => false)
-  ) as any, [uniqueUserIds.join(",")])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const userNameMap: Record<string, string> = (userNameMapRows as any)?.[0]?.map ?? {}
+  const { data: userNameMapRows } = useLiveQuery(
+    (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
+    [uniqueUserIds.join(",")]
+  )
+  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
 
   // Client-side query for payment portions — refreshes when payments change
   const activePaymentIds = payments.map((p) => p.id)
   const portionsColl = getPaymentPortionsCollection(loan.id, activePaymentIds)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: portionsRows } = useLiveQuery(((q: any) =>
-    portionsColl
-      ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
-      : q.from({ p: paymentCollection }).where(() => false)
-  ) as any, [activePaymentIds.join(",")])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const currentPortions: PaymentPortionsMap = (portionsRows as any)?.[0]?.portions ?? {}
+  const { data: portionsRows } = useLiveQuery(
+    (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
+    [activePaymentIds.join(",")]
+  )
+  const currentPortions: PaymentPortionsMap = portionsRows?.[0]?.portions ?? {}
 
   const {
     editingPayment, editAmount, editDate, editReason,
@@ -124,18 +117,18 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // Edit/delete are now synchronous collection ops — no pending state needed
   const isEditPending = false
   const isDeletePending = false
-  const [isRateChangePending, startRateChangeTransition] = useTransition()
+  const isRateChangePending = false
   const [isWaivingPenalty, startWaivePenaltyTransition] = useTransition()
   const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
 
   // Fetch rate change requests for this loan from collection
-  const { data: rateChangeRequests = [] } = useLiveQuery(
+  const { data: rateChangeRequests = [] } = useLiveSuspenseQuery(
     (q) => q.from({ r: rateChangeRequestCollection }).where(({ r }) => eq(r.loanId, loan.id)),
     [loan.id]
   )
 
   const balanceColl = getLoanBalanceCollection(loan.id)
-  const { data: balanceRows } = useLiveQuery(
+  const { data: balanceRows } = useLiveSuspenseQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
     [loan.id]
@@ -143,15 +136,11 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const balanceData = (balanceRows as any)?.[0] ?? null
 
-  // Prefetch record-payment data so the page loads instantly
+  // Route prefetch for record-payment page
   useEffect(() => {
     if (loan.status !== "active") return;
-    prefetchQueue.add(() =>
-      queryClient.prefetchQuery({
-        queryKey: queryKeys.loans.paymentContext(loan.id),
-        queryFn: () => getLoanPaymentContextAction(loan.id).then((r) => ("error" in r ? undefined : r.data)),
-      }), Priority.NORMAL, `data:loan-payment-context-${loan.id}`);
-  }, [loan.id, loan.status, queryClient]);
+    router.prefetch(`/loans/${loan.id}/payments/new`);
+  }, [loan.id, loan.status, router]);
 
   const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
   const pendingRateRequest = rateChangeList.find((r: RateChangeRequest) => r.status === "pending")
@@ -234,29 +223,37 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   }
 
   function handleRateChangeSubmit() {
-    startRateChangeTransition(async () => {
-      const rateDecimal = (parseFloat(newRate) / 100).toFixed(4)
+    const rateDecimal = (parseFloat(newRate) / 100).toFixed(4)
+    const id = generateClientId()
+    const now = new Date()
 
-      const result = await requestRateChangeAction({
+    const optimistic: RateChangeRequestWithLoan = {
+      id,
+      loanId: loan.id,
+      requestedRate: rateDecimal,
+      currentRate: loan.interestRateOverride ?? loan.interestRate,
+      status: "pending",
+      requestedBy: "",
+      requiredApproverRole: "",
+      reviewedBy: null,
+      reviewNote: null,
+      createdAt: now,
+      reviewedAt: null,
+      customerName: customerName ?? "",
+      loanRef: `LOAN-${loan.id.slice(0, 6).toUpperCase()}`,
+      principalAmount: loan.principalAmount,
+    }
+
+    try {
+      insertRateChangeRequestWithInput(id, optimistic, {
         loanId: loan.id,
         requestedRate: rateDecimal,
       })
-
-      if ("error" in result) {
-        toast.error(result.error)
-        return
-      }
-
-      if (result.data.applied) {
-        toast.success("Interest rate updated immediately")
-      } else {
-        toast.success(result.data.message)
-      }
-
-      // Refresh relevant queries so UI reflects the new state
-      router.refresh()
+      toast.success("Rate change request submitted")
       closeRateChange()
-    })
+    } catch {
+      toast.error("Failed to submit rate change request")
+    }
   }
 
   function handleWaivePenalty() {
@@ -266,7 +263,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         toast.error(result.error)
       } else {
         toast.success("Penalty waived")
-        router.refresh()
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loan.id) })
       }
     })
   }
@@ -280,7 +279,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       } else {
         toast.success("Penalty rate adjusted")
         closePenaltyAdjust()
-        router.refresh()
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loan.id) })
       }
     })
   }

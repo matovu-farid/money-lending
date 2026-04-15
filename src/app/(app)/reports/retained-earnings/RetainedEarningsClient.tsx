@@ -8,16 +8,12 @@ import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { useRetainedEarningsReport } from "@/hooks/use-reports"
-import { Loader2 } from "lucide-react"
-
 interface RetainedEarningsClientProps {
   period: string
 }
 
 export function RetainedEarningsClient({ period }: RetainedEarningsClientProps) {
-  const { data, isLoading } = useRetainedEarningsReport(period)
-
-  if (isLoading) return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+  const { data } = useRetainedEarningsReport(period)
 
   const reData = data ?? { period, beginningBalance: "0", netIncome: "0", endingBalance: "0" }
 

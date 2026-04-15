@@ -45,9 +45,11 @@ export function computeLoanOverdueInfo(params: {
       (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
     )
     // Always use base rate for overdue calculation — penalty must not inflate this
-    const totalInterestAccrued = calculateInterest(principalAmount, baseRate, totalDaysElapsed, 0)
-    const dailyRateBN = calculateDailyRate(baseRate)
+    // Use outstanding balance (not original principal) so that partial principal
+    // repayments correctly reduce the interest accrual and overdue calculation.
     const currentBalance = new BigNumber(outstandingBalance).isGreaterThan(0) ? outstandingBalance : principalAmount
+    const totalInterestAccrued = calculateInterest(currentBalance.toString(), baseRate, totalDaysElapsed, 0)
+    const dailyRateBN = calculateDailyRate(baseRate)
     const dailyInterestAmount = new BigNumber(currentBalance).multipliedBy(dailyRateBN)
     const totalInterestPaidBN = new BigNumber(totalInterestPaid)
     const unpaidInterestBN = totalInterestAccrued.minus(totalInterestPaidBN)
@@ -58,9 +60,14 @@ export function computeLoanOverdueInfo(params: {
     unpaidInterest = BigNumber.max(unpaidInterestBN, 0).toFixed(0)
   } else {
     // Term loans (fixed_rate, reducing_balance)
+    // When start day exceeds days in current month (e.g., started 31st, now in Feb),
+    // treat the last day of the current month as having completed the month.
+    const lastDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
+    const dayReached = now.getDate() >= startDate.getDate()
+      || now.getDate() >= lastDayOfCurrentMonth
     const monthsElapsed = (now.getFullYear() - startDate.getFullYear()) * 12
       + (now.getMonth() - startDate.getMonth())
-      + (now.getDate() >= startDate.getDate() ? 0 : -1)
+      + (dayReached ? 0 : -1)
     const expectedPayments = Math.min(monthsElapsed, termMonths ?? 0)
     const actualPayments = paymentCount
     const missedPayments = Math.max(expectedPayments - actualPayments, 0)

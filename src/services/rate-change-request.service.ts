@@ -129,6 +129,7 @@ export const listAllRequests = (): Effect.Effect<RateChangeRequestWithLoan[], Da
         .innerJoin(loans, eq(rateChangeRequests.loanId, loans.id))
         .innerJoin(customers, eq(loans.customerId, customers.id))
         .orderBy(desc(rateChangeRequests.createdAt))
+        .limit(100)
 
       return rows.map((row) => ({
         ...row,

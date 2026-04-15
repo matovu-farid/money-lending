@@ -10,6 +10,7 @@ import {
   calculateSchedule,
   allocateFixedRatePayment,
   allocateReducingBalancePayment,
+  computeSegmentedInterest,
 } from "../engine"
 
 describe("Interest Engine", () => {
@@ -706,5 +707,76 @@ describe("calculateLoanSummary — extended", () => {
     expect(result.totalOwed).toBe("1300000")
     // First month installment
     expect(result.monthlyInstallment).toBe("300000")
+  })
+})
+
+describe("computeSegmentedInterest — BUG-11", () => {
+  it("uses balance at each segment, not just current balance", () => {
+    // Loan: 1M principal, 10%/month
+    // Day 0: loan starts with 1M balance
+    // Day 15: payment reduces balance to 500k (principalPortion paid)
+    // Day 30: accrual computed
+    //
+    // Correct: 1M * (0.10/30) * 15 + 500k * (0.10/30) * 15 = 50000 + 25000 = 75000
+    // Buggy (using current balance for all): 500k * (0.10/30) * 30 = 50000
+    const startDate = new Date(2025, 0, 1)
+    const asOfDate = new Date(2025, 0, 31) // 30 days later
+
+    const result = computeSegmentedInterest({
+      principalAmount: "1000000",
+      monthlyRateDecimal: "0.10",
+      startDate,
+      asOfDate,
+      // One payment on day 15 that reduced principal by 500k
+      principalPayments: [
+        { date: new Date(2025, 0, 16), principalPortion: "500000" },
+      ],
+    })
+
+    // 1M for 15 days = 50000, then 500k for 15 days = 25000 → total 75000
+    expect(result.toFixed(0)).toBe("75000")
+  })
+
+  it("with no payments, equals simple interest on full principal", () => {
+    const startDate = new Date(2025, 0, 1)
+    const asOfDate = new Date(2025, 0, 31)
+
+    const result = computeSegmentedInterest({
+      principalAmount: "1000000",
+      monthlyRateDecimal: "0.10",
+      startDate,
+      asOfDate,
+      principalPayments: [],
+    })
+
+    // 1M * (0.10/30) * 30 = 100000
+    expect(result.toFixed(0)).toBe("100000")
+  })
+
+  it("handles multiple payments reducing balance over time", () => {
+    const startDate = new Date(2025, 0, 1)
+    const asOfDate = new Date(2025, 1, 1) // 31 days
+
+    const result = computeSegmentedInterest({
+      principalAmount: "1000000",
+      monthlyRateDecimal: "0.10",
+      startDate,
+      asOfDate,
+      principalPayments: [
+        { date: new Date(2025, 0, 11), principalPortion: "300000" }, // day 10: balance drops to 700k
+        { date: new Date(2025, 0, 21), principalPortion: "200000" }, // day 20: balance drops to 500k
+      ],
+    })
+
+    // Segment 1: 1M for 10 days = 33333
+    // Segment 2: 700k for 10 days = 23333
+    // Segment 3: 500k for 11 days = 18333
+    // Total ≈ 75000
+    const expected = new BigNumber("1000000").multipliedBy(new BigNumber("0.10").dividedBy(30)).multipliedBy(10)
+      .plus(new BigNumber("700000").multipliedBy(new BigNumber("0.10").dividedBy(30)).multipliedBy(10))
+      .plus(new BigNumber("500000").multipliedBy(new BigNumber("0.10").dividedBy(30)).multipliedBy(11))
+
+    const diff = result.minus(expected).abs()
+    expect(diff.isLessThanOrEqualTo(1)).toBe(true)
   })
 })

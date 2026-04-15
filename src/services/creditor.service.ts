@@ -143,7 +143,7 @@ export const getCreditor = (
 export const listCreditors = (): Effect.Effect<Creditor[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      return await db.select().from(creditors).orderBy(asc(creditors.name));
+      return await db.select().from(creditors).orderBy(asc(creditors.name)).limit(200);
     },
     catch: (e) => new DatabaseError({ cause: e }),
   });

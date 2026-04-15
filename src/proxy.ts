@@ -32,7 +32,7 @@ export async function proxy(request: NextRequest) {
   // Unassigned users can ONLY access /pending-approval -- redirect everywhere else.
   // Re-check the DB directly because the session may hold a stale role (e.g. the
   // first-user databaseHook promoted to superAdmin after the session was created).
-  let role = session.user.role
+  let role = (session.user as Record<string, unknown>).role as string | undefined
   if (role === "unassigned") {
     const rows = await db.execute(
       sql`SELECT "role" FROM "user" WHERE "id" = ${session.user.id}`

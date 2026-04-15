@@ -315,6 +315,7 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
         .innerJoin(customers, eq(loans.customerId, customers.id))
         .where(isNull(loans.deletedAt))
         .orderBy(desc(loans.createdAt))
+        .limit(500)
       return rows
     },
     catch: (e) => new DatabaseError({ cause: e }),

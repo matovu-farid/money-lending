@@ -77,7 +77,7 @@ export const updateCustomer = (
 
 export const listCustomers = (): Effect.Effect<Customer[], DatabaseError> =>
   Effect.tryPromise({
-    try: () => db.select().from(customers),
+    try: () => db.select().from(customers).limit(500),
     catch: (e) => new DatabaseError({ cause: e }),
   })
 
