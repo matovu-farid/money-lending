@@ -1,5 +1,5 @@
 import React, { useEffect } from "react"
-import type { UseFormRegister, Control, FieldErrors } from "react-hook-form"
+import type { UseFormRegister, UseFormWatch, Control, FieldErrors } from "react-hook-form"
 import type { LoanType } from "@/types"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,7 @@ import { todayDateString } from "@/lib/utils"
 import { PERPETUAL_LOAN_MIN_AMOUNT } from "@/lib/constants"
 import type { UserRole } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
+import { CreditScoreBadge } from "@/components/credit-score/credit-score-badge"
 
 interface ActiveLoanInfo {
   loan: { id: string; customerId: string }
@@ -25,6 +26,7 @@ interface ActiveLoanInfo {
 
 interface LoanDetailsStepProps {
   register: UseFormRegister<LoanFormValues>
+  watch: UseFormWatch<LoanFormValues>
   control: Control<LoanFormValues>
   errors: FieldErrors<LoanFormValues>
   prefilledCustomerId: string
@@ -43,6 +45,7 @@ interface LoanDetailsStepProps {
 
 export function LoanDetailsStep({
   register,
+  watch,
   control,
   errors,
   prefilledCustomerId,
@@ -64,12 +67,15 @@ export function LoanDetailsStep({
         <div className="space-y-1">
           <Label htmlFor="customerId" className="font-semibold">Customer</Label>
           {prefilledCustomerId && customerName ? (
-            <Input
-              id="customerId"
-              value={customerName}
-              disabled
-              className="bg-muted"
-            />
+            <>
+              <Input
+                id="customerId"
+                value={customerName}
+                disabled
+                className="bg-muted"
+              />
+              <CreditScoreBadge customerId={prefilledCustomerId} className="mt-2" />
+            </>
           ) : (
             <Input
               id="customerId"
@@ -145,7 +151,7 @@ export function LoanDetailsStep({
           startDate={startDate}
         />
 
-        <InterestRateField register={register} errors={errors} />
+        <InterestRateField register={register} errors={errors} interestRateDisplay={watch("interestRateDisplay")} />
 
         <DisbursementSourceSelect
           name="disbursementSource"

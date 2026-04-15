@@ -53,6 +53,7 @@ import { customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/s
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button";
+import { CreditScoreBadge } from "@/components/credit-score/credit-score-badge";
 
 interface LoanWithOverdue {
   loan: Loan;
@@ -375,6 +376,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
       <PageHeader title={customer.fullName} subtitle="Customer profile">
+        <CreditScoreBadge customerId={customerId} />
         {activeLoan && (
           <Link
             href={`/loans/${activeLoan.loan.id}/payments/new`}
