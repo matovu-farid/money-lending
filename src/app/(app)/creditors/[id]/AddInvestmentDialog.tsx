@@ -75,8 +75,6 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         resetForm()
         const qc = getQueryClient()
         qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
         qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
         qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       } catch (err: any) {

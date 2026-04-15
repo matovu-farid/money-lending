@@ -27,7 +27,7 @@ export type Permission =
   | "creditor:read" | "creditor:create" | "creditor:update"
   // admin
   | "dashboard:read"
-  | "reports:read"
+  | "reports:read" | "reports:financial"
   | "settings:read" | "settings:update"
   | "user:list" | "user:ban" | "user:impersonate"
   | "session:list" | "session:revoke" | "session:delete"

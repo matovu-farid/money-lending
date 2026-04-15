@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { format, addDays, subDays } from "date-fns"
 import { ChevronLeft, ChevronRight, CalendarIcon, Banknote, FileText, BarChart3 } from "lucide-react"
@@ -33,9 +33,6 @@ export function DailyCollectionsTab() {
   // Sync selectedDate with URL param on browser back/forward navigation
   useEffect(() => { setSelectedDate(dateParam) }, [dateParam])
 
-  const { data: collections } = useDailyCollections(selectedDate)
-  const { data: dueLoans } = useLoansDueToday()
-
   function navigateDate(delta: -1 | 1) {
     const current = new Date(selectedDate + "T12:00:00")
     const next = delta === 1 ? addDays(current, 1) : subDays(current, 1)
@@ -58,15 +55,6 @@ export function DailyCollectionsTab() {
     params.set("date", date)
     router.push(`/payments?${params.toString()}`)
   }
-
-  const totalCollected = collections?.totalCollected ?? "0.00"
-  const paymentCount = collections?.paymentCount ?? 0
-  const avgPayment =
-    paymentCount > 0
-      ? new BigNumber(totalCollected).dividedBy(paymentCount).toFixed(0)
-      : null
-
-  const formattedDate = format(new Date(selectedDate + "T12:00:00"), "EEE, MMM d, yyyy")
 
   return (
     <div className="space-y-4 pt-4">
@@ -116,6 +104,41 @@ export function DailyCollectionsTab() {
         </Button>
       </div>
 
+      <Suspense fallback={<LoadingSkeleton />}>
+        <DailyCollectionsContent selectedDate={selectedDate} />
+      </Suspense>
+    </div>
+  )
+}
+
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 rounded-lg bg-muted-foreground/10 animate-pulse" />
+        ))}
+      </div>
+      <div className="h-64 rounded-lg bg-muted-foreground/10 animate-pulse" />
+    </div>
+  )
+}
+
+function DailyCollectionsContent({ selectedDate }: { selectedDate: string }) {
+  const { data: collections } = useDailyCollections(selectedDate)
+  const { data: dueLoans } = useLoansDueToday()
+
+  const totalCollected = collections?.totalCollected ?? "0.00"
+  const paymentCount = collections?.paymentCount ?? 0
+  const avgPayment =
+    paymentCount > 0
+      ? new BigNumber(totalCollected).dividedBy(paymentCount).toFixed(0)
+      : null
+
+  const formattedDate = format(new Date(selectedDate + "T12:00:00"), "EEE, MMM d, yyyy")
+
+  return (
+    <>
       {/* Summary Cards Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
         <KpiCard
@@ -236,6 +259,6 @@ export function DailyCollectionsTab() {
           </Table>
         )}
       </div>
-    </div>
+    </>
   )
 }

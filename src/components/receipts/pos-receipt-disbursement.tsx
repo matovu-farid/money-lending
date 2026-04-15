@@ -120,6 +120,12 @@ export function PosReceiptDisbursement({
       {/* Officer */}
       <div>Issued by: {officerName}</div>
 
+      {/* Signature */}
+      <div className="mt-6">
+        <div className="border-b border-black mb-1 h-6" />
+        <div className="text-[10px] text-center">Customer Signature</div>
+      </div>
+
       {/* Footer */}
       <div className="border-t border-dashed border-black my-2" />
       <div className="text-center text-[10px]">Thank you for your business</div>

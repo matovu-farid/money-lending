@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { Suspense, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { Bell } from "lucide-react"
@@ -17,7 +17,23 @@ import { notificationListCollection, notificationUnreadCountCollection } from "@
 import type { Notification } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
 
+function NotificationBellSkeleton() {
+  return (
+    <Button variant="ghost" size="icon" className="relative" disabled>
+      <Bell className="h-5 w-5" />
+    </Button>
+  )
+}
+
 export function NotificationBell() {
+  return (
+    <Suspense fallback={<NotificationBellSkeleton />}>
+      <NotificationBellContent />
+    </Suspense>
+  )
+}
+
+function NotificationBellContent() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
 

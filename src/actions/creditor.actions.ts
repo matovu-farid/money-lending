@@ -12,9 +12,11 @@ import {
   getSystemCapital,
   getCreditorMonthlyInterestDue,
   getCreditorMonthlySummary,
+  getCreditorsPageData,
 } from "@/services/creditor.service"
 import type {
   CreateCreditorInput,
+  CreateCreditorWithInvestmentInput,
   UpdateCreditorInput,
   AddInvestmentInput,
   RecordCreditorRepaymentInput,
@@ -60,6 +62,43 @@ const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInpu
   revalidate: (input) => ["/creditors", `/creditors/${input.id}`],
 })
 
+export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithInvestmentInput, any>({
+  permission: "creditor:create",
+  action: async (session, input) => {
+    if (!input.name?.trim()) return { error: "Creditor name is required" }
+    if (!input.contact?.trim()) return { error: "Contact is required" }
+    if (!input.address?.trim()) return { error: "Address is required" }
+    if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
+      return { error: "A valid positive amount is required" }
+    }
+    if (!input.investmentDate?.trim() || isNaN(Date.parse(input.investmentDate))) {
+      return { error: "A valid investment date is required" }
+    }
+
+    try {
+      const creditor = await Effect.runPromise(createCreditor({
+        id: input.id,
+        name: input.name.trim(),
+        contact: input.contact.trim(),
+        address: input.address.trim(),
+      }, session.user.id))
+
+      await Effect.runPromise(addInvestment({
+        creditorId: creditor.id,
+        amount: input.amount,
+        interestRateMonthly: input.interestRateMonthly,
+        investmentDate: input.investmentDate,
+        depositLocation: input.depositLocation,
+      }, session.user.id))
+
+      revalidatePath("/creditors")
+      return { data: creditor }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
+
 export const addInvestmentAction = withAction<AddInvestmentInput, any>({
   permission: "creditor:create",
   action: async (session, input) => {
@@ -101,6 +140,11 @@ export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentI
       return { error: "Internal server error" }
     }
   },
+})
+
+export const getCreditorsPageDataAction = withAction({
+  permission: "creditor:read",
+  effect: () => getCreditorsPageData(),
 })
 
 export const getCreditorMonthlyInterestDueAction = withAction({

@@ -68,8 +68,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onUpdate: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -94,8 +93,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -123,8 +121,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

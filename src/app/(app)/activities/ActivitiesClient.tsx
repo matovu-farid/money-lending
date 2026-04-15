@@ -1,5 +1,6 @@
 "use client"
 
+import { Suspense } from "react"
 import { ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
@@ -18,7 +19,6 @@ import { PageHeader } from "@/components/ui/page-header"
 import { useUrlFilters } from "@/hooks/use-url-filters"
 import { useActivities, ACTIVITIES_PAGE_SIZE } from "@/hooks/use-activities"
 import { useAdminUsers } from "@/hooks/use-admin-users"
-import { usePermissions } from "@/hooks/use-permissions"
 import { formatDate } from "@/lib/utils"
 import type { ActivityItem } from "@/types/activity"
 
@@ -69,15 +69,38 @@ function formatTime(date: Date): string {
   return `${formatDate(d)} ${d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
 }
 
-export function ActivitiesClient() {
-  const { has } = usePermissions()
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+      <div className="space-y-3">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  )
+}
 
-  const { filters, page, setFilter, clearFilters, setPage, hasFilters, activeFilterCount } =
-    useUrlFilters({
-      basePath: "/activities",
-      defaults: { actorId: "", entityType: "", dateFrom: "", dateTo: "" },
-    })
+interface ActivitiesContentProps {
+  filters: { actorId: string; entityType: string; dateFrom: string; dateTo: string }
+  page: number
+  setFilter: (key: "actorId" | "entityType" | "dateFrom" | "dateTo", value: string) => void
+  clearFilters: () => void
+  setPage: (page: number) => void
+  hasFilters: boolean
+  activeFilterCount: number
+}
 
+function ActivitiesContent({
+  filters,
+  page,
+  setFilter,
+  clearFilters,
+  setPage,
+  hasFilters,
+  activeFilterCount,
+}: ActivitiesContentProps) {
   const { data } = useActivities(filters, page)
   const { data: adminUsers } = useAdminUsers()
 
@@ -137,9 +160,7 @@ export function ActivitiesClient() {
   ]
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="Activity" subtitle="Team actions and audit trail" />
-
+    <>
       <FilterPanel label="Filters" activeCount={activeFilterCount}>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="space-y-1.5">
@@ -258,6 +279,32 @@ export function ActivitiesClient() {
           )}
         </>
       )}
+    </>
+  )
+}
+
+export function ActivitiesClient() {
+  const { filters, page, setFilter, clearFilters, setPage, hasFilters, activeFilterCount } =
+    useUrlFilters({
+      basePath: "/activities",
+      defaults: { actorId: "", entityType: "", dateFrom: "", dateTo: "" },
+    })
+
+  return (
+    <div className="space-y-4">
+      <PageHeader title="Activity" subtitle="Team actions and audit trail" />
+
+      <Suspense fallback={<LoadingSkeleton />}>
+        <ActivitiesContent
+          filters={filters}
+          page={page}
+          setFilter={setFilter}
+          clearFilters={clearFilters}
+          setPage={setPage}
+          hasFilters={hasFilters}
+          activeFilterCount={activeFilterCount}
+        />
+      </Suspense>
     </div>
   )
 }

@@ -1,23 +1,23 @@
 "use client"
 
+import { Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { expenseCollection, expenseCategoryCollection } from "@/collections"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
 
+function LoadingSkeleton() {
+  return (
+    <div className="p-4 md:p-6 space-y-4">
+      <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+      <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+    </div>
+  )
+}
+
 export default function ExpensesPage() {
   const { has } = usePermissions()
   const canViewExpenses = has("expense:read")
-
-  const { data: allExpenses } = useLiveSuspenseQuery((q) =>
-    q.from({ e: expenseCollection }).select(({ e }) => e)
-  )
-
-  const { data: rawCategories } = useLiveSuspenseQuery((q) =>
-    q.from({ c: expenseCategoryCollection }).select(({ c }) => c)
-  )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const categories = (rawCategories ?? []) as any[]
 
   if (!canViewExpenses) {
     return (
@@ -30,16 +30,23 @@ export default function ExpensesPage() {
     )
   }
 
-  const isLoading = false
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <ExpensesContent />
+    </Suspense>
+  )
+}
 
-  if (isLoading) {
-    return (
-      <div className="p-4 md:p-6 space-y-4">
-        <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
-        <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
-      </div>
-    )
-  }
+function ExpensesContent() {
+  const { data: allExpenses } = useLiveSuspenseQuery((q) =>
+    q.from({ e: expenseCollection }).select(({ e }) => e)
+  )
+
+  const { data: rawCategories } = useLiveSuspenseQuery((q) =>
+    q.from({ c: expenseCategoryCollection }).select(({ c }) => c)
+  )
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const categories = (rawCategories ?? []) as any[]
 
   return (
     <div className="p-4 md:p-6 space-y-4">

@@ -1,8 +1,10 @@
 import { Effect, Exit } from "effect"
+import { redirect } from "next/navigation"
 import { listTransactions } from "@/services/transaction.service"
 import { listCategories } from "@/services/category.service"
 import { TransactionLogClient } from "./TransactionLogClient"
 import { PageHeader } from "@/components/ui/page-header"
+import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import type { TransactionLogFilters } from "@/types"
 
 // Transaction Log page — shows all debit/credit entries with filtering
@@ -18,6 +20,12 @@ interface TransactionLogPageProps {
 }
 
 export default async function TransactionLogPage({ searchParams }: TransactionLogPageProps) {
+  const session = await getSession()
+  if (!session) redirect("/login")
+  const role = getUserRole(session)
+  const perms = await getEffectivePermissions(session.user.id, role)
+  if (!perms.has("reports:financial")) redirect("/reports")
+
   const params = await searchParams
   const page = Number(params.page ?? 1)
   const pageSize = 50

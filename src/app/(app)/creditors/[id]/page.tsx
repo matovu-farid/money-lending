@@ -24,7 +24,7 @@ export default async function CreditorProfilePage({ params }: Props) {
   const session = await getSession()
   if (!session) redirect("/sign-in")
   const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.supervisor) redirect("/creditors")
+  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) redirect("/creditors")
 
   const { id } = await params
 

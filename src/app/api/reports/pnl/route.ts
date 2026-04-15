@@ -15,7 +15,7 @@ export async function GET(request: Request) {
   }
 
   const perms = await getEffectivePermissions(session.user.id, getUserRole(session))
-  if (!perms.has("reports:read")) {
+  if (!perms.has("reports:financial")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 })
   }
 

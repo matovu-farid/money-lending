@@ -7,7 +7,6 @@ import { toast } from "sonner"
 import {
   ArrowLeft,
   Banknote,
-  Receipt,
   ShieldAlert,
   PlusCircle,
 } from "lucide-react"
@@ -430,13 +429,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                 Record Payment
               </Link>
             )}
-            <Link
-              href={`/receipts/disbursement/${loan.id}`}
-              className={cn(buttonVariants({ variant: "outline" }))}
-            >
-              <Receipt className="h-4 w-4 mr-1.5" />
-              Print Receipt
-            </Link>
             <DisbursementReceiptButton loanId={loan.id} />
           </div>
         </div>

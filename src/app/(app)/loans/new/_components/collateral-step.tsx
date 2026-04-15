@@ -46,7 +46,7 @@ export function CollateralStep({
     <Card>
       <CardContent className="pt-6 space-y-4">
         <div className="space-y-1 relative">
-          <Label htmlFor="collateralNature" className="font-semibold">Nature</Label>
+          <Label htmlFor="collateralNature" className="font-semibold">Type of Collateral</Label>
           <Input
             id="collateralNature"
             type="text"

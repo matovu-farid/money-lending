@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useEffect } from "react"
+import { Suspense, use, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
 import { loanCollection, customerCollection } from "@/collections"
@@ -51,9 +51,31 @@ export default function LoanDetailPage({
   }
 
   return (
-    <LoanDetailClient
-      loanEntry={loanEntry}
-      customerName={customerName}
-    />
+    <Suspense fallback={<LoanDetailSkeleton />}>
+      <LoanDetailClient
+        loanEntry={loanEntry}
+        customerName={customerName}
+      />
+    </Suspense>
+  )
+}
+
+function LoanDetailSkeleton() {
+  return (
+    <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-6xl mx-auto">
+      <div className="flex items-center gap-3">
+        <div className="h-9 w-9 rounded-lg bg-muted-foreground/10 animate-pulse" />
+        <div className="space-y-1">
+          <div className="h-6 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="h-4 w-24 rounded bg-muted-foreground/10 animate-pulse" />
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-32 rounded-xl border bg-muted-foreground/5 animate-pulse" />
+        ))}
+      </div>
+      <div className="h-48 rounded-xl border bg-muted-foreground/5 animate-pulse" />
+    </div>
   )
 }

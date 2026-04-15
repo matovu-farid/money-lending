@@ -22,6 +22,17 @@ export interface UpdateCreditorInput {
   address?: string
 }
 
+export interface CreateCreditorWithInvestmentInput {
+  id?: string
+  name: string
+  contact: string
+  address: string
+  amount: string
+  interestRateMonthly: string
+  investmentDate: string
+  depositLocation?: DepositLocation
+}
+
 export interface AddInvestmentInput {
   id?: string
   creditorId: string

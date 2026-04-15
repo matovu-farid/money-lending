@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { Suspense, useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db";
 import { customerCollection, loanCollection, paymentCollection, getPaymentPortionsCollection } from "@/collections";
@@ -13,7 +13,7 @@ import {
 } from "@/actions/customer.actions";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
-import type { Customer, Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
+import type { Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -49,7 +49,7 @@ import {
 import { InfoPopover } from "@/components/ui/info-popover";
 import { PageHeader } from "@/components/ui/page-header";
 import { cn, formatDate, formatCurrency, formatRate, shortId } from "@/lib/utils";
-import { customerStatusVariant, customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/status";
+import { customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/status";
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button";
@@ -108,14 +108,6 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
           </div>
           <div className="flex items-center gap-1">
             <DisbursementReceiptButton loanId={item.loan.id} />
-            <Link
-              href={`/receipts/disbursement/${item.loan.id}`}
-              target="_blank"
-              className={buttonVariants({ variant: "ghost", size: "icon-sm" })}
-              aria-label="Full disbursement receipt"
-            >
-              <ChevronUp className="h-4 w-4 rotate-90" />
-            </Link>
             <Button
               variant="ghost"
               size="icon-sm"
@@ -215,26 +207,47 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
 
 type EditFormValues = CustomerFormValues;
 
-export default function CustomerProfilePage() {
-  const params = useParams();
+function LoadingSkeleton() {
+  return (
+    <div className="p-4 md:p-6 space-y-6 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <div className="space-y-1.5">
+          <div className="h-7 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+          <div className="h-4 w-28 rounded bg-muted-foreground/10 animate-pulse" />
+        </div>
+      </div>
+      <div className="border rounded-lg px-4 py-3 space-y-3">
+        <div className="h-5 w-36 rounded bg-muted-foreground/10 animate-pulse" />
+        <div className="space-y-2">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+          ))}
+        </div>
+      </div>
+      <div className="border rounded-lg p-6 space-y-2">
+        <div className="h-5 w-16 rounded bg-muted-foreground/10 animate-pulse" />
+        <div className="h-9 w-[200px] rounded-md bg-muted-foreground/10 animate-pulse" />
+      </div>
+    </div>
+  )
+}
+
+function CustomerProfileContent({ customerId }: { customerId: string }) {
   const router = useRouter();
-  const customerId = params.id as string;
 
   // Read customer from customerCollection
   const { data: customersData } = useLiveSuspenseQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, customerId)),
     [customerId]
   );
-  const customerLoading = false
   const customer = customersData?.[0] ?? null;
-  const notFound = !customerLoading && !customer;
+  const notFound = !customer;
 
   // Read loans from loanCollection, filtered by customer
   const { data: customerLoans } = useLiveSuspenseQuery(
     (q) => q.from({ loan: loanCollection }).where(({ loan }) => eq(loan.customerId, customerId)),
     [customerId]
   );
-  const loansLoading = false
   const loanItems: LoanWithOverdue[] = (customerLoans ?? []).map((entry) => ({
     loan: entry as unknown as Loan,
     daysOverdue: entry.daysOverdue,
@@ -336,51 +349,6 @@ export default function CustomerProfilePage() {
     setStatusDialogOpen(false);
     setPendingStatus(null);
     setStatusReason("");
-  }
-
-  if (customerLoading) {
-    return (
-      <div className="p-4 md:p-6 space-y-6 max-w-2xl">
-        {/* Page header skeleton */}
-        <div className="flex items-center justify-between">
-          <div className="space-y-1.5">
-            <div className="h-7 w-48 rounded bg-muted-foreground/10 animate-pulse" />
-            <div className="h-4 w-28 rounded bg-muted-foreground/10 animate-pulse" />
-          </div>
-          <div className="flex gap-2">
-            <div className="h-9 w-32 rounded-md bg-muted-foreground/10 animate-pulse" />
-            <div className="h-9 w-32 rounded-md bg-muted-foreground/10 animate-pulse" />
-          </div>
-        </div>
-        {/* Basic info accordion skeleton */}
-        <div className="border rounded-lg px-4 py-3 space-y-3">
-          <div className="h-5 w-36 rounded bg-muted-foreground/10 animate-pulse" />
-          <div className="space-y-2">
-            <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
-            <div className="h-4 w-40 rounded bg-muted-foreground/10 animate-pulse" />
-            <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
-            <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
-          </div>
-        </div>
-        {/* Status card skeleton */}
-        <div className="border rounded-lg p-6 space-y-2">
-          <div className="h-5 w-16 rounded bg-muted-foreground/10 animate-pulse" />
-          <div className="h-9 w-[200px] rounded-md bg-muted-foreground/10 animate-pulse" />
-        </div>
-        {/* Loan history skeleton */}
-        <div className="space-y-4">
-          <div className="h-6 w-28 rounded bg-muted-foreground/10 animate-pulse" />
-          <div className="border rounded-lg p-6 space-y-3">
-            <div className="flex justify-between">
-              <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
-              <div className="h-5 w-16 rounded-full bg-muted-foreground/10 animate-pulse" />
-            </div>
-            <div className="h-8 w-28 rounded bg-muted-foreground/10 animate-pulse" />
-            <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
-          </div>
-        </div>
-      </div>
-    );
   }
 
   if (notFound) {
@@ -595,20 +563,7 @@ export default function CustomerProfilePage() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Loan History</h2>
 
-        {loansLoading ? (
-          <div className="space-y-4">
-            {[1, 2].map((i) => (
-              <div key={i} className="border rounded-lg p-6 space-y-3">
-                <div className="flex justify-between">
-                  <div className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
-                  <div className="h-5 w-16 rounded-full bg-muted-foreground/10 animate-pulse" />
-                </div>
-                <div className="h-8 w-28 rounded bg-muted-foreground/10 animate-pulse" />
-                <div className="h-4 w-24 rounded bg-muted-foreground/8 animate-pulse" />
-              </div>
-            ))}
-          </div>
-        ) : loanItems.length === 0 ? (
+        {loanItems.length === 0 ? (
           <p className="text-sm text-muted-foreground">
             No loans on record for this customer.
           </p>
@@ -619,5 +574,16 @@ export default function CustomerProfilePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CustomerProfilePage() {
+  const params = useParams();
+  const customerId = params.id as string;
+
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <CustomerProfileContent customerId={customerId} />
+    </Suspense>
   );
 }

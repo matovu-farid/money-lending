@@ -1,11 +1,12 @@
 "use client"
 
+import { Suspense, useState } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { creditorCollection, systemCapitalCollection, creditorMonthlyDueCollection } from "@/collections"
-import { useSession } from "@/lib/auth-client"
-import { ButtonLink } from "@/components/ui/button-link"
+import { creditorCollection, creditorsPageDataCollection } from "@/collections"
+import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"
+import { AddCreditorDialog } from "./AddCreditorDialog"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { formatCurrency } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -20,69 +21,46 @@ const defaultCapital = {
   totalOutstanding: "0.00",
 }
 
-export default function CreditorsPage() {
-  const { data: session, isPending: sessionPending } = useSession()
-  const { permissions, has } = usePermissions()
-  const permissionsLoaded = permissions.size > 0
-  const isSupervisorOrAbove = has("creditor:read")
+function LoadingSkeleton() {
+  return (
+    <div className="p-4 md:p-6 space-y-6">
+      <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-24 rounded-lg bg-muted-foreground/10 animate-pulse" />
+        ))}
+      </div>
+      <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+    </div>
+  )
+}
+
+function CreditorsContent() {
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const { data: allCreditors } = useLiveSuspenseQuery((q) =>
     q.from({ c: creditorCollection }).select(({ c }) => c)
   )
   const creditors = allCreditors ?? []
 
-  const { data: capitalRows } = useLiveSuspenseQuery((q) =>
-    q.from({ c: systemCapitalCollection }).select(({ c }) => c)
+  const { data: pageDataRows } = useLiveSuspenseQuery((q) =>
+    q.from({ p: creditorsPageDataCollection }).select(({ p }) => p)
   )
-  const capital = capitalRows?.[0] ?? defaultCapital
-
-  const { data: monthlyDueRows } = useLiveSuspenseQuery((q) =>
-    q.from({ m: creditorMonthlyDueCollection }).select(({ m }) => m)
-  )
-  const monthlyDue = monthlyDueRows?.[0]?.data ?? {}
-
-  const isLoading = false
-
-  // Wait for permissions to load before checking access
-  if (sessionPending || !permissionsLoaded) return null
-
-  if (!isSupervisorOrAbove) {
-    return (
-      <div className="p-4 md:p-6 space-y-2">
-        <div className="flex items-center gap-2">
-          <PermissionInfo requiredRole="supervisor" action="View creditors" locked />
-          <p className="text-destructive font-medium">Access denied.</p>
-        </div>
-        <p className="text-muted-foreground text-sm">
-          You need Supervisor or higher permissions to view creditors.
-        </p>
-      </div>
-    )
-  }
-
-  if (isLoading) {
-    return (
-      <div className="p-4 md:p-6 space-y-6">
-        <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-24 rounded-lg bg-muted-foreground/10 animate-pulse" />
-          ))}
-        </div>
-        <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
-      </div>
-    )
-  }
+  const pageData = pageDataRows?.[0]
+  const capital = pageData?.capital ?? defaultCapital
+  const monthlyDue = pageData?.monthlyDue ?? {}
 
   return (
     <div className="p-4 md:p-6 space-y-6">
       <PageHeader title="Creditors" subtitle="Capital sources and obligations">
-        <ButtonLink href="/creditors/new">
+        <Button onClick={() => setDialogOpen(true)}>
           Add Creditor
-        </ButtonLink>
+        </Button>
       </PageHeader>
 
-      {/* System Capital KPIs — CRED-06 */}
+      <AddCreditorDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+
+      {/* System Capital KPIs */}
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
         <KpiCard
           label="Total Invested"
@@ -155,13 +133,38 @@ export default function CreditorsPage() {
           <p className="text-muted-foreground">
             Register your first creditor to start tracking invested capital.
           </p>
-          <ButtonLink href="/creditors/new">
+          <Button onClick={() => setDialogOpen(true)}>
             Add Creditor
-          </ButtonLink>
+          </Button>
         </div>
       ) : (
         <CreditorsTable creditors={creditors} monthlyDue={monthlyDue} />
       )}
     </div>
+  )
+}
+
+export default function CreditorsPage() {
+  const { has } = usePermissions()
+  const canViewCreditors = has("creditor:read")
+
+  if (!canViewCreditors) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="admin" action="View creditors" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Admin or higher permissions to view creditors.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <CreditorsContent />
+    </Suspense>
   )
 }

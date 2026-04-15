@@ -40,8 +40,7 @@ export const loanCollection = createCollection(
         qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
         qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
         qc.invalidateQueries({ queryKey: queryKeys.loans.dueToday })
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+        qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       }
     },
     onInsert: async ({ transaction }) => {
@@ -63,8 +62,7 @@ export const loanCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.loans.dueToday })
       qc.invalidateQueries({ queryKey: queryKeys.customers.all })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

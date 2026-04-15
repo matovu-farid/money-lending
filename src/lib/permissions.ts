@@ -61,7 +61,7 @@ export const PERMISSIONS: readonly Permission[] = [
   "creditor:read", "creditor:create", "creditor:update",
   // admin
   "dashboard:read",
-  "reports:read",
+  "reports:read", "reports:financial",
   "settings:read", "settings:update",
   "user:list", "user:ban", "user:impersonate",
   "session:list", "session:revoke", "session:delete",
@@ -81,18 +81,18 @@ const loanOfficerPerms: Permission[] = [
   "payment:create", "payment:read", "payment:update", "payment:delete",
   "expense:create", "expense:read",
   "income:create", "income:read",
-  "fund-transfer:create", "fund-transfer:read",
   "rate-change:create",
   "reports:read",
 ]
 
 const supervisorExtras: Permission[] = [
+  "fund-transfer:create", "fund-transfer:read",
   "loan:disburse", "loan:rollover", "loan:settle",
   "backdate:beyond-3-days",
   "rate-change:approve-standard",
   "dashboard:read",
+  "reports:financial",
   "role:assign-loan-officer",
-  "creditor:read", "creditor:create", "creditor:update",
   "payment:edit-any", "payment:delete-any",
   "activity:read",
 ]
@@ -100,6 +100,7 @@ const supervisorExtras: Permission[] = [
 const adminExtras: Permission[] = [
   "rate-change:approve-low",
   "role:assign-supervisor",
+  "creditor:read", "creditor:create", "creditor:update",
   "settings:read", "settings:update",
   "user:list", "user:ban", "user:impersonate",
   "session:list", "session:revoke", "session:delete",

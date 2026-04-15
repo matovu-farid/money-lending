@@ -54,7 +54,7 @@ export const fundTransferCollection = createCollection(
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
     },
   })

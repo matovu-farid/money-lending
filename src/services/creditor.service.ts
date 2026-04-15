@@ -503,6 +503,98 @@ export const getCreditorMonthlyInterestDue = (): Effect.Effect<
   });
 
 /**
+ * Combined query for the creditors list page.
+ * Fetches creditors, system capital, and monthly interest due in a single
+ * server action call, sharing the investments fetch and ledger queries
+ * to eliminate duplicate DB round-trips.
+ */
+export const getCreditorsPageData = (): Effect.Effect<
+  {
+    creditors: Creditor[];
+    capital: {
+      totalInvested: string;
+      totalInterestAccrued: string;
+      totalRepaymentsMade: string;
+      totalOutstanding: string;
+    };
+    monthlyDue: Record<string, string>;
+  },
+  DatabaseError
+> =>
+  Effect.tryPromise({
+    try: async () => {
+      // Fetch creditors and all investments in parallel (independent)
+      const [creditorsList, allInvestments] = await Promise.all([
+        db.select().from(creditors).orderBy(asc(creditors.name)).limit(200),
+        db.select().from(creditorInvestments),
+      ]);
+
+      if (allInvestments.length === 0) {
+        return {
+          creditors: creditorsList,
+          capital: {
+            totalInvested: "0.00",
+            totalInterestAccrued: "0.00",
+            totalRepaymentsMade: "0.00",
+            totalOutstanding: "0.00",
+          },
+          monthlyDue: {},
+        };
+      }
+
+      const investmentIds = allInvestments.map((inv) => inv.id);
+
+      // Single Promise.all for all ledger queries (no duplicates)
+      const [ledgerBalances, interestPayableMap, totalInvestedBN, totalRepaymentsMadeBN] = await Promise.all([
+        getCreditorBalancesFromLedger(investmentIds),
+        getInterestPayableFromLedger(investmentIds),
+        getCreditorTotalInvestedFromLedger(investmentIds),
+        getCreditorTotalRepaidFromLedger(investmentIds),
+      ]);
+
+      // --- System capital ---
+      let totalInterestAccrued = new BigNumber(0);
+      for (const investment of allInvestments) {
+        const interestAccrued = interestPayableMap.get(investment.id) ?? new BigNumber(0);
+        totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
+      }
+      const totalPrincipal = Array.from(ledgerBalances.values()).reduce(
+        (acc, bal) => acc.plus(bal),
+        new BigNumber(0),
+      );
+      const totalOutstanding = totalPrincipal.plus(totalInterestAccrued);
+
+      // --- Monthly interest due (reuses ledgerBalances) ---
+      const dueByCreditor = new Map<string, BigNumber>();
+      for (const investment of allInvestments) {
+        const principalBalance =
+          ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
+        if (principalBalance.isLessThanOrEqualTo(0)) continue;
+        const monthlyRate = new BigNumber(investment.interestRateMonthly);
+        const monthlyInterest = principalBalance.times(monthlyRate);
+        const current = dueByCreditor.get(investment.creditorId) ?? new BigNumber(0);
+        dueByCreditor.set(investment.creditorId, current.plus(monthlyInterest));
+      }
+      const monthlyDue: Record<string, string> = {};
+      for (const [creditorId, amount] of dueByCreditor) {
+        monthlyDue[creditorId] = formatAmount(amount);
+      }
+
+      return {
+        creditors: creditorsList,
+        capital: {
+          totalInvested: formatAmount(totalInvestedBN),
+          totalInterestAccrued: formatAmount(totalInterestAccrued),
+          totalRepaymentsMade: formatAmount(totalRepaymentsMadeBN),
+          totalOutstanding: formatAmount(totalOutstanding),
+        },
+        monthlyDue,
+      };
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  });
+
+/**
  * Build a month-by-month summary for a single creditor.
  * Walks from earliest investment month to current month.
  * Each row: interest due, interest paid, principal paid, total paid, remaining balance.

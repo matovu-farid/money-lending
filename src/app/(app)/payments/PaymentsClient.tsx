@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useTransition } from "react"
+import { Suspense, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
@@ -59,7 +59,40 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
   downloadBlob(blob, `payments-${new Date().toISOString().slice(0, 10)}.csv`)
 }
 
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-4">
+      <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+      <div className="space-y-3">
+        {[1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function PaymentsClient() {
+  const { has } = usePermissions()
+  const isAdmin = has("payment:edit-any")
+  const isSupervisor = has("payment:edit-any")
+
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <PaymentsContent has={has} isAdmin={isAdmin} isSupervisor={isSupervisor} />
+    </Suspense>
+  )
+}
+
+function PaymentsContent({
+  has,
+  isAdmin,
+  isSupervisor,
+}: {
+  has: ReturnType<typeof usePermissions>["has"]
+  isAdmin: boolean
+  isSupervisor: boolean
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { data: session } = useSession()
@@ -84,10 +117,6 @@ export function PaymentsClient() {
     }
     router.push(`/payments?${params.toString()}`)
   }
-
-  const { has } = usePermissions()
-  const isAdmin = has("payment:edit-any")
-  const isSupervisor = has("payment:edit-any")
 
   const {
     quickRecordOpen, openQuickRecord, closeQuickRecord,
@@ -140,10 +169,8 @@ export function PaymentsClient() {
     return result
   }, [allPayments, customerName, dateFrom, dateTo, amountMin, amountMax])
 
-  const isLoading = false
   const total = filtered.length
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize)
-  const isError = false
 
   function handleEditSubmit() {
     if (!selectedPayment) return
@@ -408,17 +435,7 @@ export function PaymentsClient() {
       </FilterPanel>
 
       {/* Content */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
-          ))}
-        </div>
-      ) : isError ? (
-        <p className="text-muted-foreground p-6">
-          Failed to load payments. Refresh the page or contact support if the problem persists.
-        </p>
-      ) : total === 0 ? (
+      {total === 0 ? (
         hasFilters ? (
           <div className="py-16 flex flex-col items-center text-center">
             <p className="text-lg font-medium">No payments match your filters</p>

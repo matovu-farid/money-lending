@@ -30,6 +30,9 @@ export const SHORT_ID_LENGTH = 8
 /** Valid loan types */
 export const VALID_LOAN_TYPES = ["perpetual", "fixed_rate", "reducing_balance"] as const
 
+/** Minimum principal amount (UGX) required for perpetual loans */
+export const PERPETUAL_LOAN_MIN_AMOUNT = 2_000_000
+
 /** Valid customer statuses */
 export const VALID_CUSTOMER_STATUSES = ["active", "blacklisted", "inactive"] as const
 

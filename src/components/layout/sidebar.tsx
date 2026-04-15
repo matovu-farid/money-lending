@@ -109,7 +109,9 @@ export function Sidebar({ onClose }: SidebarProps) {
     router.prefetch("/loans")
     router.prefetch("/payments")
     router.prefetch("/creditors")
-    router.prefetch("/fund-transfers")
+    if (has("fund-transfer:read")) {
+      router.prefetch("/fund-transfers")
+    }
     if (has("expense:read")) {
       router.prefetch("/expenses")
     }

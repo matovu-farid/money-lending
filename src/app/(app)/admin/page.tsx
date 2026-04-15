@@ -1,14 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
-import { delegationCollection, adminUserCollection, type DelegationRow } from "@/collections"
+import { delegationCollection, adminUserCollection } from "@/collections"
 import { generateClientId } from "@/lib/client-id"
 import { Button } from "@/components/ui/button"
 import { useAdminUsers } from "@/hooks/use-admin-users"
-import { ROLE_LEVELS, type UserRole } from "@/types"
+import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import {
   Table,
@@ -39,14 +39,50 @@ function getRoleOptions(actorRole: UserRole): UserRole[] {
 }
 
 
+function LoadingSkeleton() {
+  return (
+    <div className="p-4 md:p-6 space-y-4">
+      <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+      <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+    </div>
+  )
+}
+
 export default function AdminPage() {
   const { data: session } = useSession()
-
   const { has } = usePermissions()
   const actorRole = (session?.user?.role ?? "unassigned") as UserRole
   const actorLevel = ROLE_LEVELS[actorRole] ?? 0
-  const canViewUsers = has("user:list")
 
+  if (!has("user:list")) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="admin" action="Manage user roles" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Admin or Super Admin permissions to view this page.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <AdminContent has={has} session={session} actorRole={actorRole} actorLevel={actorLevel} />
+    </Suspense>
+  )
+}
+
+interface AdminContentProps {
+  has: (p: Permission) => boolean
+  session: ReturnType<typeof useSession>["data"]
+  actorRole: UserRole
+  actorLevel: number
+}
+
+function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps) {
   const { data: users = [] } = useAdminUsers()
 
   // Live delegation collection — optimistic insert/delete handled by TanStack DB
@@ -97,28 +133,6 @@ export default function AdminPage() {
       draft.role = newRole
     })
     toast.success(`Role updated to ${newRole}`)
-  }
-
-  if (!session) {
-    return (
-      <div className="p-4 md:p-6">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    )
-  }
-
-  if (!has("user:list")) {
-    return (
-      <div className="p-4 md:p-6 space-y-2">
-        <div className="flex items-center gap-2">
-          <PermissionInfo requiredRole="admin" action="Manage user roles" locked />
-          <p className="text-destructive font-medium">Access denied.</p>
-        </div>
-        <p className="text-muted-foreground text-sm">
-          You need Admin or Super Admin permissions to view this page.
-        </p>
-      </div>
-    )
   }
 
   const roleOptions = getRoleOptions(actorRole)

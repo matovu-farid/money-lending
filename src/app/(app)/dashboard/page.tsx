@@ -1,9 +1,9 @@
 "use client"
 
+import { Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink } from "lucide-react"
 import Link from "next/link"
-import { useSession } from "@/lib/auth-client"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { dashboardActivityCollection } from "@/collections"
 import { KpiCard } from "@/components/dashboard/kpi-card"
@@ -11,13 +11,38 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { usePermissions } from "@/hooks/use-permissions"
+import type { Permission } from "@/types"
 import { formatCurrency, formatRelativeTime } from "@/lib/utils"
 
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-8">
+      <div className="space-y-1">
+        <div className="h-7 w-36 rounded-md bg-muted-foreground/10 animate-pulse" />
+        <div className="h-4 w-64 rounded-md bg-muted-foreground/10 animate-pulse" />
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 rounded-lg bg-muted-foreground/10 animate-pulse" />
+        ))}
+      </div>
+      <div className="h-64 rounded-lg bg-muted-foreground/10 animate-pulse" />
+    </div>
+  )
+}
+
 export default function DashboardPage() {
-  const { data: session } = useSession()
   const { has } = usePermissions()
   const isAdmin = has("settings:read")
 
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <DashboardContent has={has} isAdmin={isAdmin} />
+    </Suspense>
+  )
+}
+
+function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => boolean; isAdmin: boolean }) {
   const { data } = useDashboard()
   const kpis = data?.kpis ?? null
 

@@ -46,7 +46,7 @@ export const expenseCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -59,7 +59,7 @@ export const expenseCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

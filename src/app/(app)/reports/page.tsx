@@ -11,8 +11,18 @@ import {
 } from "@/components/ui/card"
 import { buttonVariants } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+import type { Permission } from "@/types"
+import { usePermissions } from "@/hooks/use-permissions"
 
-const reportCards = [
+interface ReportCard {
+  icon: React.ElementType
+  title: string
+  description: string
+  href: string
+  permission?: Permission
+}
+
+const reportCards: ReportCard[] = [
   {
     icon: FileText,
     title: "Loan Portfolio",
@@ -26,6 +36,7 @@ const reportCards = [
     description:
       "Monthly income and expense summary with net profit calculation.",
     href: "/reports/pnl",
+    permission: "reports:financial",
   },
   {
     icon: PiggyBank,
@@ -33,12 +44,14 @@ const reportCards = [
     description:
       "Beginning balance, net income, and ending retained earnings.",
     href: "/reports/retained-earnings",
+    permission: "reports:financial",
   },
   {
     icon: Scale,
     title: "Balance Sheet",
     description: "Assets, liabilities, and equity — must balance.",
     href: "/reports/balance-sheet",
+    permission: "reports:financial",
   },
   {
     icon: ClipboardList,
@@ -52,10 +65,13 @@ const reportCards = [
     title: "Transaction Log",
     description: "Full audit trail of all debit and credit entries.",
     href: "/transactions",
+    permission: "reports:financial",
   },
 ]
 
 export default function ReportsPage() {
+  const { has } = usePermissions()
+  const visibleCards = reportCards.filter((card) => !card.permission || has(card.permission))
   return (
     <div className="space-y-8 p-4 md:p-6">
       <div>
@@ -66,7 +82,7 @@ export default function ReportsPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {reportCards.map((card) => {
+        {visibleCards.map((card) => {
           const Icon = card.icon
           return (
             <Card key={card.href} className="flex flex-col">
