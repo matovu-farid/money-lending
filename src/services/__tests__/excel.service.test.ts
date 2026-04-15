@@ -112,7 +112,7 @@ function makePnlData(overrides: Partial<PnlData> = {}): PnlData {
 function makeBalanceSheetData(overrides: Partial<BalanceSheetData> = {}): BalanceSheetData {
   return {
     asOf: "2026-03-23",
-    assets: { cashBalance: "0.00", bankBalance: "0.00", strongRoomBalance: "0.00", totalLoansOutstanding: "5000000.00", interestReceivable: "0.00", seizedCollateralValue: "0.00", totalAssets: "5000000.00" },
+    assets: { cashBalance: "0.00", bankBalance: "0.00", strongRoomBalance: "0.00", totalLoansOutstanding: "5000000.00", interestReceivable: "0.00", seizedCollateralValue: "0.00", totalAssets: "5000000.00", bankAccountBalances: {} },
     liabilities: { totalCreditorBalances: "2000000.00" },
     equity: {
       shareCapital: "1000000.00",

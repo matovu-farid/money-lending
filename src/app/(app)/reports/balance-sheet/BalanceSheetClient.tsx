@@ -28,6 +28,7 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
       interestReceivable: "0",
       seizedCollateralValue: "0",
       totalAssets: "0",
+      bankAccountBalances: {},
     },
     liabilities: { totalCreditorBalances: "0" },
     equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },

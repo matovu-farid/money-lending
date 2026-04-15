@@ -75,6 +75,7 @@ export interface BalanceSheetData {
     interestReceivable: string
     seizedCollateralValue: string
     totalAssets: string
+    bankAccountBalances: Record<string, string>
   }
   liabilities: { totalCreditorBalances: string; interestPayable?: string }
   equity: { shareCapital: string; retainedEarnings: string; totalEquity: string }
