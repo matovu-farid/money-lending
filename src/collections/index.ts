@@ -8,7 +8,7 @@ export {
 } from "./payments"
 export { expenseCollection, insertExpenseWithInput } from "./expenses"
 export { incomeCollection, insertIncomeWithInput } from "./income"
-export { creditorCollection } from "./creditors"
+export { creditorCollection, insertCreditorWithInput } from "./creditors"
 export { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "./fund-transfers"
 export {
   rateChangeRequestCollection,
@@ -83,3 +83,14 @@ export {
   systemCapitalCollection,
   creditorMonthlyDueCollection,
 } from "./creditor-extras"
+
+export {
+  creditorsPageDataCollection,
+  type CreditorsPageDataRow,
+} from "./creditors-page-data"
+
+export {
+  bankAccountCollection,
+  insertBankAccountWithInput,
+  updateBankAccountWithInput,
+} from "./bank-accounts"
