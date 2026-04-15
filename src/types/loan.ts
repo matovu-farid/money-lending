@@ -51,6 +51,7 @@ export interface CreateLoanInput {
   startDate: string         // ISO 8601 datetime string
   collateral: CollateralInput
   disbursementSource: DepositLocation
+  subLocationId?: string
   loanType?: LoanType                    // defaults to "perpetual"
   termMonths?: number                   // required for fixed_rate and reducing_balance
   interestRateOverride?: string | null  // admin-only override

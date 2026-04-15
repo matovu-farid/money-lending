@@ -262,6 +262,12 @@ export async function createLoanAction(input: CreateLoanInput) {
     }
   }
 
+  // Loan officers cannot issue more than 4,000,000 UGX
+  const MAX_LOAN_OFFICER_AMOUNT = 4_000_000
+  if (role === "loanOfficer" && new BigNumber(input.principalAmount).isGreaterThan(MAX_LOAN_OFFICER_AMOUNT)) {
+    return { error: `Loan officers cannot issue more than ${formatAmount(new BigNumber(MAX_LOAN_OFFICER_AMOUNT))} UGX. Request a supervisor to issue this loan.` }
+  }
+
   // Validate loanType
   const loanType = input.loanType || "perpetual"
   if (!VALID_LOAN_TYPES.includes(loanType as any)) {
@@ -407,6 +413,7 @@ export const getCustomerLoansWithOverdueAction = withAction<string, any>({
           minPeriodOverride: loans.minPeriodOverride,
           issuedBy: loans.issuedBy,
           disbursementSource: loans.disbursementSource,
+          subLocationId: loans.subLocationId,
           loanType: loans.loanType,
           termMonths: loans.termMonths,
           penaltyMultiplier: loans.penaltyMultiplier,

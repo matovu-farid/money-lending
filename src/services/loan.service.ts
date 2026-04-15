@@ -293,6 +293,7 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
           minPeriodOverride: loans.minPeriodOverride,
           issuedBy: loans.issuedBy,
           disbursementSource: loans.disbursementSource,
+          subLocationId: loans.subLocationId,
           loanType: loans.loanType,
           termMonths: loans.termMonths,
           penaltyMultiplier: loans.penaltyMultiplier,

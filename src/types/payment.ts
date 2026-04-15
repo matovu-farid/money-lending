@@ -11,6 +11,7 @@ export interface RecordPaymentInput {
   paymentDate: string  // ISO 8601
   amount: string       // NUMERIC string
   depositLocation: DepositLocation
+  subLocationId?: string
   note?: string
 }
 

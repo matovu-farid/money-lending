@@ -2,6 +2,7 @@ import { pgTable, uuid, numeric, timestamp, text, boolean, index } from "drizzle
 import { sql } from "drizzle-orm"
 import { loans } from "./loans"
 import { depositLocationEnum } from "./fund-transfers"
+import { bankAccounts } from "./bank-accounts"
 
 export const payments = pgTable("payments", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -10,6 +11,7 @@ export const payments = pgTable("payments", {
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   recordedBy: text("recorded_by").notNull(),
   depositLocation: depositLocationEnum("deposit_location").notNull(),
+  subLocationId: uuid("sub_location_id").references(() => bankAccounts.id, { onDelete: "restrict" }),
   editReason: text("edit_reason"),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   deletedBy: text("deleted_by"),

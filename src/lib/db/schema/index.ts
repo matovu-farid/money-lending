@@ -1,3 +1,4 @@
+export * from "./bank-accounts"
 export * from "./customers"
 export * from "./loans"
 export * from "./collateral"

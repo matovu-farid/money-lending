@@ -262,6 +262,7 @@ function NewLoanPageInner() {
       status: "active",
       issuedBy: session?.user?.id ?? "",
       disbursementSource: data.disbursementSource,
+      subLocationId: null,
       loanType: loanType ?? "perpetual",
       termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : null,
       penaltyMultiplier: "0.1000",

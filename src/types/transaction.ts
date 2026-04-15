@@ -15,6 +15,7 @@ export interface CreateTransactionInput {
   transactionDate: string
   notes?: string
   location: DepositLocation
+  subLocationId?: string
   backdateNote?: string
 }
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { Suspense, useState, useTransition } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections"
 import { useForm, Controller } from "react-hook-form"
@@ -58,11 +58,16 @@ interface InjectionFormValues {
   note: string
 }
 
-export default function FundTransfersPage() {
-  const { data: session } = useSession()
-  const { has } = usePermissions()
-  const isAdmin = has("fund-transfer:create")
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6 p-4 md:p-6">
+      <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
+      <div className="h-64 w-full rounded-lg bg-muted-foreground/10 animate-pulse" />
+    </div>
+  )
+}
 
+function FundTransfersContent({ session }: { session: { user: { id: string } } }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [isPending] = useTransition()
@@ -70,7 +75,6 @@ export default function FundTransfersPage() {
   const { data: allTransfers } = useLiveSuspenseQuery((q) =>
     q.from({ ft: fundTransferCollection }).select(({ ft }) => ft)
   )
-  const isLoading = false
   const transfers = allTransfers ?? []
 
   const {
@@ -111,8 +115,10 @@ export default function FundTransfersPage() {
       transferType: "capital_injection",
       fromLocation: null,
       toLocation: data.toLocation,
+      fromSubLocationId: null,
+      toSubLocationId: null,
       amount: data.amount.trim(),
-      transferredBy: session?.user?.id ?? "",
+      transferredBy: session.user.id,
       note: data.note.trim() || null,
       createdAt: new Date(),
     }
@@ -146,8 +152,10 @@ export default function FundTransfersPage() {
       transferType: "internal",
       fromLocation: data.fromLocation,
       toLocation: data.toLocation,
+      fromSubLocationId: null,
+      toSubLocationId: null,
       amount: data.amount.trim(),
-      transferredBy: session?.user?.id ?? "",
+      transferredBy: session.user.id,
       note: data.note.trim() || null,
       createdAt: new Date(),
     }
@@ -160,28 +168,6 @@ export default function FundTransfersPage() {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to record transfer")
     }
-  }
-
-  if (!session) {
-    return (
-      <div className="p-4 md:p-6">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    )
-  }
-
-  if (!isAdmin) {
-    return (
-      <div className="p-4 md:p-6 space-y-2">
-        <div className="flex items-center gap-2">
-          <PermissionInfo requiredRole="admin" action="Access fund transfers" locked />
-          <p className="text-destructive font-medium">Access denied.</p>
-        </div>
-        <p className="text-muted-foreground text-sm">
-          You need Admin or higher permissions to view fund transfers.
-        </p>
-      </div>
-    )
   }
 
   return (
@@ -398,11 +384,7 @@ export default function FundTransfersPage() {
 
       <Card>
         <CardContent className="p-0">
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
-            </div>
-          ) : transfers.length === 0 ? (
+          {transfers.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               No fund transfers recorded yet.
             </div>
@@ -454,5 +436,39 @@ export default function FundTransfersPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function FundTransfersPage() {
+  const { data: session } = useSession()
+  const { has } = usePermissions()
+  const isAdmin = has("fund-transfer:create")
+
+  if (!session) {
+    return (
+      <div className="p-4 md:p-6">
+        <p className="text-muted-foreground">Loading...</p>
+      </div>
+    )
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="admin" action="Access fund transfers" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Admin or higher permissions to view fund transfers.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <Suspense fallback={<LoadingSkeleton />}>
+      <FundTransfersContent session={session} />
+    </Suspense>
   )
 }
