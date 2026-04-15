@@ -61,7 +61,7 @@ export const recordExpenseAction = withAction<CreateTransactionInput, { success:
     const location = input.location || "cash"
     try {
       const balances = await Effect.runPromise(getLocationBalances())
-      const available = new BigNumber(balances[location as keyof typeof balances] ?? "0")
+      const available = new BigNumber(balances[location as "cash" | "bank" | "strong_room"] ?? "0")
       const amount = new BigNumber(input.amount)
       if (available.isLessThan(amount)) {
         const loc = location === "strong_room" ? "Strong Room" : location === "bank" ? "Bank" : "Cash on Hand"

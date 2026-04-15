@@ -248,7 +248,7 @@ export async function createLoanAction(input: CreateLoanInput) {
   if (freshAmount.isGreaterThan(0)) {
     try {
       const balances = await Effect.runPromise(getLocationBalances())
-      const available = new BigNumber(balances[input.disbursementSource as keyof typeof balances])
+      const available = new BigNumber(balances[input.disbursementSource as "cash" | "bank" | "strong_room"])
       if (available.isLessThan(freshAmount)) {
         const loc = input.disbursementSource === "strong_room" ? "Strong Room" : input.disbursementSource === "bank" ? "Bank" : "Cash on Hand"
         const isLoanOfficer = !perms.has("fund-transfer:create")
