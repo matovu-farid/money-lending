@@ -11,6 +11,7 @@ import { createCustomer, changeCustomerStatus } from "@/services/customer.servic
 import { auditLog } from "@/lib/db/schema/audit"
 import { collateral } from "@/lib/db/schema/collateral"
 import { customers } from "@/lib/db/schema/customers"
+import { loans } from "@/lib/db/schema/loans"
 import { eq } from "drizzle-orm"
 
 const ACTOR_ID = "integration-test-actor"

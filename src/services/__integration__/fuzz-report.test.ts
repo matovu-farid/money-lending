@@ -261,7 +261,7 @@ describe("Report Service — Fuzz Integration", () => {
             const totalLiabilities = new BigNumber(
               bs.liabilities.totalCreditorBalances
             )
-              .plus(new BigNumber(bs.liabilities.interestPayable))
+              .plus(new BigNumber(bs.liabilities.interestPayable ?? "0"))
             const totalEquity = new BigNumber(bs.equity.totalEquity)
 
             const diff = totalAssets

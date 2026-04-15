@@ -198,7 +198,7 @@ describe(
     describe("getRecentActivity", () => {
       it("returns empty array when no audit entries exist", async () => {
         const result = await Effect.runPromise(getRecentActivity())
-        expect(result).toEqual([])
+        expect(result.items).toEqual([])
       })
 
       it("returns loan_issued activity when a loan is created", async () => {
@@ -208,7 +208,7 @@ describe(
         const result = await Effect.runPromise(getRecentActivity())
 
         // Should have at least the loan.create entry
-        const loanIssued = result.find((r) => r.type === "loan_issued")
+        const loanIssued = result.items.find((r: any) => r.type === "loan_issued")
         expect(loanIssued).toBeDefined()
         expect(loanIssued!.description).toContain("Alice Nakamya")
         expect(loanIssued!.description).toContain("500,000")
@@ -223,8 +223,8 @@ describe(
 
         const result = await Effect.runPromise(getRecentActivity())
 
-        const paymentActivity = result.find(
-          (r) => r.type === "payment_received" && r.description.includes("200,000")
+        const paymentActivity = result.items.find(
+          (r: any) => r.type === "payment_received" && r.description.includes("200,000")
         )
         expect(paymentActivity).toBeDefined()
         expect(paymentActivity!.loanId).toBe(loan.id)
@@ -242,8 +242,8 @@ describe(
         const result = await Effect.runPromise(getRecentActivity())
 
         // All 6 are loan/payment entity types so they're included
-        expect(result.length).toBeGreaterThanOrEqual(1)
-        expect(result.length).toBeLessThanOrEqual(10)
+        expect(result.items.length).toBeGreaterThanOrEqual(1)
+        expect(result.items.length).toBeLessThanOrEqual(10)
       })
 
       it("orders activity from most recent first", async () => {
@@ -253,10 +253,10 @@ describe(
 
         const result = await Effect.runPromise(getRecentActivity())
 
-        expect(result.length).toBeGreaterThanOrEqual(2)
+        expect(result.items.length).toBeGreaterThanOrEqual(2)
         // Most recent should be first
-        expect(result[0].timestamp.getTime()).toBeGreaterThanOrEqual(
-          result[1].timestamp.getTime()
+        expect(result.items[0].timestamp.getTime()).toBeGreaterThanOrEqual(
+          result.items[1].timestamp.getTime()
         )
       })
 
@@ -267,8 +267,8 @@ describe(
 
         const result = await Effect.runPromise(getRecentActivity())
 
-        const paymentEntry = result.find(
-          (r) => r.type === "payment_received" && r.description.includes("50,000")
+        const paymentEntry = result.items.find(
+          (r: any) => r.type === "payment_received" && r.description.includes("50,000")
         )
         expect(paymentEntry).toBeDefined()
         expect(paymentEntry!.loanId).toBe(loan.id)

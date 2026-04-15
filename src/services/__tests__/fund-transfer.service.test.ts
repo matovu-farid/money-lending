@@ -23,7 +23,7 @@ vi.mock("drizzle-orm", async () => {
 const mockTransfer = {
   id: "transfer-1",
   transferType: "transfer",
-  fromLocation: "safe" as const,
+  fromLocation: "cash" as const,
   toLocation: "bank" as const,
   amount: "500000",
   transferredBy: "actor-1",
@@ -35,7 +35,7 @@ const mockCapitalInjection = {
   id: "transfer-2",
   transferType: "capital_injection",
   fromLocation: null,
-  toLocation: "safe" as const,
+  toLocation: "cash" as const,
   amount: "1000000",
   transferredBy: "actor-1",
   note: "Owner deposit",
@@ -72,7 +72,7 @@ describe("Fund Transfer Service", () => {
     const { createFundTransfer } = await import("@/services/fund-transfer.service")
     const result = await Effect.runPromise(
       createFundTransfer(
-        { fromLocation: "safe", toLocation: "bank", amount: "500000", note: "Test transfer" },
+        { fromLocation: "cash", toLocation: "bank", amount: "500000", note: "Test transfer" },
         "actor-1"
       )
     )
@@ -96,7 +96,7 @@ describe("Fund Transfer Service", () => {
     expect(autoPostFundTransfer).toHaveBeenCalledWith(capturedTx, {
       amount: "500000",
       transferId: "transfer-1",
-      fromLocation: "safe",
+      fromLocation: "cash",
       toLocation: "bank",
       transactionDate: mockTransfer.createdAt.toISOString(),
       actorId: "actor-1",
@@ -126,7 +126,7 @@ describe("Fund Transfer Service", () => {
     const { createFundTransfer } = await import("@/services/fund-transfer.service")
     await Effect.runPromise(
       createFundTransfer(
-        { fromLocation: "safe", toLocation: "bank", amount: "500000", note: "  spaced note  " },
+        { fromLocation: "cash", toLocation: "bank", amount: "500000", note: "  spaced note  " },
         "actor-1"
       )
     )
@@ -157,7 +157,7 @@ describe("Fund Transfer Service", () => {
     const { createFundTransfer } = await import("@/services/fund-transfer.service")
     await Effect.runPromise(
       createFundTransfer(
-        { fromLocation: "safe", toLocation: "bank", amount: "500000", note: "" },
+        { fromLocation: "cash", toLocation: "bank", amount: "500000", note: "" },
         "actor-1"
       )
     )
@@ -175,7 +175,7 @@ describe("Fund Transfer Service", () => {
     const { createFundTransfer } = await import("@/services/fund-transfer.service")
     const exit = await Effect.runPromiseExit(
       createFundTransfer(
-        { fromLocation: "safe", toLocation: "bank", amount: "500000" },
+        { fromLocation: "cash", toLocation: "bank", amount: "500000" },
         "actor-1"
       )
     )
@@ -219,7 +219,7 @@ describe("Fund Transfer Service", () => {
     const { createCapitalInjection } = await import("@/services/fund-transfer.service")
     const result = await Effect.runPromise(
       createCapitalInjection(
-        { toLocation: "safe", amount: "1000000", note: "Owner deposit" },
+        { toLocation: "cash", amount: "1000000", note: "Owner deposit" },
         "actor-1"
       )
     )
@@ -242,7 +242,7 @@ describe("Fund Transfer Service", () => {
     expect(autoPostCapitalInjection).toHaveBeenCalledWith(capturedTx, {
       amount: "1000000",
       transferId: "transfer-2",
-      toLocation: "safe",
+      toLocation: "cash",
       transactionDate: mockCapitalInjection.createdAt.toISOString(),
       actorId: "actor-1",
     })
@@ -257,7 +257,7 @@ describe("Fund Transfer Service", () => {
 
     const { createCapitalInjection } = await import("@/services/fund-transfer.service")
     const exit = await Effect.runPromiseExit(
-      createCapitalInjection({ toLocation: "safe", amount: "1000000" }, "actor-1")
+      createCapitalInjection({ toLocation: "cash", amount: "1000000" }, "actor-1")
     )
 
     expect(Exit.isFailure(exit)).toBe(true)
