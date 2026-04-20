@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { computeLoanOverdueInfo } from "../overdue"
+import { computeLoanOverdueInfo, shouldResetPenaltyWaiver } from "../overdue"
 
 // Helper to create a date N days ago
 function daysAgo(n: number): Date {
@@ -418,5 +418,42 @@ describe("computeLoanOverdueInfo — Term Loans (reducing_balance)", () => {
     // dailyRate = 500000 * 0.10 / 30 = 1667
     expect(result.dailyRate).toBe("1667")
     expect(result.daysOverdue).toBe(0)
+  })
+})
+
+describe("shouldResetPenaltyWaiver", () => {
+  it("should NOT reset waiver when borrower is 55 days overdue", () => {
+    // A borrower who dropped from 65 to 55 days overdue still owes money.
+    // The admin-approved waiver must stay in place.
+    expect(shouldResetPenaltyWaiver(55, true)).toBe(false)
+  })
+
+  it("should NOT reset waiver when borrower is 30 days overdue", () => {
+    // Still behind on payments — waiver should remain.
+    expect(shouldResetPenaltyWaiver(30, true)).toBe(false)
+  })
+
+  it("SHOULD reset waiver when borrower reaches 0 days overdue", () => {
+    // Fully current — waiver served its purpose, reset for future episodes.
+    expect(shouldResetPenaltyWaiver(0, true)).toBe(true)
+  })
+
+  it("should NOT reset when penaltyWaived is already false", () => {
+    // Nothing to reset.
+    expect(shouldResetPenaltyWaiver(0, false)).toBe(false)
+  })
+
+  it("should NOT reset when overdue and penaltyWaived is false", () => {
+    expect(shouldResetPenaltyWaiver(55, false)).toBe(false)
+  })
+
+  it("should NOT reset waiver at exactly 59 days overdue", () => {
+    // Edge case: just below the 60-day penalty threshold but still overdue.
+    expect(shouldResetPenaltyWaiver(59, true)).toBe(false)
+  })
+
+  it("should NOT reset waiver at exactly 1 day overdue", () => {
+    // Even slightly overdue — waiver must stay.
+    expect(shouldResetPenaltyWaiver(1, true)).toBe(false)
   })
 })

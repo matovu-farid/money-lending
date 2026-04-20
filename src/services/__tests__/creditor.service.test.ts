@@ -59,7 +59,7 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("500000")
+    expect(result.interestPortion).toBe("500000.00")
     expect(result.principalPortion).toBe("0.00")
     expect(result.principalBalanceBefore).toBe("10000000")
     expect(result.principalBalanceAfter).toBe("10000000")
@@ -67,7 +67,7 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
 
   it("1,500,000 payment against ~1,000,000 interest: ~1M to interest, remainder to principal (CRED-04)", () => {
     // 10M at 10%/month, 30 days elapsed: interest ≈ 999,999.99 (BigNumber DECIMAL_PLACES=10 precision)
-    // With formatAmount using toFixed(0) and ROUND_HALF_UP: 999999.99 rounds to 1000000
+    // With formatAmount using toFixed(2): 999999.99 stays as 999999.99
     // Payment of 1,500,000: 999999.99 to interest, 500000.01 to principal
     const result = allocatePayment({
       paymentAmount: "1500000",
@@ -76,9 +76,9 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("1000000")
-    expect(result.principalPortion).toBe("500000")
-    expect(result.principalBalanceAfter).toBe("9500000")
+    expect(result.interestPortion).toBe("999999.99")
+    expect(result.principalPortion).toBe("500000.01")
+    expect(result.principalBalanceAfter).toBe("9499999.99")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -93,8 +93,8 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("10000")
-    expect(result.principalBalanceAfter).toBe("0")
+    expect(result.interestPortion).toBe("10000.00")
+    expect(result.principalBalanceAfter).toBe("0.00")
     expect(result.loanFullyPaid).toBe(true)
   })
 })
@@ -567,10 +567,10 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
-    expect(result.totalInvested).toBe("10000000")
+    expect(result.totalInvested).toBe("10000000.00")
     // Interest now comes from ledger
     expect(parseFloat(result.interestAccrued)).toBeCloseTo(1000000, -2)
-    expect(result.repaymentsMade).toBe("0")
+    expect(result.repaymentsMade).toBe("0.00")
   })
 
   it("getCreditorDashboard: after 500K repayment on 1M interest, shows remaining interest (CRED-05)", async () => {
@@ -618,7 +618,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
     const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
 
-    expect(result.repaymentsMade).toBe("500000")
+    expect(result.repaymentsMade).toBe("500000.00")
     // Interest now from ledger
     expect(parseFloat(result.interestAccrued)).toBeCloseTo(1000000, -2)
     // Outstanding = principal (10M) + interestAccrued (~1M) ≈ 11M
@@ -737,8 +737,8 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     const result = await Effect.runPromise(getSystemCapital()) as any
 
     // Total invested = 10M + 5M = 15M
-    expect(result.totalInvested).toBe("15000000")
-    expect(result.totalRepaymentsMade).toBe("0")
+    expect(result.totalInvested).toBe("15000000.00")
+    expect(result.totalRepaymentsMade).toBe("0.00")
     // Interest accrued on both investments from ledger
     expect(parseFloat(result.totalInterestAccrued)).toBeGreaterThan(0)
     // totalOutstanding = totalPrincipal + totalInterestAccrued > 15M

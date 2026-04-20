@@ -53,10 +53,10 @@ export const paymentCollection = createCollection(
         throw new Error("Missing payment input for optimistic insert")
       }
       const result = await recordPaymentAction(input)
+      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingInsertInputs.delete(modified.id)
       // Invalidate all derived data affected by a new payment
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(input.loanId) })
@@ -77,10 +77,10 @@ export const paymentCollection = createCollection(
         throw new Error("Missing payment update input for optimistic update")
       }
       const result = await editPaymentAction(input)
+      pendingUpdateInputs.delete(original.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingUpdateInputs.delete(original.id)
       // Invalidate all derived data affected by a payment edit
       const qc = getQueryClient()
       const loanId = (original as PaymentWithCustomer).loanId
@@ -105,10 +105,10 @@ export const paymentCollection = createCollection(
         paymentId: original.id,
         reason,
       })
+      pendingDeleteReasons.delete(original.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingDeleteReasons.delete(original.id)
       // Invalidate all derived data affected by a payment deletion
       const qc = getQueryClient()
       const loanId = (original as PaymentWithCustomer).loanId

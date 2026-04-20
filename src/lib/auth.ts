@@ -84,19 +84,14 @@ export const auth = betterAuth({
           // newly created user already exists in the table, so count === 1
           // means this is the first user.
           const { sql } = await import("drizzle-orm")
-          const others = await db.execute(
-            sql`SELECT 1 FROM "user" WHERE "id" != ${user.id} LIMIT 1`
-          ) as unknown as Array<Record<string, unknown>>
-
-          if (others.length === 0) {
-            // This is the first user -- promote to superAdmin.
-            // Update directly via Drizzle since we are inside a databaseHook
-            // and calling auth.api.setRole here could cause recursion or
-            // require request headers we don't have.
-            await db.execute(
-              sql`UPDATE "user" SET "role" = 'superAdmin' WHERE "id" = ${user.id}`
-            )
-          }
+          // Atomic check-and-update: promotes to superAdmin only if no other
+          // user exists, avoiding a race condition where two concurrent
+          // registrations on a fresh database both skip promotion.
+          await db.execute(sql`
+            UPDATE "user" SET "role" = 'superAdmin'
+            WHERE "id" = ${user.id}
+              AND NOT EXISTS (SELECT 1 FROM "user" WHERE "id" != ${user.id})
+          `)
         },
       },
     },

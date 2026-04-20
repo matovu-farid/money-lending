@@ -430,7 +430,7 @@ export async function reverseInterestAccrual(
     .from(transactions)
     .where(
       and(
-        eq(transactions.referenceType, "interest_accrual"),
+        inArray(transactions.referenceType, ["interest_accrual", "penalty_interest_accrual"]),
         eq(transactions.referenceId, params.loanId),
         eq(transactions.categoryId, receivableCat.id)
       )

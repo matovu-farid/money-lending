@@ -12,7 +12,7 @@ import { sql } from "drizzle-orm"
  * Only available when CYPRESS=true.
  */
 export async function POST(request: Request) {
-  if (process.env.CYPRESS !== "true") {
+  if (process.env.NODE_ENV === "production" || process.env.CYPRESS !== "true") {
     return NextResponse.json({ error: "Test endpoint disabled" }, { status: 403 })
   }
 

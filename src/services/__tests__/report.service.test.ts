@@ -66,9 +66,9 @@ describe("Report Service — getPnlData (real service, mocked DB)", () => {
     const result = await Effect.runPromise(getPnlData("2026-02"))
 
     expect(result.period).toBe("2026-02")
-    expect(result.totalIncome).toBe("550000")
-    expect(result.totalExpenses).toBe("500000")
-    expect(result.netProfit).toBe("50000")
+    expect(result.totalIncome).toBe("550000.00")
+    expect(result.totalExpenses).toBe("500000.00")
+    expect(result.netProfit).toBe("50000.00")
     expect(result.income).toHaveLength(2)
     expect(result.expenses).toHaveLength(2)
   })
@@ -87,9 +87,9 @@ describe("Report Service — getPnlData (real service, mocked DB)", () => {
     const result = await Effect.runPromise(getPnlData("2026-02"))
 
     // Net income = 100000 - 20000 = 80000
-    expect(result.totalIncome).toBe("80000")
+    expect(result.totalIncome).toBe("80000.00")
     expect(result.income).toHaveLength(1)
-    expect(result.income[0].amount).toBe("80000")
+    expect(result.income[0].amount).toBe("80000.00")
   })
 
   it("returns zeros when no transactions exist (RPTS-02)", async () => {
@@ -102,9 +102,9 @@ describe("Report Service — getPnlData (real service, mocked DB)", () => {
     const { getPnlData } = await import("@/services/report.service")
     const result = await Effect.runPromise(getPnlData("2026-02"))
 
-    expect(result.totalIncome).toBe("0")
-    expect(result.totalExpenses).toBe("0")
-    expect(result.netProfit).toBe("0")
+    expect(result.totalIncome).toBe("0.00")
+    expect(result.totalExpenses).toBe("0.00")
+    expect(result.netProfit).toBe("0.00")
   })
 })
 
@@ -287,17 +287,10 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     mockedGetSystemCapital = creditorMod.getSystemCapital
   })
 
-  it("generateMonthlySnapshot: inserts pnl and balance_sheet rows (requires test DB)", async () => {
+  it("generateMonthlySnapshot: inserts pnl and balance_sheet rows with onConflictDoNothing", async () => {
     const { generateMonthlySnapshot } = await import("@/services/report.service")
 
-    // 1st select: existing snapshots — none
-    mockedDb.select.mockReturnValueOnce({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    } as any)
-
-    // 2nd select: getPnlData → transactions innerJoin with where
+    // 1st select: getPnlData → transactions innerJoin with where
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -309,7 +302,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 3rd select: getBalanceSheetData → single ledger query with innerJoin + where + groupBy
+    // 2nd select: getBalanceSheetData → single ledger query with innerJoin + where + groupBy
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -322,28 +315,30 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
       }),
     } as any)
 
-    // 4th select: Interest Receivable category lookup
+    // 3rd select: Interest Receivable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
     } as any)
 
-    // 5th select: Interest Payable category lookup
+    // 4th select: Interest Payable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
     } as any)
 
-    // Mock insert
-    const valuesStub = vi.fn().mockResolvedValue(undefined)
+    // Mock insert chain: .values(...).onConflictDoNothing()
+    const onConflictDoNothingStub = vi.fn().mockResolvedValue(undefined)
+    const valuesStub = vi.fn().mockReturnValue({ onConflictDoNothing: onConflictDoNothingStub })
     mockedDb.insert.mockReturnValue({ values: valuesStub })
 
     await Effect.runPromise(generateMonthlySnapshot("2026-02", "user-1"))
 
     expect(mockedDb.insert).toHaveBeenCalledTimes(1)
     expect(valuesStub).toHaveBeenCalledTimes(1)
+    expect(onConflictDoNothingStub).toHaveBeenCalledTimes(1)
 
     const insertedRows = valuesStub.mock.calls[0][0]
     expect(insertedRows).toHaveLength(2)
@@ -353,23 +348,54 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     expect(insertedRows[1].generatedBy).toBe("user-1")
   })
 
-  it("generateMonthlySnapshot: calling twice for same period does not create duplicate (idempotency)", async () => {
+  it("generateMonthlySnapshot: uses onConflictDoNothing to handle duplicates idempotently", async () => {
     const { generateMonthlySnapshot } = await import("@/services/report.service")
 
-    // Existing snapshots already have both types
+    // getPnlData → transactions
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          { type: "pnl" },
-          { type: "balance_sheet" },
-        ]),
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            { type: "credit", amount: "100000", categoryName: "Interest Earned", categoryType: "revenue" },
+          ]),
+        }),
       }),
     } as any)
 
+    // getBalanceSheetData → single ledger query
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            groupBy: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      }),
+    } as any)
+
+    // Interest Receivable category lookup
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // Interest Payable category lookup
+    mockedDb.select.mockReturnValueOnce({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([]),
+      }),
+    } as any)
+
+    // Mock insert chain — onConflictDoNothing silently skips duplicates
+    const onConflictDoNothingStub = vi.fn().mockResolvedValue(undefined)
+    const valuesStub = vi.fn().mockReturnValue({ onConflictDoNothing: onConflictDoNothingStub })
+    mockedDb.insert.mockReturnValue({ values: valuesStub })
+
+    // Even if called twice, each call uses onConflictDoNothing — no error, no duplicate
     await Effect.runPromise(generateMonthlySnapshot("2026-02", "user-1"))
 
-    // insert should NOT have been called since both types already exist
-    expect(mockedDb.insert).not.toHaveBeenCalled()
+    expect(onConflictDoNothingStub).toHaveBeenCalledTimes(1)
   })
 
   it("getPnlData: queries transactions table for given period with correct date range", async () => {
@@ -391,21 +417,21 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     const result = await Effect.runPromise(getPnlData("2026-02"))
 
     expect(result.period).toBe("2026-02")
-    expect(result.totalIncome).toBe("1500000")
-    expect(result.totalExpenses).toBe("500000")
-    expect(result.netProfit).toBe("1000000")
+    expect(result.totalIncome).toBe("1500000.00")
+    expect(result.totalExpenses).toBe("500000.00")
+    expect(result.netProfit).toBe("1000000.00")
     expect(result.income).toHaveLength(2)
     expect(result.expenses).toHaveLength(2)
     expect(result.income).toEqual(
       expect.arrayContaining([
-        { category: "Interest Earned", amount: "500000" },
-        { category: "Share Capital", amount: "1000000" },
+        { category: "Interest Earned", amount: "500000.00" },
+        { category: "Share Capital", amount: "1000000.00" },
       ])
     )
     expect(result.expenses).toEqual(
       expect.arrayContaining([
-        { category: "Rent", amount: "200000" },
-        { category: "Salaries", amount: "300000" },
+        { category: "Rent", amount: "200000.00" },
+        { category: "Salaries", amount: "300000.00" },
       ])
     )
   })
@@ -453,17 +479,17 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     const result = await Effect.runPromise(getBalanceSheetData("2026-02"))
 
     expect(result.asOf).toBe("2026-02")
-    expect(result.assets.totalLoansOutstanding).toBe("5000000")
-    expect(result.assets.interestReceivable).toBe("0")
-    expect(result.assets.cashBalance).toBe("0")
-    expect(result.assets.bankBalance).toBe("0")
-    expect(result.assets.strongRoomBalance).toBe("0")
-    expect(result.assets.totalAssets).toBe("5000000")
-    expect(result.liabilities.totalCreditorBalances).toBe("3000000")
-    expect(result.equity.shareCapital).toBe("1000000")
+    expect(result.assets.totalLoansOutstanding).toBe("5000000.00")
+    expect(result.assets.interestReceivable).toBe("0.00")
+    expect(result.assets.cashBalance).toBe("0.00")
+    expect(result.assets.bankBalance).toBe("0.00")
+    expect(result.assets.strongRoomBalance).toBe("0.00")
+    expect(result.assets.totalAssets).toBe("5000000.00")
+    expect(result.liabilities.totalCreditorBalances).toBe("3000000.00")
+    expect(result.equity.shareCapital).toBe("1000000.00")
     // retainedEarnings = totalRevenue(2500000) - totalExpenses(500000) = 2000000
-    expect(result.equity.retainedEarnings).toBe("2000000")
-    expect(result.equity.totalEquity).toBe("3000000")
+    expect(result.equity.retainedEarnings).toBe("2000000.00")
+    expect(result.equity.totalEquity).toBe("3000000.00")
   })
 
   it("getPortfolioData: returns active loans sorted by daysOverdue descending", async () => {

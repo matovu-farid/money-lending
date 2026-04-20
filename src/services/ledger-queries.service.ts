@@ -76,11 +76,12 @@ export async function getLoanBalanceFromLedger(
  * Revenue account: CR adds, DR subtracts.
  */
 export async function getInterestEarnedFromLedger(
-  loanIds: string[]
+  loanIds: string[],
+  queryDb: Pick<typeof db, "select"> = db
 ): Promise<Map<string, BigNumber>> {
   if (loanIds.length === 0) return new Map();
 
-  const rows = await db
+  const rows = await queryDb
     .select({
       loanId: transactions.loanId,
       txType: transactions.type,

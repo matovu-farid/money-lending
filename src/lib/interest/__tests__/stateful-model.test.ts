@@ -76,14 +76,18 @@ function checkInvariants(model: LoanModel): string[] {
   }
 
   // 3. Balance consistency: original - totalPrincipalPaid = current balance
+  //    formatAmount rounds to 2 decimals, so each payment can introduce up to ~0.01 error.
+  //    Across N payments the cumulative drift can reach N, so use activePayments.length + 1.
   const expectedBalance = BigNumber.max(
     new BigNumber(model.principal).minus(model.totalPrincipalPaid),
     0
   )
-  if (model.balance.minus(expectedBalance).abs().isGreaterThan(1)) {
+  const activePayments2 = model.payments.filter((p) => !p.deleted)
+  const balanceTolerance = activePayments2.length + 1
+  if (model.balance.minus(expectedBalance).abs().isGreaterThan(balanceTolerance)) {
     violations.push(
-      `Balance inconsistency: balance=${model.balance.toFixed(0)}, ` +
-      `expected=${expectedBalance.toFixed(0)} (principal=${model.principal}, paid=${model.totalPrincipalPaid.toFixed(0)})`
+      `Balance inconsistency: balance=${model.balance.toFixed(2)}, ` +
+      `expected=${expectedBalance.toFixed(2)} (principal=${model.principal}, paid=${model.totalPrincipalPaid.toFixed(2)})`
     )
   }
 

@@ -154,7 +154,7 @@ export function computeSegmentedInterest(params: {
  * Formats a BigNumber amount to 2 decimal places for display and storage.
  */
 export function formatAmount(amount: BigNumber): string {
-  return amount.toFixed(0)
+  return amount.toFixed(2)
 }
 
 /** Compute outstanding balance = principal + one period of interest */

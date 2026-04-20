@@ -13,6 +13,7 @@ interface UpdateSettingInput {
 }
 
 export const getSettingsAction = withAction({
+  permission: "settings:read",
   action: async () => {
     try {
       const settings = await db.select().from(systemSettings)

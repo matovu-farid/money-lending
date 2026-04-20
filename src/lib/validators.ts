@@ -37,10 +37,11 @@ export function validatePositiveDecimal(
   value: string | undefined | null,
   fieldName: string,
 ): string | null {
-  if (!value?.trim() || !/^\d+(\.\d{1,2})?$/.test(value)) {
+  const trimmed = value?.trim()
+  if (!trimmed || !/^\d+(\.\d{1,2})?$/.test(trimmed)) {
     return `${fieldName} must be a valid decimal number`
   }
-  if (parseFloat(value) <= 0) {
+  if (parseFloat(trimmed) <= 0) {
     return `${fieldName} must be greater than zero`
   }
   return null

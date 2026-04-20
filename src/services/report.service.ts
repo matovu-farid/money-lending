@@ -457,7 +457,7 @@ export const getPortfolioData = (): Effect.Effect<
         ? await db
             .select({ loanId: payments.loanId, count: count() })
             .from(payments)
-            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
             .groupBy(payments.loanId)
         : []
       const paymentCountMap = new Map(paymentCountRows.map((r) => [r.loanId, Number(r.count)]))
@@ -518,35 +518,13 @@ export const generateMonthlySnapshot = (
     try: async () => {
       const { periodStart, periodEnd } = periodBoundsUTC(period)
 
-      const existingSnapshots = await db
-        .select({ type: financialSnapshots.type })
-        .from(financialSnapshots)
-        .where(
-          and(
-            sql`${financialSnapshots.periodStart}::date = ${periodStart.toISOString().split("T")[0]}`,
-            sql`${financialSnapshots.type} IN ('pnl', 'balance_sheet')`
-          )
-        )
-
-      const existingTypes = new Set(existingSnapshots.map((s) => s.type))
-
-      const toInsert: ("pnl" | "balance_sheet")[] = []
-      if (!existingTypes.has("pnl")) toInsert.push("pnl")
-      if (!existingTypes.has("balance_sheet")) toInsert.push("balance_sheet")
-
-      if (toInsert.length === 0) return
-
       const [pnlData, balanceSheetData] = await Promise.all([
-        toInsert.includes("pnl")
-          ? Effect.runPromise(getPnlData(period))
-          : Promise.resolve(null),
-        toInsert.includes("balance_sheet")
-          ? Effect.runPromise(getBalanceSheetData(period))
-          : Promise.resolve(null),
+        Effect.runPromise(getPnlData(period)),
+        Effect.runPromise(getBalanceSheetData(period)),
       ])
 
       const insertRows = []
-      if (pnlData && toInsert.includes("pnl")) {
+      if (pnlData) {
         insertRows.push({
           type: "pnl" as const,
           periodStart,
@@ -555,7 +533,7 @@ export const generateMonthlySnapshot = (
           generatedBy,
         })
       }
-      if (balanceSheetData && toInsert.includes("balance_sheet")) {
+      if (balanceSheetData) {
         insertRows.push({
           type: "balance_sheet" as const,
           periodStart,
@@ -566,7 +544,7 @@ export const generateMonthlySnapshot = (
       }
 
       if (insertRows.length > 0) {
-        await db.insert(financialSnapshots).values(insertRows)
+        await db.insert(financialSnapshots).values(insertRows).onConflictDoNothing()
       }
     },
     catch: (e) => new DatabaseError({ cause: e }),

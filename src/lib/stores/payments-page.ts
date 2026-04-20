@@ -68,9 +68,15 @@ export const usePaymentsPageStore = create<PaymentsPageState & PaymentsPageActio
       editOpen: true,
       editTarget: payment,
       editAmount: payment.amount,
-      editDate: payment.paymentDate instanceof Date
-        ? payment.paymentDate.toISOString().slice(0, 10)
-        : String(payment.paymentDate).slice(0, 10),
+      editDate: (() => {
+        const d = payment.paymentDate instanceof Date
+          ? payment.paymentDate
+          : new Date(String(payment.paymentDate))
+        const y = d.getFullYear()
+        const m = String(d.getMonth() + 1).padStart(2, "0")
+        const day = String(d.getDate()).padStart(2, "0")
+        return `${y}-${m}-${day}`
+      })(),
       editReason: "",
     }),
   closeEdit: () => set({ editOpen: false, editTarget: null }),

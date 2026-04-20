@@ -63,42 +63,44 @@ export const createLoan = (
         throw { _tag: "IncompleteLoanRequirements", missing: missingFields }
       }
 
-      // Single active loan constraint
-      const [existingActiveLoan] = await db
-        .select()
-        .from(loans)
-        .where(
-          and(
-            eq(loans.customerId, input.customerId),
-            eq(loans.status, "active"),
-            isNull(loans.deletedAt)
-          )
-        )
-
-      if (existingActiveLoan && !input.rollover) {
-        throw new ValidationError({
-          message: "Customer already has an active loan. Use rollover to create a new loan.",
-          field: "customerId",
-        })
-      }
-
-      if (input.rollover && !existingActiveLoan) {
-        throw new ValidationError({
-          message: "Rollover specified but customer has no active loan.",
-          field: "customerId",
-        })
-      }
-
-      if (input.rollover && existingActiveLoan && input.rollover.fromLoanId !== existingActiveLoan.id) {
-        throw new ValidationError({
-          message: "Rollover loan ID does not match customer's active loan.",
-          field: "customerId",
-        })
-      }
-
       const startDate = new Date(input.startDate)
 
       return await db.transaction(async (tx) => {
+        // Single active loan constraint — checked inside the transaction with
+        // FOR UPDATE to serialize concurrent loan creation for the same customer
+        const [existingActiveLoan] = await tx
+          .select()
+          .from(loans)
+          .where(
+            and(
+              eq(loans.customerId, input.customerId),
+              eq(loans.status, "active"),
+              isNull(loans.deletedAt)
+            )
+          )
+          .for('update')
+
+        if (existingActiveLoan && !input.rollover) {
+          throw new ValidationError({
+            message: "Customer already has an active loan. Use rollover to create a new loan.",
+            field: "customerId",
+          })
+        }
+
+        if (input.rollover && !existingActiveLoan) {
+          throw new ValidationError({
+            message: "Rollover specified but customer has no active loan.",
+            field: "customerId",
+          })
+        }
+
+        if (input.rollover && existingActiveLoan && input.rollover.fromLoanId !== existingActiveLoan.id) {
+          throw new ValidationError({
+            message: "Rollover loan ID does not match customer's active loan.",
+            field: "customerId",
+          })
+        }
+
         const loanValues = {
             ...(input.id ? { id: input.id } : {}),
             customerId: input.customerId,
@@ -371,13 +373,21 @@ export const updateLoan = (
         if (input.issuanceFee !== undefined && input.issuanceFee !== existingLoan.issuanceFee) {
           // Find the old fee credit to get the journalGroupId and amount
           const [oldFeeTx] = await tx
-            .select()
+            .select({
+              id: transactions.id,
+              amount: transactions.amount,
+              transactionDate: transactions.transactionDate,
+              depositLocation: transactions.depositLocation,
+              journalGroupId: transactions.journalGroupId,
+            })
             .from(transactions)
+            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
             .where(
               and(
                 eq(transactions.referenceType, "loan"),
                 eq(transactions.referenceId, input.loanId),
-                eq(transactions.type, "credit")
+                eq(transactions.type, "credit"),
+                eq(transactionCategories.name, "Issuance Fees")
               )
             )
 
@@ -461,7 +471,7 @@ export const updateLoan = (
           const activePayments = await tx
             .select()
             .from(payments)
-            .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+            .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
             .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
           if (activePayments.length > 0) {

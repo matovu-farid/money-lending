@@ -33,10 +33,10 @@ export const bankAccountCollection = createCollection(
         throw new Error("Missing bank account input for optimistic insert")
       }
       const result = await createBankAccountAction(input)
+      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingInsertInputs.delete(modified.id)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.bankAccounts.all })
@@ -48,10 +48,10 @@ export const bankAccountCollection = createCollection(
         throw new Error("Missing bank account input for optimistic update")
       }
       const result = await updateBankAccountAction(input)
+      pendingUpdateInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingUpdateInputs.delete(modified.id)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.bankAccounts.all })
     },

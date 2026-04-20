@@ -5,7 +5,7 @@ import { payments } from "@/lib/db/schema/payments"
 import { customers } from "@/lib/db/schema/customers"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, and, isNull, asc, sql, inArray } from "drizzle-orm"
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+import { computeLoanOverdueInfo, shouldResetPenaltyWaiver } from "@/lib/interest/overdue"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
 import { formatAmount } from "@/lib/interest/engine"
 import { createNotificationsForLoan } from "@/services/notification.service"
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
         ? await db
             .select()
             .from(payments)
-            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
             .orderBy(asc(payments.paymentDate))
         : []
 
@@ -101,9 +101,10 @@ export async function POST(request: NextRequest) {
           })
         }
 
-        // Reset waiver when borrower returns to good standing (< 60 days overdue)
-        // This ensures future overdue episodes will trigger penalty again
-        if (info.daysOverdue < 60 && loan.penaltyWaived) {
+        // Reset waiver only when borrower is fully current (0 days overdue).
+        // This ensures the admin-approved waiver stays in place while the
+        // borrower is still behind, and only resets for future overdue episodes.
+        if (shouldResetPenaltyWaiver(info.daysOverdue, loan.penaltyWaived)) {
           await db.update(loans).set({
             penaltyWaived: false,
             penaltyWaivedBy: null,

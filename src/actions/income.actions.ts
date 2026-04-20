@@ -5,12 +5,17 @@ import { withAction } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction, listTransactions } from "@/services/transaction.service"
-import { createCategory, deleteCategory } from "@/services/category.service"
+import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
 import type { CreateTransactionInput, CreateCategoryInput, UserRole } from "@/types"
 
 export const listIncomeTransactionsAction = withAction({
   permission: "income:read",
   effect: () => listTransactions({ type: "credit", manualOnly: true }, 1, 50),
+})
+
+export const listIncomeCategoriesAction = withAction({
+  permission: "income:read",
+  effect: () => listCategories("revenue"),
 })
 
 export const recordIncomeAction = withAction<CreateTransactionInput, { success: true } | { error: string }>({

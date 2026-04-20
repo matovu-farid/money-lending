@@ -129,7 +129,7 @@ export const recordPayment = (
         // Use getLoanBalancesFromLedger to distinguish "no entries" from "balance = 0 (fully repaid)"
         const [balanceMap, interestEarnedMap] = await Promise.all([
           getLoanBalancesFromLedger([input.loanId], undefined, tx),
-          getInterestEarnedFromLedger([input.loanId]),
+          getInterestEarnedFromLedger([input.loanId], tx),
         ])
         const hasLedgerEntries = balanceMap.has(input.loanId)
         const ledgerBalance = balanceMap.get(input.loanId) ?? new BigNumber(0)
@@ -187,7 +187,7 @@ export const recordPayment = (
             for (const [, portions] of portionsMap) {
               sum = sum.plus(portions.interestPortion)
             }
-            interestAlreadyPaidInPeriod = sum.toFixed(0)
+            interestAlreadyPaidInPeriod = sum.toFixed(2)
           }
         }
 
@@ -430,7 +430,7 @@ export const editPayment = (
         // Compute overdue info to get effective rate (with penalty if applicable)
         const [editBalanceMap, editInterestMap] = await Promise.all([
           getLoanBalancesFromLedger([payment.loanId], undefined, tx),
-          getInterestEarnedFromLedger([payment.loanId]),
+          getInterestEarnedFromLedger([payment.loanId], tx),
         ])
         const editLedgerBalance = editBalanceMap.get(payment.loanId) ?? new BigNumber(0)
         const editOutstandingBalance = editBalanceMap.has(payment.loanId)
@@ -467,7 +467,7 @@ export const editPayment = (
             for (const [, portions] of portionsMap) {
               sum = sum.plus(portions.interestPortion)
             }
-            interestAlreadyPaidInPeriod = sum.toFixed(0)
+            interestAlreadyPaidInPeriod = sum.toFixed(2)
           }
         }
 
@@ -756,7 +756,7 @@ export const listPayments = (
         for (const loanId of loanIds) {
           const loanPayments = await db.select({ id: payments.id, paymentDate: payments.paymentDate, createdAt: payments.createdAt })
             .from(payments)
-            .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
+            .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
             .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
           const allIds = loanPayments.map((p) => p.id)
           const allPortions = allIds.length > 0 ? await getPaymentPortionsFromLedger(allIds) : new Map()

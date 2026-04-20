@@ -75,6 +75,58 @@ describe("Collateral Settlement Service", () => {
     vi.clearAllMocks()
   })
 
+  // ── settleWithCollateral: markedWrong filter ──────────────────────
+  it("activePayments query excludes markedWrong payments during collateral settlement", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    // Mock initial loan lookup (outside transaction)
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([mockLoan]),
+      }),
+    })
+
+    // Capture the where clause argument from the payments query inside the transaction
+    let capturedWhereArg: unknown = null
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockImplementation((whereArg: unknown) => {
+                capturedWhereArg = whereArg
+                return {
+                  orderBy: vi.fn().mockResolvedValue([]),
+                }
+              }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([{ ...mockLoan, status: "settled_with_collateral" }]),
+              }),
+            }),
+          }),
+        }
+        return callback(mockTx)
+      }
+    )
+
+    const { settleWithCollateral } = await import("@/services/collateral-settlement.service")
+    await Effect.runPromise(
+      settleWithCollateral({ loanId: "loan-1", reason: "Defaulted" }, "actor-1")
+    )
+
+    // The where clause must include a markedWrong filter (marked_wrong column).
+    // Use depth 7 to see direct column references without traversing into
+    // the parent table's full column list (which would appear at depth >= 8).
+    expect(capturedWhereArg).not.toBeNull()
+    const { inspect } = await import("util")
+    const serialized = inspect(capturedWhereArg, { depth: 7 })
+    expect(serialized).toContain("marked_wrong")
+  })
+
   // ── settleWithCollateral: happy path ──────────────────────────────
 
   it("settles a loan with collateral: posts interest, principal recovery, seizes collateral, updates status", async () => {

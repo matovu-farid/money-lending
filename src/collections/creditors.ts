@@ -37,10 +37,10 @@ export const creditorCollection = createCollection(
         throw new Error("Missing creditor input for optimistic insert")
       }
       const result = await createCreditorWithInvestmentAction(input)
+      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingInsertInputs.delete(modified.id)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })

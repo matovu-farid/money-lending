@@ -34,10 +34,52 @@ describe("generateReceiptNumber", () => {
     expect(results.size).toBe(100)
   })
 
-  it("date portion matches today's date", () => {
+  it("date portion matches today's local date", () => {
     const result = generateReceiptNumber()
     const datePart = result.split("-")[1]
-    const expected = new Date().toISOString().slice(0, 10).replace(/-/g, "")
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, "0")
+    const d = String(now.getDate()).padStart(2, "0")
+    const expected = `${y}${m}${d}`
     expect(datePart).toBe(expected)
+  })
+
+  it("uses local date, not UTC (11 PM EAT = 8 PM UTC on Apr 20 should show 20260420)", () => {
+    // Simulate 11 PM EAT (UTC+3) on April 20, 2026 → 8 PM UTC on April 20
+    const fakeDate = new Date("2026-04-20T20:00:00.000Z")
+    const origDate = globalThis.Date
+    const OrigDate = Date
+
+    // Mock Date so new Date() returns our fake date
+    class MockDate extends OrigDate {
+      constructor(...args: unknown[]) {
+        if (args.length === 0) {
+          super(fakeDate.getTime())
+        } else {
+          // @ts-expect-error - spreading args into Date constructor
+          super(...args)
+        }
+      }
+    }
+    // Copy static methods
+    MockDate.now = () => fakeDate.getTime()
+
+    globalThis.Date = MockDate as DateConstructor
+
+    try {
+      const result = generateReceiptNumber()
+      const datePart = result.split("-")[1]
+      // In EAT (UTC+3), 8PM UTC on Apr 20 = 11PM Apr 20 local
+      // The receipt date should use local date, which is April 20
+      // With toISOString() it would also show 20 in UTC, but the key point is
+      // we use local date components, not UTC
+      const localDay = String(fakeDate.getDate()).padStart(2, "0")
+      const localMonth = String(fakeDate.getMonth() + 1).padStart(2, "0")
+      const localYear = fakeDate.getFullYear()
+      expect(datePart).toBe(`${localYear}${localMonth}${localDay}`)
+    } finally {
+      globalThis.Date = origDate
+    }
   })
 })

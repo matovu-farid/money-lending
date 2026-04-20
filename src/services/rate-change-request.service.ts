@@ -159,20 +159,21 @@ export const reviewRequest = (
 ): Effect.Effect<RateChangeRequest, RateChangeRequestNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [request] = await db
-        .select()
-        .from(rateChangeRequests)
-        .where(eq(rateChangeRequests.id, input.requestId))
-
-      if (!request) throw { _tag: "RateChangeRequestNotFound", id: input.requestId }
-
-      if (request.status !== "pending") {
-        throw { _tag: "ValidationError", message: "Request has already been reviewed" }
-      }
-
-      const now = new Date()
-
       return await db.transaction(async (tx) => {
+        const [request] = await tx
+          .select()
+          .from(rateChangeRequests)
+          .where(eq(rateChangeRequests.id, input.requestId))
+          .for("update")
+
+        if (!request) throw { _tag: "RateChangeRequestNotFound", id: input.requestId }
+
+        if (request.status !== "pending") {
+          throw { _tag: "ValidationError", message: "Request has already been reviewed" }
+        }
+
+        const now = new Date()
+
         const [updated] = await tx
           .update(rateChangeRequests)
           .set({

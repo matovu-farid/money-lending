@@ -31,7 +31,7 @@ import type { PaymentWithCustomer, RecordPaymentInput, ReceiptPaymentData } from
 import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult, DepositLocation } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
-import BigNumber from "bignumber.js"
+import { computeReceiptAllocation } from "@/lib/receipt-allocation"
 
 interface QuickRecordDialogProps {
   open: boolean
@@ -161,12 +161,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     }
 
     // Compute receipt allocation from available balance data
-    const paidAmt = new BigNumber(pendingData.amount)
-    const accrued = new BigNumber(balanceData?.accruedInterest ?? "0")
-    const totalBefore = new BigNumber(balanceData?.totalBalance ?? "0")
-    const interestPaid = BigNumber.min(paidAmt, accrued)
-    const principalPaid = paidAmt.minus(interestPaid)
-    const balanceAfter = BigNumber.max(totalBefore.minus(paidAmt), new BigNumber(0))
+    const allocation = computeReceiptAllocation(pendingData.amount, balanceData)
 
     insertPaymentWithInput(id, optimistic, input)
     toast.success("Payment recorded successfully")
@@ -175,12 +170,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
       payment: {
         ...optimistic,
         depositLocationValue: pendingData.depositLocation,
-        allocation: {
-          interestPortion: interestPaid.toFixed(0),
-          principalPortion: principalPaid.toFixed(0),
-          principalBalanceAfter: balanceAfter.toFixed(0),
-          outstandingBalanceAfter: totalBefore.toFixed(0),
-        },
+        allocation,
       } as unknown as ReceiptPaymentData,
       receiptNumber: generateReceiptNumber(),
     })

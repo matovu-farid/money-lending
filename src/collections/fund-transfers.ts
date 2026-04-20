@@ -36,20 +36,20 @@ export const fundTransferCollection = createCollection(
       const injectionInput = pendingInjectionInputs.get(modified.id)
       if (injectionInput) {
         const result = await createCapitalInjectionAction(injectionInput)
+        pendingInjectionInputs.delete(modified.id)
         if ("error" in result) {
           throw new Error(result.error)
         }
-        pendingInjectionInputs.delete(modified.id)
       } else {
         const input = pendingInsertInputs.get(modified.id)
         if (!input) {
           throw new Error("Missing fund transfer input for optimistic insert")
         }
         const result = await createFundTransferAction(input)
+        pendingInsertInputs.delete(modified.id)
         if ("error" in result) {
           throw new Error(result.error)
         }
-        pendingInsertInputs.delete(modified.id)
       }
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })

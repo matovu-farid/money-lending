@@ -205,7 +205,9 @@ describe("scoreTimeliness", () => {
       { paymentDate: new Date("2026-02-20") },
       { paymentDate: new Date("2026-03-17") },
     ]
-    expect(scoreTimeliness(loan, payments)).toBe(1.0)
+    // Pin now to just after last payment so trailing gap is small
+    const now = new Date("2026-03-20")
+    expect(scoreTimeliness(loan, payments, now)).toBe(1.0)
   })
 
   it("returns 1.0 for payments every 30 days", () => {
@@ -213,25 +215,170 @@ describe("scoreTimeliness", () => {
       { paymentDate: new Date("2026-01-31") },
       { paymentDate: new Date("2026-03-02") },
     ]
-    expect(scoreTimeliness(loan, payments)).toBe(1.0)
+    const now = new Date("2026-03-05")
+    expect(scoreTimeliness(loan, payments, now)).toBe(1.0)
   })
 
   it("returns less than 1.0 for 60-day gaps", () => {
     const payments = [
       { paymentDate: new Date("2026-03-02") }, // 60 days from start
     ]
-    expect(scoreTimeliness(loan, payments)).toBeLessThan(1.0)
+    const now = new Date("2026-03-03")
+    expect(scoreTimeliness(loan, payments, now)).toBeLessThan(1.0)
   })
 
   it("returns less than 0.5 for 90+ day gaps", () => {
     const payments = [
       { paymentDate: new Date("2026-04-01") }, // 90 days from start
     ]
-    expect(scoreTimeliness(loan, payments)).toBeLessThan(0.5)
+    // Set now 90 days after last payment so trailing gap also 90 days
+    const now = new Date("2026-06-30")
+    expect(scoreTimeliness(loan, payments, now)).toBeLessThan(0.5)
   })
 
   it("returns 0.5 for no payments", () => {
     expect(scoreTimeliness(loan, [])).toBe(0.5)
+  })
+
+  it("penalizes active loan with long trailing gap since last payment", () => {
+    const payments = [
+      { paymentDate: new Date("2026-01-26") },
+      { paymentDate: new Date("2026-02-20") },
+    ]
+    // 120 days after last payment
+    const now = new Date("2026-06-20")
+    const score = scoreTimeliness(loan, payments, now)
+    expect(score).toBeLessThan(1.0)
+  })
+
+  it("borrower who stopped paying 120 days ago scores much lower than one still paying monthly", () => {
+    // Both borrowers started same loan and made 2 on-time payments
+    const commonPayments = [
+      { paymentDate: new Date("2026-01-26") },
+      { paymentDate: new Date("2026-02-25") },
+    ]
+
+    // Borrower A: stopped paying after February, now is 120 days later
+    const now = new Date("2026-06-25")
+    const stoppedScore = scoreTimeliness(loan, commonPayments, now)
+
+    // Borrower B: kept paying monthly through June
+    const keepPayingPayments = [
+      ...commonPayments,
+      { paymentDate: new Date("2026-03-27") },
+      { paymentDate: new Date("2026-04-26") },
+      { paymentDate: new Date("2026-05-26") },
+      { paymentDate: new Date("2026-06-22") },
+    ]
+    const keepPayingScore = scoreTimeliness(loan, keepPayingPayments, now)
+
+    // The borrower still paying should score perfect (all gaps ~30 days)
+    expect(keepPayingScore).toBe(1.0)
+    // The borrower who stopped should be significantly penalized
+    // Gaps: [25, 30, 120] => avg 58.3 days, formula gives ~0.54
+    expect(stoppedScore).toBeLessThan(0.7)
+    // The gap between the two should be substantial, not negligible
+    expect(keepPayingScore - stoppedScore).toBeGreaterThan(0.25)
+  })
+
+  it("does not add trailing gap for fully_paid loans", () => {
+    const paidLoan = { startDate: new Date("2026-01-01"), principalAmount: "1000000", status: "fully_paid" }
+    const payments = [
+      { paymentDate: new Date("2026-01-26") },
+      { paymentDate: new Date("2026-02-20") },
+    ]
+    // Even with now far in the future, fully_paid should not get trailing gap
+    const farFuture = new Date("2027-01-01")
+    const nearPast = new Date("2026-02-21")
+    expect(scoreTimeliness(paidLoan, payments, farFuture)).toBe(scoreTimeliness(paidLoan, payments, nearPast))
+  })
+
+  it("fully_paid loan is never penalized by trailing gap regardless of time elapsed", () => {
+    const paidLoan = { startDate: new Date("2026-01-01"), principalAmount: "1000000", status: "fully_paid" }
+    // Borrower paid on time then paid off the loan
+    const payments = [
+      { paymentDate: new Date("2026-01-26") },
+      { paymentDate: new Date("2026-02-25") },
+      { paymentDate: new Date("2026-03-27") },
+    ]
+    // Score measured right after last payment
+    const justAfter = new Date("2026-03-28")
+    // Score measured a year later — should be identical
+    const yearLater = new Date("2027-03-28")
+    const scoreAfter = scoreTimeliness(paidLoan, payments, justAfter)
+    const scoreLater = scoreTimeliness(paidLoan, payments, yearLater)
+    expect(scoreAfter).toBe(1.0)
+    expect(scoreLater).toBe(1.0)
+  })
+
+  it("active loan with last payment yesterday scores similarly to between-payment gaps", () => {
+    // Borrower paying regularly, last payment was yesterday
+    const payments = [
+      { paymentDate: new Date("2026-01-26") },
+      { paymentDate: new Date("2026-02-25") },
+      { paymentDate: new Date("2026-03-27") },
+    ]
+    // "now" is just 1 day after the last payment — trailing gap is negligible
+    const now = new Date("2026-03-28")
+    const score = scoreTimeliness(loan, payments, now)
+    // All between-payment gaps are ~30 days, trailing gap is 1 day
+    // Average should still be well within the 30-day threshold
+    expect(score).toBe(1.0)
+  })
+
+  it("edge case: active loan with only 1 payment made long ago", () => {
+    // Borrower made a single payment 25 days after start, then disappeared
+    const payments = [
+      { paymentDate: new Date("2026-01-26") }, // 25 days from start
+    ]
+    // Now is 150 days after that single payment
+    const now = new Date("2026-06-25")
+    const score = scoreTimeliness(loan, payments, now)
+    // Gaps: [25 days from start to payment, 150 days trailing]
+    // Average = (25 + 150) / 2 = 87.5 days => well above 30, severe penalty
+    expect(score).toBeLessThan(0.5)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Serialized date safety (server actions return ISO strings, not Date objects)
+// ---------------------------------------------------------------------------
+
+describe("credit score functions handle serialized date strings", () => {
+  it("recencyWeight works with ISO string dates", () => {
+    const result = recencyWeight("2026-01-01T00:00:00.000Z" as unknown as Date, new Date("2026-04-01"))
+    expect(result).toBeGreaterThan(0)
+    expect(result).toBeLessThanOrEqual(1)
+    expect(Number.isNaN(result)).toBe(false)
+  })
+
+  it("scoreTimeliness works with ISO string dates", () => {
+    const loan = { startDate: "2026-01-01T00:00:00.000Z" as unknown as Date, principalAmount: "1000000", status: "active" }
+    const payments = [
+      { paymentDate: "2026-02-01T00:00:00.000Z" as unknown as Date },
+      { paymentDate: "2026-03-01T00:00:00.000Z" as unknown as Date },
+    ]
+    const score = scoreTimeliness(loan, payments, new Date("2026-03-15"))
+    expect(Number.isNaN(score)).toBe(false)
+    expect(score).toBeGreaterThan(0)
+  })
+
+  it("scorePaydown works with ISO string dates", () => {
+    const loan = { status: "fully_paid", startDate: "2026-01-01T00:00:00.000Z" as unknown as Date, minInterestDays: 30, principalAmount: "1000000" }
+    const score = scorePaydown(loan, "0", "2026-01-20T00:00:00.000Z" as unknown as Date)
+    expect(Number.isNaN(score)).toBe(false)
+    expect(score).toBeGreaterThan(0)
+  })
+
+  it("combinedWeights works with ISO string dates", () => {
+    const loans = [
+      { startDate: "2026-01-01T00:00:00.000Z" as unknown as Date, principalAmount: "1000000" },
+      { startDate: "2026-03-01T00:00:00.000Z" as unknown as Date, principalAmount: "500000" },
+    ]
+    const weights = combinedWeights(loans, new Date("2026-04-01"))
+    expect(weights).toHaveLength(2)
+    expect(weights.every((w) => !Number.isNaN(w))).toBe(true)
+    expect(weights.reduce((a, b) => a + b, 0)).toBeCloseTo(1.0)
   })
 })
 

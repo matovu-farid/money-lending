@@ -90,7 +90,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false)
-  const [isPending] = useTransition()
+  const [isPending, startTransition] = useTransition()
   const { has } = usePermissions()
   const isAdmin = has("fund-transfer:create")
 
@@ -141,55 +141,59 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   })
 
   function onCreateBankAccount(data: { name: string }) {
-    const id = generateClientId()
-    const input = { id, name: data.name.trim() }
-    const optimistic: BankAccount = {
-      id,
-      name: data.name.trim(),
-      isActive: true,
-      createdBy: session.user.id,
-      createdAt: new Date(),
-    }
-    try {
-      insertBankAccountWithInput(id, optimistic, input)
-      toast.success("Bank account created")
-      bankAccountForm.reset()
-      setBankAccountDialogOpen(false)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create bank account")
-    }
+    startTransition(() => {
+      const id = generateClientId()
+      const input = { id, name: data.name.trim() }
+      const optimistic: BankAccount = {
+        id,
+        name: data.name.trim(),
+        isActive: true,
+        createdBy: session.user.id,
+        createdAt: new Date(),
+      }
+      try {
+        insertBankAccountWithInput(id, optimistic, input)
+        toast.success("Bank account created")
+        bankAccountForm.reset()
+        setBankAccountDialogOpen(false)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to create bank account")
+      }
+    })
   }
 
   function onInjectionSubmit(data: InjectionFormValues) {
-    const id = generateClientId()
-    const input = {
-      id,
-      toLocation: data.toLocation,
-      amount: data.amount.trim(),
-      note: data.note.trim() || undefined,
-      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
-    }
-    const optimistic: FundTransfer = {
-      id,
-      transferType: "capital_injection",
-      fromLocation: null,
-      toLocation: data.toLocation,
-      fromSubLocationId: null,
-      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
-      amount: data.amount.trim(),
-      transferredBy: session.user.id,
-      note: data.note.trim() || null,
-      createdAt: new Date(),
-    }
+    startTransition(() => {
+      const id = generateClientId()
+      const input = {
+        id,
+        toLocation: data.toLocation,
+        amount: data.amount.trim(),
+        note: data.note.trim() || undefined,
+        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
+      }
+      const optimistic: FundTransfer = {
+        id,
+        transferType: "capital_injection",
+        fromLocation: null,
+        toLocation: data.toLocation,
+        fromSubLocationId: null,
+        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
+        amount: data.amount.trim(),
+        transferredBy: session.user.id,
+        note: data.note.trim() || null,
+        createdAt: new Date(),
+      }
 
-    try {
-      insertCapitalInjectionWithInput(id, optimistic, input)
-      toast.success("Capital injection recorded")
-      injectionForm.reset()
-      setInjectionDialogOpen(false)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to record injection")
-    }
+      try {
+        insertCapitalInjectionWithInput(id, optimistic, input)
+        toast.success("Capital injection recorded")
+        injectionForm.reset()
+        setInjectionDialogOpen(false)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to record injection")
+      }
+    })
   }
 
   function onSubmit(data: TransferFormValues) {
@@ -198,37 +202,39 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       return
     }
 
-    const id = generateClientId()
-    const input = {
-      id,
-      fromLocation: data.fromLocation,
-      toLocation: data.toLocation,
-      amount: data.amount.trim(),
-      note: data.note.trim() || undefined,
-      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : undefined,
-      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
-    }
-    const optimistic: FundTransfer = {
-      id,
-      transferType: "internal",
-      fromLocation: data.fromLocation,
-      toLocation: data.toLocation,
-      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : null,
-      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
-      amount: data.amount.trim(),
-      transferredBy: session.user.id,
-      note: data.note.trim() || null,
-      createdAt: new Date(),
-    }
+    startTransition(() => {
+      const id = generateClientId()
+      const input = {
+        id,
+        fromLocation: data.fromLocation,
+        toLocation: data.toLocation,
+        amount: data.amount.trim(),
+        note: data.note.trim() || undefined,
+        fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : undefined,
+        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
+      }
+      const optimistic: FundTransfer = {
+        id,
+        transferType: "internal",
+        fromLocation: data.fromLocation,
+        toLocation: data.toLocation,
+        fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : null,
+        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
+        amount: data.amount.trim(),
+        transferredBy: session.user.id,
+        note: data.note.trim() || null,
+        createdAt: new Date(),
+      }
 
-    try {
-      insertFundTransferWithInput(id, optimistic, input)
-      toast.success("Fund transfer recorded")
-      reset()
-      setDialogOpen(false)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to record transfer")
-    }
+      try {
+        insertFundTransferWithInput(id, optimistic, input)
+        toast.success("Fund transfer recorded")
+        reset()
+        setDialogOpen(false)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to record transfer")
+      }
+    })
   }
 
   return (

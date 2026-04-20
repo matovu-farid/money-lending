@@ -54,7 +54,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
       })
       .from(loans)
       .innerJoin(customers, eq(loans.customerId, customers.id))
-      .where(eq(loans.id, loanId))
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
 
     if (!row) return { error: "Loan not found" }
 
@@ -64,7 +64,7 @@ export const getLoanPaymentContextAction = withAction<string, any>({
         customerId: row.customerId,
         customerName: row.customerName,
         loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
-        startDate: new Date(row.startDate).toISOString().slice(0, 10),
+        startDate: localDateString(row.startDate),
       },
     }
   },
@@ -85,7 +85,7 @@ export const getLoanCollateralAction = withAction<string, { data: { nature: stri
 export const getLoanReceiptDataAction = withAction<string, any>({
   permission: "loan:read",
   action: async (_session, loanId) => {
-    const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
+    const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
     if (!loan) return { error: "Loan not found" }
 
     const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
@@ -243,6 +243,15 @@ export async function createLoanAction(input: CreateLoanInput) {
 
   // Check sufficient funds at disbursement source (all locations including cash)
   // For rollovers, principalAmount is already the fresh cash portion (carried amounts are separate)
+  //
+  // KNOWN TOCTOU RISK: This balance check runs outside the loan creation transaction
+  // in loan.service.ts. A concurrent disbursement could pass validation here but
+  // overdraw the fund by the time the transaction commits. The ledger's double-entry
+  // bookkeeping will record the correct (negative) balance, so the data stays consistent,
+  // but the business constraint (no overdraw) is enforced optimistically. A database-level
+  // CHECK constraint or trigger on the Cash category balance would close this gap but
+  // requires aggregating across all transaction rows, which is expensive as a constraint.
+  // For now, the admin dashboard surfaces negative balances for manual remediation.
   const freshAmount = new BigNumber(input.principalAmount)
 
   if (freshAmount.isGreaterThan(0)) {
@@ -337,7 +346,7 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
       ? await db
           .select()
           .from(payments)
-          .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+          .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
           .orderBy(asc(payments.paymentDate))
       : []
 
@@ -505,7 +514,7 @@ export const listActiveLoansWithOverdueAction = withAction({
 })
 
 export const waivePenaltyAction = withAction<string, any>({
-  permission: "loan:update",
+  permission: "settings:update",
   forbiddenMessage: "Only admins can waive penalties",
   action: async (session, loanId) => {
     try {
@@ -536,7 +545,7 @@ export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: 
 }
 
 const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: string }, any>({
-  permission: "loan:update",
+  permission: "settings:update",
   forbiddenMessage: "Only admins can adjust penalty rates",
   action: async (_session, { loanId, multiplier }) => {
     const value = parseFloat(multiplier)

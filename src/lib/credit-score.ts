@@ -2,6 +2,11 @@ import type { LoanListEntry } from "@/types/loan"
 import type { PaymentWithCustomer } from "@/types/payment"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 
+/** Normalize a Date or serialized ISO string to a Date object */
+function toDate(d: Date | string): Date {
+  return d instanceof Date ? d : new Date(d)
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -65,7 +70,7 @@ export function getBand(score: number): { label: string; color: string } {
 // ---------------------------------------------------------------------------
 
 export function recencyWeight(loanStartDate: Date, now: Date): number {
-  const ageInDays = Math.max(0, (now.getTime() - loanStartDate.getTime()) / (1000 * 60 * 60 * 24))
+  const ageInDays = Math.max(0, (toDate(now).getTime() - toDate(loanStartDate).getTime()) / (1000 * 60 * 60 * 24))
   return Math.exp(-ageInDays / 365)
 }
 
@@ -94,15 +99,20 @@ export function combinedWeights(
 export function scoreTimeliness(
   loan: { startDate: Date; principalAmount: string; status: string },
   payments: Array<{ paymentDate: Date }>,
+  now: Date = new Date(),
 ): number {
   if (payments.length === 0) return 0.5
-  const sorted = [...payments].sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime())
+  const sorted = [...payments].sort((a, b) => toDate(a.paymentDate).getTime() - toDate(b.paymentDate).getTime())
   const gaps: number[] = []
-  const firstGap = (sorted[0].paymentDate.getTime() - loan.startDate.getTime()) / (1000 * 60 * 60 * 24)
+  const firstGap = (toDate(sorted[0].paymentDate).getTime() - toDate(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
   gaps.push(Math.max(0, firstGap))
   for (let i = 1; i < sorted.length; i++) {
-    const gap = (sorted[i].paymentDate.getTime() - sorted[i - 1].paymentDate.getTime()) / (1000 * 60 * 60 * 24)
+    const gap = (toDate(sorted[i].paymentDate).getTime() - toDate(sorted[i - 1].paymentDate).getTime()) / (1000 * 60 * 60 * 24)
     gaps.push(Math.max(0, gap))
+  }
+  if (loan.status === "active") {
+    const trailingGap = (toDate(now).getTime() - toDate(sorted[sorted.length - 1].paymentDate).getTime()) / (1000 * 60 * 60 * 24)
+    gaps.push(Math.max(0, trailingGap))
   }
   const avgGap = gaps.reduce((a, b) => a + b, 0) / gaps.length
   if (avgGap <= 30) return 1.0
@@ -134,7 +144,7 @@ export function scorePaydown(
   const principal = parseFloat(loan.principalAmount)
   const outstanding = parseFloat(outstandingBalance)
   if (loan.status === "fully_paid" && lastPaymentDate) {
-    const daysToPayoff = (lastPaymentDate.getTime() - loan.startDate.getTime()) / (1000 * 60 * 60 * 24)
+    const daysToPayoff = (toDate(lastPaymentDate).getTime() - toDate(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
     const minDays = loan.minInterestDays
     if (daysToPayoff <= minDays * 0.7) return 1.0
     if (daysToPayoff <= minDays) return 0.85

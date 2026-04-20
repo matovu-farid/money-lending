@@ -78,6 +78,7 @@ export {
 } from "./loan-extras"
 
 export { expenseCategoryCollection } from "./expense-categories"
+export { incomeCategoryCollection } from "./income-categories"
 
 export {
   systemCapitalCollection,

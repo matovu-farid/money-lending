@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/popover"
 import { markAllAsReadAction } from "@/actions/notification.actions"
 import { useNotificationUnreadCount } from "@/hooks/use-notifications"
-import { notificationListCollection, notificationUnreadCountCollection } from "@/collections"
+import { notificationListCollection } from "@/collections"
 import type { Notification } from "@/types"
 import { cn, formatRelativeTime } from "@/lib/utils"
 
@@ -57,10 +57,6 @@ function NotificationBellContent() {
     notificationListCollection.update(notification.id, (draft) => {
       draft.isRead = true
     })
-    notificationUnreadCountCollection.update("singleton", (draft) => {
-      draft.count = Math.max(0, draft.count - 1)
-    })
-
     // Navigate to the relevant detail page based on reference type
     if (notification.referenceType === "loan" && notification.referenceId) {
       router.push(`/loans/${notification.referenceId}`)
@@ -79,9 +75,6 @@ function NotificationBellContent() {
             draft.isRead = true
           })
         }
-      })
-      notificationUnreadCountCollection.update("singleton", (draft) => {
-        draft.count = 0
       })
     }
   }

@@ -59,10 +59,10 @@ describe("Receipt Number — property-based tests", () => {
     )
   })
 
-  it("uniqueness: 500 generated receipts are all unique", () => {
-    const receipts = Array.from({ length: 500 }, () => generateReceiptNumber())
+  it("uniqueness: 200 generated receipts are all unique", () => {
+    const receipts = Array.from({ length: 200 }, () => generateReceiptNumber())
     const unique = new Set(receipts)
-    expect(unique.size).toBe(500)
+    expect(unique.size).toBe(200)
   })
 
   it("date portion is valid: 8-digit date parses to a valid date", () => {

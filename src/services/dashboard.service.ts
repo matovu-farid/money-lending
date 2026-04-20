@@ -96,7 +96,7 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
           ? await db
               .select()
               .from(payments)
-              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
               .orderBy(asc(payments.paymentDate))
           : []
 

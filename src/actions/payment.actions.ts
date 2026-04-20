@@ -9,16 +9,17 @@ import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLo
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
-import { getBaseRate } from "@/lib/interest/effective-rate"
+import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull } from "drizzle-orm"
-import type { RecordPaymentInput, EditPaymentInput, DeletePaymentInput, ListPaymentsInput } from "@/types"
+import { toLoanType, type RecordPaymentInput, type EditPaymentInput, type DeletePaymentInput, type ListPaymentsInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 import { shortId } from "@/lib/utils"
 import { sendAdminNotification } from "@/lib/email"
 import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
 import { autoPostInterestEarned, autoPostPrincipalRepayment } from "@/services/auto-post.service"
-import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger } from "@/services/ledger-queries.service"
-import { allocatePayment } from "@/lib/interest/engine"
+import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
+import { allocatePayment, formatAmount } from "@/lib/interest/engine"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { daysBetween } from "@/lib/db/utils"
 
@@ -63,6 +64,7 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
 })
 
 export const editPaymentAction = withAction<EditPaymentInput, any>({
+  permission: "payment:create",
   action: async (session, input) => {
     if (!input.paymentId?.trim()) {
       return { error: "Payment ID is required" }
@@ -112,6 +114,7 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
 })
 
 export const deletePaymentAction = withAction<DeletePaymentInput, any>({
+  permission: "payment:create",
   action: async (session, input) => {
     if (!input.paymentId?.trim()) {
       return { error: "Payment ID is required" }
@@ -176,7 +179,7 @@ export const getPaymentsByLoanAction = withAction<string, any>({
       const rows = await db
         .select()
         .from(payments)
-        .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
+        .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
         .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
       return { data: rows }
     } catch (error) {
@@ -357,7 +360,7 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
           .returning()
 
         // Recompute allocation from loan state to determine interest/principal portions
-        const monthlyRateDecimal = getBaseRate(loan)
+        const baseRate = getBaseRate(loan)
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
         const loanType = loan.loanType ?? "perpetual"
 
@@ -386,6 +389,23 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
           principalBalanceBefore = runningBalance.toFixed(0)
         }
         const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate))
+
+        // Compute penalty status as of the payment date (not today) to match recordPayment behavior
+        const interestEarnedMap = await getInterestEarnedFromLedger([payment.loanId], tx)
+        const overdueInfo = computeLoanOverdueInfo({
+          principalAmount: loan.principalAmount,
+          baseRate,
+          startDate: new Date(loan.startDate),
+          loanType: toLoanType(loan.loanType),
+          termMonths: loan.termMonths,
+          totalInterestPaid: formatAmount(interestEarnedMap.get(payment.loanId) ?? new BigNumber(0)),
+          paymentCount: activePayments.length,
+          outstandingBalance: principalBalanceBefore,
+          penaltyWaived: loan.penaltyWaived,
+          loan,
+          asOf: new Date(payment.paymentDate),
+        })
+        const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
         const paymentNumber = paymentIndex + 1
 
         const allocation = allocatePayment({

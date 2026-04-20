@@ -702,11 +702,11 @@ describe("FUZZ: Sequential Payment Simulation", () => {
 
 // ─── Invariant: formatAmount Rounding ─────────────────────────────
 describe("FUZZ: formatAmount Rounding Consistency", () => {
-  it("formatAmount always returns a valid integer string", () => {
+  it("formatAmount always returns a valid 2-decimal string", () => {
     for (let i = 0; i < FUZZ_ITERATIONS; i++) {
       const val = new BigNumber(randomDecimal(0, 10000000, 6))
       const formatted = formatAmount(val)
-      expect(/^-?\d+$/.test(formatted)).toBe(true)
+      expect(/^-?\d+\.\d{2}$/.test(formatted)).toBe(true)
     }
   })
 

@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, jsonb } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, jsonb, unique } from "drizzle-orm/pg-core"
 
 export const financialSnapshots = pgTable("financial_snapshots", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -8,4 +8,6 @@ export const financialSnapshots = pgTable("financial_snapshots", {
   data: jsonb("data").notNull(),
   generatedAt: timestamp("generated_at", { withTimezone: true }).defaultNow().notNull(),
   generatedBy: text("generated_by").notNull(),
-})
+}, (table) => [
+  unique("uq_snapshots_type_period").on(table.type, table.periodStart),
+])

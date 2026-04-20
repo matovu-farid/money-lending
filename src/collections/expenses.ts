@@ -37,10 +37,10 @@ export const expenseCollection = createCollection(
         throw new Error("Missing expense input for optimistic insert")
       }
       const result = await recordExpenseAction(input)
+      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingInsertInputs.delete(modified.id)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })

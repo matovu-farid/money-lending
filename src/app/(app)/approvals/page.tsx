@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, Suspense } from "react"
+import { useState, useTransition, Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
@@ -88,7 +88,7 @@ export default function ApprovalsPage() {
 }
 
 function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
-  const [isPending, setIsPending] = useState(false)
+  const [isPending, startTransition] = useTransition()
 
   const { data: requests = [] } = useLiveSuspenseQuery(
     (q) => q.from({ r: rateChangeRequestCollection }),
@@ -112,13 +112,15 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
 
   function handleReviewSubmit() {
     if (!reviewingRequest) return
-    reviewRateChangeRequest(reviewingRequest.id, {
-      requestId: reviewingRequest.id,
-      action: reviewAction,
-      reviewNote: reviewNote.trim() || undefined,
+    startTransition(() => {
+      reviewRateChangeRequest(reviewingRequest.id, {
+        requestId: reviewingRequest.id,
+        action: reviewAction,
+        reviewNote: reviewNote.trim() || undefined,
+      })
+      toast.success(reviewAction === "approved" ? "Rate change approved and applied" : "Rate change request rejected")
+      closeReviewDialog()
     })
-    toast.success(reviewAction === "approved" ? "Rate change approved and applied" : "Rate change request rejected")
-    closeReviewDialog()
   }
 
   const pendingRequests = requests.filter((r: RateChangeRequestWithLoan) => r.status === "pending")

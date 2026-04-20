@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum, index } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, pgEnum, index, unique } from "drizzle-orm/pg-core"
 
 export const customerStatusEnum = pgEnum("customer_status", [
   "active",
@@ -18,4 +18,5 @@ export const customers = pgTable("customers", {
 }, (table) => [
   index("idx_customers_full_name").on(table.fullName),
   index("idx_customers_status").on(table.status),
+  unique("uq_customers_nin").on(table.nin),
 ])

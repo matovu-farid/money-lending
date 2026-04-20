@@ -63,6 +63,11 @@ describe("validatePositiveDecimal", () => {
   it("rejects non-numeric", () => {
     expect(validatePositiveDecimal("abc", "Amount")).not.toBeNull()
   })
+  it("accepts valid number with trailing/leading whitespace", () => {
+    expect(validatePositiveDecimal("100 ", "Amount")).toBeNull()
+    expect(validatePositiveDecimal(" 100", "Amount")).toBeNull()
+    expect(validatePositiveDecimal(" 100.50 ", "Amount")).toBeNull()
+  })
 })
 
 describe("Property-Based: Validator Functions", () => {

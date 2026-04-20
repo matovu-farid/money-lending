@@ -57,9 +57,9 @@ export const loansDueTodayCollection = createCollection(
       const result = await getLoansDueTodayAction()
       const data = result as { data: LoanDueToday[] } | { error: string }
       if ("error" in data) throw new Error(data.error)
-      return data.data.map((entry, i) => ({
+      return data.data.map((entry) => ({
         ...entry,
-        _key: `due-${i}`,
+        _key: entry.loanId,
       }))
     },
     getKey: (row) => row._key,

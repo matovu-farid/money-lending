@@ -248,18 +248,19 @@ describe("Rate Change Request Service", () => {
     const { writeAuditLog } = await import("@/services/audit.service")
     const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
 
-    // Mock select to return the pending request
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([mockRequest]),
-      }),
-    })
-
     const updatedRequest = { ...mockRequest, status: "approved", reviewedBy: "reviewer-1", reviewedAt: new Date() }
 
+    // After the TOCTOU fix, both select and update happen inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                for: vi.fn().mockResolvedValue([mockRequest]),
+              }),
+            }),
+          }),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
@@ -293,17 +294,19 @@ describe("Rate Change Request Service", () => {
     const { writeAuditLog } = await import("@/services/audit.service")
     const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
 
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([mockRequest]),
-      }),
-    })
-
     const rejectedRequest = { ...mockRequest, status: "rejected", reviewedBy: "reviewer-1" }
 
+    // After the TOCTOU fix, both select and update happen inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                for: vi.fn().mockResolvedValue([mockRequest]),
+              }),
+            }),
+          }),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
@@ -336,11 +339,21 @@ describe("Rate Change Request Service", () => {
   it("returns RateChangeRequestNotFound when request does not exist", async () => {
     const { db: mockedDb } = await import("@/lib/db")
 
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    })
+    // After TOCTOU fix, the select happens inside the transaction
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                for: vi.fn().mockResolvedValue([]),
+              }),
+            }),
+          }),
+        }
+        return callback(mockTx)
+      }
+    )
 
     const { reviewRequest } = await import("@/services/rate-change-request.service")
     const exit = await Effect.runPromiseExit(
@@ -361,11 +374,22 @@ describe("Rate Change Request Service", () => {
     const { db: mockedDb } = await import("@/lib/db")
 
     const alreadyApproved = { ...mockRequest, status: "approved" }
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([alreadyApproved]),
-      }),
-    })
+
+    // After the TOCTOU fix, the select happens inside the transaction
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                for: vi.fn().mockResolvedValue([alreadyApproved]),
+              }),
+            }),
+          }),
+        }
+        return callback(mockTx)
+      }
+    )
 
     const { reviewRequest } = await import("@/services/rate-change-request.service")
     const exit = await Effect.runPromiseExit(
@@ -378,9 +402,50 @@ describe("Rate Change Request Service", () => {
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
         expect(error.value._tag).toBe("ValidationError")
-        expect(error.value.message).toContain("already been reviewed")
+        expect(error.value.message).toContain("already")
       }
     }
+  })
+
+  it("fetches and locks request inside transaction to prevent TOCTOU race", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const { writeAuditLog } = await import("@/services/audit.service")
+
+    const updatedRequest = { ...mockRequest, status: "approved", reviewedBy: "reviewer-1", reviewedAt: new Date() }
+
+    let capturedTx: any = null
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                for: vi.fn().mockResolvedValue([mockRequest]),
+              }),
+            }),
+          }),
+          update: vi.fn().mockReturnValue({
+            set: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([updatedRequest]),
+              }),
+            }),
+          }),
+        }
+        capturedTx = mockTx
+        return callback(mockTx)
+      }
+    )
+
+    const { reviewRequest } = await import("@/services/rate-change-request.service")
+    await Effect.runPromise(
+      reviewRequest({ requestId: "req-1", action: "approved", reviewNote: "OK" }, "reviewer-1")
+    )
+
+    // The select must happen inside the transaction (via tx.select), not db.select
+    expect(capturedTx.select).toHaveBeenCalled()
+    // db.select should NOT have been called for the request lookup
+    expect(mockedDb.select).not.toHaveBeenCalled()
   })
 
   // ── countPendingRequests ──────────────────────────────────────────

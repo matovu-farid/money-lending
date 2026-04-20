@@ -32,8 +32,8 @@ export const loanCollection = createCollection(
       const settleInput = pendingSettlements.get(original.id)
       if (settleInput) {
         const result = await settleWithCollateralAction(settleInput)
-        if ("error" in result) throw new Error(result.error)
         pendingSettlements.delete(original.id)
+        if ("error" in result) throw new Error(result.error)
         const qc = getQueryClient()
         qc.invalidateQueries({ queryKey: queryKeys.loans.all })
         qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
@@ -50,10 +50,10 @@ export const loanCollection = createCollection(
         throw new Error("Missing loan input for optimistic insert")
       }
       const result = await createLoanAction(input)
+      pendingInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingInputs.delete(modified.id)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })

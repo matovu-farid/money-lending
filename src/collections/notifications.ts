@@ -43,6 +43,9 @@ export const notificationListCollection = createCollection(
       if (changes.isRead === true) {
         const result = await markAsReadAction(original.id)
         if (!("data" in result)) throw new Error("Failed to mark as read")
+        // Invalidate unread count so the badge refreshes
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount })
       }
     },
   })

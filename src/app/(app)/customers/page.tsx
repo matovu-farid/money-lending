@@ -4,7 +4,7 @@ import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { customerCollection } from "@/collections"
+import { customerCollection, loanCollection } from "@/collections"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
 import type { CustomerSearchParams } from "@/types"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
@@ -26,6 +26,10 @@ export default function CustomersPage() {
     q.from({ c: customerCollection }).select(({ c }) => c)
   )
 
+  const { data: allLoans } = useLiveSuspenseQuery((q) =>
+    q.from({ l: loanCollection }).select(({ l }) => l)
+  )
+
   // Client-side filtering
   const filtered = useMemo(() => {
     let result = allCustomers ?? []
@@ -38,8 +42,37 @@ export default function CustomersPage() {
     if (searchParams.status?.length) {
       result = result.filter((c) => searchParams.status!.includes(c.status))
     }
+
+    // Cross-reference with loans for loan-based filters
+    const loans = allLoans ?? []
+    if (searchParams.loanStatus?.length) {
+      const customerIdsWithMatchingLoans = new Set(
+        loans
+          .filter((l) => searchParams.loanStatus!.includes(l.status))
+          .map((l) => l.customerId)
+      )
+      result = result.filter((c) => customerIdsWithMatchingLoans.has(c.id))
+    }
+    if (searchParams.daysRemainingFilter && searchParams.daysRemainingFilter !== "any") {
+      const matchingCustomerIds = new Set(
+        loans
+          .filter((l) => {
+            if (l.status !== "active") return false
+            if (searchParams.daysRemainingFilter === "due_within_30") {
+              return l.daysOverdue === 0
+            }
+            if (searchParams.daysRemainingFilter === "overdue_30_plus") {
+              return l.daysOverdue >= 30
+            }
+            return false
+          })
+          .map((l) => l.customerId)
+      )
+      result = result.filter((c) => matchingCustomerIds.has(c.id))
+    }
+
     return result
-  }, [allCustomers, searchParams])
+  }, [allCustomers, allLoans, searchParams])
 
   // Client-side pagination
   const customers = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)

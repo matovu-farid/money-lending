@@ -201,7 +201,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       }
       updatePaymentWithInput(editingPayment.id, input, (draft) => {
         if (editAmount.trim()) draft.amount = editAmount.trim()
-        if (editDate) draft.paymentDate = new Date(editDate) as unknown as typeof draft.paymentDate
+        if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
       })
       toast.success("Payment updated")
       closePaymentEdit()

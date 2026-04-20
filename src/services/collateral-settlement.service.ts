@@ -134,7 +134,7 @@ export const settleWithCollateral = (
         const activePayments = await tx
           .select()
           .from(payments)
-          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
         // Accrued interest
@@ -249,7 +249,7 @@ export async function getCustomerActiveLoan(customerId: string): Promise<{
   const activePayments = await db
     .select()
     .from(payments)
-    .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt)))
+    .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
     .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
   const custBalanceMap = await getLoanBalancesFromLedger([loan.id])

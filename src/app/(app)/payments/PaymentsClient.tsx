@@ -28,6 +28,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { markPaymentWrongAction } from "@/actions/payment.actions"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
@@ -184,7 +186,7 @@ function PaymentsContent({
       }
       updatePaymentWithInput(selectedPayment.id, input, (draft) => {
         if (editAmount) draft.amount = editAmount
-        if (editDate) draft.paymentDate = new Date(editDate) as unknown as typeof draft.paymentDate
+        if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
       })
       toast.success("Payment updated")
       closeEdit()
@@ -205,6 +207,19 @@ function PaymentsContent({
       }
       toast.success("Payment marked as wrong")
       closeMarkWrong()
+      // Invalidate caches — markPaymentWrongAction bypasses TanStack DB collections
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.payments.all })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(markWrongTarget.loanId) })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     })
   }
 

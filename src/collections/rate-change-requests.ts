@@ -37,8 +37,8 @@ export const rateChangeRequestCollection = createCollection(
       const reviewInput = pendingReviews.get(original.id)
       if (reviewInput) {
         const result = await reviewRateChangeRequestAction(reviewInput)
-        if ("error" in result) throw new Error(result.error)
         pendingReviews.delete(original.id)
+        if ("error" in result) throw new Error(result.error)
         if (reviewInput.action === "approved") {
           const qc = getQueryClient()
           qc.invalidateQueries({ queryKey: queryKeys.loans.all })
@@ -55,10 +55,10 @@ export const rateChangeRequestCollection = createCollection(
         throw new Error("Missing rate change request input for optimistic insert")
       }
       const result = await requestRateChangeAction(input)
+      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      pendingInsertInputs.delete(modified.id)
     },
   })
 )

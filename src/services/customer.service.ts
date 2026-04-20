@@ -131,7 +131,7 @@ export const searchCustomers = (
           ? await db
               .select()
               .from(payments)
-              .where(and(inArray(payments.loanId, allLoanIds), isNull(payments.deletedAt)))
+              .where(and(inArray(payments.loanId, allLoanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
           : []
 
         // Group payments by loanId

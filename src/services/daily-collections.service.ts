@@ -31,6 +31,7 @@ export const getDailyCollections = (
         .where(
           and(
             isNull(payments.deletedAt),
+            eq(payments.markedWrong, false),
             sql`DATE(${payments.paymentDate} AT TIME ZONE 'Africa/Kampala') = ${date}::date`
           )
         )
@@ -103,7 +104,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
       const allPayments = await db
         .select()
         .from(payments)
-        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt)))
+        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
         .orderBy(asc(payments.paymentDate))
 
       const { getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/transaction.service")

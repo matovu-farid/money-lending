@@ -62,7 +62,7 @@ vi.mock("@/lib/db", () => {
 })
 
 vi.mock("@/lib/db/schema/payments", () => ({
-  payments: { id: "id", loanId: "loanId", deletedAt: "deletedAt", recordedBy: "recordedBy", paymentDate: "paymentDate", createdAt: "createdAt" },
+  payments: { id: "id", loanId: "loanId", deletedAt: "deletedAt", recordedBy: "recordedBy", paymentDate: "paymentDate", createdAt: "createdAt", markedWrong: "markedWrong" },
 }))
 
 vi.mock("@/lib/db/schema/loans", () => ({
@@ -127,6 +127,7 @@ import {
   deletePaymentAction,
   listPaymentsAction,
   searchActiveLoansAction,
+  getPaymentsByLoanAction,
 } from "../payment.actions"
 
 const mockGetSession = vi.mocked(getSession)
@@ -337,6 +338,36 @@ describe("Payment Actions", () => {
       mockListPayments.mockReturnValue(Effect.succeed(data) as any)
       const result = await listPaymentsAction({ page: 1, pageSize: 25 })
       expect(result).toEqual({ data })
+    })
+  })
+
+  // ===== getPaymentsByLoanAction =====
+  describe("getPaymentsByLoanAction", () => {
+    it("excludes markedWrong payments from the query", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const { db: mockedDb } = await import("@/lib/db")
+      const { eq, and, isNull } = await import("drizzle-orm")
+
+      const mockRows = [
+        { id: "p1", loanId: "loan-1", amount: "50000", markedWrong: false },
+      ]
+
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue(mockRows),
+          }),
+        }),
+      })
+
+      await getPaymentsByLoanAction("loan-1")
+
+      // Verify that eq was called with the markedWrong column and false
+      const eqCalls = (eq as ReturnType<typeof vi.fn>).mock.calls
+      const markedWrongFilter = eqCalls.find(
+        (call: any[]) => call[0] === "markedWrong" && call[1] === false
+      )
+      expect(markedWrongFilter).toBeDefined()
     })
   })
 

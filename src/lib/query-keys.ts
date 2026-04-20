@@ -42,6 +42,7 @@ export const queryKeys = {
   // ── Income ───────────────────────────────────────────────────────────
   income: {
     all: ["income"] as const,
+    categories: ["income", "categories"] as const,
   },
 
   // ── Fund Transfers ───────────────────────────────────────────────────

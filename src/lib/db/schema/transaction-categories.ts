@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, timestamp, pgEnum, boolean, index } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, pgEnum, boolean, index, unique } from "drizzle-orm/pg-core"
 
 export const categoryTypeEnum = pgEnum("category_type", ["asset", "liability", "equity", "revenue", "expense"])
 
@@ -10,4 +10,5 @@ export const transactionCategories = pgTable("transaction_categories", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_categories_name").on(table.name),
+  unique("uq_categories_name_type").on(table.name, table.type),
 ])

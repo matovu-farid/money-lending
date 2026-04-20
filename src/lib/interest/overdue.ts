@@ -104,3 +104,12 @@ export function computeLoanOverdueInfo(params: {
     effectiveRate,
   }
 }
+
+/**
+ * Determine whether a loan's penalty waiver should be reset.
+ * The waiver should only be reset when the borrower is fully current
+ * (0 days overdue), not merely below the 60-day penalty threshold.
+ */
+export function shouldResetPenaltyWaiver(daysOverdue: number, penaltyWaived: boolean): boolean {
+  return daysOverdue === 0 && penaltyWaived
+}

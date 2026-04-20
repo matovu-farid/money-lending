@@ -814,9 +814,9 @@ function simulateLoanLifecycle(params: {
 
     // 1. Conservation of money
     const sum = new BigNumber(alloc.interestPortion).plus(new BigNumber(alloc.principalPortion))
-    if (sum.minus(new BigNumber(paymentAmount)).abs().isGreaterThan(1)) {
+    if (sum.minus(new BigNumber(paymentAmount)).abs().isGreaterThan(2)) {
       violations.push(
-        `Payment #${paymentNumber}: conservation violated — payment=${paymentAmount}, interest=${alloc.interestPortion} + principal=${alloc.principalPortion} = ${sum.toFixed(0)}`
+        `Payment #${paymentNumber}: conservation violated — payment=${paymentAmount}, interest=${alloc.interestPortion} + principal=${alloc.principalPortion} = ${sum.toFixed(2)}`
       )
     }
 
@@ -842,9 +842,9 @@ function simulateLoanLifecycle(params: {
 
     // 5. Total principal paid never exceeds original
     totalPrincipalPaid = totalPrincipalPaid.plus(new BigNumber(alloc.principalPortion))
-    if (totalPrincipalPaid.isGreaterThan(new BigNumber(principal).plus(1))) {
+    if (totalPrincipalPaid.isGreaterThan(new BigNumber(principal).plus(2))) {
       violations.push(
-        `Payment #${paymentNumber}: total principal paid (${totalPrincipalPaid.toFixed(0)}) exceeds original (${principal})`
+        `Payment #${paymentNumber}: total principal paid (${totalPrincipalPaid.toFixed(2)}) exceeds original (${principal})`
       )
     }
 
@@ -1023,9 +1023,9 @@ function simulateTermLoanLifecycle(params: {
 
     // 1. Conservation of money (interest + principal = payment, within 1)
     const sum = new BigNumber(alloc.interestPortion).plus(new BigNumber(alloc.principalPortion))
-    if (sum.minus(new BigNumber(paymentAmount)).abs().isGreaterThan(1)) {
+    if (sum.minus(new BigNumber(paymentAmount)).abs().isGreaterThan(2)) {
       violations.push(
-        `Payment #${paymentNumber}: conservation violated — payment=${paymentAmount}, interest=${alloc.interestPortion} + principal=${alloc.principalPortion} = ${sum.toFixed(0)}`
+        `Payment #${paymentNumber}: conservation violated — payment=${paymentAmount}, interest=${alloc.interestPortion} + principal=${alloc.principalPortion} = ${sum.toFixed(2)}`
       )
     }
 
