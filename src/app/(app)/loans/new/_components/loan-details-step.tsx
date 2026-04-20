@@ -366,11 +366,15 @@ function useMinRate(): number {
 function InterestRateField({
   register,
   errors,
+  interestRateDisplay,
 }: {
   register: UseFormRegister<LoanFormValues>
   errors: FieldErrors<LoanFormValues>
+  interestRateDisplay: string
 }) {
   const minRate = useMinRate()
+  const rateValue = parseFloat(interestRateDisplay)
+  const needsReason = !isNaN(rateValue) && rateValue < 10
 
   return (
     <div className="space-y-1">
@@ -418,6 +422,29 @@ function InterestRateField({
         <p className="text-xs text-muted-foreground">
           Your role allows rates of {minRate}% and above. To set a lower rate, request a rate change after the loan is created.
         </p>
+      )}
+      {needsReason && (
+        <div className="space-y-1 mt-2">
+          <Label htmlFor="lowRateReason" className="font-semibold text-sm">Reason for low rate</Label>
+          <textarea
+            id="lowRateReason"
+            className="w-full rounded-lg border border-input bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:border-ring min-h-[60px] resize-y"
+            placeholder="Explain why the interest rate is below 10%..."
+            maxLength={500}
+            {...register("lowRateReason", {
+              validate: (v) => {
+                const rate = parseFloat(interestRateDisplay)
+                if (!isNaN(rate) && rate < 10 && !v?.trim()) {
+                  return "A reason is required when the interest rate is below 10%"
+                }
+                return true
+              },
+            })}
+          />
+          {errors.lowRateReason && (
+            <p className="text-sm text-destructive">{errors.lowRateReason.message}</p>
+          )}
+        </div>
       )}
     </div>
   )

@@ -189,6 +189,7 @@ export const addInvestment = (
           investmentDate: input.investmentDate,
           actorId,
           depositLocation: input.depositLocation,
+          subLocationId: input.subLocationId,
         })
 
         return investment;

@@ -102,8 +102,9 @@ export function PosReceiptDisbursement({
           <span>Interest Rate:</span>
           <span>{interestRate}</span>
         </div>
-        <div>
-          <span>Collateral: {collateralNature}</span>
+        <div className="flex justify-between">
+          <span>Collateral:</span>
+          <span>{collateralNature}</span>
         </div>
 
         {formattedSource && (

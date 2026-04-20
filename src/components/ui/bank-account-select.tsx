@@ -2,6 +2,7 @@
 
 import { Controller, type Control, type FieldValues, type Path } from "react-hook-form"
 import { useLiveQuery } from "@tanstack/react-db"
+import Link from "next/link"
 import { bankAccountCollection } from "@/collections"
 import { Label } from "@/components/ui/label"
 import {
@@ -42,7 +43,11 @@ function BankAccountSelect<T extends FieldValues>({
       <div className="space-y-1.5">
         <Label>{label}</Label>
         <p className="text-sm text-muted-foreground">
-          No bank accounts configured. Ask a supervisor to create one in Fund Transfers.
+          No bank accounts have been set up yet. Please{" "}
+          <Link href="/fund-transfers" className="text-primary underline underline-offset-4 hover:text-primary/80">
+            add a bank account
+          </Link>{" "}
+          first before proceeding.
         </p>
       </div>
     )

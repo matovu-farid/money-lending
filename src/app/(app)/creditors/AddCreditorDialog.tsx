@@ -17,8 +17,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import { todayDateString } from "@/lib/utils"
-import type { DepositLocation } from "@/types"
 
 interface CreditorFormValues {
   name: string
@@ -27,6 +27,7 @@ interface CreditorFormValues {
   amount: string
   interestRateMonthly: string
   investmentDate: string
+  bankAccountId: string
 }
 
 interface AddCreditorDialogProps {
@@ -51,6 +52,7 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
       amount: "",
       interestRateMonthly: "3",
       investmentDate: todayDateString(),
+      bankAccountId: "",
     },
   })
 
@@ -78,7 +80,8 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
           amount: data.amount.trim(),
           interestRateMonthly: (Number(data.interestRateMonthly) / 100).toString(),
           investmentDate: data.investmentDate,
-          depositLocation: "cash" as DepositLocation,
+          depositLocation: "bank",
+          subLocationId: data.bankAccountId,
         }
       )
 
@@ -204,6 +207,15 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
                 />
                 {errors.investmentDate && <p className="text-sm text-destructive">{errors.investmentDate.message}</p>}
               </div>
+
+              <BankAccountSelect
+                name="bankAccountId"
+                control={control}
+                label="Deposit To"
+                disabled={isPending}
+                id="cred-bank-account"
+                showBalances={false}
+              />
             </div>
           </div>
         </form>

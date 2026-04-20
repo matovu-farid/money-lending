@@ -72,6 +72,7 @@ function NewLoanPageInner() {
       collateralNature: resumingDraft ? draftSnapshot.collateralNature : "",
       collateralDescription: resumingDraft ? draftSnapshot.collateralDescription : "",
       backdateNote: "",
+      lowRateReason: "",
     },
     mode: "onTouched",
   })
@@ -207,7 +208,7 @@ function NewLoanPageInner() {
 
   // --- Step navigation ---
 
-  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource", "backdateNote"]
+  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource", "backdateNote", "lowRateReason"]
   const step2Fields: (keyof LoanFormValues)[] = ["collateralNature", "collateralDescription"]
 
   async function handleStep1Next() {
@@ -351,6 +352,7 @@ function NewLoanPageInner() {
         {step === 1 && (
           <LoanDetailsStep
             register={register}
+            watch={watch}
             control={control}
             errors={errors}
             prefilledCustomerId={prefilledCustomerId}

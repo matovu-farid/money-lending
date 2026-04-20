@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
+import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import { todayDateString } from "@/lib/utils"
 
 interface Props {
@@ -28,6 +29,7 @@ interface InvestmentFormValues {
   amount: string
   interestRate: string
   date: string
+  bankAccountId: string
 }
 
 export function AddInvestmentDialog({ creditorId }: Props) {
@@ -45,6 +47,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
       amount: "",
       interestRate: "10",
       date: todayDateString(),
+      bankAccountId: "",
     },
   })
 
@@ -53,6 +56,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
       amount: "",
       interestRate: "10",
       date: todayDateString(),
+      bankAccountId: "",
     })
   }
 
@@ -64,6 +68,8 @@ export function AddInvestmentDialog({ creditorId }: Props) {
           amount: data.amount.trim(),
           interestRateMonthly: (Number(data.interestRate) / 100).toString(),
           investmentDate: data.date,
+          depositLocation: "bank",
+          subLocationId: data.bankAccountId,
         })
         if ("error" in result) {
           toast.error(result.error)
@@ -153,6 +159,15 @@ export function AddInvestmentDialog({ creditorId }: Props) {
             />
             {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
           </div>
+
+          <BankAccountSelect
+            name="bankAccountId"
+            control={control}
+            label="Deposit To"
+            disabled={isPending}
+            id="inv-bank-account"
+            showBalances={false}
+          />
 
           <DialogFooter showCloseButton>
             <Button type="submit" disabled={isPending}>

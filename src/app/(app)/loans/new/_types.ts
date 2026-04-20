@@ -11,6 +11,7 @@ export interface LoanFormValues {
   collateralNature: string
   collateralDescription: string
   backdateNote: string
+  lowRateReason: string
 }
 
 export interface ReceiptData {

@@ -31,6 +31,7 @@ export interface CreateCreditorWithInvestmentInput {
   interestRateMonthly: string
   investmentDate: string
   depositLocation?: DepositLocation
+  subLocationId?: string
 }
 
 export interface AddInvestmentInput {
@@ -40,6 +41,7 @@ export interface AddInvestmentInput {
   interestRateMonthly: string
   investmentDate: string
   depositLocation?: DepositLocation
+  subLocationId?: string
 }
 
 export interface RecordCreditorRepaymentInput {
