@@ -1,17 +1,20 @@
 import { cn } from "@/lib/utils"
+import { Breadcrumb, type BreadcrumbItem } from "@/components/ui/breadcrumb"
 
 interface PageHeaderProps {
   title: string
   subtitle?: string | React.ReactNode
+  breadcrumbs?: BreadcrumbItem[]
   children?: React.ReactNode
   className?: string
 }
 
-export function PageHeader({ title, subtitle, children, className }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, breadcrumbs, children, className }: PageHeaderProps) {
   if (children) {
     return (
       <div className={cn("flex items-center justify-between", className)}>
         <div>
+          {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
           {subtitle && (
             typeof subtitle === "string" ? (
@@ -32,6 +35,7 @@ export function PageHeader({ title, subtitle, children, className }: PageHeaderP
 
   return (
     <div className={className}>
+      {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
       <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
       {subtitle && (
         typeof subtitle === "string" ? (

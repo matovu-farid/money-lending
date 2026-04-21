@@ -1,3 +1,5 @@
+"use client"
+
 import type { LucideIcon } from "lucide-react"
 import type { ReactNode } from "react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,8 +16,9 @@ interface KpiCardProps {
 }
 
 export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName, loading, labelExtra }: KpiCardProps) {
+
   return (
-    <Card>
+    <Card interactive>
       <CardContent className="pt-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
@@ -23,7 +26,9 @@ export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName, lo
             {loading ? (
               <div className="h-8 w-32 rounded bg-muted-foreground/10 animate-pulse" />
             ) : (
-              <p className={cn("text-2xl font-semibold font-mono tracking-tight tabular-nums", valueClassName)}>{value}</p>
+              <p className={cn("text-2xl font-semibold font-mono tracking-tight tabular-nums", valueClassName)}>
+                {value}
+              </p>
             )}
             {subtitle && (
               <p className="text-sm text-muted-foreground">{subtitle}</p>

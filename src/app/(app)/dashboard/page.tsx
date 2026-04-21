@@ -2,11 +2,21 @@
 
 import { Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink } from "lucide-react"
+import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink, Plus, DollarSign } from "lucide-react"
 import Link from "next/link"
 import { useDashboard } from "@/hooks/use-dashboard"
 import { dashboardActivityCollection } from "@/collections"
+import dynamic from "next/dynamic"
 import { KpiCard } from "@/components/dashboard/kpi-card"
+
+const CollectionsChart = dynamic(
+  () => import("@/components/dashboard/collections-chart").then((m) => m.CollectionsChart),
+  { ssr: false }
+)
+const LoanDistributionChart = dynamic(
+  () => import("@/components/dashboard/loan-distribution-chart").then((m) => m.LoanDistributionChart),
+  { ssr: false }
+)
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
@@ -163,6 +173,72 @@ function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => b
           </>
         )}
       </div>
+
+      {/* Quick Actions */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <Link
+          href="/payments"
+          className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-4 text-center hover:bg-muted transition-colors"
+        >
+          <DollarSign className="h-5 w-5 text-primary" />
+          <span className="text-sm font-medium">Record Payment</span>
+        </Link>
+        <Link
+          href="/customers/new"
+          className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-4 text-center hover:bg-muted transition-colors"
+        >
+          <Users className="h-5 w-5 text-primary" />
+          <span className="text-sm font-medium">New Customer</span>
+        </Link>
+        <Link
+          href="/loans/new"
+          className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-4 text-center hover:bg-muted transition-colors"
+        >
+          <Plus className="h-5 w-5 text-primary" />
+          <span className="text-sm font-medium">New Loan</span>
+        </Link>
+        <Link
+          href="/loans?filter=overdue"
+          className="flex flex-col items-center gap-2 rounded-lg border border-border bg-card p-4 text-center hover:bg-muted transition-colors"
+        >
+          <AlertTriangle className="h-5 w-5 text-destructive" />
+          <span className="text-sm font-medium">View Overdue</span>
+        </Link>
+      </div>
+
+      {/* Charts */}
+      {isAdmin && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Suspense
+            fallback={
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl font-semibold">Daily Collections</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[260px] rounded bg-muted-foreground/10 animate-pulse" />
+                </CardContent>
+              </Card>
+            }
+          >
+            <CollectionsChart />
+          </Suspense>
+          <Suspense
+            fallback={
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-xl font-semibold">Loan Distribution</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-[260px] rounded bg-muted-foreground/10 animate-pulse" />
+                </CardContent>
+              </Card>
+            }
+          >
+            <LoanDistributionChart />
+          </Suspense>
+        </div>
+      )}
 
       {/* Recent Activity */}
       <Card>
