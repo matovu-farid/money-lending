@@ -264,7 +264,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
           <DialogTrigger
             render={
               <Button variant="outline">
-                <PlusCircle className="mr-2 h-4 w-4" />
+                <PlusCircle className="h-4 w-4" />
                 Capital Injection
               </Button>
             }
@@ -340,7 +340,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               <Button type="submit" disabled={isPending} className="w-full">
                 {isPending ? (
                   <>
-                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                    <Loader2 className="animate-spin h-4 w-4" />
                     Recording...
                   </>
                 ) : (
@@ -354,7 +354,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
           <DialogTrigger
             render={
               <Button>
-                <ArrowRightLeft className="mr-2 h-4 w-4" />
+                <ArrowRightLeft className="h-4 w-4" />
                 New Transfer
               </Button>
             }
@@ -463,7 +463,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               <Button type="submit" disabled={isPending} className="w-full">
                 {isPending ? (
                   <>
-                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                    <Loader2 className="animate-spin h-4 w-4" />
                     Recording...
                   </>
                 ) : (
@@ -488,7 +488,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               <DialogTrigger
                 render={
                   <Button size="sm" variant="outline">
-                    <PlusCircle className="mr-2 h-3.5 w-3.5" />
+                    <PlusCircle className="h-3.5 w-3.5" />
                     New Account
                   </Button>
                 }

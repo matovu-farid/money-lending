@@ -130,7 +130,7 @@ export default function LoginPage() {
           <Button type="submit" className="w-full" disabled={isPending}>
             {isPending ? (
               <>
-                <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                <Loader2 className="animate-spin h-4 w-4" />
                 Signing in...
               </>
             ) : (

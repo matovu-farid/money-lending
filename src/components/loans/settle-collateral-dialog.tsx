@@ -116,7 +116,7 @@ export function SettleCollateralDialog({
             onClick={handleSubmit}
             disabled={isPending || !reason.trim()}
           >
-            {isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Confirm Settlement
           </Button>
         </DialogFooter>

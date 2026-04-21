@@ -68,7 +68,7 @@ export default function NewCustomerPage() {
               <Button type="submit" disabled={isPending}>
                 {isPending ? (
                   <>
-                    <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                    <Loader2 className="animate-spin h-4 w-4" />
                     Registering...
                   </>
                 ) : (

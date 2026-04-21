@@ -151,7 +151,7 @@ export function CustomerSearchBar({ onSearch, loading }: CustomerSearchBarProps)
 
         {hasActiveFilters && (
           <Button variant="ghost" size="sm" onClick={handleClearFilters}>
-            <X className="h-4 w-4 mr-1" />
+            <X className="h-4 w-4" />
             Clear filters
           </Button>
         )}

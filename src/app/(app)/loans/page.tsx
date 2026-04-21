@@ -324,7 +324,7 @@ export default function LoansPage() {
             Issue your first loan by selecting a customer.
           </p>
           <Button className="mt-4" onClick={() => setPickerOpen(true)}>
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="h-4 w-4" />
             Issue Loan
           </Button>
         </div>
@@ -442,7 +442,7 @@ export default function LoansPage() {
           {/* Actions Row */}
           <div className="flex items-center justify-end gap-2 print:hidden">
             <Button size="sm" onClick={() => setPickerOpen(true)}>
-              <Plus className="h-4 w-4 mr-1.5" />
+              <Plus className="h-4 w-4" />
               Issue Loan
             </Button>
             <Button
@@ -451,7 +451,7 @@ export default function LoansPage() {
               onClick={handleExportExcel}
               disabled={isExporting}
             >
-              <Download className="h-4 w-4 mr-1.5" />
+              <Download className="h-4 w-4" />
               {isExporting ? "Exporting..." : "Export Excel"}
             </Button>
           </div>

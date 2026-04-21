@@ -370,7 +370,7 @@ function PaymentsContent({
             disabled={rows.length === 0}
             onClick={() => exportToCsv(rows)}
           >
-            <Download className="h-4 w-4 mr-2" />
+            <Download className="h-4 w-4" />
             Export CSV
           </Button>
         )}

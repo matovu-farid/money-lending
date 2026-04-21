@@ -375,14 +375,22 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
 
   return (
     <div className="p-4 md:p-6 space-y-6 max-w-2xl">
-      <PageHeader title={customer.fullName} subtitle="Customer profile">
+      <PageHeader
+        title={customer.fullName}
+        subtitle="Customer profile"
+        breadcrumbs={[
+          { label: "Home", href: "/" },
+          { label: "Customers", href: "/customers" },
+          { label: customer.fullName },
+        ]}
+      >
         <CreditScoreBadge customerId={customerId} />
         {activeLoan && (
           <Link
             href={`/loans/${activeLoan.loan.id}/payments/new`}
             className={cn(buttonVariants({ variant: "outline" }))}
           >
-            <Banknote className="h-4 w-4 mr-1.5" />
+            <Banknote className="h-4 w-4" />
             Record Payment
           </Link>
         )}
@@ -428,7 +436,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
                   <Button type="submit" disabled={isEditPending}>
                     {isEditPending ? (
                       <>
-                        <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                        <Loader2 className="animate-spin h-4 w-4" />
                         Saving...
                       </>
                     ) : (
@@ -551,7 +559,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
             >
               {isStatusPending ? (
                 <>
-                  <Loader2 className="animate-spin mr-2 h-4 w-4" />
+                  <Loader2 className="animate-spin h-4 w-4" />
                   Saving...
                 </>
               ) : (

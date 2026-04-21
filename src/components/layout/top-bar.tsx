@@ -1,11 +1,14 @@
 "use client"
 
-import { PanelLeft } from "lucide-react"
+import { PanelLeft, Search } from "lucide-react"
 import { NotificationBell } from "@/components/notifications/notification-bell"
+import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { useSidebarStore } from "@/lib/stores/sidebar"
+import { useCommandPalette } from "@/components/command-palette"
 
 export function TopBar() {
   const { collapsed, toggle } = useSidebarStore()
+  const { open: openCommandPalette } = useCommandPalette()
 
   return (
     <header className="h-14 bg-background flex items-center px-4 md:px-6 shrink-0">
@@ -30,6 +33,25 @@ export function TopBar() {
         <span className="md:hidden font-semibold text-lg tracking-tight">Lending Manager</span>
       </div>
       <div className="flex items-center gap-2">
+        <button
+          onClick={openCommandPalette}
+          className="hidden sm:flex items-center gap-2 h-8 rounded-md border border-border bg-muted/50 px-2.5 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          aria-label="Open command palette"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span className="text-xs">Search...</span>
+          <kbd className="ml-1 inline-flex h-5 items-center gap-0.5 rounded border border-border bg-background px-1.5 font-mono text-[10px] font-medium">
+            <span className="text-xs">&#8984;</span>K
+          </kbd>
+        </button>
+        <button
+          onClick={openCommandPalette}
+          className="flex sm:hidden items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+          aria-label="Open command palette"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+        <ThemeToggle />
         <NotificationBell />
       </div>
     </header>

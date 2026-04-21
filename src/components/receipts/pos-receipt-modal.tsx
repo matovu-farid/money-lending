@@ -161,15 +161,15 @@ export function PosReceiptModal({
 
         <DialogFooter className="flex-row gap-2 sm:justify-end">
           <Button variant="outline" onClick={onClose}>
-            <X className="mr-2 h-4 w-4" />
+            <X className="h-4 w-4" />
             Close
           </Button>
           <Button variant="outline" onClick={handleDownloadImage} disabled={downloading}>
-            {downloading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
+            {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Save Image
           </Button>
           <Button onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" />
+            <Printer className="h-4 w-4" />
             Print
           </Button>
         </DialogFooter>

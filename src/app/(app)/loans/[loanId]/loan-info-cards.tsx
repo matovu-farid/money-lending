@@ -126,7 +126,7 @@ export function LoanInfoCards({
                   disabled={isWaivingPenalty}
                   onClick={onWaivePenalty}
                 >
-                  {isWaivingPenalty ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                  {isWaivingPenalty ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
                   Waive Penalty
                 </Button>
                 {!adjustingPenalty ? (
@@ -177,7 +177,7 @@ export function LoanInfoCards({
         {loan.status === "active" && has("rate-change:create") && !pendingRateRequest && (
           <div className="flex items-center gap-1.5 mt-2">
             <Button variant="outline" size="sm" onClick={() => onOpenRateChange(getBaseRate(loan))}>
-              <ArrowUpDown className="h-3.5 w-3.5 mr-1.5" />
+              <ArrowUpDown className="h-3.5 w-3.5" />
               Request Rate Change
             </Button>
             <PermissionInfo

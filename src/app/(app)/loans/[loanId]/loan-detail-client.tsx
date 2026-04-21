@@ -22,6 +22,7 @@ import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
 import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
+import { CopyButton } from "@/components/ui/copy-button"
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
 import { SimulatorPanel } from "@/components/loans/simulator-panel"
 import { Badge } from "@/components/ui/badge"
@@ -33,6 +34,7 @@ import { calculateSchedule } from "@/lib/interest/engine"
 import { useLoanDetailStore } from "@/lib/stores/loan-detail"
 import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button"
+import { Breadcrumb } from "@/components/ui/breadcrumb"
 import { LoanInfoCards } from "./loan-info-cards"
 import { PaymentTable } from "./payment-table"
 import { EditPaymentDialog } from "./edit-payment-dialog"
@@ -289,6 +291,14 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-6xl mx-auto">
+      <Breadcrumb
+        items={[
+          { label: "Home", href: "/" },
+          { label: "Loans", href: "/loans" },
+          { label: loanRef },
+        ]}
+      />
+
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
@@ -331,7 +341,10 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                 </div>
               </InfoPopover>
             </div>
-            <p className="text-xs text-muted-foreground font-mono mt-0.5">{loanRef}</p>
+            <span className="flex items-center gap-0.5 mt-0.5">
+              <p className="text-xs text-muted-foreground font-mono">{loanRef}</p>
+              <CopyButton value={loanRef} />
+            </span>
           </div>
         </div>
 
@@ -340,7 +353,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
             href={`/loans/new?customerId=${loan.customerId}`}
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
-            <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+            <PlusCircle className="h-3.5 w-3.5" />
             Issue New Loan
           </Link>
           {loan.status === "active" && has("loan:settle") && (
@@ -350,7 +363,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
               onClick={() => openSettleCollateral()}
               className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 border-orange-300"
             >
-              <ShieldAlert className="h-3.5 w-3.5 mr-1.5" />
+              <ShieldAlert className="h-3.5 w-3.5" />
               Settle with Collateral
             </Button>
           )}
@@ -425,7 +438,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                 href={`/loans/${loan.id}/payments/new`}
                 className={cn(buttonVariants())}
               >
-                <Banknote className="h-4 w-4 mr-1.5" />
+                <Banknote className="h-4 w-4" />
                 Record Payment
               </Link>
             )}
