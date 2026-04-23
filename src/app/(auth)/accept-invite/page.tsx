@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useTransition } from "react"
+import { useState, useEffect, useTransition, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
@@ -30,6 +30,20 @@ interface SetPasswordForm {
 }
 
 export default function AcceptInvitePage() {
+  return (
+    <Suspense fallback={
+      <Card>
+        <CardContent className="flex items-center justify-center py-12">
+          <Loader2 className="animate-spin h-6 w-6 text-muted-foreground" />
+        </CardContent>
+      </Card>
+    }>
+      <AcceptInviteContent />
+    </Suspense>
+  )
+}
+
+function AcceptInviteContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const token = searchParams.get("token") ?? ""
