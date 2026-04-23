@@ -3,7 +3,7 @@ import crypto from "crypto"
 import { db } from "@/lib/db"
 import { invitations } from "@/lib/db/schema/invitations"
 import { user } from "@/lib/db/schema/auth"
-import { eq, and, desc, sql } from "drizzle-orm"
+import { eq, and, desc } from "drizzle-orm"
 import { Resend } from "resend"
 import { InviteUserTemplate } from "@/lib/emails"
 import type { UserRole } from "@/types"
@@ -192,7 +192,7 @@ export async function validateInviteToken(rawToken: string) {
   return { valid: true as const, invitation }
 }
 
-export async function acceptInvitation(rawToken: string, password: string) {
+export async function acceptInvitation(rawToken: string) {
   const result = await validateInviteToken(rawToken)
 
   if (!result.valid) {
