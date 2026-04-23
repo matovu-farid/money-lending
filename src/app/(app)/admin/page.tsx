@@ -4,8 +4,11 @@ import { useState, Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
-import { delegationCollection, adminUserCollection } from "@/collections"
+import { delegationCollection, adminUserCollection, invitationCollection, type InvitationRow } from "@/collections"
+import { resendInviteAction } from "@/actions/invitation.actions"
 import { generateClientId } from "@/lib/client-id"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { useAdminUsers } from "@/hooks/use-admin-users"
 import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
@@ -323,6 +326,234 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
           )}
         </section>
       )}
+
+      {has("user:invite") && (
+        <InvitationsSection actorRole={actorRole} session={session} />
+      )}
     </div>
+  )
+}
+
+function InvitationsSection({
+  actorRole,
+  session,
+}: {
+  actorRole: UserRole
+  session: ReturnType<typeof useSession>["data"]
+}) {
+  const [email, setEmail] = useState("")
+  const [inviteeName, setInviteeName] = useState("")
+  const [inviteRole, setInviteRole] = useState<UserRole | "">("")
+  const [statusFilter, setStatusFilter] = useState("all")
+  const [isSending, setIsSending] = useState(false)
+
+  const roleOptions = getRoleOptions(actorRole)
+
+  const { data: allInvitations = [] } = useLiveSuspenseQuery((q) =>
+    q.from({ i: invitationCollection }).select(({ i }) => i)
+  )
+
+  const filteredInvitations =
+    statusFilter === "all"
+      ? allInvitations
+      : allInvitations.filter((inv) => inv.status === statusFilter)
+
+  async function handleSendInvite(e: React.FormEvent) {
+    e.preventDefault()
+    if (!email.trim() || !inviteeName.trim() || !inviteRole) return
+
+    try {
+      setIsSending(true)
+      invitationCollection.insert({
+        id: crypto.randomUUID(),
+        email: email.trim().toLowerCase(),
+        name: inviteeName.trim(),
+        role: inviteRole,
+        status: "pending",
+        invitedBy: session?.user?.id ?? "",
+        inviterName: session?.user?.name ?? "",
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        createdAt: new Date(),
+        acceptedAt: null,
+      })
+      toast.success(`Invitation sent to ${email}`)
+      setEmail("")
+      setInviteeName("")
+      setInviteRole("")
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to send invitation")
+    } finally {
+      setIsSending(false)
+    }
+  }
+
+  function handleRevoke(invitationId: string) {
+    try {
+      invitationCollection.delete(invitationId)
+      toast.success("Invitation revoked")
+    } catch {
+      toast.error("Failed to revoke invitation")
+    }
+  }
+
+  async function handleResend(invitationId: string) {
+    const result = await resendInviteAction({ invitationId })
+    if ("error" in result) {
+      toast.error(result.error)
+    } else {
+      toast.success("Invitation resent")
+    }
+  }
+
+  const STATUS_BADGES: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+    pending: "default",
+    accepted: "secondary",
+    expired: "destructive",
+    revoked: "outline",
+  }
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-lg font-semibold">Invitations</h2>
+
+      <form onSubmit={handleSendInvite} className="flex flex-col sm:flex-row gap-3 items-end">
+        <div className="space-y-1.5 flex-1">
+          <Label htmlFor="invite-name">Name</Label>
+          <Input
+            id="invite-name"
+            value={inviteeName}
+            onChange={(e) => setInviteeName(e.target.value)}
+            placeholder="John Doe"
+            disabled={isSending}
+          />
+        </div>
+        <div className="space-y-1.5 flex-1">
+          <Label htmlFor="invite-email">Email</Label>
+          <Input
+            id="invite-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="john@example.com"
+            disabled={isSending}
+          />
+        </div>
+        <div className="space-y-1.5 w-40">
+          <Label>Role</Label>
+          <Select
+            value={inviteRole}
+            onValueChange={(val: string | null) => val && setInviteRole(val as UserRole)}
+          >
+            <SelectTrigger size="sm">
+              <SelectValue placeholder="Select role" />
+            </SelectTrigger>
+            <SelectContent>
+              {roleOptions.map((role) => (
+                <SelectItem key={role} value={role}>
+                  {role === "loanOfficer"
+                    ? "Loan Officer"
+                    : role === "superAdmin"
+                      ? "Super Admin"
+                      : role.charAt(0).toUpperCase() + role.slice(1)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button type="submit" disabled={isSending || !email.trim() || !inviteeName.trim() || !inviteRole}>
+          Send Invite
+        </Button>
+      </form>
+
+      <div className="flex gap-2">
+        {["all", "pending", "accepted", "expired", "revoked"].map((s) => (
+          <Button
+            key={s}
+            variant={statusFilter === s ? "default" : "outline"}
+            size="sm"
+            onClick={() => setStatusFilter(s)}
+          >
+            {s.charAt(0).toUpperCase() + s.slice(1)}
+          </Button>
+        ))}
+      </div>
+
+      {filteredInvitations.length === 0 ? (
+        <p className="text-muted-foreground text-sm">No invitations found.</p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Sent By</TableHead>
+              <TableHead>Sent</TableHead>
+              <TableHead>Expires</TableHead>
+              <TableHead>Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filteredInvitations.map((inv) => (
+              <TableRow key={inv.id}>
+                <TableCell className="font-medium">{inv.name}</TableCell>
+                <TableCell>{inv.email}</TableCell>
+                <TableCell>
+                  {inv.role === "loanOfficer"
+                    ? "Loan Officer"
+                    : inv.role === "superAdmin"
+                      ? "Super Admin"
+                      : inv.role.charAt(0).toUpperCase() + inv.role.slice(1)}
+                </TableCell>
+                <TableCell>
+                  <Badge variant={STATUS_BADGES[inv.status] ?? "outline"}>
+                    {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
+                  </Badge>
+                </TableCell>
+                <TableCell>{inv.inviterName ?? "—"}</TableCell>
+                <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
+                  {formatDate(inv.createdAt)}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
+                  {formatDate(inv.expiresAt)}
+                </TableCell>
+                <TableCell>
+                  <div className="flex gap-2">
+                    {inv.status === "pending" && (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResend(inv.id)}
+                        >
+                          Resend
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => handleRevoke(inv.id)}
+                        >
+                          Revoke
+                        </Button>
+                      </>
+                    )}
+                    {inv.status === "expired" && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleResend(inv.id)}
+                      >
+                        Resend
+                      </Button>
+                    )}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </section>
   )
 }
