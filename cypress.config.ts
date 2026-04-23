@@ -256,10 +256,15 @@ export default defineConfig({
         },
 
         async "db:getInviteUrl"({ email }: { email: string }) {
-          const res = await fetch(`http://localhost:3000/api/test/invite-url?email=${encodeURIComponent(email)}`)
-          if (!res.ok) return null
-          const data = await res.json()
-          return data.url ?? null
+          // Read invite URL from temp file written by invitation.service.ts in test mode
+          const fs = await import("fs")
+          const filePath = `/tmp/invite-url-${email}`
+          try {
+            const url = fs.readFileSync(filePath, "utf-8").trim()
+            return url || null
+          } catch {
+            return null
+          }
         },
 
         async "db:cleanInvitations"() {

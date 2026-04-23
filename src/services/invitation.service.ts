@@ -77,6 +77,9 @@ export async function createInvitation(input: {
 
   if (isTest) {
     pendingInviteUrls.set(input.email, inviteUrl)
+    // Also write to /tmp for Cypress task access (in-memory map is server-only)
+    const fs = await import("fs")
+    fs.writeFileSync(`/tmp/invite-url-${input.email}`, inviteUrl)
   } else {
     await resend.emails.send({
       from: emailFrom,
@@ -137,6 +140,8 @@ export async function resendInvitation(invitationId: string, inviterName: string
 
   if (isTest) {
     pendingInviteUrls.set(existing.email, inviteUrl)
+    const fs = await import("fs")
+    fs.writeFileSync(`/tmp/invite-url-${existing.email}`, inviteUrl)
   } else {
     await resend.emails.send({
       from: emailFrom,

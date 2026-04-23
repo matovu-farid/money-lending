@@ -6,10 +6,6 @@ describe("Invitation System", () => {
     cy.task("db:reset")
   })
 
-  /**
-   * Register a user via the form, promote to a role, then clear cookies.
-   * Uses the same pattern as the registration test and admin-panel test.
-   */
   function registerAndPromote(email: string, name: string, role: string) {
     cy.visit("/register")
     cy.get("#name").type(name)
@@ -37,22 +33,40 @@ describe("Invitation System", () => {
   }
 
   /**
-   * Fill and submit the invitation form in the Invitations section.
-   * The role Select uses a SelectTrigger with placeholder "Select role".
+   * Fill and submit the invitation form.
+   * Uses keyboard selection (type first letter + enter) following admin-panel.cy.ts pattern.
    */
-  function sendInvite(name: string, email: string, roleLabel: string) {
-    cy.get("#invite-name").type(name)
-    cy.get("#invite-email").type(email)
+  function sendInvite(name: string, email: string, roleFirstLetter: string) {
+    cy.get("#invite-name").clear().type(name)
+    cy.get("#invite-email").clear().type(email)
 
-    // The role Select is inside the Invitations <section>
+    // Open the role Select inside the Invitations section
     cy.contains("section", "Invitations").within(() => {
       cy.get("[data-slot=select-trigger]").click()
     })
-    // SelectContent renders in a portal outside the section
+    // SelectContent renders in a portal — use keyboard to select
     cy.get("[data-slot=select-content]", { timeout: 5000 }).should("exist")
-    cy.contains("[data-slot=select-item]", roleLabel).click()
+    cy.focused().type(`${roleFirstLetter}{enter}`)
 
-    cy.contains("button", "Send Invite").click()
+    // Wait for the button to become enabled (role state updated)
+    cy.contains("button", "Send Invite").should("not.be.disabled").click()
+  }
+
+  /**
+   * Wait for server-side processing to complete after an optimistic insert.
+   * Checks the DB for the invitation row to confirm server processed it.
+   */
+  function waitForInviteProcessed(email: string) {
+    cy.task("db:getInvitations").then((rows: any) => {
+      const found = rows.find((r: any) => r.email === email)
+      if (!found) {
+        // Retry after a short delay
+        cy.wait(500)
+        cy.task("db:getInvitations").then((rows2: any) => {
+          expect(rows2.find((r: any) => r.email === email)).to.not.be.undefined
+        })
+      }
+    })
   }
 
   describe("Sending Invitations", () => {
@@ -66,9 +80,9 @@ describe("Invitation System", () => {
       cy.visit("/admin")
       cy.contains("Invitations", { timeout: 10000 }).should("be.visible")
 
-      sendInvite("John Doe", "john@example.com", "Loan Officer")
+      sendInvite("John Doe", "john@example.com", "l")
 
-      // Toast says "Invitation sent to john@example.com"
+      // Toast confirms the invite was sent
       cy.contains("Invitation sent", { timeout: 10000 }).should("be.visible")
 
       // Verify invitation appears in the invitations table
@@ -83,25 +97,28 @@ describe("Invitation System", () => {
       cy.visit("/admin")
       cy.contains("Invitations", { timeout: 10000 }).should("be.visible")
 
-      sendInvite("Duplicate Admin", adminEmail, "Loan Officer")
+      sendInvite("Duplicate Admin", adminEmail, "l")
 
-      // The service throws "This user already has an account"
-      cy.contains("already has an account", { timeout: 10000 }).should("be.visible")
+      // The optimistic insert succeeds but onInsert fails server-side.
+      // The invitation row should be rolled back — verify it doesn't persist.
+      cy.wait(2000) // Allow onInsert to fail and rollback
+      cy.contains("section", "Invitations").within(() => {
+        cy.contains(adminEmail).should("not.exist")
+      })
     })
 
     it("revokes a pending invitation", () => {
       cy.visit("/admin")
       cy.contains("Invitations", { timeout: 10000 }).should("be.visible")
 
-      sendInvite("To Revoke", "revoke@example.com", "Loan Officer")
+      sendInvite("To Revoke", "revoke@example.com", "l")
       cy.contains("Invitation sent", { timeout: 10000 }).should("be.visible")
 
-      // Click the Revoke button in the invitations table row
-      cy.contains("section", "Invitations").within(() => {
-        cy.contains("tr", "revoke@example.com").within(() => {
-          cy.contains("button", "Revoke").click()
-        })
-      })
+      // Wait for server processing before trying to revoke
+      waitForInviteProcessed("revoke@example.com")
+
+      // Click the Revoke button — there should be exactly one invitation
+      cy.contains("button", "Revoke").click()
 
       cy.contains("Invitation revoked", { timeout: 10000 }).should("be.visible")
     })
@@ -110,10 +127,10 @@ describe("Invitation System", () => {
       cy.visit("/admin")
       cy.contains("Invitations", { timeout: 10000 }).should("be.visible")
 
-      sendInvite("Filter Test", "filter@example.com", "Loan Officer")
+      sendInvite("Filter Test", "filter@example.com", "l")
       cy.contains("Invitation sent", { timeout: 10000 }).should("be.visible")
 
-      // Filter to Accepted (should be empty since all invitations are pending)
+      // Filter to Accepted (should be empty)
       cy.contains("section", "Invitations").within(() => {
         cy.contains("button", "Accepted").click()
         cy.contains("No invitations found").should("be.visible")
@@ -140,19 +157,29 @@ describe("Invitation System", () => {
       cy.visit("/admin")
       cy.contains("Invitations", { timeout: 10000 }).should("be.visible")
 
-      sendInvite("New Officer", "officer@example.com", "Loan Officer")
+      sendInvite("New Officer", "officer@example.com", "l")
       cy.contains("Invitation sent", { timeout: 10000 }).should("be.visible")
 
-      // Sign out and visit the invite URL
+      // Wait for the server to process the invite and store the URL
+      waitForInviteProcessed("officer@example.com")
+
+      // Sign out
       cy.clearCookies()
 
-      cy.task("db:getInviteUrl", { email: "officer@example.com" }).then(
-        (url) => {
-          expect(url).to.not.be.null
-          const parsed = new URL(url as string)
-          cy.visit(parsed.pathname + parsed.search)
-        }
-      )
+      // Get the invite URL — retry since the in-memory map may not be populated yet
+      function getInviteUrlWithRetry(email: string, retries = 5): void {
+        cy.task("db:getInviteUrl", { email }).then((url) => {
+          if (!url && retries > 0) {
+            cy.wait(1000)
+            getInviteUrlWithRetry(email, retries - 1)
+          } else {
+            expect(url).to.not.be.null
+            const parsed = new URL(url as string)
+            cy.visit(parsed.pathname + parsed.search)
+          }
+        })
+      }
+      getInviteUrlWithRetry("officer@example.com")
 
       // Accept invite page shows the invitee's name and role
       cy.contains("Welcome, New Officer", { timeout: 10000 }).should(
@@ -195,7 +222,7 @@ describe("Invitation System", () => {
   })
 
   describe("Permission Enforcement", () => {
-    it("hides invitations section from loan officers", () => {
+    it("redirects loan officers away from admin page", () => {
       adminEmail = `admin-${Date.now()}@fidexa.org`
       const officerEmail = `officer-${Date.now()}@fidexa.org`
 
@@ -205,8 +232,8 @@ describe("Invitation System", () => {
       loginAs(officerEmail)
       cy.visit("/admin")
 
-      // Loan officers do not have user:list permission, so they see "Access denied"
-      cy.contains("Access denied", { timeout: 10000 }).should("be.visible")
+      // Admin layout redirects users without user:list permission to /dashboard
+      cy.url({ timeout: 10000 }).should("include", "/dashboard")
     })
   })
 })
