@@ -47,6 +47,7 @@ export default defineConfig({
               DELETE FROM loans;
               DELETE FROM customers;
               DELETE FROM system_settings;
+              DELETE FROM invitation;
               DELETE FROM "user";
             `)
             return null
@@ -241,6 +242,35 @@ export default defineConfig({
               FROM payments ORDER BY created_at DESC
             `
             return rows
+          })
+        },
+
+        async "db:getInvitations"() {
+          return withSql(async (sql) => {
+            const rows = await sql`
+              SELECT id, email, name, role, status, token, expires_at, created_at
+              FROM invitation ORDER BY created_at DESC
+            `
+            return rows
+          })
+        },
+
+        async "db:getInviteUrl"({ email }: { email: string }) {
+          // Read invite URL from temp file written by invitation.service.ts in test mode
+          const fs = await import("fs")
+          const filePath = `/tmp/invite-url-${email}`
+          try {
+            const url = fs.readFileSync(filePath, "utf-8").trim()
+            return url || null
+          } catch {
+            return null
+          }
+        },
+
+        async "db:cleanInvitations"() {
+          return withSql(async (sql) => {
+            await sql`DELETE FROM invitation`
+            return null
           })
         },
       })

@@ -4,7 +4,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
 
-const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password"]
+const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite"]
 
 export async function proxy(request: NextRequest) {
   const session = await auth.api.getSession({

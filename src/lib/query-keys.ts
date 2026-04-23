@@ -111,6 +111,11 @@ export const queryKeys = {
     all: ["delegations"] as const,
   },
 
+  // ── Invitations ──────────────────────────────────────────────────────
+  invitations: {
+    all: ["invitations"] as const,
+  },
+
   // ── Admin Users ──────────────────────────────────────────────────────
   adminUsers: {
     list: ["admin-users", "list"] as const,

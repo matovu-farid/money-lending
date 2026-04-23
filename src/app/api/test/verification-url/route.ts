@@ -12,6 +12,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "email required" }, { status: 400 })
   }
 
+  // Support both verification URLs and invite URLs via ?type= param
+  const type = request.nextUrl.searchParams.get("type")
+
+  if (type === "invite") {
+    const { pendingInviteUrls } = await import("@/services/invitation.service")
+    const url = pendingInviteUrls.get(email)
+    if (!url) {
+      return NextResponse.json({ error: "no pending invite" }, { status: 404 })
+    }
+    return NextResponse.json({ url })
+  }
+
   const url = pendingVerifications.get(email)
   if (!url) {
     return NextResponse.json({ error: "no pending verification" }, { status: 404 })

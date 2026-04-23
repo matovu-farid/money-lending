@@ -449,7 +449,7 @@ describe("PERMISSIONS array", () => {
       "dashboard:read",
       "reports:read", "reports:financial",
       "settings:read", "settings:update",
-      "user:list", "user:ban", "user:impersonate",
+      "user:list", "user:ban", "user:impersonate", "user:invite",
       "session:list", "session:revoke", "session:delete",
       // delegation
       "delegation:create", "delegation:revoke", "delegation:read",
@@ -521,7 +521,7 @@ describe("ROLE_PERMISSIONS", () => {
       "rate-change:approve-low",
       "role:assign-supervisor",
       "settings:read", "settings:update",
-      "user:list", "user:ban", "user:impersonate",
+      "user:list", "user:ban", "user:impersonate", "user:invite",
       "session:list", "session:revoke", "session:delete",
       "delegation:create", "delegation:revoke", "delegation:read",
     ]

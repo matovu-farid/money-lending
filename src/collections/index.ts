@@ -16,6 +16,7 @@ export {
   reviewRateChangeRequest,
 } from "./rate-change-requests"
 export { delegationCollection, type DelegationRow } from "./delegations"
+export { invitationCollection, type InvitationRow } from "./invitations"
 
 // --- New read-only collections ---
 export {
