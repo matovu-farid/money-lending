@@ -117,10 +117,19 @@ describe("Invitation System", () => {
       // Wait for server processing before trying to revoke
       waitForInviteProcessed("revoke@example.com")
 
-      // Click the Revoke button — there should be exactly one invitation
-      cy.contains("button", "Revoke").click()
+      // Click the Revoke action button inside the invitations table
+      cy.contains("section", "Invitations")
+        .find("table")
+        .contains("button", "Revoke")
+        .click()
 
-      cy.contains("Invitation revoked", { timeout: 10000 }).should("be.visible")
+      // Verify the invitation was revoked by checking the DB
+      cy.wait(2000) // Allow server-side onDelete to process
+      cy.task("db:getInvitations").then((rows: any) => {
+        const invite = rows.find((r: any) => r.email === "revoke@example.com")
+        expect(invite).to.not.be.undefined
+        expect(invite.status).to.equal("revoked")
+      })
     })
 
     it("filters invitations by status", () => {
