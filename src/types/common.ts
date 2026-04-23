@@ -29,7 +29,7 @@ export type Permission =
   | "dashboard:read"
   | "reports:read" | "reports:financial"
   | "settings:read" | "settings:update"
-  | "user:list" | "user:ban" | "user:impersonate"
+  | "user:list" | "user:ban" | "user:impersonate" | "user:invite"
   | "session:list" | "session:revoke" | "session:delete"
   // delegation
   | "delegation:create" | "delegation:revoke" | "delegation:read"
