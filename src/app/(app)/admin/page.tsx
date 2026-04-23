@@ -4,7 +4,7 @@ import { useState, Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
-import { delegationCollection, adminUserCollection, invitationCollection, type InvitationRow } from "@/collections"
+import { delegationCollection, adminUserCollection, invitationCollection } from "@/collections"
 import { resendInviteAction } from "@/actions/invitation.actions"
 import { generateClientId } from "@/lib/client-id"
 import { Input } from "@/components/ui/input"
@@ -358,7 +358,7 @@ function InvitationsSection({
       ? allInvitations
       : allInvitations.filter((inv) => inv.status === statusFilter)
 
-  async function handleSendInvite(e: React.FormEvent) {
+  async function handleSendInvite(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!email.trim() || !inviteeName.trim() || !inviteRole) return
 
