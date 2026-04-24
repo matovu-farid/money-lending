@@ -262,7 +262,7 @@ export function Sidebar({ onClose }: SidebarProps) {
             <button
               type="button"
               className={cn(
-                "flex items-center gap-2 min-w-0 rounded-md hover:bg-sidebar-accent transition-colors",
+                "flex items-center gap-2 min-w-0 rounded-md hover:bg-sidebar-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                 collapsed ? "" : "flex-1 px-1 py-1 -mx-1"
               )}
               onClick={() => setChangeNameOpen(true)}
