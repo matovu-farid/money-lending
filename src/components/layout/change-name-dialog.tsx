@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -24,32 +24,30 @@ export function ChangeNameDialog({ open, onOpenChange, currentName }: ChangeName
   const [name, setName] = useState(currentName)
   const [isPending, setIsPending] = useState(false)
 
-  function handleOpen(nextOpen: boolean) {
-    if (!nextOpen) {
-      setName(currentName)
-    }
-    onOpenChange(nextOpen)
-  }
+  useEffect(() => {
+    if (open) setName(currentName)
+  }, [open, currentName])
 
   async function handleSubmit() {
     const trimmed = name.trim()
     if (!trimmed) return
 
     setIsPending(true)
-    const { error } = await authClient.updateUser({ name: trimmed })
-    setIsPending(false)
-
-    if (error) {
-      toast.error("Failed to update name")
-      return
+    try {
+      const { error } = await authClient.updateUser({ name: trimmed })
+      if (error) {
+        toast.error("Failed to update name")
+        return
+      }
+      toast.success("Name updated")
+      onOpenChange(false)
+    } finally {
+      setIsPending(false)
     }
-
-    toast.success("Name updated")
-    onOpenChange(false)
   }
 
   return (
-    <DrawerDialog open={open} onOpenChange={handleOpen}>
+    <DrawerDialog open={open} onOpenChange={onOpenChange}>
       <DrawerDialogContent>
         <DialogHeader>
           <DialogTitle>Change Name</DialogTitle>
@@ -71,7 +69,7 @@ export function ChangeNameDialog({ open, onOpenChange, currentName }: ChangeName
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => handleOpen(false)} disabled={isPending}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
             Cancel
           </Button>
           <Button onClick={handleSubmit} disabled={isPending || !name.trim()}>
