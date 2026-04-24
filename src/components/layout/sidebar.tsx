@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
@@ -23,6 +23,7 @@ import { usePermissions } from "@/hooks/use-permissions"
 import { signOut, useSession } from "@/lib/auth-client"
 import { useSidebarStore } from "@/lib/stores/sidebar"
 import { Button } from "@/components/ui/button"
+import { ChangeNameDialog } from "@/components/layout/change-name-dialog"
 import {
   Tooltip,
   TooltipContent,
@@ -96,6 +97,7 @@ export function Sidebar({ onClose }: SidebarProps) {
   const router = useRouter()
   const { data: session } = useSession()
   const prefetchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const [changeNameOpen, setChangeNameOpen] = useState(false)
 
   const user = session?.user
   const { has } = usePermissions()
@@ -256,20 +258,30 @@ export function Sidebar({ onClose }: SidebarProps) {
               collapsed ? "justify-center" : ""
             )}
           >
-            {/* Avatar circle with initials */}
-            <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold shrink-0">
-              {initials}
-            </div>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-sidebar-foreground truncate">
-                  {user?.name ?? "User"}
-                </p>
-                <p className="text-xs text-muted-foreground truncate">
-                  {user?.email ?? ""}
-                </p>
+            {/* Avatar + name area — clickable to change name */}
+            <button
+              type="button"
+              className={cn(
+                "flex items-center gap-2 min-w-0 rounded-md hover:bg-sidebar-accent transition-colors",
+                collapsed ? "" : "flex-1 px-1 py-1 -mx-1"
+              )}
+              onClick={() => setChangeNameOpen(true)}
+              aria-label="Change name"
+            >
+              <div className="h-8 w-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold shrink-0">
+                {initials}
               </div>
-            )}
+              {!collapsed && (
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="text-sm font-medium text-sidebar-foreground truncate">
+                    {user?.name ?? "User"}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {user?.email ?? ""}
+                  </p>
+                </div>
+              )}
+            </button>
             {!collapsed && (
               <Button
                 variant="ghost"
@@ -299,6 +311,11 @@ export function Sidebar({ onClose }: SidebarProps) {
             </Tooltip>
           )}
         </div>
+        <ChangeNameDialog
+          open={changeNameOpen}
+          onOpenChange={setChangeNameOpen}
+          currentName={user?.name ?? ""}
+        />
       </aside>
     </TooltipProvider>
   )
