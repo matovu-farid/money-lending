@@ -11,6 +11,9 @@ import type { TransactionRow, CreateTransactionInput } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
+// Note: transactions table subscription is set up in expenses.ts
+// (shared table, deduplicated by subscribeToTableChanges)
+
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
  * The onInsert handler reads from here because CreateTransactionInput has fields
@@ -41,12 +44,12 @@ export const incomeCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      // Invalidate query-based collections
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -54,12 +57,12 @@ export const incomeCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      // Invalidate query-based collections
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

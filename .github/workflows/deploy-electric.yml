@@ -1,0 +1,62 @@
+name: Deploy ElectricSQL
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "deploy/electric/**"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy stack file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ELECTRIC_SSH_HOST }}
+          username: ${{ secrets.ELECTRIC_SSH_USER }}
+          key: ${{ secrets.ELECTRIC_SSH_KEY }}
+          source: "deploy/electric/docker-stack.yml"
+          target: "~/electric-deploy/"
+          strip_components: 2
+
+      - name: Deploy Electric stack
+        uses: appleboy/ssh-action@v1
+        env:
+          ELECTRIC_DATABASE_URL: ${{ secrets.ELECTRIC_DATABASE_URL }}
+          ELECTRIC_SECRET: ${{ secrets.ELECTRIC_SECRET }}
+        with:
+          host: ${{ secrets.ELECTRIC_SSH_HOST }}
+          username: ${{ secrets.ELECTRIC_SSH_USER }}
+          key: ${{ secrets.ELECTRIC_SSH_KEY }}
+          envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET
+          script: |
+            # Ensure Docker Swarm is initialized
+            docker swarm init 2>/dev/null || true
+
+            # Pull latest image
+            docker pull electricsql/electric:latest
+
+            # Deploy the stack with env vars
+            cd ~/electric-deploy
+            export ELECTRIC_DATABASE_URL="$ELECTRIC_DATABASE_URL"
+            export ELECTRIC_SECRET="$ELECTRIC_SECRET"
+            export ELECTRIC_LOG_LEVEL=info
+            docker stack deploy -c docker-stack.yml electric
+
+            # Wait for service to be healthy
+            echo "Waiting for Electric to start..."
+            for i in $(seq 1 20); do
+              sleep 3
+              if curl -sf http://localhost:3001/v1/health > /dev/null 2>&1; then
+                echo "Electric is healthy!"
+                curl -s http://localhost:3001/v1/health
+                exit 0
+              fi
+              echo "  Attempt $i/20..."
+            done
+            echo "WARNING: Electric may still be starting up"

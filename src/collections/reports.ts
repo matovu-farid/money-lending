@@ -18,6 +18,26 @@ import type {
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { boundedSet } from "@/lib/bounded-map"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh reports when underlying data tables change via Electric
+subscribeToTableChanges("loans", getQueryClient(), [
+  queryKeys.reports.portfolio,
+  queryKeys.reports.pnl(),
+  queryKeys.reports.balanceSheet(),
+  queryKeys.reports.retainedEarnings(),
+])
+subscribeToTableChanges("payments", getQueryClient(), [
+  queryKeys.reports.portfolio,
+  queryKeys.reports.pnl(),
+  queryKeys.reports.balanceSheet(),
+  queryKeys.reports.retainedEarnings(),
+])
+subscribeToTableChanges("transactions", getQueryClient(), [
+  queryKeys.reports.transactions,
+  queryKeys.reports.pnl(),
+  queryKeys.reports.balanceSheet(),
+])
 
 // --- Portfolio (no params) ---
 

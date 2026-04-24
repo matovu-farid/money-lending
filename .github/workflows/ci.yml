@@ -17,6 +17,8 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       BUSINESS_TIMEZONE: Africa/Kampala
       CRON_SECRET: ci-cron-secret
+      ELECTRIC_URL: http://localhost:3001
+      ELECTRIC_SECRET: ci-electric-secret
 
     steps:
       - uses: actions/checkout@v4

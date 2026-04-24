@@ -15,6 +15,13 @@ import type {
 } from "@/types/payment"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when payments table changes via Electric
+subscribeToTableChanges("payments", getQueryClient(), [
+  queryKeys.payments.all,
+  queryKeys.payments.portionsAll,
+])
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
@@ -57,18 +64,15 @@ export const paymentCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate all derived data affected by a new payment
+      // Invalidate query-based collections (Electric handles payments/loans auto-refresh)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(input.loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
-      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onUpdate: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -81,19 +85,16 @@ export const paymentCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate all derived data affected by a payment edit
+      // Invalidate query-based collections
       const qc = getQueryClient()
       const loanId = (original as PaymentWithCustomer).loanId
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
-      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -109,19 +110,16 @@ export const paymentCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate all derived data affected by a payment deletion
+      // Invalidate query-based collections
       const qc = getQueryClient()
       const loanId = (original as PaymentWithCustomer).loanId
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
-      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

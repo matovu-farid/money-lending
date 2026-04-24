@@ -5,7 +5,13 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { getCreditorsPageDataAction } from "@/actions/creditor.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
 import type { Creditor } from "@/types/creditor"
+
+// Auto-refresh creditors page data when underlying tables change via Electric
+subscribeToTableChanges("creditors", getQueryClient(), [queryKeys.creditors.all])
+subscribeToTableChanges("creditor_investments", getQueryClient(), [queryKeys.creditors.all])
+subscribeToTableChanges("creditor_repayments", getQueryClient(), [queryKeys.creditors.all])
 
 export type CreditorsPageDataRow = {
   _key: string

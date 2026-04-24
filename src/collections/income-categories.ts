@@ -6,6 +6,9 @@ import { listIncomeCategoriesAction } from "@/actions/income.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
+// Note: transaction_categories subscription is set up in expense-categories.ts
+// (shared table, deduplicated by subscribeToTableChanges)
+
 export type IncomeCategoryRow = {
   _key: string
   id: string

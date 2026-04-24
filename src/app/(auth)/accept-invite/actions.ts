@@ -1,6 +1,6 @@
 "use server"
 
-import { validateInviteToken, acceptInvitation } from "@/services/invitation.service"
+import { validateInviteToken, acceptInvitation, markInvitationAccepted } from "@/services/invitation.service"
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
 import { db } from "@/lib/db"
@@ -29,9 +29,10 @@ export async function acceptInviteAndCreateAccount(token: string, password: stri
   if (!password || password.length < 8) return { error: "Password must be at least 8 characters" }
 
   try {
-    const { email, name, role } = await acceptInvitation(token)
+    // Validate token and get invite details — does NOT mark as accepted yet
+    const { invitationId, email, name, role } = await acceptInvitation(token)
 
-    // Create account via Better Auth with emailVerified: true
+    // Create account first — if this fails, the invitation stays "pending" so the user can retry
     const signUpResult = await auth.api.signUpEmail({
       body: { email, password, name },
       headers: await headers(),
@@ -46,6 +47,9 @@ export async function acceptInviteAndCreateAccount(token: string, password: stri
       .update(user)
       .set({ role, emailVerified: true })
       .where(eq(user.id, signUpResult.user.id))
+
+    // Only mark invitation as accepted after account is fully set up
+    await markInvitationAccepted(invitationId)
 
     return { data: { success: true } }
   } catch (e: any) {

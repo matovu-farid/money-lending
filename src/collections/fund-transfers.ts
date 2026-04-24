@@ -1,13 +1,14 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listFundTransfersAction,
   createFundTransferAction,
   createCapitalInjectionAction,
 } from "@/actions/fund-transfer.actions"
 import type { FundTransfer, CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types/fund-transfer"
+import { shapeUrl } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -20,17 +21,13 @@ const pendingInsertInputs = new Map<string, CreateFundTransferInput>()
 const pendingInjectionInputs = new Map<string, CreateCapitalInjectionInput>()
 
 export const fundTransferCollection = createCollection(
-  queryCollectionOptions<FundTransfer>({
-    queryKey: [...queryKeys.fundTransfers.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<FundTransfer>> => {
-      const result = await listFundTransfersAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data
-    },
+  electricCollectionOptions<FundTransfer>({
+    id: "fund-transfers",
     getKey: (transfer) => transfer.id,
+    shapeOptions: {
+      url: shapeUrl("fund_transfers"),
+      columnMapper: snakeCamelMapper(),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const injectionInput = pendingInjectionInputs.get(modified.id)
@@ -51,10 +48,10 @@ export const fundTransferCollection = createCollection(
           throw new Error(result.error)
         }
       }
+      // Invalidate query-based collections that depend on fund transfer data
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
     },
   })

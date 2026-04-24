@@ -6,6 +6,13 @@ import { getUnreadCountAction, getNotificationsAction, markAsReadAction } from "
 import type { Notification } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when notifications table changes via Electric
+subscribeToTableChanges("notifications", getQueryClient(), [
+  queryKeys.notifications.unreadCount,
+  queryKeys.notifications.list,
+])
 
 // --- Unread count (singleton) ---
 
@@ -43,9 +50,6 @@ export const notificationListCollection = createCollection(
       if (changes.isRead === true) {
         const result = await markAsReadAction(original.id)
         if (!("data" in result)) throw new Error("Failed to mark as read")
-        // Invalidate unread count so the badge refreshes
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.notifications.unreadCount })
       }
     },
   })

@@ -5,6 +5,17 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { getSystemCapitalAction, getCreditorMonthlyInterestDueAction } from "@/actions/creditor.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh capital totals and monthly due when creditor tables change via Electric
+subscribeToTableChanges("creditor_investments", getQueryClient(), [
+  queryKeys.creditors.capital,
+  queryKeys.creditors.monthlyDue,
+])
+subscribeToTableChanges("creditor_repayments", getQueryClient(), [
+  queryKeys.creditors.capital,
+  queryKeys.creditors.monthlyDue,
+])
 
 // --- System capital (singleton) ---
 

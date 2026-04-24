@@ -1,13 +1,14 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listCreditorsAction,
   createCreditorWithInvestmentAction,
   updateCreditorAction,
 } from "@/actions/creditor.actions"
 import type { Creditor, CreateCreditorWithInvestmentInput, UpdateCreditorInput } from "@/types/creditor"
+import { shapeUrl } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -19,17 +20,13 @@ import { queryKeys } from "@/lib/query-keys"
 const pendingInsertInputs = new Map<string, CreateCreditorWithInvestmentInput>()
 
 export const creditorCollection = createCollection(
-  queryCollectionOptions<Creditor>({
-    queryKey: [...queryKeys.creditors.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<Creditor>> => {
-      const result = await listCreditorsAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data
-    },
+  electricCollectionOptions<Creditor>({
+    id: "creditors",
     getKey: (creditor) => creditor.id,
+    shapeOptions: {
+      url: shapeUrl("creditors"),
+      columnMapper: snakeCamelMapper(),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input = pendingInsertInputs.get(modified.id)
@@ -41,8 +38,8 @@ export const creditorCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      // Invalidate query-based collections that depend on creditor data
       const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
     },

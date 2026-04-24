@@ -10,6 +10,13 @@ import {
 import type { TransactionRow, CreateTransactionInput } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when transactions table changes via Electric
+subscribeToTableChanges("transactions", getQueryClient(), [
+  queryKeys.expenses.all,
+  queryKeys.income.all,
+])
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
@@ -41,12 +48,12 @@ export const expenseCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      // Invalidate query-based collections
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -54,12 +61,12 @@ export const expenseCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      // Invalidate query-based collections
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

@@ -9,6 +9,12 @@ import {
 } from "@/actions/delegation.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when delegations table changes via Electric
+subscribeToTableChanges("delegations", getQueryClient(), [
+  queryKeys.delegations.all,
+])
 
 /** Row shape returned by listDelegationsAction */
 export interface DelegationRow {

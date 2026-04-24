@@ -5,6 +5,13 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { listExpenseCategoriesAction } from "@/actions/expense.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when transaction_categories table changes via Electric
+subscribeToTableChanges("transaction_categories", getQueryClient(), [
+  queryKeys.expenses.categories,
+  queryKeys.income.categories,
+])
 
 export type ExpenseCategoryRow = {
   _key: string

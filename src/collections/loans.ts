@@ -11,6 +11,13 @@ import type { LoanListEntry, CreateLoanInput } from "@/types/loan"
 import type { SettleWithCollateralInput } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when loans table changes via Electric
+subscribeToTableChanges("loans", getQueryClient(), [
+  queryKeys.loans.all,
+  queryKeys.loans.dueToday,
+])
 
 const pendingInputs = new Map<string, CreateLoanInput>()
 const pendingSettlements = new Map<string, SettleWithCollateralInput>()
@@ -34,13 +41,11 @@ export const loanCollection = createCollection(
         const result = await settleWithCollateralAction(settleInput)
         pendingSettlements.delete(original.id)
         if ("error" in result) throw new Error(result.error)
+        // Invalidate only query-based collections (Electric handles loans auto-refresh)
         const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
         qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
         qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
         qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-        qc.invalidateQueries({ queryKey: queryKeys.loans.dueToday })
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       }
     },
     onInsert: async ({ transaction }) => {
@@ -54,15 +59,13 @@ export const loanCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      // Invalidate only query-based collections (Electric handles auto-refresh for table-backed ones)
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.loans.dueToday })
-      qc.invalidateQueries({ queryKey: queryKeys.customers.all })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     },
   })
 )

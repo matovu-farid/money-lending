@@ -358,13 +358,13 @@ function InvitationsSection({
       ? allInvitations
       : allInvitations.filter((inv) => inv.status === statusFilter)
 
-  async function handleSendInvite(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSendInvite(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault()
     if (!email.trim() || !inviteeName.trim() || !inviteRole) return
 
+    setIsSending(true)
     try {
-      setIsSending(true)
-      invitationCollection.insert({
+      const tx = invitationCollection.insert({
         id: crypto.randomUUID(),
         email: email.trim().toLowerCase(),
         name: inviteeName.trim(),
@@ -376,6 +376,7 @@ function InvitationsSection({
         createdAt: new Date(),
         acceptedAt: null,
       })
+      await tx.isPersisted.promise
       toast.success(`Invitation sent to ${email}`)
       setEmail("")
       setInviteeName("")
@@ -387,12 +388,13 @@ function InvitationsSection({
     }
   }
 
-  function handleRevoke(invitationId: string) {
+  async function handleRevoke(invitationId: string) {
     try {
-      invitationCollection.delete(invitationId)
+      const tx = invitationCollection.delete(invitationId)
+      await tx.isPersisted.promise
       toast.success("Invitation revoked")
-    } catch {
-      toast.error("Failed to revoke invitation")
+    } catch (err: any) {
+      toast.error(err.message ?? "Failed to revoke invitation")
     }
   }
 

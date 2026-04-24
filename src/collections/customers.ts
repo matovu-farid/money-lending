@@ -1,28 +1,23 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  searchCustomersAction,
   createCustomerAction,
   updateCustomerAction,
 } from "@/actions/customer.actions"
 import type { Customer, CreateCustomerInput, UpdateCustomerInput } from "@/types/customer"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
+import { shapeUrl } from "@/lib/electric"
 
 export const customerCollection = createCollection(
-  queryCollectionOptions<Customer>({
-    queryKey: [...queryKeys.customers.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<Customer>> => {
-      const result = await searchCustomersAction({ page: 0, pageSize: 10000 })
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data.rows
-    },
+  electricCollectionOptions<Customer>({
+    id: "customers",
     getKey: (customer) => customer.id,
+    shapeOptions: {
+      url: shapeUrl("customers"),
+      columnMapper: snakeCamelMapper(),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input: CreateCustomerInput = {

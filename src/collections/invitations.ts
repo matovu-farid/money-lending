@@ -9,7 +9,13 @@ import {
 } from "@/actions/invitation.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
 import type { UserRole } from "@/types"
+
+// Auto-refresh when invitations table changes via Electric
+subscribeToTableChanges("invitations", getQueryClient(), [
+  queryKeys.invitations.all,
+])
 
 export interface InvitationRow {
   id: string

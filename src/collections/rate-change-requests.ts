@@ -11,6 +11,12 @@ import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.s
 import type { CreateRateChangeRequestInput } from "@/types/rate-change"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh when rate_change_requests table changes via Electric
+subscribeToTableChanges("rate_change_requests", getQueryClient(), [
+  queryKeys.rateChangeRequests.all,
+])
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
@@ -40,8 +46,8 @@ export const rateChangeRequestCollection = createCollection(
         pendingReviews.delete(original.id)
         if ("error" in result) throw new Error(result.error)
         if (reviewInput.action === "approved") {
+          // Invalidate query-based collections (Electric handles rate-change-requests auto-refresh)
           const qc = getQueryClient()
-          qc.invalidateQueries({ queryKey: queryKeys.loans.all })
           qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
           qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
           qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })

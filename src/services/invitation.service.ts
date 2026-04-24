@@ -206,17 +206,19 @@ export async function acceptInvitation(rawToken: string) {
 
   const { invitation } = result
 
-  // Mark invitation as accepted
-  await db
-    .update(invitations)
-    .set({ status: "accepted", acceptedAt: new Date() })
-    .where(eq(invitations.id, invitation.id))
-
   return {
+    invitationId: invitation.id,
     email: invitation.email,
     name: invitation.name,
     role: invitation.role as UserRole,
   }
+}
+
+export async function markInvitationAccepted(invitationId: string) {
+  await db
+    .update(invitations)
+    .set({ status: "accepted", acceptedAt: new Date() })
+    .where(eq(invitations.id, invitationId))
 }
 
 export async function listInvitations(statusFilter?: string) {

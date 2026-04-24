@@ -10,6 +10,16 @@ import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { boundedSet } from "@/lib/bounded-map"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh daily collections when payments or loans change via Electric
+subscribeToTableChanges("payments", getQueryClient(), [
+  queryKeys.dailyCollections.all,
+  queryKeys.loans.dueToday,
+])
+subscribeToTableChanges("loans", getQueryClient(), [
+  queryKeys.loans.dueToday,
+])
 
 // --- Daily collections by date (parameterized) ---
 

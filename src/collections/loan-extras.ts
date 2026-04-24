@@ -15,6 +15,13 @@ import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import type { UserRole, PaymentPortionsMap } from "@/types"
 import { boundedSet } from "@/lib/bounded-map"
+import { subscribeToTableChanges } from "@/lib/electric"
+
+// Auto-refresh location balances when financial tables change via Electric
+subscribeToTableChanges("loans", getQueryClient(), [queryKeys.locationBalances.all])
+subscribeToTableChanges("payments", getQueryClient(), [queryKeys.locationBalances.all])
+subscribeToTableChanges("transactions", getQueryClient(), [queryKeys.locationBalances.all])
+subscribeToTableChanges("fund_transfers", getQueryClient(), [queryKeys.locationBalances.all])
 
 // --- Collateral natures (no params, singleton array) ---
 
