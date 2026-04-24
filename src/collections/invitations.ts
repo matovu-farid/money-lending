@@ -13,7 +13,7 @@ import { subscribeToTableChanges } from "@/lib/electric"
 import type { UserRole } from "@/types"
 
 // Auto-refresh when invitations table changes via Electric
-subscribeToTableChanges("invitations", getQueryClient(), [
+subscribeToTableChanges("invitation", getQueryClient(), [
   queryKeys.invitations.all,
 ])
 

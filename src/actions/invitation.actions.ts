@@ -43,6 +43,7 @@ export const createInviteAction = withAction<
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {
+      console.error("[createInviteAction] Failed:", e)
       return { error: e.message ?? "Failed to send invitation" }
     }
   },
@@ -59,6 +60,7 @@ export const revokeInviteAction = withAction<{ invitationId: string }, any>({
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {
+      console.error("[revokeInviteAction] Failed:", e)
       return { error: e.message ?? "Failed to revoke invitation" }
     }
   },
@@ -78,6 +80,7 @@ export const resendInviteAction = withAction<{ invitationId: string }, any>({
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {
+      console.error("[resendInviteAction] Failed:", e)
       return { error: e.message ?? "Failed to resend invitation" }
     }
   },
@@ -89,7 +92,8 @@ export const listInvitationsAction = withAction({
     try {
       const data = await listInvitations()
       return { data }
-    } catch {
+    } catch (e) {
+      console.error("[listInvitationsAction] Failed:", e)
       return { error: "Failed to load invitations" }
     }
   },

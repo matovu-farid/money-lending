@@ -12,7 +12,7 @@ import { queryKeys } from "@/lib/query-keys"
 import { subscribeToTableChanges } from "@/lib/electric"
 
 // Auto-refresh when delegations table changes via Electric
-subscribeToTableChanges("delegations", getQueryClient(), [
+subscribeToTableChanges("delegation", getQueryClient(), [
   queryKeys.delegations.all,
 ])
 
