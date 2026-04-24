@@ -71,7 +71,7 @@ describe(
             await testDb.delete(schema.delegations)
 
             const userId = `sup-${supIdx}`
-            const created = await createDelegation(userId, "admin-fuzz")
+            const created = await createDelegation(crypto.randomUUID(), userId, "admin-fuzz")
             const active = await getActiveDelegation(userId)
 
             expect(active).not.toBeNull()
@@ -92,10 +92,10 @@ describe(
             await testDb.delete(schema.delegations)
 
             const userId = `sup-${supIdx}`
-            await createDelegation(userId, "admin-fuzz")
+            await createDelegation(crypto.randomUUID(), userId, "admin-fuzz")
 
             await expect(
-              createDelegation(userId, "admin-fuzz"),
+              createDelegation(crypto.randomUUID(), userId, "admin-fuzz"),
             ).rejects.toThrow("User already has an active delegation")
           },
         ),
@@ -111,7 +111,7 @@ describe(
             await testDb.delete(schema.delegations)
 
             const userId = `sup-${supIdx}`
-            const created = await createDelegation(userId, "admin-fuzz")
+            const created = await createDelegation(crypto.randomUUID(), userId, "admin-fuzz")
             await revokeDelegation(created.id, "admin-fuzz")
 
             const active = await getActiveDelegation(userId)
@@ -132,11 +132,11 @@ describe(
             const userId = `sup-${supIdx}`
 
             // First cycle
-            const first = await createDelegation(userId, "admin-fuzz")
+            const first = await createDelegation(crypto.randomUUID(), userId, "admin-fuzz")
             await revokeDelegation(first.id, "admin-fuzz")
 
             // Second cycle — should not throw
-            const second = await createDelegation(userId, "admin-fuzz")
+            const second = await createDelegation(crypto.randomUUID(), userId, "admin-fuzz")
             expect(second.id).not.toBe(first.id)
 
             const active = await getActiveDelegation(userId)
@@ -157,7 +157,7 @@ describe(
             await testDb.delete(schema.delegations)
 
             await expect(
-              createDelegation("admin-fuzz", "admin-fuzz"),
+              createDelegation(crypto.randomUUID(), "admin-fuzz", "admin-fuzz"),
             ).rejects.toThrow("Only supervisors can receive delegations")
           },
         ),
@@ -174,7 +174,7 @@ describe(
 
             const count = Math.min(n, 5) // cap at number of supervisors
             for (let i = 0; i < count; i++) {
-              await createDelegation(`sup-${i}`, "admin-fuzz")
+              await createDelegation(crypto.randomUUID(), `sup-${i}`, "admin-fuzz")
             }
 
             const all = await listDelegations()

@@ -37,6 +37,7 @@ export const invitationCollection = createCollection(
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await createInviteAction({
+        id: modified.id,
         email: modified.email,
         name: modified.name,
         role: modified.role as UserRole,

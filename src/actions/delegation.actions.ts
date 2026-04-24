@@ -8,16 +8,19 @@ import {
   listDelegations,
 } from "@/services/delegation.service"
 
-export const createDelegationAction = withAction<{ userId: string }, any>({
+export const createDelegationAction = withAction<{ id: string; userId: string }, any>({
   permission: "delegation:create",
   forbiddenMessage: "Only admins can create delegations",
   action: async (session, input) => {
+    if (!input.id?.trim()) {
+      return { error: "ID is required" }
+    }
     if (!input.userId?.trim()) {
       return { error: "User ID is required" }
     }
 
     try {
-      const data = await createDelegation(input.userId, session.user.id)
+      const data = await createDelegation(input.id, input.userId, session.user.id)
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {

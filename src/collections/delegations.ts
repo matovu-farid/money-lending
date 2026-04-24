@@ -29,7 +29,7 @@ export const delegationCollection = createCollection(
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
-      const result = await createDelegationAction({ userId: modified.userId })
+      const result = await createDelegationAction({ id: modified.id, userId: modified.userId })
       if ("error" in result) {
         throw new Error(result.error)
       }

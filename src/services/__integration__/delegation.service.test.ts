@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest"
 import { resetDb, testDb } from "./setup"
 import * as schema from "@/lib/db/schema"
-import { eq, and, isNull } from "drizzle-orm"
+
 import {
   createDelegation,
   revokeDelegation,
@@ -49,7 +49,7 @@ describe("Delegation Service — Integration", () => {
   // ─── Create → Get → List → Revoke flow ────────────────────────────
 
   it("creates a delegation for a supervisor", async () => {
-    const result = await createDelegation(SUPERVISOR_ID, ADMIN_ID)
+    const result = await createDelegation(crypto.randomUUID(), SUPERVISOR_ID, ADMIN_ID)
 
     expect(result.id).toBeDefined()
     expect(result.userId).toBe(SUPERVISOR_ID)
@@ -95,10 +95,10 @@ describe("Delegation Service — Integration", () => {
 
   it("prevents creating a second active delegation for the same user", async () => {
     // Create first delegation
-    await createDelegation(SUPERVISOR_ID, ADMIN_ID)
+    await createDelegation(crypto.randomUUID(), SUPERVISOR_ID, ADMIN_ID)
 
     // Attempt a second one
-    await expect(createDelegation(SUPERVISOR_ID, ADMIN_ID)).rejects.toThrow(
+    await expect(createDelegation(crypto.randomUUID(), SUPERVISOR_ID, ADMIN_ID)).rejects.toThrow(
       "User already has an active delegation"
     )
 
@@ -112,13 +112,13 @@ describe("Delegation Service — Integration", () => {
   // ─── Non-supervisor rejection ──────────────────────────────────────
 
   it("rejects delegation for a non-supervisor (admin)", async () => {
-    await expect(createDelegation(ADMIN_ID, ADMIN_ID)).rejects.toThrow(
+    await expect(createDelegation(crypto.randomUUID(), ADMIN_ID, ADMIN_ID)).rejects.toThrow(
       "Only supervisors can receive delegations"
     )
   })
 
   it("rejects delegation for a non-supervisor (agent)", async () => {
-    await expect(createDelegation(AGENT_ID, ADMIN_ID)).rejects.toThrow(
+    await expect(createDelegation(crypto.randomUUID(), AGENT_ID, ADMIN_ID)).rejects.toThrow(
       "Only supervisors can receive delegations"
     )
   })

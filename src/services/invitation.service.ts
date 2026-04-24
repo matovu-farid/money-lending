@@ -29,6 +29,7 @@ function getBaseUrl(): string {
 }
 
 export async function createInvitation(input: {
+  id: string
   email: string
   name: string
   role: UserRole
@@ -63,6 +64,7 @@ export async function createInvitation(input: {
   const [row] = await db
     .insert(invitations)
     .values({
+      id: input.id,
       email: input.email,
       name: input.name,
       role: input.role,

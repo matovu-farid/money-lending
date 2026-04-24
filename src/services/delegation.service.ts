@@ -3,7 +3,7 @@ import { delegations } from "@/lib/db/schema/delegations"
 import { user } from "@/lib/db/schema/auth"
 import { eq, isNull, and, desc } from "drizzle-orm"
 
-export async function createDelegation(userId: string, delegatedBy: string) {
+export async function createDelegation(id: string, userId: string, delegatedBy: string) {
   // Check for existing active delegation
   const [existing] = await db
     .select({ id: delegations.id })
@@ -27,7 +27,7 @@ export async function createDelegation(userId: string, delegatedBy: string) {
 
   const [row] = await db
     .insert(delegations)
-    .values({ userId, delegatedBy })
+    .values({ id, userId, delegatedBy })
     .returning()
 
   return row

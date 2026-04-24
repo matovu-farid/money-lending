@@ -13,12 +13,13 @@ import {
 } from "@/services/invitation.service"
 
 export const createInviteAction = withAction<
-  { email: string; name: string; role: UserRole },
+  { id: string; email: string; name: string; role: UserRole },
   any
 >({
   permission: "user:invite",
   forbiddenMessage: "Only admins can send invitations",
   action: async (session, input) => {
+    if (!input.id?.trim()) return { error: "ID is required" }
     if (!input.email?.trim()) return { error: "Email is required" }
     if (!input.name?.trim()) return { error: "Name is required" }
     if (!input.role) return { error: "Role is required" }
@@ -34,6 +35,7 @@ export const createInviteAction = withAction<
 
     try {
       const data = await createInvitation({
+        id: input.id.trim(),
         email: input.email.trim().toLowerCase(),
         name: input.name.trim(),
         role: input.role,

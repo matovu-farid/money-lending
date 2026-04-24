@@ -50,12 +50,12 @@ describe("createDelegationAction", () => {
   })
 
   it("returns error when userId is empty", async () => {
-    const result = await createDelegationAction({ userId: "" })
+    const result = await createDelegationAction({ id: "del-test", userId: "" })
     expect(result).toEqual({ error: "User ID is required" })
   })
 
   it("returns error when userId is whitespace", async () => {
-    const result = await createDelegationAction({ userId: "   " })
+    const result = await createDelegationAction({ id: "del-test", userId: "   " })
     expect(result).toEqual({ error: "User ID is required" })
   })
 
@@ -63,15 +63,15 @@ describe("createDelegationAction", () => {
     const mockData = { id: "del-1", userId: "user-1" }
     vi.mocked(createDelegation).mockResolvedValue(mockData as any)
 
-    const result = await createDelegationAction({ userId: "user-1" })
+    const result = await createDelegationAction({ id: "del-1", userId: "user-1" })
     expect(result).toEqual({ data: mockData })
-    expect(createDelegation).toHaveBeenCalledWith("user-1", "test-user")
+    expect(createDelegation).toHaveBeenCalledWith("del-1", "user-1", "test-user")
   })
 
   it("returns error when service throws", async () => {
     vi.mocked(createDelegation).mockRejectedValue(new Error("DB error"))
 
-    const result = await createDelegationAction({ userId: "user-1" })
+    const result = await createDelegationAction({ id: "del-1", userId: "user-1" })
     expect(result).toEqual({ error: "DB error" })
   })
 })

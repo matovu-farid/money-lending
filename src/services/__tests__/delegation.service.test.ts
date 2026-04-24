@@ -48,7 +48,7 @@ describe("Delegation Service — Unit", () => {
     mockDb.insert.mockReturnValue({ values: mockValues })
 
     const { createDelegation } = await import("@/services/delegation.service")
-    const result = await createDelegation("user-1", "admin-1")
+    const result = await createDelegation("del-1", "user-1", "admin-1")
 
     expect(result.id).toBe("del-1")
     expect(result.userId).toBe("user-1")
@@ -68,7 +68,7 @@ describe("Delegation Service — Unit", () => {
     mockDb.select.mockReturnValue({ from: mockFrom })
 
     const { createDelegation } = await import("@/services/delegation.service")
-    await expect(createDelegation("user-1", "admin-1")).rejects.toThrow(
+    await expect(createDelegation("del-1", "user-1", "admin-1")).rejects.toThrow(
       "User already has an active delegation"
     )
   })
@@ -92,7 +92,7 @@ describe("Delegation Service — Unit", () => {
       .mockReturnValueOnce({ from: mockFrom2 })
 
     const { createDelegation } = await import("@/services/delegation.service")
-    await expect(createDelegation("user-1", "admin-1")).rejects.toThrow(
+    await expect(createDelegation("del-1", "user-1", "admin-1")).rejects.toThrow(
       "Only supervisors can receive delegations"
     )
   })
@@ -116,7 +116,7 @@ describe("Delegation Service — Unit", () => {
       .mockReturnValueOnce({ from: mockFrom2 })
 
     const { createDelegation } = await import("@/services/delegation.service")
-    await expect(createDelegation("nonexistent", "admin-1")).rejects.toThrow(
+    await expect(createDelegation("del-1", "nonexistent", "admin-1")).rejects.toThrow(
       "Only supervisors can receive delegations"
     )
   })
