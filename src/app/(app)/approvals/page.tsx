@@ -1,13 +1,18 @@
 "use client"
 
-import { useState, useTransition, Suspense } from "react"
+import { useState, useTransition, useMemo, Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
-import { rateChangeRequestCollection, reviewRateChangeRequest } from "@/collections"
-import type { Permission } from "@/types"
+import {
+  rateChangeRequestCollection,
+  reviewRateChangeRequest,
+  loanCollection,
+  customerCollection,
+} from "@/collections"
+import type { Permission, RateChangeRequest } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
-import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
+import { shortId } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
@@ -32,6 +37,13 @@ import {
 import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { approvalStatusBadgeVariant } from "@/lib/status"
 import Link from "next/link"
+
+/** Enriched rate change request with resolved loan/customer fields for display */
+interface EnrichedRequest extends RateChangeRequest {
+  customerName: string
+  loanRef: string
+  principalAmount: string
+}
 
 function LoadingSkeleton() {
   return (
@@ -90,16 +102,57 @@ export default function ApprovalsPage() {
 function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
   const [isPending, startTransition] = useTransition()
 
-  const { data: requests = [] } = useLiveSuspenseQuery(
+  const { data: rawRequests = [] } = useLiveSuspenseQuery(
     (q) => q.from({ r: rateChangeRequestCollection }),
     []
   )
 
-  const [reviewingRequest, setReviewingRequest] = useState<RateChangeRequestWithLoan | null>(null)
+  const { data: allLoans = [] } = useLiveSuspenseQuery(
+    (q) => q.from({ l: loanCollection }),
+    []
+  )
+
+  const { data: allCustomers = [] } = useLiveSuspenseQuery(
+    (q) => q.from({ c: customerCollection }),
+    []
+  )
+
+  // Build lookup maps for O(1) resolution
+  const loanMap = useMemo(() => {
+    const m = new Map<string, { principalAmount: string; customerId: string }>()
+    for (const l of allLoans) {
+      m.set(l.id, { principalAmount: l.principalAmount, customerId: l.customerId })
+    }
+    return m
+  }, [allLoans])
+
+  const customerMap = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const c of allCustomers) {
+      m.set(c.id, c.fullName)
+    }
+    return m
+  }, [allCustomers])
+
+  // Enrich raw Electric rows with resolved JOINed fields
+  const requests: EnrichedRequest[] = useMemo(() => {
+    return (rawRequests as RateChangeRequest[]).map((r) => {
+      const loan = loanMap.get(r.loanId)
+      const customerName = loan ? (customerMap.get(loan.customerId) ?? "Unknown") : "Unknown"
+      return {
+        ...r,
+        customerName,
+        loanRef: `LOAN-${shortId(r.loanId).toUpperCase()}`,
+        principalAmount: loan?.principalAmount ?? "0",
+      }
+    })
+  }, [rawRequests, loanMap, customerMap])
+
+  const [reviewingRequest, setReviewingRequest] = useState<EnrichedRequest | null>(null)
   const [reviewAction, setReviewAction] = useState<"approved" | "rejected">("approved")
   const [reviewNote, setReviewNote] = useState("")
 
-  function openReviewDialog(request: RateChangeRequestWithLoan, action: "approved" | "rejected") {
+  function openReviewDialog(request: EnrichedRequest, action: "approved" | "rejected") {
     setReviewingRequest(request)
     setReviewAction(action)
     setReviewNote("")
@@ -123,8 +176,8 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
     })
   }
 
-  const pendingRequests = requests.filter((r: RateChangeRequestWithLoan) => r.status === "pending")
-  const reviewedRequests = requests.filter((r: RateChangeRequestWithLoan) => r.status !== "pending")
+  const pendingRequests = requests.filter((r) => r.status === "pending")
+  const reviewedRequests = requests.filter((r) => r.status !== "pending")
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -184,7 +237,7 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {pendingRequests.map((request: RateChangeRequestWithLoan) => {
+                  {pendingRequests.map((request) => {
                     const canReview = has(request.requiredApproverRole as Permission)
                     return (
                       <TableRow key={request.id} data-testid="pending-request-row">
@@ -265,7 +318,7 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reviewedRequests.map((request: RateChangeRequestWithLoan) => (
+                  {reviewedRequests.map((request) => (
                     <TableRow key={request.id} data-testid="reviewed-request-row">
                       <TableCell className="font-mono text-sm">
                         <Link href={`/loans/${request.loanId}`} className="text-primary hover:underline">

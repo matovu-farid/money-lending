@@ -1,26 +1,18 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listDelegationsAction,
   createDelegationAction,
   revokeDelegationAction,
 } from "@/actions/delegation.actions"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
+import { shapeUrl } from "@/lib/electric"
 
-// Auto-refresh when delegations table changes via Electric
-subscribeToTableChanges("delegation", getQueryClient(), [
-  queryKeys.delegations.all,
-])
-
-/** Row shape returned by listDelegationsAction */
-export interface DelegationRow {
+/** Row shape synced from the raw delegation table via Electric */
+export type DelegationRow = {
   id: string
   userId: string
-  userName: string | null
   delegatedBy: string
   createdAt: Date
   revokedAt: Date | null
@@ -28,17 +20,13 @@ export interface DelegationRow {
 }
 
 export const delegationCollection = createCollection(
-  queryCollectionOptions<DelegationRow>({
-    queryKey: [...queryKeys.delegations.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<DelegationRow>> => {
-      const result = await listDelegationsAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data
-    },
+  electricCollectionOptions<DelegationRow>({
+    id: "delegations",
     getKey: (delegation) => delegation.id,
+    shapeOptions: {
+      url: shapeUrl("delegation"),
+      columnMapper: snakeCamelMapper(),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await createDelegationAction({ userId: modified.userId })

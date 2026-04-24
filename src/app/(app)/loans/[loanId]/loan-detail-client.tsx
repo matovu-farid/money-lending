@@ -19,7 +19,6 @@ import { queryKeys } from "@/lib/query-keys"
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
 import { paymentCollection, rateChangeRequestCollection } from "@/collections"
 import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
-import type { RateChangeRequestWithLoan } from "@/services/rate-change-request.service"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -228,7 +227,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     const id = generateClientId()
     const now = new Date()
 
-    const optimistic: RateChangeRequestWithLoan = {
+    const optimistic: RateChangeRequest = {
       id,
       loanId: loan.id,
       requestedRate: rateDecimal,
@@ -240,9 +239,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       reviewNote: null,
       createdAt: now,
       reviewedAt: null,
-      customerName: customerName ?? "",
-      loanRef: `LOAN-${loan.id.slice(0, 6).toUpperCase()}`,
-      principalAmount: loan.principalAmount,
     }
 
     try {

@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, Suspense } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useState, useMemo, Suspense } from "react"
+import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
-import { delegationCollection, adminUserCollection, invitationCollection } from "@/collections"
+import { delegationCollection, adminUserCollection, invitationCollection, getUserNameMapCollection } from "@/collections"
 import { resendInviteAction } from "@/actions/invitation.actions"
 import { generateClientId } from "@/lib/client-id"
 import { Input } from "@/components/ui/input"
@@ -95,6 +95,24 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
   const activeDelegations = allDelegations.filter((d) => !d.revokedAt)
   const pastDelegations = allDelegations.filter((d) => d.revokedAt)
 
+  // Resolve user IDs from delegations to display names
+  const delegationUserIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const d of allDelegations) {
+      ids.add(d.userId)
+      ids.add(d.delegatedBy)
+      if (d.revokedBy) ids.add(d.revokedBy)
+    }
+    return [...ids]
+  }, [allDelegations])
+
+  const delegationNameMapColl = getUserNameMapCollection(delegationUserIds)
+  const { data: delegationNameRows } = useLiveQuery(
+    (q) => q.from({ u: delegationNameMapColl }).select(({ u }) => u),
+    [delegationUserIds.join(",")]
+  )
+  const delegationNameMap: Record<string, string> = delegationNameRows?.[0]?.map ?? {}
+
   const [isDelegating, setIsDelegating] = useState(false)
   const [isRevoking, setIsRevoking] = useState(false)
 
@@ -105,8 +123,7 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
       delegationCollection.insert({
         id,
         userId,
-        userName: null,
-        delegatedBy: session?.user?.name ?? "",
+        delegatedBy: session?.user?.id ?? "",
         createdAt: new Date(),
         revokedAt: null,
         revokedBy: null,
@@ -272,8 +289,8 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
               <TableBody>
                 {activeDelegations.map((d) => (
                   <TableRow key={d.id}>
-                    <TableCell className="font-medium">{d.userName}</TableCell>
-                    <TableCell>{d.delegatedBy}</TableCell>
+                    <TableCell className="font-medium">{delegationNameMap[d.userId] ?? d.userId}</TableCell>
+                    <TableCell>{delegationNameMap[d.delegatedBy] ?? d.delegatedBy}</TableCell>
                     <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
                       {formatDate(d.createdAt)}
                     </TableCell>
@@ -312,12 +329,12 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
                 <TableBody>
                   {pastDelegations.map((d) => (
                     <TableRow key={d.id}>
-                      <TableCell className="font-medium">{d.userName}</TableCell>
-                      <TableCell>{d.delegatedBy}</TableCell>
+                      <TableCell className="font-medium">{delegationNameMap[d.userId] ?? d.userId}</TableCell>
+                      <TableCell>{delegationNameMap[d.delegatedBy] ?? d.delegatedBy}</TableCell>
                       <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
                         {formatDate(d.createdAt)} — {d.revokedAt ? formatDate(d.revokedAt) : "—"}
                       </TableCell>
-                      <TableCell>{d.revokedBy ?? "—"}</TableCell>
+                      <TableCell>{d.revokedBy ? (delegationNameMap[d.revokedBy] ?? d.revokedBy) : "—"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -353,6 +370,18 @@ function InvitationsSection({
     q.from({ i: invitationCollection }).select(({ i }) => i)
   )
 
+  // Resolve inviter user IDs to display names
+  const inviterUserIds = useMemo(() => {
+    return [...new Set(allInvitations.map((inv) => inv.invitedBy))]
+  }, [allInvitations])
+
+  const inviterNameMapColl = getUserNameMapCollection(inviterUserIds)
+  const { data: inviterNameRows } = useLiveQuery(
+    (q) => q.from({ u: inviterNameMapColl }).select(({ u }) => u),
+    [inviterUserIds.join(",")]
+  )
+  const inviterNameMap: Record<string, string> = inviterNameRows?.[0]?.map ?? {}
+
   const filteredInvitations =
     statusFilter === "all"
       ? allInvitations
@@ -371,7 +400,7 @@ function InvitationsSection({
         role: inviteRole,
         status: "pending",
         invitedBy: session?.user?.id ?? "",
-        inviterName: session?.user?.name ?? "",
+        token: crypto.randomUUID(),
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
         createdAt: new Date(),
         acceptedAt: null,
@@ -513,7 +542,7 @@ function InvitationsSection({
                     {inv.status.charAt(0).toUpperCase() + inv.status.slice(1)}
                   </Badge>
                 </TableCell>
-                <TableCell>{inv.inviterName ?? "—"}</TableCell>
+                <TableCell>{inviterNameMap[inv.invitedBy] ?? "—"}</TableCell>
                 <TableCell className="text-sm text-muted-foreground font-mono tabular-nums">
                   {formatDate(inv.createdAt)}
                 </TableCell>
