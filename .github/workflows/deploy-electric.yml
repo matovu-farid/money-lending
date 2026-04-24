@@ -19,7 +19,7 @@ jobs:
         with:
           host: ${{ secrets.ELECTRIC_SSH_HOST }}
           username: ${{ secrets.ELECTRIC_SSH_USER }}
-          key: ${{ secrets.ELECTRIC_SSH_KEY }}
+          password: ${{ secrets.ELECTRIC_SSH_PASSWORD }}
           source: "deploy/electric/docker-stack.yml"
           target: "~/electric-deploy/"
           strip_components: 2
@@ -32,7 +32,7 @@ jobs:
         with:
           host: ${{ secrets.ELECTRIC_SSH_HOST }}
           username: ${{ secrets.ELECTRIC_SSH_USER }}
-          key: ${{ secrets.ELECTRIC_SSH_KEY }}
+          password: ${{ secrets.ELECTRIC_SSH_PASSWORD }}
           envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET
           script: |
             # Ensure Docker Swarm is initialized
