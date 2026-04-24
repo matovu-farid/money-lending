@@ -52,9 +52,9 @@ jobs:
             echo "Waiting for Electric to start..."
             for i in $(seq 1 20); do
               sleep 3
-              if curl -sf http://localhost:3001/v1/health > /dev/null 2>&1; then
+              if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1; then
                 echo "Electric is healthy!"
-                curl -s http://localhost:3001/v1/health
+                curl -s http://127.0.0.1:3001/v1/health
                 exit 0
               fi
               echo "  Attempt $i/20..."

@@ -55,9 +55,9 @@ for i in $(seq 1 30); do
     echo "Electric is running: $STATUS"
     # Check health endpoint
     sleep 2
-    if curl -sf http://localhost:3001/v1/health > /dev/null 2>&1; then
+    if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1; then
       echo "Health check passed!"
-      curl -s http://localhost:3001/v1/health | python3 -m json.tool 2>/dev/null || true
+      curl -s http://127.0.0.1:3001/v1/health | python3 -m json.tool 2>/dev/null || true
       exit 0
     fi
   fi
