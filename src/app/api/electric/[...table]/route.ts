@@ -28,11 +28,12 @@ const ALLOWED_TABLES = new Set([
 ])
 
 /**
- * Columns to exclude from specific tables for security reasons.
- * The invitation token is a secret used to accept invites — must not leak to clients.
+ * Server-enforced column allowlists for tables with sensitive columns.
+ * When a table is listed here, ONLY these columns are synced — regardless
+ * of what the client requests. This prevents token/secret leaks.
  */
-const EXCLUDED_COLUMNS: Record<string, string[]> = {
-  invitation: ["token"],
+const SAFE_COLUMNS: Record<string, string> = {
+  invitation: "id,email,name,role,status,invited_by,expires_at,created_at,accepted_at",
 }
 
 export async function GET(
@@ -74,25 +75,14 @@ export async function GET(
   const where = url.searchParams.get("where")
   if (where) originUrl.searchParams.set("where", where)
 
-  // Forward columns param, but always exclude sensitive columns
-  const excluded = EXCLUDED_COLUMNS[table]
-  let columns = url.searchParams.get("columns")
-  if (excluded) {
-    if (columns) {
-      // Remove excluded columns from client-requested column list
-      columns = columns
-        .split(",")
-        .filter((c) => !excluded.includes(c.trim()))
-        .join(",")
-    }
-    // If no columns requested, Electric returns all — we must explicitly
-    // request all-minus-excluded, but that requires knowing the schema.
-    // Instead, always set columns for tables with exclusions by omitting
-    // excluded columns from the response via Electric's columns param.
-    // For now, the shape options in invitations.ts should specify columns
-    // explicitly to avoid syncing the token field.
+  // Enforce server-side column restrictions for sensitive tables
+  const safeCols = SAFE_COLUMNS[table]
+  if (safeCols) {
+    originUrl.searchParams.set("columns", safeCols)
+  } else {
+    const columns = url.searchParams.get("columns")
+    if (columns) originUrl.searchParams.set("columns", columns)
   }
-  if (columns) originUrl.searchParams.set("columns", columns)
 
   const replica = url.searchParams.get("replica")
   if (replica) originUrl.searchParams.set("replica", replica)
