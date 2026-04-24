@@ -423,7 +423,10 @@ export function allocatePayment(params: {
     }
   }
 
-  const principalPortion = payment.minus(interestOwed)
+  const principalPortion = BigNumber.min(
+    payment.minus(interestOwed),
+    new BigNumber(principalBalanceBefore)
+  )
   const principalBalanceAfter = BigNumber.max(
     new BigNumber(principalBalanceBefore).minus(principalPortion),
     0
