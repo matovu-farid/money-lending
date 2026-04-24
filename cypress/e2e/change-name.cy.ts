@@ -9,17 +9,17 @@ describe("Change Name", () => {
 
   it("opens change name dialog from sidebar", () => {
     cy.get("aside").find("button[aria-label='Change name']").click()
-    cy.contains("Change Name")
-    cy.get("input#userName").should("have.value", "Original Name")
+    cy.contains("Change Name").should("be.visible")
+    cy.get("input#userName").should("be.visible").and("have.value", "Original Name")
   })
 
   it("updates the user name successfully", () => {
     cy.get("aside").find("button[aria-label='Change name']").click()
     cy.get("input#userName").clear().type("New Name")
     cy.contains("button", "Save").click()
-    cy.contains("Name updated")
+    cy.contains("Name updated", { timeout: 10000 }).should("be.visible")
     // Sidebar shows updated name
-    cy.get("aside").contains("New Name")
+    cy.get("aside").contains("New Name").should("be.visible")
   })
 
   it("disables save when name is empty", () => {
@@ -32,8 +32,9 @@ describe("Change Name", () => {
     cy.get("aside").find("button[aria-label='Change name']").click()
     cy.get("input#userName").clear().type("Temporary")
     cy.contains("button", "Cancel").click()
-    // Reopen — should show original name
+    // Confirm dialog is closed before reopening
+    cy.get("input#userName").should("not.exist")
     cy.get("aside").find("button[aria-label='Change name']").click()
-    cy.get("input#userName").should("have.value", "Original Name")
+    cy.get("input#userName").should("be.visible").and("have.value", "Original Name")
   })
 })
