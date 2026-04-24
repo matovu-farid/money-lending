@@ -14,8 +14,8 @@ export type DelegationRow = {
   id: string
   userId: string
   delegatedBy: string
-  createdAt: Date
-  revokedAt: Date | null
+  createdAt: string
+  revokedAt: string | null
   revokedBy: string | null
 }
 

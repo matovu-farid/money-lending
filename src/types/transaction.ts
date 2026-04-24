@@ -40,6 +40,24 @@ export interface TransactionRow {
   isOptimistic?: boolean
 }
 
+/** Raw transaction shape from Electric shape sync (no JOINed categoryName). */
+export type TransactionShapeRow = {
+  id: string
+  type: string
+  amount: string
+  categoryId: string
+  referenceType: string | null
+  referenceId: string | null
+  loanId: string | null
+  description: string | null
+  transactionDate: string
+  recordedBy: string
+  depositLocation: string | null
+  subLocationId: string | null
+  journalGroupId: string | null
+  createdAt: string
+}
+
 /** UI-facing category shape */
 export interface CategoryRow {
   id: string

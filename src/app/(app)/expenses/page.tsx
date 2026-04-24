@@ -1,10 +1,11 @@
 "use client"
 
-import { Suspense } from "react"
+import { Suspense, useMemo } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { expenseCollection, expenseCategoryCollection } from "@/collections"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
+import type { TransactionRow, TransactionShapeRow } from "@/types"
 
 function LoadingSkeleton() {
   return (
@@ -48,10 +49,31 @@ function ExpensesContent() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const categories = (rawCategories ?? []) as any[]
 
+  // Resolve categoryName from the category collection (Electric shapes don\'t JOIN)
+  const transactions: TransactionRow[] = useMemo(() => {
+    const catMap = new Map<string, string>()
+    for (const c of categories) {
+      catMap.set(c.id, c.name)
+    }
+    return ((allExpenses ?? []) as unknown as TransactionShapeRow[]).map((e) => ({
+      id: e.id,
+      type: e.type,
+      amount: e.amount,
+      categoryId: e.categoryId,
+      categoryName: catMap.get(e.categoryId) ?? "Unknown",
+      description: e.description,
+      transactionDate: new Date(e.transactionDate),
+      recordedBy: e.recordedBy,
+      referenceType: e.referenceType,
+      referenceId: e.referenceId,
+      createdAt: new Date(e.createdAt),
+    }))
+  }, [allExpenses, categories])
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <ExpenseListClient
-        transactions={allExpenses ?? []}
+        transactions={transactions}
         categories={categories}
       />
     </div>

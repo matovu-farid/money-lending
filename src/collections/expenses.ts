@@ -1,42 +1,35 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listExpenseTransactionsAction,
   recordExpenseAction,
   deleteExpenseAction,
 } from "@/actions/expense.actions"
-import type { TransactionRow, CreateTransactionInput } from "@/types"
+import type { TransactionShapeRow, CreateTransactionInput } from "@/types"
+import { shapeUrl } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
-
-// Auto-refresh when transactions table changes via Electric
-subscribeToTableChanges("transactions", getQueryClient(), [
-  queryKeys.expenses.all,
-  queryKeys.income.all,
-])
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
  * The onInsert handler reads from here because CreateTransactionInput has fields
- * (categoryId, location, backdateNote, etc.) that aren't part of TransactionRow.
+ * (categoryId, location, backdateNote, etc.) that aren't part of TransactionShapeRow.
  */
 const pendingInsertInputs = new Map<string, CreateTransactionInput>()
 
 export const expenseCollection = createCollection(
-  queryCollectionOptions<TransactionRow>({
-    queryKey: [...queryKeys.expenses.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<TransactionRow>> => {
-      const result = await listExpenseTransactionsAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data.data
-    },
+  electricCollectionOptions<TransactionShapeRow>({
+    id: "expenses",
     getKey: (expense) => expense.id,
+    shapeOptions: {
+      url: shapeUrl("transactions"),
+      params: {
+        where: '"type" = \'debit\' AND "reference_type" IS NULL',
+      },
+      columnMapper: snakeCamelMapper(),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input = pendingInsertInputs.get(modified.id)
@@ -78,7 +71,7 @@ export const expenseCollection = createCollection(
  */
 export function insertExpenseWithInput(
   id: string,
-  optimistic: TransactionRow,
+  optimistic: TransactionShapeRow,
   input: CreateTransactionInput
 ) {
   pendingInsertInputs.set(id, input)

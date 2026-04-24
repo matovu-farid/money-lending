@@ -10,7 +10,7 @@ import {
 import { shapeUrl } from "@/lib/electric"
 import type { UserRole } from "@/types"
 
-/** Row shape synced from the raw invitation table via Electric */
+/** Row shape synced from the raw invitation table via Electric (token excluded for security) */
 export type InvitationRow = {
   id: string
   email: string
@@ -18,10 +18,9 @@ export type InvitationRow = {
   role: string
   status: string
   invitedBy: string
-  token: string
-  expiresAt: Date
-  createdAt: Date
-  acceptedAt: Date | null
+  expiresAt: string
+  createdAt: string
+  acceptedAt: string | null
 }
 
 export const invitationCollection = createCollection(
@@ -30,6 +29,9 @@ export const invitationCollection = createCollection(
     getKey: (invitation) => invitation.id,
     shapeOptions: {
       url: shapeUrl("invitation"),
+      params: {
+        columns: ["id", "email", "name", "role", "status", "invited_by", "expires_at", "created_at", "accepted_at"],
+      },
       columnMapper: snakeCamelMapper(),
     },
     onInsert: async ({ transaction }) => {

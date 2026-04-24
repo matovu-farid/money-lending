@@ -1,38 +1,35 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listIncomeTransactionsAction,
   recordIncomeAction,
   deleteIncomeAction,
 } from "@/actions/income.actions"
-import type { TransactionRow, CreateTransactionInput } from "@/types"
+import type { TransactionShapeRow, CreateTransactionInput } from "@/types"
+import { shapeUrl } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-
-// Note: transactions table subscription is set up in expenses.ts
-// (shared table, deduplicated by subscribeToTableChanges)
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
  * The onInsert handler reads from here because CreateTransactionInput has fields
- * (categoryId, location, backdateNote, etc.) that aren't part of TransactionRow.
+ * (categoryId, location, backdateNote, etc.) that aren't part of TransactionShapeRow.
  */
 const pendingInsertInputs = new Map<string, CreateTransactionInput>()
 
 export const incomeCollection = createCollection(
-  queryCollectionOptions<TransactionRow>({
-    queryKey: [...queryKeys.income.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<TransactionRow>> => {
-      const result = await listIncomeTransactionsAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data.data
-    },
+  electricCollectionOptions<TransactionShapeRow>({
+    id: "income",
     getKey: (income) => income.id,
+    shapeOptions: {
+      url: shapeUrl("transactions"),
+      params: {
+        where: '"type" = \'credit\' AND "reference_type" IS NULL',
+      },
+      columnMapper: snakeCamelMapper(),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input = pendingInsertInputs.get(modified.id)
@@ -74,7 +71,7 @@ export const incomeCollection = createCollection(
  */
 export function insertIncomeWithInput(
   id: string,
-  optimistic: TransactionRow,
+  optimistic: TransactionShapeRow,
   input: CreateTransactionInput
 ) {
   pendingInsertInputs.set(id, input)

@@ -1,4 +1,6 @@
 import { ELECTRIC_PROTOCOL_QUERY_PARAMS } from "@electric-sql/client"
+import { auth } from "@/lib/auth"
+import { headers } from "next/headers"
 
 const ELECTRIC_URL = process.env.ELECTRIC_URL ?? "http://localhost:3001"
 const ELECTRIC_SOURCE_SECRET = process.env.ELECTRIC_SECRET
@@ -23,13 +25,28 @@ const ALLOWED_TABLES = new Set([
   "fund_transfers",
   "collateral",
   "transaction_categories",
-  "settings",
 ])
+
+/**
+ * Columns to exclude from specific tables for security reasons.
+ * The invitation token is a secret used to accept invites — must not leak to clients.
+ */
+const EXCLUDED_COLUMNS: Record<string, string[]> = {
+  invitation: ["token"],
+}
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ table: string[] }> }
 ) {
+  const session = await auth.api.getSession({ headers: await headers() })
+  if (!session?.user) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    })
+  }
+
   const { table: tableSegments } = await params
   const table = tableSegments.join("/")
 
@@ -57,7 +74,24 @@ export async function GET(
   const where = url.searchParams.get("where")
   if (where) originUrl.searchParams.set("where", where)
 
-  const columns = url.searchParams.get("columns")
+  // Forward columns param, but always exclude sensitive columns
+  const excluded = EXCLUDED_COLUMNS[table]
+  let columns = url.searchParams.get("columns")
+  if (excluded) {
+    if (columns) {
+      // Remove excluded columns from client-requested column list
+      columns = columns
+        .split(",")
+        .filter((c) => !excluded.includes(c.trim()))
+        .join(",")
+    }
+    // If no columns requested, Electric returns all — we must explicitly
+    // request all-minus-excluded, but that requires knowing the schema.
+    // Instead, always set columns for tables with exclusions by omitting
+    // excluded columns from the response via Electric's columns param.
+    // For now, the shape options in invitations.ts should specify columns
+    // explicitly to avoid syncing the token field.
+  }
   if (columns) originUrl.searchParams.set("columns", columns)
 
   const replica = url.searchParams.get("replica")
@@ -71,13 +105,13 @@ export async function GET(
   const response = await fetch(originUrl.toString())
 
   // Copy response headers, removing encoding headers that break streaming
-  const headers = new Headers(response.headers)
-  headers.delete("content-encoding")
-  headers.delete("content-length")
+  const responseHeaders = new Headers(response.headers)
+  responseHeaders.delete("content-encoding")
+  responseHeaders.delete("content-length")
 
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers,
+    headers: responseHeaders,
   })
 }

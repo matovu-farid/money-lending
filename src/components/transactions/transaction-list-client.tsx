@@ -29,7 +29,7 @@ import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PageHeader } from "@/components/ui/page-header"
-import type { CreateCategoryInput, CreateTransactionInput, TransactionRow, CategoryRow, DepositLocation } from "@/types"
+import type { CreateCategoryInput, CreateTransactionInput, TransactionRow, TransactionShapeRow, CategoryRow, DepositLocation } from "@/types"
 
 interface TransactionFormValues {
   date: string
@@ -197,7 +197,6 @@ export function TransactionListClient({
     try {
       setIsAddPending(true)
       const id = generateClientId()
-      const category = displayedCategories.find((c) => c.id === data.categoryId)
       const input: CreateTransactionInput = {
         id,
         categoryId: data.categoryId,
@@ -208,19 +207,21 @@ export function TransactionListClient({
         subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
         backdateNote: data.backdateNote?.trim() || undefined,
       }
-      const optimistic: TransactionRow = {
+      const optimistic: TransactionShapeRow = {
         id,
         type: labels.txType,
         amount: data.amount,
         categoryId: data.categoryId,
-        categoryName: category?.name ?? "Unknown",
         description: data.notes || null,
-        transactionDate: new Date(data.date),
+        transactionDate: data.date,
         recordedBy: "",
         referenceType: null,
         referenceId: null,
-        createdAt: new Date().toISOString() as unknown as Date,
-        isOptimistic: true,
+        loanId: null,
+        depositLocation: data.location || null,
+        subLocationId: data.location === "bank" ? data.subLocationId || null : null,
+        journalGroupId: null,
+        createdAt: new Date().toISOString(),
       }
       insertWithInput(id, optimistic, input)
       toast.success(labels.successRecord)

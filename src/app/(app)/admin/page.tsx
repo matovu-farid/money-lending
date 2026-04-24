@@ -124,7 +124,7 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
         id,
         userId,
         delegatedBy: session?.user?.id ?? "",
-        createdAt: new Date(),
+        createdAt: new Date().toISOString(),
         revokedAt: null,
         revokedBy: null,
       })
@@ -400,9 +400,8 @@ function InvitationsSection({
         role: inviteRole,
         status: "pending",
         invitedBy: session?.user?.id ?? "",
-        token: crypto.randomUUID(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        createdAt: new Date().toISOString(),
         acceptedAt: null,
       })
       await tx.isPersisted.promise
