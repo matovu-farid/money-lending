@@ -30,11 +30,11 @@ jobs:
 
       - name: Validate nginx.conf
         run: |
-          # nginx -t resolves upstream hostnames at config-test time, so we
-          # stub `electric` in /etc/hosts. The IP doesn't matter — we only
-          # care about syntax, directives, and the cache zone definition.
+          # We use a variable in proxy_pass + the Docker embedded resolver,
+          # so nginx defers `electric` DNS resolution to request time.
+          # That means `nginx -t` validates cleanly without needing the
+          # service to exist.
           docker run --rm \
-            --add-host electric:127.0.0.1 \
             -v "$PWD/deploy/electric/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
             nginx:1.27-alpine nginx -t
 
