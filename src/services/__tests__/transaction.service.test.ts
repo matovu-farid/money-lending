@@ -35,6 +35,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const auditMod = await import("@/services/audit.service")
     mockedWriteAuditLog = auditMod.writeAuditLog as any
     const svc = await import("@/services/transaction.service")
+    svc.__resetCategoryCacheForTests()
     recordExpense = svc.recordExpense
     recordIncome = svc.recordIncome
     listTransactions = svc.listTransactions
@@ -530,32 +531,30 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    expect(txMock.insert).toHaveBeenCalledTimes(2) // debit + credit
+    // postJournalEntry now does a single multi-row insert instead of two
+    // sequential inserts — so .insert is called once with [debit, credit].
+    expect(txMock.insert).toHaveBeenCalledTimes(1)
 
-    // Verify the debit entry shape
-    const debitValuesCall = txMock.insert.mock.results[0].value.values
-    expect(debitValuesCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "debit",
-        amount: "100000",
-        referenceType: "payment",
-        referenceId: "payment-1",
-        recordedBy: "actor-1",
-        loanId: "loan-1",
-      })
-    )
-
-    // Verify the credit entry shape
-    const creditValuesCall = txMock.insert.mock.results[1].value.values
-    expect(creditValuesCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "credit",
-        amount: "100000",
-        referenceType: "payment",
-        referenceId: "payment-1",
-        recordedBy: "actor-1",
-        loanId: "loan-1",
-      })
+    const valuesCall = txMock.insert.mock.results[0].value.values
+    expect(valuesCall).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "debit",
+          amount: "100000",
+          referenceType: "payment",
+          referenceId: "payment-1",
+          recordedBy: "actor-1",
+          loanId: "loan-1",
+        }),
+        expect.objectContaining({
+          type: "credit",
+          amount: "100000",
+          referenceType: "payment",
+          referenceId: "payment-1",
+          recordedBy: "actor-1",
+          loanId: "loan-1",
+        }),
+      ])
     )
   })
 
@@ -587,11 +586,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
             }),
           }),
         })
-        // Third call: debit transaction insert
-        .mockReturnValueOnce({
-          values: vi.fn().mockResolvedValue(undefined),
-        })
-        // Fourth call: credit transaction insert
+        // Third call: combined debit+credit journal entry insert
         .mockReturnValueOnce({
           values: vi.fn().mockResolvedValue(undefined),
         }),
@@ -605,8 +600,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    // 2 category creates + 2 journal entries = 4 inserts
-    expect(txMock.insert).toHaveBeenCalledTimes(4)
+    // 2 category creates + 1 journal entry insert (multi-row) = 3 inserts
+    expect(txMock.insert).toHaveBeenCalledTimes(3)
   })
 
   // ── autoPostInterestExpense ──────────────────────────────────────────
@@ -634,30 +629,26 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    expect(txMock.insert).toHaveBeenCalledTimes(2) // debit + credit
+    expect(txMock.insert).toHaveBeenCalledTimes(1) // single multi-row insert
 
-    // Verify the debit entry shape
-    const debitValuesCall = txMock.insert.mock.results[0].value.values
-    expect(debitValuesCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "debit",
-        amount: "50000",
-        referenceType: "creditor_repayment",
-        referenceId: "inv-1",
-        recordedBy: "actor-1",
-      })
-    )
-
-    // Verify the credit entry shape
-    const creditValuesCall = txMock.insert.mock.results[1].value.values
-    expect(creditValuesCall).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: "credit",
-        amount: "50000",
-        referenceType: "creditor_repayment",
-        referenceId: "inv-1",
-        recordedBy: "actor-1",
-      })
+    const valuesCall = txMock.insert.mock.results[0].value.values
+    expect(valuesCall).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "debit",
+          amount: "50000",
+          referenceType: "creditor_repayment",
+          referenceId: "inv-1",
+          recordedBy: "actor-1",
+        }),
+        expect.objectContaining({
+          type: "credit",
+          amount: "50000",
+          referenceType: "creditor_repayment",
+          referenceId: "inv-1",
+          recordedBy: "actor-1",
+        }),
+      ])
     )
   })
 
@@ -689,11 +680,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
             }),
           }),
         })
-        // Third call: debit transaction insert
-        .mockReturnValueOnce({
-          values: vi.fn().mockResolvedValue(undefined),
-        })
-        // Fourth call: credit transaction insert
+        // Third call: combined debit+credit journal entry insert
         .mockReturnValueOnce({
           values: vi.fn().mockResolvedValue(undefined),
         }),
@@ -706,8 +693,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
       actorId: "actor-1",
     })
 
-    // 2 category creates + 2 journal entries = 4 inserts
-    expect(txMock.insert).toHaveBeenCalledTimes(4)
+    // 2 category creates + 1 journal entry insert (multi-row) = 3 inserts
+    expect(txMock.insert).toHaveBeenCalledTimes(3)
   })
 
   // ── getPaymentPortionsFromLedger ─────────────────────────────────────

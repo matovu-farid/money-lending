@@ -107,7 +107,10 @@ describe("Fund Transfer Actions", () => {
       expect((result as any).error).toContain("Amount")
     })
 
-    it("creates transfer and revalidates on success", async () => {
+    it("creates transfer on success without server-side revalidation", async () => {
+      // Pages render client-side from TanStack DB collections, so the action
+      // intentionally does NOT call revalidatePath — that would block the
+      // response while Next re-fetches RSC for routes the user may not be on.
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
       const created = { id: "ft1" }
@@ -115,8 +118,7 @@ describe("Fund Transfer Actions", () => {
 
       const result = await createFundTransferAction(validInput as any)
       expect(result).toEqual({ data: created })
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/fund-transfers")
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/reports/balance-sheet")
+      expect(mockRevalidatePath).not.toHaveBeenCalled()
     })
   })
 
@@ -147,7 +149,8 @@ describe("Fund Transfer Actions", () => {
       expect(result).toEqual({ error: "Invalid deposit location" })
     })
 
-    it("creates injection and revalidates on success", async () => {
+    it("creates injection on success without server-side revalidation", async () => {
+      // Same rationale as createFundTransferAction — see comment above.
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
       const created = { id: "ci1" }
@@ -155,7 +158,7 @@ describe("Fund Transfer Actions", () => {
 
       const result = await createCapitalInjectionAction(validInput as any)
       expect(result).toEqual({ data: created })
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/fund-transfers")
+      expect(mockRevalidatePath).not.toHaveBeenCalled()
     })
   })
 

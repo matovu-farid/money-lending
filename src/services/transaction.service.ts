@@ -44,11 +44,28 @@ type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense"
 
+// Module-level cache of resolved category IDs. Categories are seeded at install
+// and their IDs never change, so it's safe to memoise lookups for the lifetime
+// of the server process. Without this every postJournalEntry call did a SELECT
+// (often two) per journal entry, which dominated transaction latency on
+// hot paths like loan disbursement and capital injection.
+const categoryIdCache = new Map<string, string>()
+const categoryCacheKey = (name: string, type: CategoryType) => `${type}:${name}`
+
+/** Test-only: reset the in-memory category ID cache between test cases. */
+export function __resetCategoryCacheForTests(): void {
+  categoryIdCache.clear()
+}
+
 async function getOrCreateCategory(
   tx: DrizzleTransaction,
   name: string,
   type: CategoryType
 ): Promise<string> {
+  const key = categoryCacheKey(name, type)
+  const cached = categoryIdCache.get(key)
+  if (cached) return cached
+
   const [existing] = await tx
     .select()
     .from(transactionCategories)
@@ -58,7 +75,10 @@ async function getOrCreateCategory(
         eq(transactionCategories.type, type)
       )
     )
-  if (existing) return existing.id
+  if (existing) {
+    categoryIdCache.set(key, existing.id)
+    return existing.id
+  }
 
   const [created] = await tx
     .insert(transactionCategories)
@@ -66,7 +86,10 @@ async function getOrCreateCategory(
     .onConflictDoNothing()
     .returning()
 
-  if (created) return created.id
+  if (created) {
+    categoryIdCache.set(key, created.id)
+    return created.id
+  }
 
   // Re-fetch if conflict occurred (concurrent insert)
   const [refetched] = await tx
@@ -78,6 +101,7 @@ async function getOrCreateCategory(
         eq(transactionCategories.type, type)
       )
     )
+  categoryIdCache.set(key, refetched.id)
   return refetched.id
 }
 
@@ -101,38 +125,42 @@ export async function postJournalEntry(
 ): Promise<string> {
   const journalGroupId = randomUUID()
 
-  const debitCategoryId = await getOrCreateCategory(tx, params.debitCategory.name, params.debitCategory.type)
-  const creditCategoryId = await getOrCreateCategory(tx, params.creditCategory.name, params.creditCategory.type)
+  const [debitCategoryId, creditCategoryId] = await Promise.all([
+    getOrCreateCategory(tx, params.debitCategory.name, params.debitCategory.type),
+    getOrCreateCategory(tx, params.creditCategory.name, params.creditCategory.type),
+  ])
 
-  await tx.insert(transactions).values({
-    type: "debit",
-    amount: params.amount,
-    categoryId: debitCategoryId,
-    referenceType: params.referenceType,
-    referenceId: params.referenceId,
-    loanId: params.loanId ?? null,
-    description: params.description,
-    transactionDate: params.transactionDate,
-    recordedBy: params.recordedBy,
-    depositLocation: params.debitDepositLocation ?? null,
-    subLocationId: params.debitSubLocationId ?? null,
-    journalGroupId,
-  })
-
-  await tx.insert(transactions).values({
-    type: "credit",
-    amount: params.amount,
-    categoryId: creditCategoryId,
-    referenceType: params.referenceType,
-    referenceId: params.referenceId,
-    loanId: params.loanId ?? null,
-    description: params.description,
-    transactionDate: params.transactionDate,
-    recordedBy: params.recordedBy,
-    depositLocation: params.creditDepositLocation ?? null,
-    subLocationId: params.creditSubLocationId ?? null,
-    journalGroupId,
-  })
+  // Single multi-row insert — saves a round-trip vs. two sequential inserts
+  await tx.insert(transactions).values([
+    {
+      type: "debit",
+      amount: params.amount,
+      categoryId: debitCategoryId,
+      referenceType: params.referenceType,
+      referenceId: params.referenceId,
+      loanId: params.loanId ?? null,
+      description: params.description,
+      transactionDate: params.transactionDate,
+      recordedBy: params.recordedBy,
+      depositLocation: params.debitDepositLocation ?? null,
+      subLocationId: params.debitSubLocationId ?? null,
+      journalGroupId,
+    },
+    {
+      type: "credit",
+      amount: params.amount,
+      categoryId: creditCategoryId,
+      referenceType: params.referenceType,
+      referenceId: params.referenceId,
+      loanId: params.loanId ?? null,
+      description: params.description,
+      transactionDate: params.transactionDate,
+      recordedBy: params.recordedBy,
+      depositLocation: params.creditDepositLocation ?? null,
+      subLocationId: params.creditSubLocationId ?? null,
+      journalGroupId,
+    },
+  ])
 
   return journalGroupId
 }

@@ -171,13 +171,11 @@ describe("Loan Service", () => {
                 }),
               }
             }
-            // Cash balance check
+            // Cash balance check (sufficient funds so disbursement validation passes)
             return {
               from: vi.fn().mockReturnValue({
                 innerJoin: vi.fn().mockReturnValue({
-                  where: vi.fn().mockReturnValue({
-                    groupBy: vi.fn().mockResolvedValue([]),
-                  }),
+                  where: vi.fn().mockResolvedValue([{ total: "999999999" }]),
                 }),
               }),
             }
@@ -233,13 +231,11 @@ describe("Loan Service", () => {
                 }),
               }
             }
-            // Cash balance check
+            // Cash balance check (sufficient funds so disbursement validation passes)
             return {
               from: vi.fn().mockReturnValue({
                 innerJoin: vi.fn().mockReturnValue({
-                  where: vi.fn().mockReturnValue({
-                    groupBy: vi.fn().mockResolvedValue([]),
-                  }),
+                  where: vi.fn().mockResolvedValue([{ total: "999999999" }]),
                 }),
               }),
             }
@@ -849,14 +845,12 @@ describe("Loan Service", () => {
                 }),
               }
             }
-            // Cash balance check
+            // Cash balance check (sufficient funds so disbursement validation passes)
             return {
               from: vi.fn().mockReturnValue({
                 where: vi.fn().mockResolvedValue([]),
                 innerJoin: vi.fn().mockReturnValue({
-                  where: vi.fn().mockReturnValue({
-                    groupBy: vi.fn().mockResolvedValue([]),
-                  }),
+                  where: vi.fn().mockResolvedValue([{ total: "999999999" }]),
                 }),
               }),
             }
