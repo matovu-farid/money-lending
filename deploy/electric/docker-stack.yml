@@ -31,7 +31,9 @@ services:
       restart_policy:
         condition: on-failure
         delay: 5s
-        max_attempts: 5
+        # No max_attempts — swarm should keep retrying with backoff. A
+        # bounded count gets the service stuck after transient issues
+        # (DNS, dependency not ready) without ever recovering.
       placement:
         constraints:
           - node.role == manager
@@ -63,7 +65,9 @@ services:
       restart_policy:
         condition: on-failure
         delay: 5s
-        max_attempts: 5
+        # No max_attempts — swarm should keep retrying with backoff. A
+        # bounded count gets the service stuck after transient issues
+        # (DNS, dependency not ready) without ever recovering.
       placement:
         constraints:
           - node.role == manager
