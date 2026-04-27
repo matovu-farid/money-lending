@@ -4,8 +4,8 @@ services:
   electric:
     image: electricsql/electric:latest
     # No host port — only nginx is reachable from outside the swarm.
-    expose:
-      - "3000"
+    # Services on the same overlay network can reach each other on any port
+    # without an explicit `expose:`, which compose v3 deprecated.
     environment:
       # Direct (non-pooled) Neon connection — required for logical replication.
       # IMPORTANT: Do NOT use the -pooler URL. Remove channel_binding param.

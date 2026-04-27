@@ -72,7 +72,6 @@ jobs:
           key: ${{ secrets.ELECTRIC_SSH_KEY }}
           envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET
           command_timeout: 5m
-          script_stop: true
           script: |
             set -euo pipefail
 
@@ -89,9 +88,32 @@ jobs:
             export ELECTRIC_SECRET="$ELECTRIC_SECRET"
             export ELECTRIC_LOG_LEVEL=info
 
+            # If a previous deployment has electric_electric publishing port
+            # 3001 directly (pre-nginx layout), nginx can't claim that ingress
+            # port until the old service is removed. Detect and tear down the
+            # stack first — named volumes (electric_data) survive stack rm,
+            # so no replication state is lost.
+            if docker service inspect electric_electric \
+                 --format '{{range .Endpoint.Spec.Ports}}{{.PublishedPort}} {{end}}' \
+                 2>/dev/null | grep -qw 3001; then
+              echo "Detected legacy port mapping on electric_electric — removing stack to free port 3001..."
+              docker stack rm electric
+              for i in $(seq 1 30); do
+                sleep 2
+                REMAINING=$(docker service ls --filter label=com.docker.stack.namespace=electric -q | wc -l)
+                NETWORKS=$(docker network ls --filter label=com.docker.stack.namespace=electric -q | wc -l)
+                if [ "$REMAINING" = "0" ] && [ "$NETWORKS" = "0" ]; then
+                  echo "Stack fully torn down."
+                  break
+                fi
+                echo "  Waiting for stack teardown ($i/30): services=$REMAINING networks=$NETWORKS"
+              done
+              # Belt-and-braces wait for ingress port release.
+              sleep 5
+            fi
+
             # --resolve-image always picks up newer :latest digests on each deploy.
-            # --prune removes services that no longer exist in the stack file
-            # (important when restructuring, e.g. adding/removing nginx).
+            # --prune removes services that no longer exist in the stack file.
             docker stack deploy \
               -c docker-stack.yml \
               --resolve-image always \
