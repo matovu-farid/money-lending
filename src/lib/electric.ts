@@ -1,6 +1,6 @@
 "use client"
 
-import { ShapeStream } from "@electric-sql/client"
+import { ShapeStream, isChangeMessage } from "@electric-sql/client"
 import type { QueryClient } from "@tanstack/react-query"
 
 /**
@@ -118,6 +118,11 @@ export function subscribeToTableChanges(
         if (hasUpToDate) initialSyncDone = true
         return
       }
+
+      // Skip control/heartbeat batches (e.g. up-to-date, must-refetch). Only
+      // actual row changes should trigger downstream invalidations — otherwise
+      // upstream proxy hiccups produce a flood of pointless server-action calls.
+      if (!messages.some(isChangeMessage)) return
 
       // Live change detected — schedule coalesced invalidation for each key
       for (const key of state.keys) {

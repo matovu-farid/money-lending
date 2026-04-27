@@ -49,6 +49,10 @@ vi.mock("@electric-sql/client", () => {
         fake.emit = (messages: unknown[]) => messageHandler(messages)
       }
     },
+    // Mirror the real predicate from @electric-sql/client/src/helpers.ts:
+    // a ChangeMessage is identified by the presence of a `key` field.
+    isChangeMessage: (m: unknown): boolean =>
+      m != null && typeof m === "object" && "key" in (m as Record<string, unknown>),
   }
 })
 
@@ -211,6 +215,54 @@ describe("subscribeToTableChanges — coalesced invalidation", () => {
     paymentsStream.emit(liveChange)
     // Advance the remaining 20ms to reach 50ms total — flush should fire once.
     await vi.advanceTimersByTimeAsync(20)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].queryKey).toEqual([...sharedKey])
+  })
+
+  it("does NOT invalidate when only a control/heartbeat message arrives after initial sync", async () => {
+    const { subscribeToTableChanges, __INVALIDATION_DEBOUNCE_MS__ } = await loadFreshModule()
+    const { client, calls } = makeQueryClient()
+
+    subscribeToTableChanges("loans", client, [["dashboard", "kpis"] as const])
+
+    expect(streams).toHaveLength(1)
+    const [loansStream] = streams
+
+    // Complete initial sync.
+    loansStream.emit(upToDateMessage)
+
+    // Heartbeat-style control message arrives later (e.g. up-to-date / must-refetch
+    // emitted by the upstream Electric proxy when it reconnects). This must NOT
+    // trigger any invalidation — only real row changes should.
+    loansStream.emit([{ headers: { control: "up-to-date" } }] as unknown[])
+    loansStream.emit([{ headers: { control: "must-refetch" } }] as unknown[])
+
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
+
+    expect(calls).toHaveLength(0)
+  })
+
+  it("invalidates exactly ONCE when a batch contains both a control and a change message", async () => {
+    const { subscribeToTableChanges, __INVALIDATION_DEBOUNCE_MS__ } = await loadFreshModule()
+    const { client, calls } = makeQueryClient()
+
+    const sharedKey = ["dashboard", "kpis"] as const
+    subscribeToTableChanges("loans", client, [sharedKey])
+
+    expect(streams).toHaveLength(1)
+    const [loansStream] = streams
+
+    loansStream.emit(upToDateMessage) // initial sync done
+
+    // Mixed batch: a control heartbeat plus a real row change. Because at least
+    // one message is a ChangeMessage, the batch must produce one invalidation.
+    loansStream.emit([
+      { headers: { control: "up-to-date" } },
+      { key: "row-1", value: { id: 1 }, headers: { operation: "insert" } },
+    ] as unknown[])
+
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
 
     expect(calls).toHaveLength(1)
     expect(calls[0].queryKey).toEqual([...sharedKey])
