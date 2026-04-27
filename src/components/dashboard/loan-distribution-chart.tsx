@@ -3,8 +3,9 @@
 import { useMemo } from "react"
 import { PieChart, Pie, ResponsiveContainer, Tooltip } from "recharts"
 import { useLiveQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections/loans"
+import { loanStatusCountsCollection } from "@/collections/loan-status-counts"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import type { LoanStatus } from "@/types"
 
 const STATUS_CONFIG: Record<
   string,
@@ -21,14 +22,10 @@ const STATUS_CONFIG: Record<
 }
 
 function computeDistribution(
-  loans: Array<{ status: string }>
+  counts: Record<LoanStatus, number>
 ): Array<{ name: string; value: number; fill: string; key: string }> {
-  const counts = new Map<string, number>()
-  for (const loan of loans) {
-    counts.set(loan.status, (counts.get(loan.status) ?? 0) + 1)
-  }
-
-  return Array.from(counts.entries())
+  return (Object.entries(counts) as Array<[LoanStatus, number]>)
+    .filter(([, count]) => count > 0)
     .map(([status, count]) => {
       const config = STATUS_CONFIG[status] ?? {
         label: status,
@@ -40,15 +37,24 @@ function computeDistribution(
 }
 
 export function LoanDistributionChart() {
-  const { data: loans } = useLiveQuery((q) =>
+  const { data: rows } = useLiveQuery((q) =>
     q
-      .from({ l: loanCollection })
-      .select(({ l }) => ({
-        status: l.status,
+      .from({ r: loanStatusCountsCollection })
+      .select(({ r }) => ({
+        counts: r.counts,
       }))
   )
 
-  const distribution = useMemo(() => computeDistribution((loans ?? []) as unknown as Array<{ status: string }>), [loans])
+  const distribution = useMemo(() => {
+    const counts = (rows?.[0]?.counts ?? {
+      pending: 0,
+      active: 0,
+      fully_paid: 0,
+      settled_with_collateral: 0,
+      rolled_over: 0,
+    }) as Record<LoanStatus, number>
+    return computeDistribution(counts)
+  }, [rows])
   const total = useMemo(
     () => distribution.reduce((sum, d) => sum + d.value, 0),
     [distribution]

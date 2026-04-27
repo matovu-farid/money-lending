@@ -9,13 +9,13 @@ import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { createLoan, listLoans } from "@/services/loan.service"
-import { toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry } from "@/types"
+import { toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { payments } from "@/lib/db/schema/payments"
-import { eq, and, isNull, asc, desc, inArray } from "drizzle-orm"
+import { eq, and, isNull, asc, desc, inArray, sql } from "drizzle-orm"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
@@ -473,6 +473,33 @@ export const listLoansWithOverdueAction = withAction({
     try {
       const allLoans = await Effect.runPromise(listLoans())
       return { data: await computeOverdue(allLoans) }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+export const getLoanStatusCountsAction = withAction({
+  permission: "loan:read",
+  action: async () => {
+    try {
+      const rows = await db
+        .select({ status: loans.status, count: sql<number>`count(*)::int` })
+        .from(loans)
+        .where(isNull(loans.deletedAt))
+        .groupBy(loans.status)
+
+      const counts: Record<LoanStatus, number> = {
+        pending: 0,
+        active: 0,
+        fully_paid: 0,
+        settled_with_collateral: 0,
+        rolled_over: 0,
+      }
+      for (const row of rows) {
+        counts[row.status as LoanStatus] = row.count
+      }
+      return { data: counts }
     } catch {
       return { error: "Internal server error" }
     }

@@ -20,6 +20,11 @@ export const queryKeys = {
     dueToday: ["loans-due-today"] as const,
   },
 
+  // ── Loan Status Counts ───────────────────────────────────────────────
+  loanStatusCounts: {
+    all: ["loan-status-counts"] as const,
+  },
+
   // ── Payments ─────────────────────────────────────────────────────────
   payments: {
     all: ["payments"] as const,
