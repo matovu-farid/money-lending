@@ -52,15 +52,13 @@ services:
         target: /etc/nginx/conf.d/default.conf
     volumes:
       - nginx_cache:/var/cache/nginx/electric
-    healthcheck:
-      # Hits the nginx-local endpoint, NOT a proxied path — nginx liveness
-      # must not depend on Electric being reachable, otherwise an Electric
-      # outage cascades into nginx restart loops.
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/nginx-health"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
-      start_period: 10s
+    # No healthcheck. nginx is a simple proxy — if the process is alive,
+    # it's healthy. Swarm's `restart_policy: on-failure` already restarts
+    # the task if nginx dies, which is the only failure mode that
+    # matters here. Adding wget-based HTTP probes was producing false
+    # negatives (wget exit codes in busybox alpine were not reliable
+    # under load or for empty 200 responses), causing swarm to kill
+    # perfectly healthy tasks every ~60s in a restart loop.
     depends_on:
       - electric
     deploy:
