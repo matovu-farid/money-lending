@@ -4,6 +4,7 @@ import { PanelLeft, Search } from "lucide-react"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { useSidebarStore } from "@/lib/stores/sidebar"
 import { useCommandPalette } from "@/components/command-palette"
+import { LogoMark } from "@/components/brand/logo"
 
 export function TopBar() {
   const { collapsed, toggle } = useSidebarStore()
@@ -23,13 +24,17 @@ export function TopBar() {
         ) : (
           <button
             onClick={toggle}
-            className="hidden md:inline font-semibold text-lg tracking-tight hover:text-muted-foreground transition-colors cursor-pointer"
+            className="hidden md:inline-flex items-center gap-2 font-semibold text-lg tracking-tight hover:text-muted-foreground transition-colors cursor-pointer"
             aria-label="Collapse sidebar"
           >
+            <LogoMark size={26} />
             Lending Manager
           </button>
         )}
-        <span className="md:hidden font-semibold text-lg tracking-tight">Lending Manager</span>
+        <span className="md:hidden inline-flex items-center gap-2 font-semibold text-lg tracking-tight">
+          <LogoMark size={24} />
+          Lending Manager
+        </span>
       </div>
       <div className="flex items-center gap-2">
         <button
