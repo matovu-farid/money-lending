@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections/fund-transfers"
-import { bankAccountCollection, insertBankAccountWithInput, updateBankAccountWithInput } from "@/collections/bank-accounts"
+import { bankAccountCollection } from "@/collections/bank-accounts"
 import { locationBalancesCollection } from "@/collections/loan-extras"
 import { useForm, Controller } from "react-hook-form"
 import { ArrowRightLeft, PlusCircle, MoreHorizontal, Building2 } from "lucide-react"
@@ -147,17 +147,15 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   // row automatically via the collection's onInsert handler.
 
   function onCreateBankAccount(data: { name: string }) {
-    const id = generateClientId()
-    const input = { id, name: data.name.trim() }
     const optimistic: BankAccount = {
-      id,
+      id: generateClientId(),
       name: data.name.trim(),
       isActive: true,
       createdBy: session.user.id,
       createdAt: new Date(),
     }
     try {
-      insertBankAccountWithInput(id, optimistic, input)
+      bankAccountCollection.insert(optimistic)
       toast.success("Bank account created")
       bankAccountForm.reset()
       setBankAccountDialogOpen(false)
@@ -561,12 +559,9 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                                 onSelect={() => {
                                   const newName = prompt("New account name:", account.name)
                                   if (newName && newName.trim() && newName.trim() !== account.name) {
-                                    updateBankAccountWithInput(
-                                      { id: account.id, name: newName.trim() },
-                                      (draft) => {
-                                        draft.name = newName.trim()
-                                      }
-                                    )
+                                    bankAccountCollection.update(account.id, (draft) => {
+                                      draft.name = newName.trim()
+                                    })
                                     toast.success("Account renamed")
                                   }
                                 }}
@@ -576,12 +571,9 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                               <DropdownMenuItem
                                 onSelect={() => {
                                   const nextActive = !account.isActive
-                                  updateBankAccountWithInput(
-                                    { id: account.id, isActive: nextActive },
-                                    (draft) => {
-                                      draft.isActive = nextActive
-                                    }
-                                  )
+                                  bankAccountCollection.update(account.id, (draft) => {
+                                    draft.isActive = nextActive
+                                  })
                                   toast.success(nextActive ? "Account reactivated" : "Account deactivated")
                                 }}
                               >

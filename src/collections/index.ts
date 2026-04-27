@@ -84,8 +84,4 @@ export {
   type CreditorsPageDataRow,
 } from "./creditors-page-data"
 
-export {
-  bankAccountCollection,
-  insertBankAccountWithInput,
-  updateBankAccountWithInput,
-} from "./bank-accounts"
+export { bankAccountCollection } from "./bank-accounts"

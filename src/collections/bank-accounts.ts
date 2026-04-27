@@ -7,13 +7,10 @@ import {
   createBankAccountAction,
   updateBankAccountAction,
 } from "@/actions/bank-account.actions"
-import type { BankAccount, CreateBankAccountInput, UpdateBankAccountInput } from "@/types"
+import type { BankAccount, UpdateBankAccountInput } from "@/types"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-
-const pendingInsertInputs = new Map<string, CreateBankAccountInput>()
-const pendingUpdateInputs = new Map<string, UpdateBankAccountInput>()
 
 export const bankAccountCollection = createCollection(
   electricCollectionOptions<BankAccount>({
@@ -26,28 +23,17 @@ export const bankAccountCollection = createCollection(
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
-      const input = pendingInsertInputs.get(modified.id)
-      if (!input) {
-        throw new Error("Missing bank account input for optimistic insert")
-      }
-      const result = await createBankAccountAction(input)
-      pendingInsertInputs.delete(modified.id)
+      const result = await createBankAccountAction({ id: modified.id, name: modified.name })
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate query-based collections that depend on bank account data
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
-      const { modified } = transaction.mutations[0]
-      const input = pendingUpdateInputs.get(modified.id)
-      if (!input) {
-        throw new Error("Missing bank account input for optimistic update")
-      }
+      const { original, changes } = transaction.mutations[0]
+      const input: UpdateBankAccountInput = { id: original.id, ...changes }
       const result = await updateBankAccountAction(input)
-      pendingUpdateInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
@@ -55,22 +41,3 @@ export const bankAccountCollection = createCollection(
     },
   })
 )
-
-export function insertBankAccountWithInput(
-  id: string,
-  optimistic: BankAccount,
-  input: CreateBankAccountInput
-) {
-  pendingInsertInputs.set(id, input)
-  bankAccountCollection.insert(optimistic)
-}
-
-export function updateBankAccountWithInput(
-  input: UpdateBankAccountInput,
-  applyOptimistic: (draft: BankAccount) => void
-) {
-  pendingUpdateInputs.set(input.id, input)
-  bankAccountCollection.update(input.id, (draft) => {
-    applyOptimistic(draft as BankAccount)
-  })
-}
