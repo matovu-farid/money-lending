@@ -48,22 +48,29 @@ docker stack deploy \
   --with-registry-auth
 
 echo ""
-echo "Waiting for Electric to become healthy..."
+echo "Waiting for Electric + nginx to become healthy..."
 for i in $(seq 1 30); do
-  STATUS=$(docker service ps electric_electric --format '{{.CurrentState}}' 2>/dev/null | head -1)
-  if echo "$STATUS" | grep -q "Running"; then
-    echo "Electric is running: $STATUS"
-    # Check health endpoint
+  ELECTRIC_STATUS=$(docker service ps electric_electric --format '{{.CurrentState}}' 2>/dev/null | head -1)
+  NGINX_STATUS=$(docker service ps electric_nginx --format '{{.CurrentState}}' 2>/dev/null | head -1)
+  if echo "$ELECTRIC_STATUS" | grep -q "Running" && echo "$NGINX_STATUS" | grep -q "Running"; then
+    echo "Electric: $ELECTRIC_STATUS"
+    echo "nginx:    $NGINX_STATUS"
+    # Health endpoint is served by nginx (cache-bypassed) and proxied to Electric.
     sleep 2
     if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1; then
-      echo "Health check passed!"
-      curl -s http://127.0.0.1:3001/v1/health | python3 -m json.tool 2>/dev/null || true
+      echo "Health check passed (via nginx)!"
+      curl -s -D /tmp/electric-headers.txt http://127.0.0.1:3001/v1/health \
+        | python3 -m json.tool 2>/dev/null || true
+      echo "--- response headers ---"
+      cat /tmp/electric-headers.txt
+      rm -f /tmp/electric-headers.txt
       exit 0
     fi
   fi
-  echo "  Attempt $i/30: $STATUS"
+  echo "  Attempt $i/30: electric=$ELECTRIC_STATUS | nginx=$NGINX_STATUS"
   sleep 3
 done
 
-echo "WARNING: Electric may not be fully healthy yet. Check with:"
+echo "WARNING: Stack may not be fully healthy yet. Check with:"
 echo "  docker service logs electric_electric"
+echo "  docker service logs electric_nginx"

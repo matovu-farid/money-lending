@@ -3,8 +3,9 @@ version: "3.8"
 services:
   electric:
     image: electricsql/electric:latest
-    ports:
-      - "3001:3000"
+    # No host port — only nginx is reachable from outside the swarm.
+    expose:
+      - "3000"
     environment:
       # Direct (non-pooled) Neon connection — required for logical replication.
       # IMPORTANT: Do NOT use the -pooler URL. Remove channel_binding param.
@@ -40,6 +41,44 @@ services:
         reservations:
           memory: 256M
 
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "3001:3000"
+    configs:
+      - source: electric_nginx_conf
+        target: /etc/nginx/conf.d/default.conf
+    volumes:
+      - nginx_cache:/var/cache/nginx/electric
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/v1/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      - electric
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          memory: 128M
+        reservations:
+          memory: 32M
+
+configs:
+  electric_nginx_conf:
+    file: ./nginx.conf
+
 volumes:
   electric_data:
+    driver: local
+  nginx_cache:
     driver: local

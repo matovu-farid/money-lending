@@ -5,26 +5,64 @@ on:
     branches: [main]
     paths:
       - "deploy/electric/**"
+      - ".github/workflows/deploy-electric.yml"
+  pull_request:
+    paths:
+      - "deploy/electric/**"
+      - ".github/workflows/deploy-electric.yml"
   workflow_dispatch:
 
 jobs:
-  deploy:
+  validate:
+    name: Validate stack and nginx config
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-stack.yml syntax
+        env:
+          ELECTRIC_DATABASE_URL: postgres://stub
+          ELECTRIC_SECRET: stub
+        run: |
+          # `docker compose config` understands the v3.8 compose schema and
+          # will fail fast on YAML errors, unknown keys, or bad references.
+          docker compose -f deploy/electric/docker-stack.yml config --quiet
+
+      - name: Validate nginx.conf
+        run: |
+          # nginx -t does syntax validation only — upstream hostnames are
+          # resolved lazily at request time, so `electric` not existing
+          # during the test is fine.
+          docker run --rm \
+            -v "$PWD/deploy/electric/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:1.27-alpine nginx -t
+
+  deploy:
+    name: Deploy to swarm
+    needs: validate
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: electric-deploy
+      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Copy stack file to server
+      - name: Copy stack files to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.ELECTRIC_SSH_HOST }}
           username: ${{ secrets.ELECTRIC_SSH_USER }}
           key: ${{ secrets.ELECTRIC_SSH_KEY }}
-          source: "deploy/electric/docker-stack.yml"
+          source: |
+            deploy/electric/docker-stack.yml
+            deploy/electric/nginx.conf
           target: "~/electric-deploy/"
           strip_components: 2
+          overwrite: true
 
-      - name: Deploy Electric stack
+      - name: Deploy stack
         uses: appleboy/ssh-action@v1
         env:
           ELECTRIC_DATABASE_URL: ${{ secrets.ELECTRIC_DATABASE_URL }}
@@ -34,29 +72,66 @@ jobs:
           username: ${{ secrets.ELECTRIC_SSH_USER }}
           key: ${{ secrets.ELECTRIC_SSH_KEY }}
           envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET
+          command_timeout: 5m
+          script_stop: true
           script: |
-            # Ensure Docker Swarm is initialized
+            set -euo pipefail
+
+            # Idempotent — `docker swarm init` is a no-op once the node is a manager.
             docker swarm init 2>/dev/null || true
 
-            # Pull latest image
+            # Pull pinned images up front so deploy doesn't stall on first start.
             docker pull electricsql/electric:latest
+            docker pull nginx:1.27-alpine
 
-            # Deploy the stack with env vars
             cd ~/electric-deploy
+
             export ELECTRIC_DATABASE_URL="$ELECTRIC_DATABASE_URL"
             export ELECTRIC_SECRET="$ELECTRIC_SECRET"
             export ELECTRIC_LOG_LEVEL=info
-            docker stack deploy -c docker-stack.yml electric
 
-            # Wait for service to be healthy
-            echo "Waiting for Electric to start..."
-            for i in $(seq 1 20); do
+            # --resolve-image always picks up newer :latest digests on each deploy.
+            # --prune removes services that no longer exist in the stack file
+            # (important when restructuring, e.g. adding/removing nginx).
+            docker stack deploy \
+              -c docker-stack.yml \
+              --resolve-image always \
+              --prune \
+              electric
+
+            echo "Waiting for stack to converge..."
+            for i in $(seq 1 40); do
               sleep 3
+              ELECTRIC_REPLICAS=$(docker service ls --filter name=electric_electric --format '{{.Replicas}}')
+              NGINX_REPLICAS=$(docker service ls --filter name=electric_nginx --format '{{.Replicas}}')
+              echo "  Attempt $i/40: electric=$ELECTRIC_REPLICAS nginx=$NGINX_REPLICAS"
+
+              # Health endpoint is served by nginx (cache-bypassed) and proxied to Electric.
               if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1; then
-                echo "Electric is healthy!"
+                echo "Electric is healthy via nginx!"
                 curl -s http://127.0.0.1:3001/v1/health
-                exit 0
+                echo
+                break
               fi
-              echo "  Attempt $i/20..."
+
+              if [ "$i" = "40" ]; then
+                echo "ERROR: Stack did not become healthy in time."
+                docker service ps electric_electric --no-trunc || true
+                docker service ps electric_nginx --no-trunc || true
+                docker service logs --tail 100 electric_electric || true
+                docker service logs --tail 100 electric_nginx || true
+                exit 1
+              fi
             done
-            echo "WARNING: Electric may still be starting up"
+
+            # Smoke test: confirm nginx is actually in front (not bypassed by an
+            # old config). The X-Cache-Status header is added by our nginx.conf,
+            # so its presence is a positive signal that traffic is going through it.
+            echo "Verifying nginx caching layer is in the request path..."
+            HEADERS=$(curl -sI http://127.0.0.1:3001/v1/health)
+            echo "$HEADERS"
+            if ! echo "$HEADERS" | grep -qi '^x-cache-status:'; then
+              echo "ERROR: X-Cache-Status header missing — request did not traverse nginx."
+              exit 1
+            fi
+            echo "nginx caching layer confirmed in request path."
