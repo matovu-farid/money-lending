@@ -8,7 +8,7 @@ import {
   updateCustomerAction,
 } from "@/actions/customer.actions"
 import type { Customer, CreateCustomerInput, UpdateCustomerInput } from "@/types/customer"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 
 export const customerCollection = createCollection(
   electricCollectionOptions<Customer>({
@@ -17,6 +17,7 @@ export const customerCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("customers"),
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("customers"),
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
@@ -31,6 +32,7 @@ export const customerCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
       const { original, changes } = transaction.mutations[0]

@@ -1,18 +1,12 @@
 "use client"
 
-import { Suspense, useState, useTransition } from "react"
+import { Suspense, useState } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import {
-  fundTransferCollection,
-  insertFundTransferWithInput,
-  insertCapitalInjectionWithInput,
-  bankAccountCollection,
-  insertBankAccountWithInput,
-  updateBankAccountWithInput,
-  locationBalancesCollection,
-} from "@/collections"
+import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections/fund-transfers"
+import { bankAccountCollection, insertBankAccountWithInput, updateBankAccountWithInput } from "@/collections/bank-accounts"
+import { locationBalancesCollection } from "@/collections/loan-extras"
 import { useForm, Controller } from "react-hook-form"
-import { Loader2, ArrowRightLeft, PlusCircle, MoreHorizontal, Building2 } from "lucide-react"
+import { ArrowRightLeft, PlusCircle, MoreHorizontal, Building2 } from "lucide-react"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -90,7 +84,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false)
-  const [isPending, startTransition] = useTransition()
   const { has } = usePermissions()
   const isAdmin = has("fund-transfer:create")
 
@@ -140,60 +133,64 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     },
   })
 
+  // NOTE: We deliberately do NOT wrap these handlers in useTransition. The
+  // optimistic insert from TanStack DB renders the new row immediately, so the
+  // user already sees the result. Wrapping the dialog-close + form-reset state
+  // updates in startTransition would defer them and gate them on the same
+  // transition that includes any heavy re-renders triggered by the optimistic
+  // mutation, which made submit feel laggy. Failures roll back the optimistic
+  // row automatically via the collection's onInsert handler.
+
   function onCreateBankAccount(data: { name: string }) {
-    startTransition(() => {
-      const id = generateClientId()
-      const input = { id, name: data.name.trim() }
-      const optimistic: BankAccount = {
-        id,
-        name: data.name.trim(),
-        isActive: true,
-        createdBy: session.user.id,
-        createdAt: new Date(),
-      }
-      try {
-        insertBankAccountWithInput(id, optimistic, input)
-        toast.success("Bank account created")
-        bankAccountForm.reset()
-        setBankAccountDialogOpen(false)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to create bank account")
-      }
-    })
+    const id = generateClientId()
+    const input = { id, name: data.name.trim() }
+    const optimistic: BankAccount = {
+      id,
+      name: data.name.trim(),
+      isActive: true,
+      createdBy: session.user.id,
+      createdAt: new Date(),
+    }
+    try {
+      insertBankAccountWithInput(id, optimistic, input)
+      toast.success("Bank account created")
+      bankAccountForm.reset()
+      setBankAccountDialogOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to create bank account")
+    }
   }
 
   function onInjectionSubmit(data: InjectionFormValues) {
-    startTransition(() => {
-      const id = generateClientId()
-      const input = {
-        id,
-        toLocation: data.toLocation,
-        amount: data.amount.trim(),
-        note: data.note.trim() || undefined,
-        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
-      }
-      const optimistic: FundTransfer = {
-        id,
-        transferType: "capital_injection",
-        fromLocation: null,
-        toLocation: data.toLocation,
-        fromSubLocationId: null,
-        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
-        amount: data.amount.trim(),
-        transferredBy: session.user.id,
-        note: data.note.trim() || null,
-        createdAt: new Date(),
-      }
+    const id = generateClientId()
+    const input = {
+      id,
+      toLocation: data.toLocation,
+      amount: data.amount.trim(),
+      note: data.note.trim() || undefined,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
+    }
+    const optimistic: FundTransfer = {
+      id,
+      transferType: "capital_injection",
+      fromLocation: null,
+      toLocation: data.toLocation,
+      fromSubLocationId: null,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
+      amount: data.amount.trim(),
+      transferredBy: session.user.id,
+      note: data.note.trim() || null,
+      createdAt: new Date(),
+    }
 
-      try {
-        insertCapitalInjectionWithInput(id, optimistic, input)
-        toast.success("Capital injection recorded")
-        injectionForm.reset()
-        setInjectionDialogOpen(false)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to record injection")
-      }
-    })
+    try {
+      insertCapitalInjectionWithInput(id, optimistic, input)
+      toast.success("Capital injection recorded")
+      injectionForm.reset()
+      setInjectionDialogOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to record injection")
+    }
   }
 
   function onSubmit(data: TransferFormValues) {
@@ -202,39 +199,37 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       return
     }
 
-    startTransition(() => {
-      const id = generateClientId()
-      const input = {
-        id,
-        fromLocation: data.fromLocation,
-        toLocation: data.toLocation,
-        amount: data.amount.trim(),
-        note: data.note.trim() || undefined,
-        fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : undefined,
-        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
-      }
-      const optimistic: FundTransfer = {
-        id,
-        transferType: "internal",
-        fromLocation: data.fromLocation,
-        toLocation: data.toLocation,
-        fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : null,
-        toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
-        amount: data.amount.trim(),
-        transferredBy: session.user.id,
-        note: data.note.trim() || null,
-        createdAt: new Date(),
-      }
+    const id = generateClientId()
+    const input = {
+      id,
+      fromLocation: data.fromLocation,
+      toLocation: data.toLocation,
+      amount: data.amount.trim(),
+      note: data.note.trim() || undefined,
+      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : undefined,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
+    }
+    const optimistic: FundTransfer = {
+      id,
+      transferType: "internal",
+      fromLocation: data.fromLocation,
+      toLocation: data.toLocation,
+      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : null,
+      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : null,
+      amount: data.amount.trim(),
+      transferredBy: session.user.id,
+      note: data.note.trim() || null,
+      createdAt: new Date(),
+    }
 
-      try {
-        insertFundTransferWithInput(id, optimistic, input)
-        toast.success("Fund transfer recorded")
-        reset()
-        setDialogOpen(false)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : "Failed to record transfer")
-      }
-    })
+    try {
+      insertFundTransferWithInput(id, optimistic, input)
+      toast.success("Fund transfer recorded")
+      reset()
+      setDialogOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to record transfer")
+    }
   }
 
   return (
@@ -284,7 +279,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                   control={injectionForm.control}
                   rules={{ required: "Deposit location is required" }}
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange} disabled={isPending}>
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger id="injectionToLocation">
                         <SelectValue placeholder="Select location" />
                       </SelectTrigger>
@@ -315,7 +310,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 control={injectionForm.control}
                 label="Amount (UGX)"
                 required="Amount is required"
-                disabled={isPending}
                 id="injectionAmount"
               />
 
@@ -328,7 +322,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                     <Textarea
                       id="injectionNote"
                       placeholder="e.g. Shareholder contribution..."
-                      disabled={isPending}
                       maxLength={2500}
                       value={field.value}
                       onChange={field.onChange}
@@ -337,15 +330,8 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 />
               </div>
 
-              <Button type="submit" disabled={isPending} className="w-full">
-                {isPending ? (
-                  <>
-                    <Loader2 className="animate-spin h-4 w-4" />
-                    Recording...
-                  </>
-                ) : (
-                  "Record Injection"
-                )}
+              <Button type="submit" className="w-full">
+                Record Injection
               </Button>
             </form>
           </DialogContent>
@@ -371,7 +357,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                   control={control}
                   rules={{ required: "Source is required" }}
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange} disabled={isPending}>
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger id="fromLocation">
                         <SelectValue placeholder="Select source" />
                       </SelectTrigger>
@@ -407,7 +393,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                     validate: (v) => v !== fromLocation || "Source and destination must be different",
                   }}
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange} disabled={isPending}>
+                    <Select value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger id="toLocation">
                         <SelectValue placeholder="Select destination" />
                       </SelectTrigger>
@@ -438,7 +424,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 control={control}
                 label="Amount (UGX)"
                 required="Amount is required"
-                disabled={isPending}
                 id="transferAmount"
               />
 
@@ -451,7 +436,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                     <Textarea
                       id="transferNote"
                       placeholder="Reason for transfer..."
-                      disabled={isPending}
                       maxLength={2500}
                       value={field.value}
                       onChange={field.onChange}
@@ -460,15 +444,8 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 />
               </div>
 
-              <Button type="submit" disabled={isPending} className="w-full">
-                {isPending ? (
-                  <>
-                    <Loader2 className="animate-spin h-4 w-4" />
-                    Recording...
-                  </>
-                ) : (
-                  "Record Transfer"
-                )}
+              <Button type="submit" className="w-full">
+                Record Transfer
               </Button>
             </form>
           </DialogContent>

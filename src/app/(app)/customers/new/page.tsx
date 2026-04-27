@@ -7,7 +7,7 @@ import Link from "next/link"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { generateClientId } from "@/lib/client-id"
-import { customerCollection } from "@/collections"
+import { customerCollection } from "@/collections/customers"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -21,11 +21,11 @@ export default function NewCustomerPage() {
     defaultValues: { fullName: "", nin: "", contact: "", address: "" },
   })
 
-  function onSubmit(data: CustomerFormValues) {
+  async function onSubmit(data: CustomerFormValues) {
     setIsPending(true)
     try {
       const id = generateClientId()
-      customerCollection.insert({
+      const tx = customerCollection.insert({
         id,
         fullName: data.fullName.trim(),
         nin: data.nin.trim(),
@@ -35,6 +35,7 @@ export default function NewCustomerPage() {
         createdAt: new Date(),
         updatedAt: new Date(),
       })
+      await tx.isPersisted.promise
       toast.success("Customer registered successfully")
       router.push(`/customers/${id}`)
     } catch (err: any) {

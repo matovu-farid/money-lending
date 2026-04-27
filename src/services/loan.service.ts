@@ -241,6 +241,42 @@ export const createLoan = (
           ? input.principalAmount  // fresh cash only (excludes carriedPrincipal + carriedInterest)
           : loan.principalAmount
 
+        // Validate funds are available at the chosen source / sub-location before
+        // posting the disbursement. For "bank" with a sub-location, scope the
+        // check to that specific bank account; otherwise check the whole source.
+        if (new BigNumber(freshDisbursementAmount).isGreaterThan(0)) {
+          const balanceConds = [
+            eq(transactionCategories.name, "Cash"),
+            eq(transactions.depositLocation, input.disbursementSource),
+          ]
+          if (input.disbursementSource === "bank" && input.subLocationId) {
+            balanceConds.push(eq(transactions.subLocationId, input.subLocationId))
+          }
+          const [balanceRow] = await tx
+            .select({
+              total: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'debit' THEN ${transactions.amount} ELSE -${transactions.amount} END), '0')`,
+            })
+            .from(transactions)
+            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+            .where(and(...balanceConds))
+
+          // The just-posted issuance fee debit already increased this source's
+          // balance, so subtract it back out to compare against pre-fee funds.
+          const issuanceFeeAtSource = new BigNumber(input.issuanceFee)
+          const available = new BigNumber(balanceRow?.total ?? "0").minus(issuanceFeeAtSource)
+
+          if (available.isLessThan(freshDisbursementAmount)) {
+            const where =
+              input.disbursementSource === "bank" && input.subLocationId
+                ? "this bank account"
+                : `the ${input.disbursementSource.replace("_", " ")} source`
+            throw new ValidationError({
+              message: `Insufficient funds at ${where} to disburse this loan.`,
+              field: input.disbursementSource === "bank" && input.subLocationId ? "subLocationId" : "disbursementSource",
+            })
+          }
+        }
+
         await autoPostPrincipalDisbursement(tx, {
           amount: freshDisbursementAmount,
           loanId: loan.id,

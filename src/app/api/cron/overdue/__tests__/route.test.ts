@@ -79,10 +79,6 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
-vi.mock("@/services/notification.service", () => ({
-  createNotificationsForLoan: vi.fn().mockResolvedValue(undefined),
-}))
-
 vi.mock("@/lib/interest/overdue", () => ({
   computeLoanOverdueInfo: vi.fn().mockReturnValue({
     daysOverdue: 0,

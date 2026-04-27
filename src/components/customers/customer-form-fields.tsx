@@ -1,6 +1,9 @@
 "use client"
 
+import { useMemo } from "react"
 import type { UseFormRegister, UseFormSetValue, FieldErrors } from "react-hook-form"
+import { useLiveQuery } from "@tanstack/react-db"
+import { customerCollection } from "@/collections/customers"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 
@@ -21,6 +24,8 @@ interface CustomerFormFieldsProps {
   errors: FieldErrors<CustomerFormValues>
   disabled?: boolean
   idPrefix?: string
+  /** Customer ID to exclude from NIN duplicate check (for edit mode). */
+  excludeCustomerId?: string
 }
 
 export function CustomerFormFields({
@@ -29,8 +34,22 @@ export function CustomerFormFields({
   errors,
   disabled,
   idPrefix = "",
+  excludeCustomerId,
 }: CustomerFormFieldsProps) {
   const id = (name: string) => idPrefix ? `${idPrefix}-${name}` : name
+
+  const { data: existingCustomers } = useLiveQuery(
+    (q) => q.from({ c: customerCollection }).select(({ c }) => ({ id: c.id, nin: c.nin })),
+    []
+  )
+  const existingNins = useMemo(() => {
+    const set = new Set<string>()
+    for (const c of existingCustomers ?? []) {
+      if (c.id === excludeCustomerId) continue
+      if (c.nin) set.add(c.nin.toUpperCase().trim())
+    }
+    return set
+  }, [existingCustomers, excludeCustomerId])
 
   return (
     <>
@@ -71,6 +90,8 @@ export function CustomerFormFields({
             validate: {
               format: v => /^[CA][MF]\d{8}[A-Z0-9]{4}$/.test(v.trim().toUpperCase())
                 || "Must be 14 characters: C/A, M/F, 8 digits, 4 alphanumeric (e.g. CM97027102X4CU)",
+              unique: v => !existingNins.has(v.trim().toUpperCase())
+                || "A customer with this NIN already exists",
             },
             onChange: (e) => setValue("nin", e.target.value.toUpperCase()),
           })}

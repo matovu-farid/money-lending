@@ -1,7 +1,6 @@
 "use client"
 
 import { PanelLeft, Search } from "lucide-react"
-import { NotificationBell } from "@/components/notifications/notification-bell"
 import { ThemeToggle } from "@/components/layout/theme-toggle"
 import { useSidebarStore } from "@/lib/stores/sidebar"
 import { useCommandPalette } from "@/components/command-palette"
@@ -52,7 +51,6 @@ export function TopBar() {
           <Search className="h-4 w-4" />
         </button>
         <ThemeToggle />
-        <NotificationBell />
       </div>
     </header>
   )

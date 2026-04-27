@@ -8,9 +8,16 @@ import {
   createCapitalInjectionAction,
 } from "@/actions/fund-transfer.actions"
 import type { FundTransfer, CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types/fund-transfer"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+
+// Dashboard KPIs depend on the Cash ledger but the dashboard collection only
+// subscribes to loans/payments tables — capital injections + fund transfers
+// don't touch those, so we invalidate the KPI key explicitly here. Other
+// dependent collections (locationBalances, reports.balanceSheet) already
+// auto-invalidate via subscribeToTableChanges on `transactions` and
+// `fund_transfers`, so manually invalidating them would be redundant.
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
@@ -27,6 +34,7 @@ export const fundTransferCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("fund_transfers"),
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("fund_transfers"),
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
@@ -48,11 +56,7 @@ export const fundTransferCollection = createCollection(
           throw new Error(result.error)
         }
       }
-      // Invalidate query-based collections that depend on fund transfer data
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
     },
   })
 )

@@ -2,11 +2,13 @@
 
 import { Suspense, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useForm } from "react-hook-form"
-import { customerCollection, collateralNaturesCollection, locationBalancesCollection, getActiveLoanCheckCollection, getLoanCollateralCollection } from "@/collections"
+import { customerCollection } from "@/collections/customers"
+import { collateralNaturesCollection, locationBalancesCollection, getActiveLoanCheckCollection, getLoanCollateralCollection } from "@/collections/loan-extras"
+import { getLoanBalanceCollection } from "@/collections/loan-balance"
 import { generateClientId } from "@/lib/client-id"
-import { insertLoanWithInput } from "@/collections"
+import { insertLoanWithInput } from "@/collections/loans"
 import { useSession } from "@/lib/auth-client"
 
 import { calculateLoanSummary } from "@/lib/interest"
@@ -83,6 +85,20 @@ function NewLoanPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // runs once on mount
 
+  // Warm the loan-detail route + its per-loan dynamic collections as soon as
+  // the receipt modal opens. By the time the user closes the receipt and
+  // navigates, the route bundle is loaded and the collateral/balance fetches
+  // have already started — eliminating the noticeable wait we saw post-issue.
+  useEffect(() => {
+    const id = receiptData?.loanId
+    if (!id) return
+    router.prefetch(`/loans/${id}`)
+    // Touching these getters is enough — the collections use `startSync: true`,
+    // so creation kicks off the queryFn immediately.
+    getLoanBalanceCollection(id)
+    getLoanCollateralCollection(id)
+  }, [receiptData?.loanId, router])
+
   // Sync form changes back to the store
   useEffect(() => {
     const subscription = watch((values) => {
@@ -116,20 +132,21 @@ function NewLoanPageInner() {
 
   // --- Data queries ---
 
-  const { data: knownNaturesRows } = useLiveSuspenseQuery((q) =>
+  const { data: knownNaturesRows } = useLiveQuery((q) =>
     q.from({ n: collateralNaturesCollection }).select(({ n }) => n)
   )
   const knownNatures = (knownNaturesRows ?? []).map((r) => r.nature)
 
-  const { data: locationBalancesRows } = useLiveSuspenseQuery((q) =>
+  const { data: locationBalancesRows } = useLiveQuery((q) =>
     q.from({ l: locationBalancesCollection }).select(({ l }) => l)
   )
   const lbRow = locationBalancesRows?.[0]
   const locationBalances: Record<"cash" | "bank" | "strong_room", string> | null = lbRow
     ? { cash: lbRow.cash, bank: lbRow.bank, strong_room: lbRow.strong_room }
     : null
+  const bankAccountBalances = lbRow?.bankAccounts ?? {}
 
-  const { data: matchedCustomers } = useLiveSuspenseQuery(
+  const { data: matchedCustomers } = useLiveQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, prefilledCustomerId)),
     [prefilledCustomerId]
   )
@@ -208,7 +225,7 @@ function NewLoanPageInner() {
 
   // --- Step navigation ---
 
-  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource", "backdateNote", "lowRateReason"]
+  const step1Fields: (keyof LoanFormValues)[] = ["customerId", "principalAmount", "issuanceFee", "startDate", "interestRateDisplay", "disbursementSource", "subLocationId", "backdateNote", "lowRateReason"]
   const step2Fields: (keyof LoanFormValues)[] = ["collateralNature", "collateralDescription"]
 
   async function handleStep1Next() {
@@ -365,6 +382,7 @@ function NewLoanPageInner() {
             startDate={startDate}
             principalAmount={principalAmount}
             locationBalances={locationBalances}
+            bankAccountBalances={bankAccountBalances}
             userRole={userRole}
             onNext={handleStep1Next}
           />

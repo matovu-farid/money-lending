@@ -8,7 +8,7 @@ import {
   reviewRateChangeRequestAction,
 } from "@/actions/rate-change-request.actions"
 import type { RateChangeRequest, CreateRateChangeRequestInput } from "@/types/rate-change"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -30,6 +30,7 @@ export const rateChangeRequestCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("rate_change_requests"),
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("rate_change_requests"),
     },
     onUpdate: async ({ transaction }) => {
       const { original } = transaction.mutations[0]

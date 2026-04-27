@@ -2,7 +2,8 @@
 
 import { Suspense, useMemo } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { incomeCollection, incomeCategoryCollection } from "@/collections"
+import { incomeCollection } from "@/collections/income"
+import { incomeCategoryCollection } from "@/collections/income-categories"
 import { IncomeListClient } from "./IncomeListClient"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { TransactionRow, TransactionShapeRow } from "@/types"

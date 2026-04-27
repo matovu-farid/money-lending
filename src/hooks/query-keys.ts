@@ -52,11 +52,6 @@ export const queryKeys = {
     list: () => [...queryKeys.adminUsers.all, "list"] as const,
   },
 
-  notifications: {
-    all: ["notifications"] as const,
-    unreadCount: () => [...queryKeys.notifications.all, "unread-count"] as const,
-  },
-
   recentLoans: {
     all: ["recent-loans"] as const,
     list: () => [...queryKeys.recentLoans.all, "list"] as const,

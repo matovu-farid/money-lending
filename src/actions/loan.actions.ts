@@ -257,9 +257,22 @@ export async function createLoanAction(input: CreateLoanInput) {
   if (freshAmount.isGreaterThan(0)) {
     try {
       const balances = await Effect.runPromise(getLocationBalances())
-      const available = new BigNumber(balances[input.disbursementSource as "cash" | "bank" | "strong_room"])
+      // For bank disbursements with a chosen sub-account, validate against that
+      // specific account's balance — the aggregate "bank" total can mask an
+      // individual account that lacks funds.
+      const isBankWithSub =
+        input.disbursementSource === "bank" && !!input.subLocationId
+      const available = isBankWithSub
+        ? new BigNumber(balances.bankAccounts?.[input.subLocationId as string] ?? "0")
+        : new BigNumber(balances[input.disbursementSource as "cash" | "bank" | "strong_room"])
       if (available.isLessThan(freshAmount)) {
-        const loc = input.disbursementSource === "strong_room" ? "Strong Room" : input.disbursementSource === "bank" ? "Bank" : "Cash on Hand"
+        const loc = isBankWithSub
+          ? "the selected bank account"
+          : input.disbursementSource === "strong_room"
+            ? "Strong Room"
+            : input.disbursementSource === "bank"
+              ? "Bank"
+              : "Cash on Hand"
         const isLoanOfficer = !perms.has("fund-transfer:create")
         const action = isLoanOfficer
           ? "Ask your supervisor to transfer or inject funds before disbursing."

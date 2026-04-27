@@ -1,4 +1,3 @@
-import { after } from "next/server"
 import { betterAuth } from "better-auth"
 import { drizzleAdapter } from "better-auth/adapters/drizzle"
 import { admin, testUtils } from "better-auth/plugins"
@@ -13,7 +12,7 @@ export const pendingVerifications = new Map<string, string>()
 
 const isTest = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
 const isCypress = process.env.CYPRESS === "true"
-console.log("[Email Debug] Module loaded", { isTest, isCypress, NODE_ENV: process.env.NODE_ENV, sendOnSignUp: !isTest })
+
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 const emailFrom = process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>"
@@ -52,6 +51,17 @@ export const auth = betterAuth({
         pendingVerifications.set(user.email, url)
         return
       }
+
+      // Skip for invited users — their email gets verified directly during acceptance
+      const { sql } = await import("drizzle-orm")
+      const inviteRows = await db.execute(
+        sql`SELECT 1 FROM "invitation" WHERE "email" = ${user.email} AND "status" = 'pending' LIMIT 1`
+      )
+      if ((inviteRows as unknown as any[]).length > 0) {
+        console.log("[Email Debug] SKIPPED — user has pending invitation")
+        return
+      }
+
       console.log("[Email Debug] Proceeding to send email via Resend")
       try {
         const result = await resend.emails.send({
@@ -67,9 +77,19 @@ export const auth = betterAuth({
     },
   },
   session: {
+    // Per better-auth docs (Optimizing for Performance), enabling cookieCache
+    // makes `auth.api.getSession({ headers })` validate a signed `session_data`
+    // cookie cryptographically and skip the database entirely. Without it,
+    // every middleware hit, every Electric long-poll, every API route does a
+    // session SELECT on the user/session tables — which is what was producing
+    // the CONNECT_TIMEOUT bursts and pool exhaustion.
+    //
+    // Trade-off: revoked/banned sessions can stay live for up to `maxAge`
+    // before the cache expires and the next `getSession` re-checks the DB.
+    // 5 minutes is the better-auth-recommended default.
     cookieCache: {
-      enabled: false,
-      maxAge: 5 * 60, // 5 minutes
+      enabled: true,
+      maxAge: 5 * 60,
     },
   },
   databaseHooks: {

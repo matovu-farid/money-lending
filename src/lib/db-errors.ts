@@ -11,3 +11,13 @@ export function isUniqueConstraintError(error: unknown): boolean {
     (error as any).code === "23505"
   )
 }
+
+/**
+ * Get the constraint name from a Postgres unique constraint violation.
+ * Returns null if not a unique violation or constraint name unknown.
+ */
+export function getUniqueConstraintName(error: unknown): string | null {
+  if (!isUniqueConstraintError(error)) return null
+  const constraint = (error as any).constraint_name ?? (error as any).constraint
+  return typeof constraint === "string" ? constraint : null
+}

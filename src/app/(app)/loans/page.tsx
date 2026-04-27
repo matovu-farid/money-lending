@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections"
+import { loanCollection } from "@/collections/loans"
 import { Plus, ChevronRight, Loader2 } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"

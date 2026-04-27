@@ -2,7 +2,7 @@
 
 import { useMemo, useCallback } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { permissionsCollection } from "@/collections"
+import { permissionsCollection } from "@/collections/permissions"
 import type { Permission } from "@/types"
 
 export function usePermissions() {

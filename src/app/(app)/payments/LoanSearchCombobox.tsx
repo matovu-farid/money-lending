@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react"
 import { Clock, Search, X } from "lucide-react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections"
+import { loanCollection } from "@/collections/loans"
 import { Input } from "@/components/ui/input"
 import { formatNumberWithCommas, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"

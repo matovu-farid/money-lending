@@ -10,7 +10,6 @@ export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{ action:
 export class DuplicateError extends Data.TaggedError("DuplicateError")<{ entity: string; field: string }> {}
 export class PaymentNotFound extends Data.TaggedError("PaymentNotFound")<{ id: string }> {}
 export class ReceiptBlockedError extends Data.TaggedError("ReceiptBlockedError")<{ missing: string[] }> {}
-export class NotificationNotFound extends Data.TaggedError("NotificationNotFound")<{ id: string }> {}
 export class CreditorNotFound extends Data.TaggedError("CreditorNotFound")<{ id: string }> {}
 export class InvestmentNotFound extends Data.TaggedError("InvestmentNotFound")<{ id: string }> {}
 export class CategoryInUseError extends Data.TaggedError("CategoryInUseError")<{ categoryId: string }> {}

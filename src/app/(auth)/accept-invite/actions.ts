@@ -24,35 +24,35 @@ export async function getInviteDetails(token: string) {
   }
 }
 
-export async function acceptInviteAndCreateAccount(token: string, password: string) {
+export async function prepareInviteAcceptance(token: string) {
   if (!token) return { error: "No invitation token provided" }
-  if (!password || password.length < 8) return { error: "Password must be at least 8 characters" }
+
+  const result = await validateInviteToken(token)
+  if (!result.valid) {
+    return { error: result.error }
+  }
+
+  return { data: { success: true } }
+}
+
+export async function finalizeInviteAcceptance(token: string) {
+  if (!token) return { error: "No invitation token provided" }
 
   try {
-    // Validate token and get invite details — does NOT mark as accepted yet
-    const { invitationId, email, name, role } = await acceptInvitation(token)
-
-    // Create account first — if this fails, the invitation stays "pending" so the user can retry
-    const signUpResult = await auth.api.signUpEmail({
-      body: { email, password, name },
-      headers: await headers(),
-    })
-
-    if (!signUpResult?.user?.id) {
-      return { error: "Failed to create account" }
+    const session = await auth.api.getSession({ headers: await headers() })
+    if (!session?.user) {
+      return { error: "Not authenticated" }
     }
 
-    // Set role and mark email as verified
-    await db
-      .update(user)
-      .set({ role, emailVerified: true })
-      .where(eq(user.id, signUpResult.user.id))
+    const { invitationId, role } = await acceptInvitation(token)
 
-    // Only mark invitation as accepted after account is fully set up
-    await markInvitationAccepted(invitationId)
+    await Promise.all([
+      db.update(user).set({ role, emailVerified: true }).where(eq(user.id, session.user.id)),
+      markInvitationAccepted(invitationId),
+    ])
 
     return { data: { success: true } }
   } catch (e: any) {
-    return { error: e.message ?? "Failed to accept invitation" }
+    return { error: e.message ?? "Failed to finalize invitation" }
   }
 }

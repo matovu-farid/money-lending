@@ -10,7 +10,6 @@ import {
   DuplicateError,
   PaymentNotFound,
   ReceiptBlockedError,
-  NotificationNotFound,
   CreditorNotFound,
   InvestmentNotFound,
   CategoryInUseError,
@@ -89,12 +88,6 @@ describe("Tagged Errors", () => {
     expect(err.missing).toEqual(["signature"])
   })
 
-  it("NotificationNotFound has correct tag and id", () => {
-    const err = new NotificationNotFound({ id: "notif-1" })
-    expect(err._tag).toBe("NotificationNotFound")
-    expect(err.id).toBe("notif-1")
-  })
-
   it("CreditorNotFound has correct tag and id", () => {
     const err = new CreditorNotFound({ id: "cred-1" })
     expect(err._tag).toBe("CreditorNotFound")
@@ -143,7 +136,6 @@ describe("Tagged Errors", () => {
       new DuplicateError({ entity: "x", field: "x" }),
       new PaymentNotFound({ id: "x" }),
       new ReceiptBlockedError({ missing: [] }),
-      new NotificationNotFound({ id: "x" }),
       new CreditorNotFound({ id: "x" }),
       new InvestmentNotFound({ id: "x" }),
       new CategoryInUseError({ categoryId: "x" }),

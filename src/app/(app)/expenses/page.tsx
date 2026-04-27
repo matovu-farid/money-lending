@@ -2,7 +2,8 @@
 
 import { Suspense, useMemo } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { expenseCollection, expenseCategoryCollection } from "@/collections"
+import { expenseCollection } from "@/collections/expenses"
+import { expenseCategoryCollection } from "@/collections/expense-categories"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { TransactionRow, TransactionShapeRow } from "@/types"

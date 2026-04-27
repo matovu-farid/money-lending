@@ -1,7 +1,7 @@
 "use client"
 
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { dashboardCollection } from "@/collections"
+import { dashboardCollection } from "@/collections/dashboard"
 import type { DashboardKPIs } from "@/types"
 
 export interface DashboardData {

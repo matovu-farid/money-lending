@@ -3,7 +3,7 @@
 import { useMemo } from "react"
 import { PieChart, Pie, ResponsiveContainer, Tooltip } from "recharts"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections"
+import { loanCollection } from "@/collections/loans"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 const STATUS_CONFIG: Record<

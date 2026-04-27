@@ -4,7 +4,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { eq, ilike, inArray, and, count, isNull, desc } from "drizzle-orm"
+import { eq, ilike, inArray, and, count, isNull, desc, sql } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
@@ -36,6 +36,42 @@ export const createCustomer = (
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),
       () => createCustomer({ ...input, id: undefined })
+    )
+  )
+
+/**
+ * Like createCustomer but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const createCustomerWithTxid = (
+  input: CreateCustomerInput
+): Effect.Effect<{ customer: Customer; txid: number }, DatabaseError> =>
+  Effect.tryPromise({
+    try: () =>
+      db.transaction(async (tx) => {
+        const [customer] = await tx
+          .insert(customers)
+          .values({
+            ...(input.id ? { id: input.id } : {}),
+            fullName: input.fullName,
+            nin: input.nin,
+            contact: input.contact,
+            address: input.address,
+          })
+          .returning()
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { customer, txid }
+      }),
+    catch: (e) => new DatabaseError({ cause: e }),
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => createCustomerWithTxid({ ...input, id: undefined })
     )
   )
 

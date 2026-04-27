@@ -7,7 +7,7 @@ import {
   createDelegationAction,
   revokeDelegationAction,
 } from "@/actions/delegation.actions"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 
 /** Row shape synced from the raw delegation table via Electric */
 export type DelegationRow = {
@@ -26,6 +26,7 @@ export const delegationCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("delegation"),
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("delegation"),
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]

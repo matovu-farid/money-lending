@@ -1,12 +1,14 @@
 "use client"
 
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { getDailyCollectionsCollection, loansDueTodayCollection } from "@/collections"
+import { useLiveQuery, useLiveSuspenseQuery } from "@tanstack/react-db"
+import { getDailyCollectionsCollection, loansDueTodayCollection } from "@/collections/daily-collections"
 import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 
+// Date-keyed daily collections use a non-suspending query. Switching dates
+// otherwise blanks the page on every change while the new date's data fetches.
 export function useDailyCollections(date: string) {
   const collection = getDailyCollectionsCollection(date)
-  const { data } = useLiveSuspenseQuery(
+  const { data } = useLiveQuery(
     (q) => q.from({ d: collection }).select(({ d }) => d),
     [date]
   )

@@ -54,6 +54,7 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/services/customer.service", () => ({
   createCustomer: vi.fn(),
+  createCustomerWithTxid: vi.fn(),
   getCustomer: vi.fn(),
   updateCustomer: vi.fn(),
   listCustomers: vi.fn(),
@@ -66,7 +67,7 @@ vi.mock("@/services/customer.service", () => ({
 import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import {
-  createCustomer,
+  createCustomerWithTxid,
   getCustomer,
   updateCustomer,
   listCustomers,
@@ -88,7 +89,7 @@ const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
 const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
-const mockCreateCustomer = vi.mocked(createCustomer)
+const mockCreateCustomer = vi.mocked(createCustomerWithTxid)
 const mockGetCustomer = vi.mocked(getCustomer)
 const mockUpdateCustomer = vi.mocked(updateCustomer)
 const mockListCustomers = vi.mocked(listCustomers)
@@ -191,11 +192,13 @@ describe("Customer Actions", () => {
     it("creates customer and revalidates path on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const created = { id: "c1", ...validInput }
-      mockCreateCustomer.mockReturnValue(Effect.succeed(created) as any)
+      mockCreateCustomer.mockReturnValue(
+        Effect.succeed({ customer: created, txid: 12345 }) as any,
+      )
 
       const result = await createCustomerAction(validInput)
 
-      expect(result).toEqual({ data: created })
+      expect(result).toEqual({ data: created, txid: 12345 })
       expect(mockCreateCustomer).toHaveBeenCalledWith(validInput)
       expect(mockRevalidatePath).toHaveBeenCalledWith("/customers")
     })
@@ -206,7 +209,7 @@ describe("Customer Actions", () => {
         Effect.fail(new DatabaseError({ cause: "db down" })) as any,
       )
       const result = await createCustomerAction(validInput)
-      expect(result).toEqual({ error: "Database error" })
+      expect(result).toEqual({ error: "Database error — check server logs for details" })
     })
 
     it("returns generic error for unknown service failure", async () => {

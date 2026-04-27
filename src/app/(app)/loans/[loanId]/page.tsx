@@ -3,7 +3,8 @@
 import { Suspense, use, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
-import { loanCollection, customerCollection } from "@/collections"
+import { loanCollection } from "@/collections/loans"
+import { customerCollection } from "@/collections/customers"
 import { toast } from "sonner"
 import { LoanDetailClient } from "./loan-detail-client"
 

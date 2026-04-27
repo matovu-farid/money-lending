@@ -5,9 +5,10 @@ import { withAction } from "@/lib/with-action"
 import { getErrorTag } from "@/lib/action-utils"
 import { validateFullName, validateNIN, validateUgandanPhone } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
-import { createCustomer, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
+import { createCustomerWithTxid, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput } from "@/types"
 import { VALID_CUSTOMER_STATUSES } from "@/lib/constants"
+import { getUniqueConstraintName, isUniqueConstraintError } from "@/lib/db-errors"
 
 export const listCustomersAction = withAction({
   permission: "customer:read",
@@ -29,12 +30,22 @@ export const createCustomerAction = withAction<CreateCustomerInput, any>({
     }
 
     try {
-      const data = await Effect.runPromise(createCustomer(input))
+      const { customer, txid } = await Effect.runPromise(createCustomerWithTxid(input))
       revalidatePath("/customers")
-      return { data }
+      return { data: customer, txid }
     } catch (error) {
+      // Unwrap the underlying cause from DatabaseError
+      const cause = (error as any)?.cause?.cause ?? (error as any)?.cause ?? error
+      if (isUniqueConstraintError(cause)) {
+        const constraint = getUniqueConstraintName(cause)
+        if (constraint === "uq_customers_nin") {
+          return { error: "A customer with this NIN already exists" }
+        }
+        return { error: "A customer with these details already exists" }
+      }
+      console.error("[createCustomerAction] Database error:", cause)
       if (getErrorTag(error) === "DatabaseError") {
-        return { error: "Database error" }
+        return { error: "Database error — check server logs for details" }
       }
       return { error: "Internal server error" }
     }

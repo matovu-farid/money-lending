@@ -2,7 +2,8 @@
 
 import { useMemo } from "react"
 import { useLiveSuspenseQuery, eq } from "@tanstack/react-db"
-import { loanCollection, paymentCollection } from "@/collections"
+import { loanCollection } from "@/collections/loans"
+import { paymentCollection } from "@/collections/payments"
 import { calculateCreditScore } from "@/lib/credit-score"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { cn } from "@/lib/utils"

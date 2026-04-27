@@ -100,12 +100,6 @@ export const queryKeys = {
         : (["reports", "retained-earnings"] as const),
   },
 
-  // ── Notifications ────────────────────────────────────────────────────
-  notifications: {
-    unreadCount: ["notifications", "unread-count"] as const,
-    list: ["notifications", "list"] as const,
-  },
-
   // ── Delegations ──────────────────────────────────────────────────────
   delegations: {
     all: ["delegations"] as const,

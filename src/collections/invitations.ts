@@ -7,7 +7,7 @@ import {
   createInviteAction,
   revokeInviteAction,
 } from "@/actions/invitation.actions"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import type { UserRole } from "@/types"
 
 /** Row shape synced from the raw invitation table via Electric (token excluded for security) */
@@ -33,6 +33,7 @@ export const invitationCollection = createCollection(
         columns: ["id", "email", "name", "role", "status", "invited_by", "expires_at", "created_at", "accepted_at"],
       },
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("invitation"),
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]

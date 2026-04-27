@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
@@ -101,27 +101,6 @@ export function Sidebar({ onClose }: SidebarProps) {
 
   const user = session?.user
   const { has } = usePermissions()
-
-  // Prefetch routes on mount
-  useEffect(() => {
-    if (has("dashboard:read")) {
-      router.prefetch("/dashboard")
-    }
-    router.prefetch("/customers")
-    router.prefetch("/loans")
-    router.prefetch("/payments")
-    router.prefetch("/creditors")
-    if (has("fund-transfer:read")) {
-      router.prefetch("/fund-transfers")
-    }
-    if (has("expense:read")) {
-      router.prefetch("/expenses")
-    }
-    router.prefetch("/reports")
-    if (has("rate-change:approve-standard")) {
-      router.prefetch("/approvals")
-    }
-  }, [router, has])
 
   // Prefetch route on hover with debounce
   const handlePrefetch = useCallback((href: string) => {

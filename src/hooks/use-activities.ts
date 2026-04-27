@@ -1,7 +1,7 @@
 "use client"
 
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { getActivitiesCollection, ACTIVITIES_PAGE_SIZE } from "@/collections"
+import { useLiveQuery } from "@tanstack/react-db"
+import { getActivitiesCollection, ACTIVITIES_PAGE_SIZE } from "@/collections/activities"
 import type { GetActivitiesResult } from "@/types/activity"
 
 export type ActivityFilterParams = {
@@ -11,12 +11,15 @@ export type ActivityFilterParams = {
   dateTo: string
 }
 
+// Filter+page-keyed activities query is non-suspending: every filter change
+// or page change creates a new collection that fetches from the server, and
+// suspending would blank the activity list on each change.
 export function useActivities(
   params: ActivityFilterParams,
   page: number,
 ) {
   const collection = getActivitiesCollection(params, page)
-  const { data } = useLiveSuspenseQuery(
+  const { data } = useLiveQuery(
     (q) => q.from({ a: collection }).select(({ a }) => a),
     [JSON.stringify(params), page]
   )

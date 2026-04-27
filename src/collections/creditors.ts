@@ -8,7 +8,7 @@ import {
   updateCreditorAction,
 } from "@/actions/creditor.actions"
 import type { Creditor, CreateCreditorWithInvestmentInput, UpdateCreditorInput } from "@/types/creditor"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -26,6 +26,7 @@ export const creditorCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("creditors"),
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("creditors"),
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]

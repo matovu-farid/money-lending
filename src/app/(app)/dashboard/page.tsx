@@ -5,7 +5,7 @@ import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink, Plus, DollarSign } from "lucide-react"
 import Link from "next/link"
 import { useDashboard } from "@/hooks/use-dashboard"
-import { dashboardActivityCollection } from "@/collections"
+import { dashboardActivityCollection } from "@/collections/dashboard"
 import dynamic from "next/dynamic"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 

@@ -4,8 +4,8 @@ import { useState, useEffect, useTransition, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
-import { signIn } from "@/lib/auth-client"
-import { getInviteDetails, acceptInviteAndCreateAccount } from "./actions"
+import { signUp } from "@/lib/auth-client"
+import { getInviteDetails, prepareInviteAcceptance, finalizeInviteAcceptance } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -88,26 +88,33 @@ function AcceptInviteContent() {
     }
 
     startTransition(async () => {
-      const result = await acceptInviteAndCreateAccount(token, data.password)
-
-      if ("error" in result) {
-        setError("root", { message: result.error })
+      // Re-validate token before creating the account
+      const prepResult = await prepareInviteAcceptance(token)
+      if ("error" in prepResult) {
+        setError("root", { message: prepResult.error })
         return
       }
 
-      // Sign in with the new credentials
-      const signInResult = await signIn.email({
+      // Create account client-side — session cookie set via HTTP response
+      const signUpResult = await signUp.email({
+        name: inviteData!.name,
         email: inviteData!.email,
         password: data.password,
       })
+      if (signUpResult.error) {
+        setError("root", { message: signUpResult.error.message ?? "Failed to create account" })
+        return
+      }
 
-      if (signInResult.error) {
-        setError("root", { message: "Account created but sign-in failed. Please go to the login page." })
+      // User is now authenticated — set role and mark invitation accepted
+      const finalResult = await finalizeInviteAcceptance(token)
+      if ("error" in finalResult) {
+        setError("root", { message: finalResult.error })
         return
       }
 
       document.cookie = "has_account=1; path=/; max-age=315360000; SameSite=Lax"
-      router.push("/")
+      router.push("/dashboard")
       router.refresh()
     })
   }

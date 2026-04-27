@@ -27,4 +27,11 @@ export const transactions = pgTable("transactions", {
   index("idx_transactions_journal_group_id").on(table.journalGroupId),
   index("idx_transactions_loan_id").on(table.loanId),
   index("idx_transactions_reference_id").on(table.referenceId),
+  // Composite index for location-balance aggregation (GROUP BY type, deposit_location, sub_location_id WHERE category_id = ?)
+  index("idx_transactions_balances").on(
+    table.categoryId,
+    table.type,
+    table.depositLocation,
+    table.subLocationId,
+  ),
 ])

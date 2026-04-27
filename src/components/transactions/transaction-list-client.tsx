@@ -5,11 +5,9 @@ import { useForm } from "react-hook-form"
 import { useLiveQuery } from "@tanstack/react-db"
 import BigNumber from "bignumber.js"
 import { toast } from "sonner"
-import {
-  expenseCollection, insertExpenseWithInput,
-  incomeCollection, insertIncomeWithInput,
-  locationBalancesCollection,
-} from "@/collections"
+import { expenseCollection, insertExpenseWithInput } from "@/collections/expenses"
+import { incomeCollection, insertIncomeWithInput } from "@/collections/income"
+import { locationBalancesCollection } from "@/collections/loan-extras"
 import { generateClientId } from "@/lib/client-id"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"

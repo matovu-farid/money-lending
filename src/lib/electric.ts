@@ -4,6 +4,29 @@ import { ShapeStream } from "@electric-sql/client"
 import type { QueryClient } from "@tanstack/react-query"
 
 /**
+ * Default `onError` handler for ShapeStreams. Without it, non-retryable errors
+ * (proxy 401 from a session-lookup timeout, 502 from upstream Electric being
+ * unreachable, network drops while offline) bubble out of the ShapeStream as
+ * unhandled promise rejections, which Next.js logs as `unhandledRejection:
+ * FetchError` and which can crash the page.
+ *
+ * Returning `{}` tells the client to retry with the same params; the underlying
+ * client already does exponential backoff. This makes the shape stream
+ * "self-healing" once the user is back online or the session is restored.
+ */
+export function shapeOnError(label: string) {
+  return (err: unknown): Record<string, never> => {
+    const status = (err as { status?: number } | null)?.status
+    if (typeof status === "number") {
+      console.warn(`[electric] shape "${label}" error ${status}; retrying`)
+    } else {
+      console.warn(`[electric] shape "${label}" error; retrying`, err)
+    }
+    return {}
+  }
+}
+
+/**
  * Build the shape proxy URL for a given table.
  * In the browser this resolves to /api/electric/<table>.
  * The proxy route handles auth, secret injection, and table whitelisting.
@@ -46,25 +69,33 @@ export function subscribeToTableChanges(
 
   const stream = new ShapeStream({
     url: shapeUrl(table),
+    onError: shapeOnError(table),
   })
 
   // Skip the initial sync (we already have data from queryFn).
   // Only invalidate on live changes after the initial sync completes.
   let initialSyncDone = false
 
-  stream.subscribe((messages) => {
-    if (!initialSyncDone) {
-      // Check if initial sync is complete
-      const hasUpToDate = messages.some(
-        (m) => "headers" in m && "control" in m.headers && m.headers.control === "up-to-date"
-      )
-      if (hasUpToDate) initialSyncDone = true
-      return
-    }
+  stream.subscribe(
+    (messages) => {
+      if (!initialSyncDone) {
+        // Check if initial sync is complete
+        const hasUpToDate = messages.some(
+          (m) => "headers" in m && "control" in m.headers && m.headers.control === "up-to-date"
+        )
+        if (hasUpToDate) initialSyncDone = true
+        return
+      }
 
-    // Live change detected — invalidate ALL registered query keys for this table
-    for (const key of state.keys) {
-      queryClient.invalidateQueries({ queryKey: [...key] })
+      // Live change detected — invalidate ALL registered query keys for this table
+      for (const key of state.keys) {
+        queryClient.invalidateQueries({ queryKey: [...key] })
+      }
+    },
+    (err) => {
+      // Subscriber error callback — never let it bubble out as an unhandled
+      // rejection. Logging is enough; the stream's onError above handles retry.
+      console.warn(`[electric] subscriber error on "${table}":`, err)
     }
-  })
+  )
 }

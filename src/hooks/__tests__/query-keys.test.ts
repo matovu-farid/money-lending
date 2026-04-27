@@ -159,19 +159,6 @@ describe("queryKeys", () => {
     })
   })
 
-  describe("notifications", () => {
-    it("all is the root tuple", () => {
-      expect(queryKeys.notifications.all).toEqual(["notifications"])
-    })
-
-    it("unreadCount extends all", () => {
-      expect(queryKeys.notifications.unreadCount()).toEqual([
-        "notifications",
-        "unread-count",
-      ])
-    })
-  })
-
   describe("recentLoans", () => {
     it("all is the root tuple", () => {
       expect(queryKeys.recentLoans.all).toEqual(["recent-loans"])

@@ -11,7 +11,7 @@ import { formatCurrency, formatPeriodDate } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { useBalanceSheetReport } from "@/hooks/use-reports"
-import { bankAccountCollection } from "@/collections"
+import { bankAccountCollection } from "@/collections/bank-accounts"
 import { useLiveQuery } from "@tanstack/react-db"
 
 interface BalanceSheetClientProps {

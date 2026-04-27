@@ -8,7 +8,7 @@ import {
   deleteExpenseAction,
 } from "@/actions/expense.actions"
 import type { TransactionShapeRow, CreateTransactionInput } from "@/types"
-import { shapeUrl } from "@/lib/electric"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -29,6 +29,7 @@ export const expenseCollection = createCollection(
         where: '"type" = \'debit\' AND "reference_type" IS NULL',
       },
       columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("transactions[expenses]"),
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]

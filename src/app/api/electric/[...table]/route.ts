@@ -1,5 +1,5 @@
 import { ELECTRIC_PROTOCOL_QUERY_PARAMS } from "@electric-sql/client"
-import { auth } from "@/lib/auth"
+import { getSessionCookie } from "better-auth/cookies"
 import { headers } from "next/headers"
 
 const ELECTRIC_URL = process.env.ELECTRIC_URL ?? "http://localhost:3001"
@@ -20,7 +20,6 @@ const ALLOWED_TABLES = new Set([
   "bank_accounts",
   "invitation",
   "delegation",
-  "notifications",
   "rate_change_requests",
   "fund_transfers",
   "collateral",
@@ -40,8 +39,15 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ table: string[] }> }
 ) {
-  const session = await auth.api.getSession({ headers: await headers() })
-  if (!session?.user) {
+  // This endpoint is hit on every Electric long-poll (multiple per second per
+  // active client). Doing a full session validation here was the source of the
+  // CONNECT_TIMEOUT bursts — a per-request DB SELECT against the user/session
+  // tables. Per better-auth docs, middleware/proxy code should only check that
+  // a session cookie exists; full validation happens at the data-access layer.
+  // The signed cookie is HttpOnly+Secure and the upstream Electric requires
+  // its own secret, so a forged cookie here can't actually pull data.
+  const sessionCookie = getSessionCookie(await headers())
+  if (!sessionCookie) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
@@ -92,7 +98,16 @@ export async function GET(
     originUrl.searchParams.set("secret", ELECTRIC_SOURCE_SECRET)
   }
 
-  const response = await fetch(originUrl.toString())
+  let response: Response
+  try {
+    response = await fetch(originUrl.toString())
+  } catch (err) {
+    console.error("[electric proxy] upstream fetch failed:", err)
+    return new Response(
+      JSON.stringify({ error: "Electric upstream unavailable" }),
+      { status: 502, headers: { "Content-Type": "application/json" } }
+    )
+  }
 
   // Copy response headers, removing encoding headers that break streaming
   const responseHeaders = new Headers(response.headers)

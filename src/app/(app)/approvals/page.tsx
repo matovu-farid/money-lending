@@ -4,12 +4,9 @@ import { useState, useTransition, useMemo, Suspense } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
-import {
-  rateChangeRequestCollection,
-  reviewRateChangeRequest,
-  loanCollection,
-  customerCollection,
-} from "@/collections"
+import { rateChangeRequestCollection, reviewRateChangeRequest } from "@/collections/rate-change-requests"
+import { loanCollection } from "@/collections/loans"
+import { customerCollection } from "@/collections/customers"
 import type { Permission, RateChangeRequest } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { shortId } from "@/lib/utils"

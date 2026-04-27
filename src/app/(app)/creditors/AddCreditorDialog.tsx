@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { insertCreditorWithInput } from "@/collections"
+import { insertCreditorWithInput } from "@/collections/creditors"
 import { generateClientId } from "@/lib/client-id"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {

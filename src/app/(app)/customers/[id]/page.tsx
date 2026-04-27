@@ -3,7 +3,10 @@
 import { Suspense, useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db";
-import { customerCollection, loanCollection, paymentCollection, getPaymentPortionsCollection } from "@/collections";
+import { customerCollection } from "@/collections/customers";
+import { loanCollection } from "@/collections/loans";
+import { paymentCollection } from "@/collections/payments";
+import { getPaymentPortionsCollection } from "@/collections/loan-extras";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -431,6 +434,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
                   errors={errors}
                   disabled={isEditPending}
                   idPrefix="edit"
+                  excludeCustomerId={customerId}
                 />
                 <div className="flex gap-3">
                   <Button type="submit" disabled={isEditPending}>

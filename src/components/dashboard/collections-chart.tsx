@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
 } from "recharts"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { paymentCollection } from "@/collections"
+import { paymentCollection } from "@/collections/payments"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/utils"
 

@@ -179,6 +179,23 @@ export const getRetainedEarningsData = (
  * Get current cash balances per deposit location from the ledger.
  * Returns { cash, bank, strong_room } as formatted decimal strings.
  */
+/**
+ * Cached lookup of the system "Cash" category id.
+ * "Cash" is a system-seeded category whose id never changes after install,
+ * so caching it at module scope eliminates a JOIN from every balance query.
+ */
+let cashCategoryIdCache: string | null = null
+async function getCashCategoryId(): Promise<string | null> {
+  if (cashCategoryIdCache) return cashCategoryIdCache
+  const [row] = await db
+    .select({ id: transactionCategories.id })
+    .from(transactionCategories)
+    .where(eq(transactionCategories.name, "Cash"))
+    .limit(1)
+  cashCategoryIdCache = row?.id ?? null
+  return cashCategoryIdCache
+}
+
 export const getLocationBalances = (): Effect.Effect<
   {
     cash: string
@@ -190,6 +207,15 @@ export const getLocationBalances = (): Effect.Effect<
 > =>
   Effect.tryPromise({
     try: async () => {
+      const cashId = await getCashCategoryId()
+      const empty = {
+        cash: formatAmount(new BigNumber(0)),
+        bank: formatAmount(new BigNumber(0)),
+        strong_room: formatAmount(new BigNumber(0)),
+        bankAccounts: {},
+      }
+      if (!cashId) return empty
+
       const rows = await db
         .select({
           txType: transactions.type,
@@ -198,11 +224,7 @@ export const getLocationBalances = (): Effect.Effect<
           total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
         })
         .from(transactions)
-        .innerJoin(
-          transactionCategories,
-          eq(transactions.categoryId, transactionCategories.id)
-        )
-        .where(eq(transactionCategories.name, "Cash"))
+        .where(eq(transactions.categoryId, cashId))
         .groupBy(transactions.type, transactions.depositLocation, transactions.subLocationId)
 
       const balances = {

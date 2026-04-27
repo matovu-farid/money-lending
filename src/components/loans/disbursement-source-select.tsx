@@ -101,6 +101,7 @@ function DisbursementSourceSelect<T extends FieldValues>({
                   disabled={disabled}
                   bankAccountBalances={bankAccountBalances}
                   showBalances={true}
+                  requiredAmount={amount}
                 />
               )}
             </>

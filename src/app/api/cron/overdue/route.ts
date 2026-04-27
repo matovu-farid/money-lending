@@ -2,13 +2,11 @@ import { type NextRequest } from "next/server"
 import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
-import { customers } from "@/lib/db/schema/customers"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { eq, and, isNull, asc, sql, inArray } from "drizzle-orm"
+import { eq, and, isNull, asc, inArray } from "drizzle-orm"
 import { computeLoanOverdueInfo, shouldResetPenaltyWaiver } from "@/lib/interest/overdue"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
 import { formatAmount } from "@/lib/interest/engine"
-import { createNotificationsForLoan } from "@/services/notification.service"
 import BigNumber from "bignumber.js"
 import { toLoanType } from "@/types"
 
@@ -31,23 +29,8 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const results: { loanId: string; daysOverdue: string }[] = []
-    const alertResults: { loanId: string; daysUntilDue: number }[] = []
-
-    const targetUsersResult = await db.execute(
-      sql`SELECT id FROM "user" WHERE role IN ('admin', 'loanOfficer', 'supervisor', 'superAdmin')`
-    )
-    const targetUserIds = (targetUsersResult as unknown as Array<{ id: string }>).map(
-      (r) => r.id
-    )
 
     const loanIds = activeLoans.map((l) => l.id)
-
-    // Batch-fetch customer names for all active loans
-    const customerIds = [...new Set(activeLoans.map((l) => l.customerId))]
-    const customerRows = customerIds.length > 0
-      ? await db.select({ id: customers.id, fullName: customers.fullName }).from(customers).where(inArray(customers.id, customerIds))
-      : []
-    const customerNameMap = new Map(customerRows.map((c) => [c.id, c.fullName]))
 
     const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
     const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
@@ -113,32 +96,6 @@ export async function POST(request: NextRequest) {
           console.log(`[overdue-cron] Penalty waiver reset for loan ${loan.id} (back to good standing)`)
         }
 
-        const lastPayment = loanPayments.at(-1)
-        const referenceDate = lastPayment
-          ? new Date(lastPayment.paymentDate)
-          : new Date(loan.startDate)
-
-        const nextDueDate = new Date(referenceDate)
-        nextDueDate.setDate(nextDueDate.getDate() + 30)
-
-        const daysUntilDue = Math.floor(
-          (nextDueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
-        )
-
-        if (daysUntilDue >= 0 && daysUntilDue <= 5) {
-          const customerName = customerNameMap.get(loan.customerId) ?? "Unknown"
-
-          const message = `Loan for ${customerName} — due in ${daysUntilDue} days`
-
-          await createNotificationsForLoan(
-            loan.id,
-            message,
-            nextDueDate,
-            targetUserIds
-          )
-
-          alertResults.push({ loanId: loan.id, daysUntilDue })
-        }
       } catch (err) {
         console.error(`[Cron] Failed to process loan ${loan.id}:`, err)
       }
@@ -148,8 +105,6 @@ export async function POST(request: NextRequest) {
       processed: activeLoans.length,
       flagged: results.length,
       flaggedLoans: results,
-      alerts: alertResults.length,
-      alertedLoans: alertResults,
       timestamp: now.toISOString(),
     })
   } catch (error) {

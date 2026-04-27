@@ -1,13 +1,13 @@
 "use client"
 
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery, useLiveSuspenseQuery } from "@tanstack/react-db"
 import {
   portfolioCollection,
   transactionReportCollection,
   getPnlCollection,
   getBalanceSheetCollection,
   getRetainedEarningsCollection,
-} from "@/collections"
+} from "@/collections/reports"
 import type {
   PortfolioEntry,
   PnlData,
@@ -38,9 +38,15 @@ export function usePortfolioReport() {
   return { data: entries }
 }
 
+// Period-keyed reports use non-suspending queries. Each new period creates a
+// fresh query collection that fetches from the server, so suspending forces a
+// blank screen on every period switch. Returning `undefined` while the data is
+// in flight lets the report page keep its previous chrome and show its own
+// inline loading state.
+
 export function usePnlReport(period: string) {
   const collection = getPnlCollection(period)
-  const { data } = useLiveSuspenseQuery(
+  const { data } = useLiveQuery(
     (q) => q.from({ r: collection }).select(({ r }) => r),
     [period]
   )
@@ -51,7 +57,7 @@ export function usePnlReport(period: string) {
 
 export function useBalanceSheetReport(period: string) {
   const collection = getBalanceSheetCollection(period)
-  const { data } = useLiveSuspenseQuery(
+  const { data } = useLiveQuery(
     (q) => q.from({ r: collection }).select(({ r }) => r),
     [period]
   )
@@ -62,7 +68,7 @@ export function useBalanceSheetReport(period: string) {
 
 export function useRetainedEarningsReport(period: string) {
   const collection = getRetainedEarningsCollection(period)
-  const { data } = useLiveSuspenseQuery(
+  const { data } = useLiveQuery(
     (q) => q.from({ r: collection }).select(({ r }) => r),
     [period]
   )

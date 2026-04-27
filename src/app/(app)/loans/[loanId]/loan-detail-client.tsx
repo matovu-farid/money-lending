@@ -10,14 +10,18 @@ import {
   ShieldAlert,
   PlusCircle,
 } from "lucide-react"
-import { updatePaymentWithInput, deletePaymentWithReason, currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection, getLoanBalanceCollection, insertRateChangeRequestWithInput } from "@/collections"
+import { updatePaymentWithInput, deletePaymentWithReason } from "@/collections/payments"
+import { currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
+import { getLoanBalanceCollection } from "@/collections/loan-balance"
+import { insertRateChangeRequestWithInput } from "@/collections/rate-change-requests"
 import { waivePenaltyAction, adjustPenaltyMultiplierAction } from "@/actions/loan.actions"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { generateClientId } from "@/lib/client-id"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
-import { paymentCollection, rateChangeRequestCollection } from "@/collections"
+import { paymentCollection } from "@/collections/payments"
+import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
@@ -61,9 +65,12 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   )
   const userRole: UserRole = userRoleRows?.[0]?.role ?? ("unassigned" as UserRole)
 
-  // Fetch collateral via collection
+  // Fetch collateral via collection. Use the non-suspending variant so the
+  // page renders immediately on navigation — collateral data is only needed
+  // by the Settle Collateral dialog, which is closed by default. Suspending
+  // here was making post-issuance navigation wait on a server round-trip.
   const collateralColl = getLoanCollateralCollection(loan.id)
-  const { data: collateralRows } = useLiveSuspenseQuery(
+  const { data: collateralRows } = useLiveQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q) => q.from({ c: collateralColl as any }).select(({ c }: any) => c),
     [loan.id]
@@ -127,8 +134,12 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     [loan.id]
   )
 
+  // Balance collection — non-suspending. The page already has a fallback
+  // outstanding balance from the loan list entry (loanEntry.outstandingBalance),
+  // so the only consumers that strictly need this data — SimulatorPanel and
+  // SettleCollateralDialog — can wait for it without blocking initial render.
   const balanceColl = getLoanBalanceCollection(loan.id)
-  const { data: balanceRows } = useLiveSuspenseQuery(
+  const { data: balanceRows } = useLiveQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
     [loan.id]

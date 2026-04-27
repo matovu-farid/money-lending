@@ -1,22 +1,25 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useLiveSuspenseQuery, eq } from "@tanstack/react-db"
-import { loanCollection, customerCollection, getLoanBalanceCollection } from "@/collections"
+import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
+import { loanCollection } from "@/collections/loans"
+import { customerCollection } from "@/collections/customers"
+import { getLoanBalanceCollection } from "@/collections/loan-balance"
 import { shortId } from "@/lib/utils"
 import { RecordPaymentForm } from "./record-payment-form"
 
 export default function RecordPaymentPage() {
   const { loanId } = useParams<{ loanId: string }>()
 
-  // Get loan from collection
+  // Loan + customer come from globally-synced Electric collections, so
+  // suspending here is fine — the data is already in memory after the app's
+  // initial sync. The cost was the per-loan balance below.
   const { data: loans } = useLiveSuspenseQuery(
     (q) => q.from({ l: loanCollection }).where(({ l }) => eq(l.id, loanId)),
     [loanId]
   )
   const loan = loans?.[0] ?? null
 
-  // Get customer name from collection
   const loanLoading = false
   const { data: customers } = useLiveSuspenseQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, loan?.customerId ?? "")),
@@ -24,15 +27,18 @@ export default function RecordPaymentPage() {
   )
   const customerName = customers?.[0]?.fullName ?? ""
 
+  // Per-loan balance is a query collection that fetches fresh from the server
+  // for every loan. Don't suspend on it — the form can render and let the
+  // user start typing; balance-aware UI fills in once the data arrives.
   const balanceColl = getLoanBalanceCollection(loanId)
-  const { data: balanceRows } = useLiveSuspenseQuery(
+  const { data: balanceRows } = useLiveQuery(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
     [loanId]
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const balanceLoading = false
   const balanceData = (balanceRows as any)?.[0] ?? null
+  const balanceLoading = !balanceData
 
   if (loanLoading) {
     return (

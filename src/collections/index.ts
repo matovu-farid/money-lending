@@ -57,13 +57,6 @@ export {
 
 export { adminUserCollection, type AdminUser } from "./admin-users"
 
-export {
-  notificationUnreadCountCollection,
-  notificationListCollection,
-  type UnreadCountRow,
-  type NotificationRow,
-} from "./notifications"
-
 export { permissionsCollection, type PermissionsRow } from "./permissions"
 
 export { getLoanBalanceCollection, type LoanBalanceRow } from "./loan-balance"

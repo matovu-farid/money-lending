@@ -45,8 +45,18 @@ export default function LoginPage() {
       })
 
       if (result.error) {
+        // Server-side failure (e.g. DB connection timeout) shouldn't masquerade
+        // as a credential error — show the real cause so the user doesn't
+        // waste time double-checking their password.
+        const status = result.error.status
+        const isServerError = typeof status === "number" && status >= 500
+        const isOffline = typeof navigator !== "undefined" && !navigator.onLine
         setError("root", {
-          message: result.error.message ?? "Invalid email or password. Please try again.",
+          message: isOffline
+            ? "You're offline. Check your internet connection and try again."
+            : isServerError
+              ? "Service is temporarily unavailable. Please try again in a moment."
+              : (result.error.message ?? "Invalid email or password. Please try again."),
         })
         return
       }

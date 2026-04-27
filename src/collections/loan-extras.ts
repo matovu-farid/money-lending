@@ -46,6 +46,7 @@ export type LocationBalancesRow = {
   cash: string
   bank: string
   strong_room: string
+  bankAccounts: Record<string, string>
 }
 
 export const locationBalancesCollection = createCollection(

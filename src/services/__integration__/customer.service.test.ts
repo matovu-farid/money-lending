@@ -3,6 +3,7 @@ import { Effect, Exit, Cause } from "effect"
 import { resetDb, testDb } from "./setup"
 import {
   createCustomer,
+  createCustomerWithTxid,
   getCustomer,
   updateCustomer,
   listCustomers,
@@ -40,6 +41,30 @@ describe("Customer Service (integration)", () => {
     expect(customer.status).toBe("active")
     expect(customer.createdAt).toBeInstanceOf(Date)
     expect(customer.updatedAt).toBeInstanceOf(Date)
+  }, TEST_TIMEOUT)
+
+  // ── 1b. createCustomerWithTxid ───────────────────────────────────────
+  it("createCustomerWithTxid returns customer + a numeric Postgres txid", async () => {
+    const result = await Effect.runPromise(
+      createCustomerWithTxid({
+        id: crypto.randomUUID(),
+        fullName: "Txid Tester",
+        nin: "CM12345678ABCD",
+        contact: "0771234567",
+        address: "Kampala, Uganda",
+      })
+    )
+
+    expect(result.customer.id).toBeDefined()
+    expect(result.customer.fullName).toBe("Txid Tester")
+    expect(result.customer.nin).toBe("CM12345678ABCD")
+    expect(typeof result.txid).toBe("number")
+    expect(Number.isFinite(result.txid)).toBe(true)
+    expect(result.txid).toBeGreaterThan(0)
+
+    // Verify the customer is actually persisted
+    const fetched = await Effect.runPromise(getCustomer(result.customer.id))
+    expect(fetched.id).toBe(result.customer.id)
   }, TEST_TIMEOUT)
 
   // ── 2. getCustomer ──────────────────────────────────────────────────

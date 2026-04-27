@@ -2,7 +2,8 @@
 
 import { Suspense, useState } from "react"
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { creditorCollection, creditorsPageDataCollection } from "@/collections"
+import { creditorCollection } from "@/collections/creditors"
+import { creditorsPageDataCollection } from "@/collections/creditors-page-data"
 import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"

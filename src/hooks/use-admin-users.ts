@@ -1,9 +1,9 @@
 "use client"
 
 import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { adminUserCollection } from "@/collections"
+import { adminUserCollection } from "@/collections/admin-users"
 
-export type { AdminUser } from "@/collections"
+export type { AdminUser } from "@/collections/admin-users"
 
 export function useAdminUsers() {
   const { data } = useLiveSuspenseQuery((q) =>
