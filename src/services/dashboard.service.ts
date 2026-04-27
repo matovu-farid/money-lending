@@ -19,31 +19,38 @@ import { toLoanType, type DashboardKPIs, type ActivityFeedItem } from "@/types"
 export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      // Derive aggregate KPIs from the ledger (single source of truth)
-      const ledgerRows = await db
-        .select({
-          categoryName: transactionCategories.name,
-          txType: transactions.type,
-          referenceType: transactions.referenceType,
-          total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
-        })
-        .from(transactions)
-        .innerJoin(
-          transactionCategories,
-          eq(transactions.categoryId, transactionCategories.id)
-        )
-        .where(
-          inArray(transactionCategories.name, [
-            "Loans Receivable",
-            "Interest Earned",
-            "Cash",
-          ])
-        )
-        .groupBy(
-          transactionCategories.name,
-          transactions.type,
-          transactions.referenceType
-        )
+      // Run the aggregate ledger query and the active-loans query in parallel —
+      // they are independent and dominate latency.
+      const [ledgerRows, activeLoans] = await Promise.all([
+        db
+          .select({
+            categoryName: transactionCategories.name,
+            txType: transactions.type,
+            referenceType: transactions.referenceType,
+            total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+          })
+          .from(transactions)
+          .innerJoin(
+            transactionCategories,
+            eq(transactions.categoryId, transactionCategories.id)
+          )
+          .where(
+            inArray(transactionCategories.name, [
+              "Loans Receivable",
+              "Interest Earned",
+              "Cash",
+            ])
+          )
+          .groupBy(
+            transactionCategories.name,
+            transactions.type,
+            transactions.referenceType
+          ),
+        db
+          .select()
+          .from(loans)
+          .where(and(eq(loans.status, "active"), isNull(loans.deletedAt))),
+      ])
 
       let loansReceivableDr = new BigNumber(0)
       let loansReceivableCr = new BigNumber(0)
@@ -84,21 +91,21 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
       // Asset: DR adds, CR subtracts — total cash across all locations
       const capitalInSystem = cashDrTotal.minus(cashCrTotal)
 
-      // Overdue count — needs per-loan payment data for interest accrual math
-      const activeLoans = await db
-        .select()
-        .from(loans)
-        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
-
       const loanIds = activeLoans.map((l) => l.id)
-      const allPayments =
-        loanIds.length > 0
-          ? await db
-              .select()
-              .from(payments)
-              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-              .orderBy(asc(payments.paymentDate))
-          : []
+
+      // Run the three loan-scoped queries in parallel — all only depend on loanIds.
+      const paymentsPromise = loanIds.length > 0
+        ? db
+            .select()
+            .from(payments)
+            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+            .orderBy(asc(payments.paymentDate))
+        : Promise.resolve([])
+      const [allPayments, ledgerBalances, interestEarnedMap] = await Promise.all([
+        paymentsPromise,
+        getLoanBalancesFromLedger(loanIds),
+        getInterestEarnedFromLedger(loanIds),
+      ])
 
       const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
       for (const p of allPayments) {
@@ -106,10 +113,6 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
         existing.push(p)
         paymentsByLoanId.set(p.loanId, existing)
       }
-
-      // Batch-fetch per-loan outstanding balances from ledger
-      const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
-      const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
       let overdueCount = 0
 
@@ -168,30 +171,33 @@ export const getRecentActivity = (
 ): Effect.Effect<{ items: ActivityFeedItem[]; total: number }, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const [countResult] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(auditLog)
-        .where(inArray(auditLog.entityType, ["loan", "payment"]))
+      // Count and page-fetch are independent — run in parallel.
+      const [countResult, recentEntries] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(auditLog)
+          .where(inArray(auditLog.entityType, ["loan", "payment"]))
+          .then((r) => r[0]),
+        db
+          .select({
+            id: auditLog.id,
+            actorId: auditLog.actorId,
+            action: auditLog.action,
+            entityType: auditLog.entityType,
+            entityId: auditLog.entityId,
+            beforeValue: auditLog.beforeValue,
+            afterValue: auditLog.afterValue,
+            occurredAt: auditLog.occurredAt,
+            actorName: user.name,
+          })
+          .from(auditLog)
+          .leftJoin(user, eq(auditLog.actorId, user.id))
+          .where(inArray(auditLog.entityType, ["loan", "payment"]))
+          .orderBy(desc(auditLog.occurredAt))
+          .limit(pageSize)
+          .offset((page - 1) * pageSize),
+      ])
       const total = Number(countResult?.count ?? 0)
-
-      const recentEntries = await db
-        .select({
-          id: auditLog.id,
-          actorId: auditLog.actorId,
-          action: auditLog.action,
-          entityType: auditLog.entityType,
-          entityId: auditLog.entityId,
-          beforeValue: auditLog.beforeValue,
-          afterValue: auditLog.afterValue,
-          occurredAt: auditLog.occurredAt,
-          actorName: user.name,
-        })
-        .from(auditLog)
-        .leftJoin(user, eq(auditLog.actorId, user.id))
-        .where(inArray(auditLog.entityType, ["loan", "payment"]))
-        .orderBy(desc(auditLog.occurredAt))
-        .limit(pageSize)
-        .offset((page - 1) * pageSize)
 
       // Pre-fetch customer names for all loan.create entries to avoid N+1
       const customerIdsToFetch = new Set<string>()

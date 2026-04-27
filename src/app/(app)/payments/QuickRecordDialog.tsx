@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form"
 import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { getLoanBalanceCollection } from "@/collections/loan-balance"
-import { insertPaymentWithInput } from "@/collections/payments"
+import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -29,7 +29,7 @@ import { useSession } from "@/lib/auth-client"
 import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { generateClientId } from "@/lib/client-id"
-import type { PaymentWithCustomer, RecordPaymentInput, ReceiptPaymentData } from "@/types"
+import type { RecordPaymentInput, ReceiptPaymentData } from "@/types"
 import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult, DepositLocation } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
@@ -136,21 +136,23 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     const id = generateClientId()
     const now = new Date()
 
-    const optimistic: PaymentWithCustomer = {
+    const optimistic: PaymentRow = {
       id,
       loanId: selectedLoan.loanId,
-      customerId: selectedLoan.customerId,
-      customerName: selectedLoan.customerName,
       paymentDate: new Date(pendingData.paymentDate + "T12:00:00"),
       amount: pendingData.amount,
-      interestPortion: "0",
-      principalPortion: "0",
-      principalBalanceAfter: "0",
-      outstandingBalance: "0",
       recordedBy: session?.user?.id ?? "",
-      recorderName: session?.user?.name ?? "",
       depositLocation: pendingData.depositLocation,
+      subLocationId: pendingData.depositLocation === "bank" ? pendingData.subLocationId || null : null,
+      editReason: null,
+      deletedAt: null,
+      deletedBy: null,
+      deleteReason: null,
+      markedWrong: false,
+      markedWrongReason: null,
+      markedWrongBy: null,
       createdAt: now,
+      updatedAt: now,
     }
 
     const input: RecordPaymentInput = {

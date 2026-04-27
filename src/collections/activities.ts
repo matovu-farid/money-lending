@@ -6,7 +6,6 @@ import { getActivitiesAction } from "@/actions/activity.actions"
 import type { GetActivitiesResult } from "@/types/activity"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { boundedSet } from "@/lib/bounded-map"
 
 export const ACTIVITIES_PAGE_SIZE = 25
 
@@ -18,8 +17,6 @@ export type ActivityFilterParams = {
 }
 
 export type ActivitiesRow = GetActivitiesResult & { _key: string }
-
-const MAX_ACTIVITIES_CACHED = 30
 
 function createActivitiesCollection(params: ActivityFilterParams, page: number) {
   return createCollection(
@@ -46,6 +43,11 @@ function createActivitiesCollection(params: ActivityFilterParams, page: number) 
 }
 
 type ActivitiesCollectionType = ReturnType<typeof createActivitiesCollection>
+// Session-scoped cache: keyed by (params, page). Entries persist for the
+// lifetime of the page so back-navigation to a previously-visited filter/page
+// combo serves cached results instantly (no server round-trip). The cache is
+// bounded only by the set of distinct filter+page combos a user actually
+// visits in one session, which is small in practice.
 const activitiesCollections = new Map<string, ActivitiesCollectionType>()
 
 export function getActivitiesCollection(params: ActivityFilterParams, page: number) {
@@ -53,7 +55,7 @@ export function getActivitiesCollection(params: ActivityFilterParams, page: numb
   let collection = activitiesCollections.get(key)
   if (!collection) {
     collection = createActivitiesCollection(params, page)
-    boundedSet(activitiesCollections, key, collection, MAX_ACTIVITIES_CACHED)
+    activitiesCollections.set(key, collection)
   }
   return collection
 }

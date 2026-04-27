@@ -5,6 +5,7 @@ import { useLiveSuspenseQuery, eq } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { paymentCollection } from "@/collections/payments"
 import { calculateCreditScore } from "@/lib/credit-score"
+import type { PaymentWithCustomer } from "@/types"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { cn } from "@/lib/utils"
 
@@ -19,13 +20,32 @@ export function CreditScoreBadge({ customerId, className }: CreditScoreBadgeProp
     [customerId],
   )
 
-  const { data: customerPayments } = useLiveSuspenseQuery(
-    (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.customerId, customerId)),
-    [customerId],
+  // Payments are now a raw row stream (no customerId). Filter client-side by
+  // matching loanIds for this customer.
+  const { data: allPayments } = useLiveSuspenseQuery(
+    (q) => q.from({ p: paymentCollection }).select(({ p }) => p),
+    [],
   )
 
+  const customerPayments = useMemo(() => {
+    const loanIds = new Set((customerLoans ?? []).map((l) => l.id))
+    return (allPayments ?? [])
+      .filter((p) => loanIds.has(p.loanId))
+      .map((p) => ({
+        ...p,
+        // calculateCreditScore only reads loanId + paymentDate
+        customerId,
+        customerName: "",
+        interestPortion: "0",
+        principalPortion: "0",
+        principalBalanceAfter: "0",
+        outstandingBalance: "0",
+        recorderName: "",
+      })) as unknown as PaymentWithCustomer[]
+  }, [allPayments, customerLoans, customerId])
+
   const result = useMemo(
-    () => calculateCreditScore(customerLoans ?? [], customerPayments ?? []),
+    () => calculateCreditScore(customerLoans ?? [], customerPayments),
     [customerLoans, customerPayments],
   )
 

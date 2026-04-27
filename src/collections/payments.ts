@@ -1,58 +1,62 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listPaymentsAction,
   recordPaymentAction,
   editPaymentAction,
   deletePaymentAction,
 } from "@/actions/payment.actions"
 import type {
-  PaymentWithCustomer,
   RecordPaymentInput,
   EditPaymentInput,
+  Payment,
 } from "@/types/payment"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
 
-// Auto-refresh when payments table changes via Electric
-subscribeToTableChanges("payments", getQueryClient(), [
-  queryKeys.payments.all,
-  queryKeys.payments.portionsAll,
-])
+/**
+ * Row shape synced via Electric — mirrors the `payments` DB table after
+ * snake_case → camelCase mapping. Server-only enrichments that used to live
+ * on `PaymentWithCustomer` (customerName, recorderName, interest/principal
+ * portions, balances) are NOT on this row. Consumers join them client-side:
+ *   - customerId / customerName: loanCollection.customerId, loanCollection.customerName
+ *   - interestPortion / principalPortion: getPaymentPortionsCollection(loanId, ids)
+ *   - principalBalanceAfter: computed from running-balance map (already done in
+ *     loan-detail-client.tsx)
+ *   - recorderName: getUserNameMapCollection(recordedBy ids)
+ */
+export type PaymentRow = Payment
 
 /**
  * Side-channel map: stores the original form input keyed by client-generated ID.
  * The onInsert handler reads from here because RecordPaymentInput has fields
- * (loanId, depositLocation, note, etc.) that aren't part of PaymentWithCustomer.
+ * (loanId, depositLocation, note, etc.) that aren't part of the Electric row
+ * (no `customerId`/`customerName` on the row).
  */
 const pendingInsertInputs = new Map<string, RecordPaymentInput>()
 
 /**
- * Side-channel map for update reasons. The `reason` audit field isn't part of
- * PaymentWithCustomer, so we stash it here before calling collection.update().
+ * Side-channel map for update reasons. The `reason` audit field isn't a column.
  */
 const pendingUpdateInputs = new Map<string, EditPaymentInput>()
 
 /**
- * Side-channel map for delete reasons. Same idea — `reason` isn't on the row type.
+ * Side-channel map for delete reasons. Same idea — `reason` isn't on the row.
  */
 const pendingDeleteReasons = new Map<string, string>()
 
 export const paymentCollection = createCollection(
-  queryCollectionOptions<PaymentWithCustomer>({
-    queryKey: [...queryKeys.payments.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<PaymentWithCustomer>> => {
-      const result = await listPaymentsAction({ page: 1, pageSize: 10000 })
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data.rows
-    },
+  electricCollectionOptions<PaymentRow>({
+    id: "payments",
     getKey: (payment) => payment.id,
+    shapeOptions: {
+      url: shapeUrl("payments"),
+      columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("payments"),
+    },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input = pendingInsertInputs.get(modified.id)
@@ -73,6 +77,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
     },
     onUpdate: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -87,7 +92,7 @@ export const paymentCollection = createCollection(
       }
       // Invalidate query-based collections
       const qc = getQueryClient()
-      const loanId = (original as PaymentWithCustomer).loanId
+      const loanId = (original as PaymentRow).loanId
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
@@ -95,6 +100,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -112,7 +118,7 @@ export const paymentCollection = createCollection(
       }
       // Invalidate query-based collections
       const qc = getQueryClient()
-      const loanId = (original as PaymentWithCustomer).loanId
+      const loanId = (original as PaymentRow).loanId
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
@@ -120,6 +126,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
     },
   })
 )
@@ -131,7 +138,7 @@ export const paymentCollection = createCollection(
  */
 export function insertPaymentWithInput(
   id: string,
-  optimistic: PaymentWithCustomer,
+  optimistic: PaymentRow,
   input: RecordPaymentInput
 ) {
   pendingInsertInputs.set(id, input)
@@ -145,11 +152,11 @@ export function insertPaymentWithInput(
 export function updatePaymentWithInput(
   id: string,
   input: EditPaymentInput,
-  applyOptimistic: (draft: PaymentWithCustomer) => void
+  applyOptimistic: (draft: PaymentRow) => void
 ) {
   pendingUpdateInputs.set(id, input)
   paymentCollection.update(id, (draft) => {
-    applyOptimistic(draft as PaymentWithCustomer)
+    applyOptimistic(draft as PaymentRow)
   })
 }
 

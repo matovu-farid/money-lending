@@ -186,39 +186,40 @@ export const getActivities = (
 
       const where = and(...conditions)
 
-      // Count total
-      const [countResult] = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(auditLog)
-        .innerJoin(user, eq(auditLog.actorId, user.id))
-        .where(where)
+      // Count and page-fetch are independent — run in parallel.
+      const [countResult, rows] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(auditLog)
+          .innerJoin(user, eq(auditLog.actorId, user.id))
+          .where(where)
+          .then((r) => r[0]),
+        db
+          .select({
+            id: auditLog.id,
+            actorId: auditLog.actorId,
+            action: auditLog.action,
+            entityType: auditLog.entityType,
+            entityId: auditLog.entityId,
+            beforeValue: auditLog.beforeValue,
+            afterValue: auditLog.afterValue,
+            occurredAt: auditLog.occurredAt,
+            actorName: user.name,
+            actorRole: user.role,
+          })
+          .from(auditLog)
+          .innerJoin(user, eq(auditLog.actorId, user.id))
+          .where(where)
+          .orderBy(desc(auditLog.occurredAt))
+          .limit(pageSize)
+          .offset((page - 1) * pageSize),
+      ])
 
       const total = Number(countResult?.count ?? 0)
 
       if (total === 0) {
         return { items: [], total: 0 }
       }
-
-      // Fetch page
-      const rows = await db
-        .select({
-          id: auditLog.id,
-          actorId: auditLog.actorId,
-          action: auditLog.action,
-          entityType: auditLog.entityType,
-          entityId: auditLog.entityId,
-          beforeValue: auditLog.beforeValue,
-          afterValue: auditLog.afterValue,
-          occurredAt: auditLog.occurredAt,
-          actorName: user.name,
-          actorRole: user.role,
-        })
-        .from(auditLog)
-        .innerJoin(user, eq(auditLog.actorId, user.id))
-        .where(where)
-        .orderBy(desc(auditLog.occurredAt))
-        .limit(pageSize)
-        .offset((page - 1) * pageSize)
 
       // Pre-fetch customer names for loan entries to avoid N+1
       const customerIdsToFetch = new Set<string>()

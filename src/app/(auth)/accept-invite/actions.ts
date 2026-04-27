@@ -6,6 +6,7 @@ import { headers } from "next/headers"
 import { db } from "@/lib/db"
 import { eq } from "drizzle-orm"
 import { user } from "@/lib/db/schema/auth"
+import { invalidateUserPermissions } from "@/lib/action-utils"
 
 export async function getInviteDetails(token: string) {
   if (!token) return { error: "No invitation token provided" }
@@ -50,6 +51,10 @@ export async function finalizeInviteAcceptance(token: string) {
       db.update(user).set({ role, emailVerified: true }).where(eq(user.id, session.user.id)),
       markInvitationAccepted(invitationId),
     ])
+
+    // The user just got a real role assigned — flush any stale "unassigned"
+    // permission entries so the very next request reflects their new role.
+    invalidateUserPermissions(session.user.id)
 
     return { data: { success: true } }
   } catch (e: any) {

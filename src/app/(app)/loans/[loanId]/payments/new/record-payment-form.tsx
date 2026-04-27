@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form"
 import { ArrowLeft } from "lucide-react"
 import { toast } from "sonner"
 import { generateClientId } from "@/lib/client-id"
-import { insertPaymentWithInput } from "@/collections/payments"
+import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
 import { useSession } from "@/lib/auth-client"
 import { generateReceiptNumber } from "@/lib/receipt-number"
 import { Button } from "@/components/ui/button"
@@ -29,7 +29,7 @@ import { formatCurrency, formatDate, formatNumberWithCommas, todayDateString } f
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
-import type { PaymentWithCustomer, RecordPaymentInput } from "@/types/payment"
+import type { RecordPaymentInput } from "@/types/payment"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
 import { computeReceiptAllocation } from "@/lib/receipt-allocation"
 
@@ -61,7 +61,7 @@ function BalanceSkeleton() {
   return <span className="inline-block h-4 w-24 rounded bg-muted-foreground/10 animate-pulse align-middle" />
 }
 
-export function RecordPaymentForm({ loanId, customerId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
+export function RecordPaymentForm({ loanId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
   const router = useRouter()
   const { data: session } = useSession()
   const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
@@ -95,21 +95,23 @@ export function RecordPaymentForm({ loanId, customerId, customerName, loanRefere
     const id = generateClientId()
     const now = new Date()
 
-    const optimistic: PaymentWithCustomer = {
+    const optimistic: PaymentRow = {
       id,
       loanId,
-      customerId,
-      customerName,
       paymentDate: new Date(pendingData.paymentDate + "T12:00:00"),
       amount: pendingData.amount.trim(),
-      interestPortion: "0",
-      principalPortion: "0",
-      principalBalanceAfter: "0",
-      outstandingBalance: "0",
       recordedBy: "",
-      recorderName: "",
       depositLocation: pendingData.depositLocation,
+      subLocationId: null,
+      editReason: null,
+      deletedAt: null,
+      deletedBy: null,
+      deleteReason: null,
+      markedWrong: false,
+      markedWrongReason: null,
+      markedWrongBy: null,
       createdAt: now,
+      updatedAt: now,
     }
 
     const input: RecordPaymentInput = {

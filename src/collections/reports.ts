@@ -56,6 +56,7 @@ export const portfolioCollection = createCollection(
       }))
     },
     getKey: (row) => row._key,
+    startSync: true,
   })
 )
 
@@ -86,6 +87,7 @@ export const transactionReportCollection = createCollection(
       return [{ ...(result.data as TransactionReportData), _key: "singleton" }]
     },
     getKey: (row) => row._key,
+    startSync: true,
   })
 )
 
@@ -108,6 +110,10 @@ function createPnlCollection(period: string) {
         return [{ ...(result.data as PnlData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
+      // Safe: this factory is only called from getPnlCollection() when a caller
+      // actually needs the report for `period`, so eager sync never fires for
+      // unused params.
+      startSync: true,
     })
   )
 }
@@ -137,6 +143,10 @@ function createBalanceSheetCollection(period: string) {
         return [{ ...(result.data as BalanceSheetData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
+      // Safe: this factory is only called from getBalanceSheetCollection()
+      // when a caller actually needs the report for `period`, so eager sync
+      // never fires for unused params.
+      startSync: true,
     })
   )
 }
@@ -166,6 +176,10 @@ function createRetainedEarningsCollection(period: string) {
         return [{ ...(result.data as RetainedEarningsData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
+      // Safe: this factory is only called from getRetainedEarningsCollection()
+      // when a caller actually needs the report for `period`, so eager sync
+      // never fires for unused params.
+      startSync: true,
     })
   )
 }

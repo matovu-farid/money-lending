@@ -2,7 +2,12 @@
 
 import { auth } from "@/lib/auth"
 import { headers } from "next/headers"
-import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import {
+  getSession,
+  getUserRole,
+  getEffectivePermissions,
+  invalidateUserPermissions,
+} from "@/lib/action-utils"
 import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
 
 const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "supervisor", "admin", "superAdmin"]
@@ -68,6 +73,9 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
       body: { userId, role: targetRole },
       headers: await headers(),
     })
+    // Drop any cached permissions for the target user so the new role
+    // takes effect immediately rather than within the 30 s TTL window.
+    invalidateUserPermissions(userId)
     return { data: { role: targetRole } }
   } catch {
     return { error: "Failed to update role" }

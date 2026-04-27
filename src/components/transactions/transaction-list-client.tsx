@@ -124,14 +124,19 @@ export function TransactionListClient({
   const watchedAmount = watch("amount")
   const watchedLocation = watch("location")
 
-  // Fetch location balances for expense insufficient-funds validation
-  const { data: locationBalancesRows } = useLiveQuery((q) =>
-    q.from({ l: locationBalancesCollection }).select(({ l }) => l)
-  )
+  // Fetch location balances for expense insufficient-funds validation.
+  // Subscribe to the collection directly (not via a derived query builder)
+  // so we don't spin up a new live-query collection on every form re-render.
+  // react-hook-form's `watch()` calls above force this component to re-render
+  // on every keystroke; with a query-builder factory, a transient subscriber
+  // teardown could trigger gcTime: 1ms cleanup and a refetch storm.
+  const { data: locationBalancesRows } = useLiveQuery(locationBalancesCollection)
   const lbRow = locationBalancesRows?.[0]
-  const locationBalances: Record<"cash" | "bank" | "strong_room", string> | null = lbRow
-    ? { cash: lbRow.cash, bank: lbRow.bank, strong_room: lbRow.strong_room }
-    : null
+  // Memoize so consumers can rely on referential stability (useMemo deps below).
+  const locationBalances = useMemo<Record<"cash" | "bank" | "strong_room", string> | null>(
+    () => (lbRow ? { cash: lbRow.cash, bank: lbRow.bank, strong_room: lbRow.strong_room } : null),
+    [lbRow],
+  )
 
   // Check if current expense amount exceeds available funds at selected location
   const insufficientFundsLocation = useMemo(() => {

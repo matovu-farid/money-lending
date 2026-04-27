@@ -3,8 +3,11 @@
 import { Suspense, useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
 import { paymentCollection, updatePaymentWithInput } from "@/collections/payments"
+import { loanCollection } from "@/collections/loans"
+import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
+import BigNumber from "bignumber.js"
 import { toast } from "sonner"
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
@@ -140,14 +143,121 @@ function PaymentsContent({
 
   const pageSize = 25
 
-  // TanStack DB live query for all payments
-  const { data: allPayments } = useLiveSuspenseQuery((q) =>
+  // TanStack DB live query for all payments (raw rows from Electric shape)
+  const { data: rawPayments } = useLiveSuspenseQuery((q) =>
     q.from({ p: paymentCollection }).select(({ p }) => p)
   )
 
+  // Loans drive the customer join (loanCollection already has customerName + customerId)
+  const { data: allLoans } = useLiveSuspenseQuery((q) =>
+    q.from({ l: loanCollection }).select(({ l }) => l)
+  )
+
+  // Resolve recordedBy → display name via the user-name-map collection
+  const uniqueRecorderIdsKey = useMemo(
+    () => [...new Set((rawPayments ?? []).map((p) => p.recordedBy))].sort().join(","),
+    [rawPayments]
+  )
+  const uniqueRecorderIds = useMemo(
+    () => (uniqueRecorderIdsKey ? uniqueRecorderIdsKey.split(",") : []),
+    [uniqueRecorderIdsKey]
+  )
+  const userNameMapColl = useMemo(
+    () => getUserNameMapCollection(uniqueRecorderIds),
+    [uniqueRecorderIds]
+  )
+  const { data: userNameMapRows } = useLiveQuery(
+    (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
+    [userNameMapColl]
+  )
+  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
+
+  // Fetch interest/principal portions for the entire payment set in one go.
+  // The server action is keyed only by paymentIds, so we pass a sentinel loanId.
+  const allPaymentIdsKey = useMemo(
+    () => (rawPayments ?? []).map((p) => p.id).sort().join(","),
+    [rawPayments]
+  )
+  const allPaymentIds = useMemo(
+    () => (allPaymentIdsKey ? allPaymentIdsKey.split(",") : []),
+    [allPaymentIdsKey]
+  )
+  const portionsColl = useMemo(
+    () => getPaymentPortionsCollection("__all__", allPaymentIds),
+    [allPaymentIds]
+  )
+  const { data: portionsRows } = useLiveQuery(
+    (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
+    [portionsColl]
+  )
+  const portionsMap = portionsRows?.[0]?.portions ?? {}
+
+  // Build the joined PaymentWithCustomer-shaped rows that the rest of this
+  // component already consumes (customerName, recorderName, interestPortion,
+  // principalPortion, principalBalanceAfter, outstandingBalance).
+  const allPayments: PaymentWithCustomer[] = useMemo(() => {
+    const loanMap = new Map<string, { customerId: string; customerName: string; principalAmount: string }>()
+    for (const l of allLoans ?? []) {
+      loanMap.set(l.id, {
+        customerId: l.customerId,
+        customerName: l.customerName ?? "Unknown",
+        principalAmount: l.principalAmount,
+      })
+    }
+
+    // Group payments by loanId so we can compute a running principal balance
+    // (principalBalanceAfter) chronologically per loan — same logic that used
+    // to be enriched server-side.
+    const byLoan = new Map<string, typeof rawPayments>()
+    for (const p of rawPayments ?? []) {
+      const list = byLoan.get(p.loanId) ?? []
+      list.push(p)
+      byLoan.set(p.loanId, list)
+    }
+    const balanceAfterMap: Record<string, string> = {}
+    for (const [loanId, plist] of byLoan) {
+      const loanInfo = loanMap.get(loanId)
+      if (!loanInfo) continue
+      const sorted = [...plist].sort((a, b) => {
+        const da = new Date(a.paymentDate).getTime()
+        const db = new Date(b.paymentDate).getTime()
+        if (da !== db) return da - db
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      })
+      let bal = new BigNumber(loanInfo.principalAmount)
+      for (const p of sorted) {
+        const principal = portionsMap[p.id]?.principalPortion ?? "0"
+        bal = bal.minus(new BigNumber(principal))
+        if (bal.isLessThan(0)) bal = new BigNumber(0)
+        balanceAfterMap[p.id] = bal.toFixed(0)
+      }
+    }
+
+    return (rawPayments ?? []).map((p) => {
+      const info = loanMap.get(p.loanId)
+      const portion = portionsMap[p.id]
+      return {
+        id: p.id,
+        loanId: p.loanId,
+        customerId: info?.customerId ?? "",
+        customerName: info?.customerName ?? "Unknown",
+        paymentDate: p.paymentDate instanceof Date ? p.paymentDate : new Date(p.paymentDate),
+        amount: p.amount,
+        interestPortion: portion?.interestPortion ?? "0",
+        principalPortion: portion?.principalPortion ?? "0",
+        principalBalanceAfter: balanceAfterMap[p.id] ?? "0",
+        outstandingBalance: balanceAfterMap[p.id] ?? "0",
+        recordedBy: p.recordedBy,
+        recorderName: userNameMap[p.recordedBy] ?? "",
+        depositLocation: p.depositLocation,
+        createdAt: p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt),
+      }
+    })
+  }, [rawPayments, allLoans, portionsMap, userNameMap])
+
   // Client-side filtering
   const filtered = useMemo(() => {
-    let result = allPayments ?? []
+    let result = allPayments
     if (customerName) {
       const term = customerName.toLowerCase()
       result = result.filter((p) => p.customerName.toLowerCase().includes(term))

@@ -54,17 +54,85 @@ export const hasActiveDelegation = cache(async (userId: string): Promise<boolean
   return rows.length > 0
 })
 
+// ---------------------------------------------------------------------------
+// Cross-request short-TTL cache for effective permissions
+// ---------------------------------------------------------------------------
+//
+// `cache()` from React only dedupes within a single request/render. Server
+// actions run in fresh requests, so the same user hitting POST /customers,
+// then POST /expenses, then GET /reports re-runs the underlying delegation
+// lookup every time — that lookup was profiled at ~1.4 s in dev because it
+// blocks on better-auth + Postgres.
+//
+// To kill that overhead we add a tiny module-scoped cache keyed on
+// `${userId}:${role}` with a 30-second TTL.
+//
+// TTL choice: 30 s is the better-auth-style trade. Permission/role/delegation
+// changes propagate within at most half a minute on their own, AND every
+// known mutation site (assignRole, finalizeInviteAcceptance, create/revoke
+// delegation) calls `invalidateUserPermissions(userId)` immediately after
+// the DB write — so under normal operation the cache is invalidated in
+// real time. The 30 s TTL is purely a safety net for cases we haven't
+// hooked (e.g. direct DB tweaks, future code paths that forget to call the
+// invalidator).
+//
+// We cap the map at 1000 entries with FIFO eviction so a long-running dev
+// process can't leak memory.
+
+type CachedPermissions = { value: Set<Permission>; expiresAt: number }
+
+const PERMISSIONS_CACHE_TTL_MS = 30_000
+const PERMISSIONS_CACHE_MAX = 1000
+
+const permissionsCache = new Map<string, CachedPermissions>()
+
+function permissionsCacheKey(userId: string, role: UserRole): string {
+  return `${userId}:${role}`
+}
+
+function setPermissionsCache(key: string, value: Set<Permission>): void {
+  // FIFO eviction: when full, drop the oldest entry (Map preserves insertion
+  // order, so the first key is the oldest).
+  if (permissionsCache.size >= PERMISSIONS_CACHE_MAX) {
+    const oldest = permissionsCache.keys().next().value
+    if (oldest !== undefined) permissionsCache.delete(oldest)
+  }
+  permissionsCache.set(key, { value, expiresAt: Date.now() + PERMISSIONS_CACHE_TTL_MS })
+}
+
 /**
- * Get effective permissions for a user based on their role.
- * Supervisors with an active delegation get elevated permissions.
+ * Invalidate every cache entry for a userId — call this immediately after
+ * any mutation that affects the user's effective permissions:
+ *   - `auth.api.setRole(...)` (assignRole)
+ *   - `db.update(user).set({ role })` (invite acceptance)
+ *   - createDelegation / revokeDelegation
  *
- * Memoised per-request — same (userId, role) pair within one request
- * reuses the same Set instance (and skips repeat delegation queries).
+ * It also sweeps `permissionsCache` of any expired entries opportunistically.
+ * Cheap (O(n) over <=1000 entries) and only called on writes.
  */
-export const getEffectivePermissions = cache(async (
+export function invalidateUserPermissions(userId: string): void {
+  const prefix = `${userId}:`
+  const now = Date.now()
+  for (const [k, v] of permissionsCache) {
+    if (k.startsWith(prefix) || v.expiresAt <= now) {
+      permissionsCache.delete(k)
+    }
+  }
+}
+
+/**
+ * Test/maintenance helper — clear the entire cross-request cache. Not
+ * exported from a barrel; primarily used in unit tests where multiple
+ * cases share module state.
+ */
+export function __clearPermissionsCacheForTests(): void {
+  permissionsCache.clear()
+}
+
+async function computeEffectivePermissions(
   userId: string,
   role: UserRole,
-): Promise<Set<Permission>> => {
+): Promise<Set<Permission>> {
   const base = getPermissionsForRole(role)
   if (role === "supervisor") {
     const delegated = await hasActiveDelegation(userId)
@@ -73,6 +141,36 @@ export const getEffectivePermissions = cache(async (
     }
   }
   return base
+}
+
+/**
+ * Get effective permissions for a user based on their role.
+ * Supervisors with an active delegation get elevated permissions.
+ *
+ * Two-layer caching:
+ *   1. Per-request: React's `cache()` dedupes calls within a single
+ *      server action / RSC render so the same (userId, role) Set is
+ *      reused without re-checking delegations.
+ *   2. Cross-request: a 30 s in-memory TTL cache keyed on
+ *      `${userId}:${role}` so back-to-back navigations stop re-running
+ *      the ~1.4 s delegation lookup. Invalidated immediately on
+ *      role/delegation writes via `invalidateUserPermissions()`.
+ */
+export const getEffectivePermissions = cache(async (
+  userId: string,
+  role: UserRole,
+): Promise<Set<Permission>> => {
+  const key = permissionsCacheKey(userId, role)
+  const hit = permissionsCache.get(key)
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.value
+  }
+  // Stale entry — drop before refilling so the FIFO order reflects recency.
+  if (hit) permissionsCache.delete(key)
+
+  const value = await computeEffectivePermissions(userId, role)
+  setPermissionsCache(key, value)
+  return value
 })
 
 /**

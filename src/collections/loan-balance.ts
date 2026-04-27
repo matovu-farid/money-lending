@@ -5,7 +5,6 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { getLoanBalanceAction } from "@/actions/payment.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { boundedSet } from "@/lib/bounded-map"
 
 export type LoanBalanceRow = {
   _key: string
@@ -13,8 +12,6 @@ export type LoanBalanceRow = {
   accruedInterest: string
   totalBalance: string
 }
-
-const MAX_LOAN_BALANCE_CACHED = 50
 
 function createLoanBalanceCollection(loanId: string) {
   return createCollection(
@@ -51,7 +48,7 @@ export function getLoanBalanceCollection(loanId: string) {
   let collection = loanBalanceCollections.get(loanId)
   if (!collection) {
     collection = createLoanBalanceCollection(loanId)
-    boundedSet(loanBalanceCollections, loanId, collection, MAX_LOAN_BALANCE_CACHED)
+    loanBalanceCollections.set(loanId, collection)
   }
   return collection
 }

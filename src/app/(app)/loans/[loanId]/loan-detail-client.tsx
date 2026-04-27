@@ -22,7 +22,7 @@ import { queryKeys } from "@/lib/query-keys"
 import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
-import type { UserRole, RateChangeRequest, LoanListEntry } from "@/types"
+import type { UserRole, RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -80,33 +80,85 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const collateralNature = collateralData?.nature
   const collateralDescription = collateralData?.description ?? null
 
-  // Use TanStack DB collection for payments — live, reactive, cached
+  // Use TanStack DB collection for payments — live, reactive, cached.
+  // The Electric shape provides raw `payments` rows (no customerName/portions);
+  // we project them into the PaymentWithCustomer shape downstream consumers
+  // (PaymentTable, SimulatorPanel) already type against. customerName is
+  // already known on this page (passed in via props), and portions / balances
+  // are derived below from `currentPortions` + `runningBalanceMap`.
   const { data: rawPayments } = useLiveSuspenseQuery(
     (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, loan.id)),
     [loan.id]
   )
-  const payments = Array.isArray(rawPayments) ? rawPayments : []
+  const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : []
 
-  // Resolve recordedBy user IDs to names
-  const uniqueUserIds = useMemo(
-    () => [...new Set(payments.map((p) => p.recordedBy))],
-    [payments]
+  // Resolve recordedBy user IDs to names.
+  // Memoize on the joined-id signature so the array identity only changes
+  // when the actual set of ids changes (sorted for order-stability).
+  const uniqueUserIdsKey = useMemo(
+    () => [...new Set(rawPaymentsArr.map((p) => p.recordedBy))].sort().join(","),
+    [rawPaymentsArr]
   )
-  const userNameMapColl = getUserNameMapCollection(uniqueUserIds)
+  const uniqueUserIds = useMemo(
+    () => (uniqueUserIdsKey ? uniqueUserIdsKey.split(",") : []),
+    [uniqueUserIdsKey]
+  )
+  const userNameMapColl = useMemo(
+    () => getUserNameMapCollection(uniqueUserIds),
+    [uniqueUserIds]
+  )
   const { data: userNameMapRows } = useLiveQuery(
     (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
-    [uniqueUserIds.join(",")]
+    [userNameMapColl]
   )
   const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
 
-  // Client-side query for payment portions — refreshes when payments change
-  const activePaymentIds = payments.map((p) => p.id)
-  const portionsColl = getPaymentPortionsCollection(loan.id, activePaymentIds)
+  // Client-side query for payment portions — refreshes when payments change.
+  // Memoize the id list and collection on the joined-id signature so the
+  // ShapeStream isn't torn down on every render.
+  const activePaymentIdsKey = useMemo(
+    () => rawPaymentsArr.map((p) => p.id).sort().join(","),
+    [rawPaymentsArr]
+  )
+  const activePaymentIds = useMemo(
+    () => (activePaymentIdsKey ? activePaymentIdsKey.split(",") : []),
+    [activePaymentIdsKey]
+  )
+  const portionsColl = useMemo(
+    () => getPaymentPortionsCollection(loan.id, activePaymentIds),
+    [loan.id, activePaymentIds]
+  )
   const { data: portionsRows } = useLiveQuery(
     (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
-    [activePaymentIds.join(",")]
+    [portionsColl]
   )
   const currentPortions: PaymentPortionsMap = portionsRows?.[0]?.portions ?? {}
+
+  // Project the raw Electric rows into the PaymentWithCustomer shape that the
+  // downstream components (PaymentTable, SimulatorPanel, store dialogs) type
+  // against. customerId/customerName come from props, portions/balances are
+  // computed from `currentPortions` and the running balance map below.
+  const payments: PaymentWithCustomer[] = useMemo(() => {
+    return rawPaymentsArr.map((p) => {
+      const portion = currentPortions[p.id]
+      return {
+        id: p.id,
+        loanId: p.loanId,
+        customerId: loan.customerId,
+        customerName: customerName ?? "",
+        paymentDate: p.paymentDate instanceof Date ? p.paymentDate : new Date(p.paymentDate),
+        amount: p.amount,
+        interestPortion: portion?.interestPortion ?? "0",
+        principalPortion: portion?.principalPortion ?? "0",
+        principalBalanceAfter: "0",
+        outstandingBalance: "0",
+        recordedBy: p.recordedBy,
+        recorderName: userNameMap[p.recordedBy] ?? "",
+        depositLocation: p.depositLocation,
+        createdAt: p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt),
+      }
+    })
+  }, [rawPaymentsArr, currentPortions, userNameMap, loan.customerId, customerName])
 
   const {
     editingPayment, editAmount, editDate, editReason,

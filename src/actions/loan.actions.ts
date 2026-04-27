@@ -352,16 +352,21 @@ export async function createLoanAction(input: CreateLoanInput) {
 }
 
 async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
-  // Batch-fetch all payments for all loans in a single query
+  // Batch-fetch all payments and ledger aggregates in parallel — all three
+  // queries only depend on loanIds and were previously running sequentially.
   const loanIds = loanList.map((l) => l.id)
-  const allPayments =
-    loanIds.length > 0
-      ? await db
-          .select()
-          .from(payments)
-          .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-          .orderBy(asc(payments.paymentDate))
-      : []
+  const paymentsPromise = loanIds.length > 0
+    ? db
+        .select()
+        .from(payments)
+        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+        .orderBy(asc(payments.paymentDate))
+    : Promise.resolve([])
+  const [allPayments, ledgerBalances, interestEarnedMap] = await Promise.all([
+    paymentsPromise,
+    getLoanBalancesFromLedger(loanIds),
+    getInterestEarnedFromLedger(loanIds),
+  ])
 
   // Group payments by loanId
   const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
@@ -370,9 +375,6 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
     existing.push(p)
     paymentsByLoanId.set(p.loanId, existing)
   }
-
-  const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
-  const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
   return loanList.map((loan) => {
       let daysOverdue = 0

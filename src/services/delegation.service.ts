@@ -2,6 +2,7 @@ import { db } from "@/lib/db"
 import { delegations } from "@/lib/db/schema/delegations"
 import { user } from "@/lib/db/schema/auth"
 import { eq, isNull, and, desc } from "drizzle-orm"
+import { invalidateUserPermissions } from "@/lib/action-utils"
 
 export async function createDelegation(id: string, userId: string, delegatedBy: string) {
   // Check for existing active delegation
@@ -30,6 +31,12 @@ export async function createDelegation(id: string, userId: string, delegatedBy: 
     .values({ id, userId, delegatedBy })
     .returning()
 
+  // Supervisor's effective permissions just expanded
+  // (MANAGING_SUPERVISOR_ELEVATED is now in their set) — drop any cached
+  // entries so the next permission check picks up the elevation immediately
+  // instead of after the 30 s TTL.
+  invalidateUserPermissions(userId)
+
   return row
 }
 
@@ -43,6 +50,10 @@ export async function revokeDelegation(delegationId: string, revokedBy: string) 
   if (!row) {
     throw new Error("Active delegation not found")
   }
+
+  // Conversely, the supervisor just lost elevated permissions — invalidate
+  // so the next request can no longer see the cached elevated set.
+  invalidateUserPermissions(row.userId)
 
   return row
 }

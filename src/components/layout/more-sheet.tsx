@@ -1,7 +1,8 @@
 "use client"
 
+import { useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { Drawer } from "@base-ui/react/drawer"
 import {
   Landmark,
@@ -27,6 +28,26 @@ interface MoreSheetProps {
 
 export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
   const pathname = usePathname()
+  const router = useRouter()
+  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
+
+  // Prefetch route on hover with debounce
+  const handlePrefetch = useCallback((href: string) => {
+    clearTimeout(prefetchTimerRef.current)
+    prefetchTimerRef.current = setTimeout(() => {
+      router.prefetch(href)
+    }, 100)
+  }, [router])
+
+  const cancelPrefetch = useCallback(() => {
+    clearTimeout(prefetchTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(prefetchTimerRef.current)
+    }
+  }, [])
 
   return (
     <Drawer.Root open={open} onOpenChange={onOpenChange} swipeDirection="down">
@@ -50,6 +71,10 @@ export function MoreSheet({ open, onOpenChange }: MoreSheetProps) {
                   href={item.href}
                   data-testid={`more-item-${item.label.toLowerCase()}`}
                   onClick={() => onOpenChange(false)}
+                  onMouseEnter={() => handlePrefetch(item.href)}
+                  onFocus={() => handlePrefetch(item.href)}
+                  onTouchStart={() => handlePrefetch(item.href)}
+                  onMouseLeave={cancelPrefetch}
                   aria-current={isActive ? "page" : undefined}
                   className={cn(
                     "flex items-center gap-3 rounded-md px-3 py-3 text-sm transition-colors",

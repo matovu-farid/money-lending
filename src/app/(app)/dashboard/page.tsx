@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { Banknote, CreditCard, TrendingUp, Users, AlertTriangle, Landmark, ExternalLink, Plus, DollarSign } from "lucide-react"
 import Link from "next/link"
 import { useDashboard } from "@/hooks/use-dashboard"
@@ -56,11 +56,12 @@ function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => b
   const { data } = useDashboard()
   const kpis = data?.kpis ?? null
 
-  const { data: activityRows } = useLiveSuspenseQuery((q) =>
+  const { data: activityRows, isLoading: activityLoading } = useLiveQuery((q) =>
     q.from({ a: dashboardActivityCollection }).select(({ a }) => a)
   )
 
   const activity = activityRows?.[0]?.items ?? []
+  const activityReady = !activityLoading && activityRows !== undefined
 
   return (
     <div className="space-y-8">
@@ -251,7 +252,18 @@ function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => b
           )}
         </CardHeader>
         <CardContent className="p-0">
-          {activity.length === 0 ? (
+          {!activityReady ? (
+            <div className="px-6 py-4 space-y-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="flex-1 min-w-0 space-y-2">
+                    <div className="h-4 w-3/4 rounded bg-muted-foreground/10 animate-pulse" />
+                    <div className="h-3 w-1/3 rounded bg-muted-foreground/10 animate-pulse" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : activity.length === 0 ? (
             <p className="text-muted-foreground text-center py-8 px-6">
               No recent activity
             </p>
