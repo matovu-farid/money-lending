@@ -5,7 +5,7 @@ import { withAction } from "@/lib/with-action"
 import { getErrorTag } from "@/lib/action-utils"
 import { validateFullName, validateNIN, validateUgandanPhone } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
-import { createCustomerWithTxid, getCustomer, updateCustomer, listCustomers, searchCustomers, changeCustomerStatus } from "@/services/customer.service"
+import { createCustomerWithTxid, getCustomer, updateCustomerWithTxid, listCustomers, searchCustomers, changeCustomerStatusWithTxid } from "@/services/customer.service"
 import type { CreateCustomerInput, UpdateCustomerInput, CustomerSearchParams, ChangeStatusInput } from "@/types"
 import { VALID_CUSTOMER_STATUSES } from "@/lib/constants"
 import { getUniqueConstraintName, isUniqueConstraintError } from "@/lib/db-errors"
@@ -67,9 +67,20 @@ export async function updateCustomerAction(
 
 const updateCustomerWrapped = withAction<{ id: string; input: UpdateCustomerInput }, any>({
   permission: "customer:update",
-  effect: (_session, { id, input }) => updateCustomer(id, input),
-  revalidate: (input) => ["/customers", `/customers/${input.id}`],
-  errors: { CustomerNotFound: "Customer not found" },
+  action: async (_session, { id, input }) => {
+    try {
+      const { customer, txid } = await Effect.runPromise(updateCustomerWithTxid(id, input))
+      revalidatePath("/customers")
+      revalidatePath(`/customers/${id}`)
+      return { data: customer, txid }
+    } catch (error) {
+      if (getErrorTag(error) === "CustomerNotFound") {
+        return { error: "Customer not found" }
+      }
+      console.error("[updateCustomerAction]", error)
+      return { error: "Internal server error" }
+    }
+  },
 })
 
 export const searchCustomersAction = withAction<CustomerSearchParams, any>({
@@ -92,12 +103,12 @@ export const changeCustomerStatusAction = withAction<ChangeStatusInput, any>({
     }
 
     try {
-      const data = await Effect.runPromise(
-        changeCustomerStatus(input.customerId, input.newStatus, input.reason, session.user.id)
+      const { customer, txid } = await Effect.runPromise(
+        changeCustomerStatusWithTxid(input.customerId, input.newStatus, input.reason, session.user.id)
       )
       revalidatePath("/customers")
       revalidatePath(`/customers/${input.customerId}`)
-      return { data }
+      return { data: customer, txid }
     } catch (error) {
       if (getErrorTag(error) === "CustomerNotFound") {
         return { error: "Customer not found" }

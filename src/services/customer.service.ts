@@ -111,6 +111,37 @@ export const updateCustomer = (
     )
   )
 
+/**
+ * Like updateCustomer but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const updateCustomerWithTxid = (
+  id: string,
+  input: UpdateCustomerInput
+): Effect.Effect<{ customer: Customer; txid: number }, CustomerNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: () =>
+      db.transaction(async (tx) => {
+        const [customer] = await tx
+          .update(customers)
+          .set({ ...input, updatedAt: new Date() })
+          .where(eq(customers.id, id))
+          .returning()
+        if (!customer) throw new CustomerNotFound({ id })
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { customer, txid }
+      }),
+    catch: (e) => {
+      if (e instanceof CustomerNotFound) return e
+      return new DatabaseError({ cause: e })
+    },
+  })
+
 export const listCustomers = (): Effect.Effect<Customer[], DatabaseError> =>
   Effect.tryPromise({
     try: () => db.select().from(customers).limit(500),
@@ -273,6 +304,52 @@ export const changeCustomerStatus = (
         })
 
         return updated
+      })
+    },
+    catch: (e) => {
+      if (e instanceof CustomerNotFound) return e
+      return new DatabaseError({ cause: e })
+    },
+  })
+
+/**
+ * Like changeCustomerStatus but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const changeCustomerStatusWithTxid = (
+  id: string,
+  newStatus: CustomerStatus,
+  reason: string,
+  actorId: string
+): Effect.Effect<{ customer: Customer; txid: number }, CustomerNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      return await db.transaction(async (tx) => {
+        const [current] = await tx.select().from(customers).where(eq(customers.id, id))
+        if (!current) throw new CustomerNotFound({ id })
+
+        const [updated] = await tx
+          .update(customers)
+          .set({ status: newStatus, updatedAt: new Date() })
+          .where(eq(customers.id, id))
+          .returning()
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "status_change",
+          entityType: "customer",
+          entityId: id,
+          beforeValue: JSON.stringify({ status: current.status }),
+          afterValue: JSON.stringify({ status: newStatus, reason }),
+        })
+
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { customer: updated, txid }
       })
     },
     catch: (e) => {

@@ -57,9 +57,11 @@ vi.mock("@/services/customer.service", () => ({
   createCustomerWithTxid: vi.fn(),
   getCustomer: vi.fn(),
   updateCustomer: vi.fn(),
+  updateCustomerWithTxid: vi.fn(),
   listCustomers: vi.fn(),
   searchCustomers: vi.fn(),
   changeCustomerStatus: vi.fn(),
+  changeCustomerStatusWithTxid: vi.fn(),
 }))
 
 // ---------- Imports (after mocks) ----------
@@ -70,9 +72,11 @@ import {
   createCustomerWithTxid,
   getCustomer,
   updateCustomer,
+  updateCustomerWithTxid,
   listCustomers,
   searchCustomers,
   changeCustomerStatus,
+  changeCustomerStatusWithTxid,
 } from "@/services/customer.service"
 import { CustomerNotFound, DatabaseError } from "@/lib/errors"
 
@@ -92,9 +96,14 @@ const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockCreateCustomer = vi.mocked(createCustomerWithTxid)
 const mockGetCustomer = vi.mocked(getCustomer)
 const mockUpdateCustomer = vi.mocked(updateCustomer)
+const mockUpdateCustomerWithTxid = vi.mocked(updateCustomerWithTxid)
 const mockListCustomers = vi.mocked(listCustomers)
 const mockSearchCustomers = vi.mocked(searchCustomers)
 const mockChangeCustomerStatus = vi.mocked(changeCustomerStatus)
+const mockChangeCustomerStatusWithTxid = vi.mocked(changeCustomerStatusWithTxid)
+void mockUpdateCustomer
+void mockChangeCustomerStatus
+void mockRequireRole
 
 const fakeSession = {
   user: { id: "u1", name: "Test User", email: "t@t.com", role: "admin" },
@@ -257,18 +266,20 @@ describe("Customer Actions", () => {
     it("updates customer and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const updated = { id: "c1", fullName: "New Name" }
-      mockUpdateCustomer.mockReturnValue(Effect.succeed(updated) as any)
+      mockUpdateCustomerWithTxid.mockReturnValue(
+        Effect.succeed({ customer: updated, txid: 12345 }) as any,
+      )
 
       const result = await updateCustomerAction("c1", { fullName: "New Name" })
 
-      expect(result).toEqual({ data: updated })
+      expect(result).toEqual({ data: updated, txid: 12345 })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/customers")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/customers/c1")
     })
 
     it("returns error when customer not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockUpdateCustomer.mockReturnValue(
+      mockUpdateCustomerWithTxid.mockReturnValue(
         Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
       )
       const result = await updateCustomerAction("c1", { fullName: "New" })
@@ -348,12 +359,14 @@ describe("Customer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
       const updated = { id: "c1", status: "blacklisted" }
-      mockChangeCustomerStatus.mockReturnValue(Effect.succeed(updated) as any)
+      mockChangeCustomerStatusWithTxid.mockReturnValue(
+        Effect.succeed({ customer: updated, txid: 67890 }) as any,
+      )
 
       const result = await changeCustomerStatusAction(validInput)
 
-      expect(result).toEqual({ data: updated })
-      expect(mockChangeCustomerStatus).toHaveBeenCalledWith(
+      expect(result).toEqual({ data: updated, txid: 67890 })
+      expect(mockChangeCustomerStatusWithTxid).toHaveBeenCalledWith(
         "c1",
         "blacklisted",
         "Repeatedly defaulted on loans",
@@ -366,7 +379,7 @@ describe("Customer Actions", () => {
     it("returns error when customer not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
-      mockChangeCustomerStatus.mockReturnValue(
+      mockChangeCustomerStatusWithTxid.mockReturnValue(
         Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
       )
       const result = await changeCustomerStatusAction(validInput)

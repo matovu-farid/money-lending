@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiveQuery, eq } from "@tanstack/react-db";
-import { customerCollection } from "@/collections/customers";
+import { customerCollection, changeCustomerStatusWithInput } from "@/collections/customers";
 import { loanCollection } from "@/collections/loans";
 import { paymentCollection } from "@/collections/payments";
 import { getPaymentPortionsCollection } from "@/collections/loan-extras";
@@ -11,9 +11,6 @@ import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Banknote, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
-import {
-  changeCustomerStatusAction,
-} from "@/actions/customer.actions";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
 import type { Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
@@ -325,27 +322,26 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
 
   function handleStatusConfirm() {
     if (!customer || !pendingStatus || statusReason.trim().length < 10) return;
-    startStatusTransition(async () => {
-      // Status changes go through the server action (audit trail + reason)
-      const result = await changeCustomerStatusAction({
-        customerId: customer.id,
-        newStatus: pendingStatus,
-        reason: statusReason,
-      });
-      if ("error" in result) {
-        toast.error(result.error);
-        return;
+    startStatusTransition(() => {
+      try {
+        // Optimistically updates the collection; onUpdate dispatches the
+        // status-change server action with the supplied reason.
+        changeCustomerStatusWithInput(
+          customer.id,
+          pendingStatus,
+          statusReason,
+        );
+        setStatusDialogOpen(false);
+        toast.success(
+          `${customer.fullName}'s status updated to ${customerStatusLabel(pendingStatus)}.`,
+        );
+        setPendingStatus(null);
+        setStatusReason("");
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "Failed to update status";
+        toast.error(message);
       }
-      // Update collection optimistically to reflect new status
-      customerCollection.update(customerId, (draft) => {
-        draft.status = pendingStatus;
-      });
-      setStatusDialogOpen(false);
-      toast.success(
-        `${customer.fullName}'s status updated to ${customerStatusLabel(pendingStatus)}.`,
-      );
-      setPendingStatus(null);
-      setStatusReason("");
     });
   }
 

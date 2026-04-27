@@ -1,6 +1,6 @@
 "use client"
 
-import { useTransition, useEffect, useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
@@ -14,11 +14,12 @@ import { updatePaymentWithInput, deletePaymentWithReason } from "@/collections/p
 import { currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
 import { getLoanBalanceCollection } from "@/collections/loan-balance"
 import { insertRateChangeRequestWithInput } from "@/collections/rate-change-requests"
-import { waivePenaltyAction, adjustPenaltyMultiplierAction } from "@/actions/loan.actions"
+import {
+  waiveLoanPenaltyWithInput,
+  adjustLoanPenaltyMultiplierWithInput,
+} from "@/collections/loans"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { generateClientId } from "@/lib/client-id"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
 import { useLiveQuery, eq } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
@@ -173,12 +174,15 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     reset,
   } = useLoanDetailStore()
 
-  // Edit/delete are now synchronous collection ops — no pending state needed
+  // Edit/delete are now synchronous collection ops — no pending state needed.
+  // Penalty waive/adjust are also collection-routed (TanStack DB renders the
+  // optimistic row instantly; failures roll back automatically), so we drop
+  // the useTransition pending flags for them too.
   const isEditPending = false
   const isDeletePending = false
   const isRateChangePending = false
-  const [isWaivingPenalty, startWaivePenaltyTransition] = useTransition()
-  const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
+  const isWaivingPenalty = false
+  const isAdjustingPenalty = false
 
   // Fetch rate change requests for this loan from collection
   const { data: rateChangeRequests = [] } = useLiveQuery(
@@ -317,33 +321,23 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   }
 
   function handleWaivePenalty() {
-    startWaivePenaltyTransition(async () => {
-      const result = await waivePenaltyAction(loan.id)
-      if ("error" in result) {
-        toast.error(result.error)
-      } else {
-        toast.success("Penalty waived")
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
-        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loan.id) })
-      }
-    })
+    try {
+      waiveLoanPenaltyWithInput(loan.id)
+      toast.success("Penalty waived")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to waive penalty")
+    }
   }
 
   function handleAdjustPenaltySave() {
-    startAdjustPenaltyTransition(async () => {
+    try {
       const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4)
-      const result = await adjustPenaltyMultiplierAction(loan.id, decimal)
-      if ("error" in result) {
-        toast.error(result.error)
-      } else {
-        toast.success("Penalty rate adjusted")
-        closePenaltyAdjust()
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
-        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loan.id) })
-      }
-    })
+      adjustLoanPenaltyMultiplierWithInput(loan.id, decimal)
+      toast.success("Penalty rate adjusted")
+      closePenaltyAdjust()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to adjust penalty")
+    }
   }
 
   const loanRef = `LOAN-${shortId(loan.id).toUpperCase()}`

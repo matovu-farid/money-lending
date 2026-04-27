@@ -10,7 +10,7 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
-import { eq, and, asc, isNull } from "drizzle-orm"
+import { eq, and, asc, isNull, sql } from "drizzle-orm"
 import { toLoanType, type RecordPaymentInput, type EditPaymentInput, type DeletePaymentInput, type ListPaymentsInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 import { shortId } from "@/lib/utils"
@@ -248,7 +248,7 @@ const markPaymentWrongWrapped = withAction<
     }
 
     try {
-      const updated = await db.transaction(async (tx) => {
+      const { updated, txid } = await db.transaction(async (tx) => {
         const [payment] = await tx
           .select()
           .from(payments)
@@ -313,13 +313,17 @@ const markPaymentWrongWrapped = withAction<
             .where(eq(loans.id, payment.loanId))
         }
 
-        return updatedPayment
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { updated: updatedPayment, txid }
       })
 
       revalidatePath("/payments")
       revalidatePath(`/loans/${updated.loanId}`)
 
-      return { data: updated }
+      return { data: updated, txid }
     } catch (e: any) {
       if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
       if (e?._tag === "AlreadyMarkedWrong") return { error: "Payment is already marked as wrong" }
@@ -337,7 +341,7 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
     }
 
     try {
-      const updated = await db.transaction(async (tx) => {
+      const { updated, txid } = await db.transaction(async (tx) => {
         const [payment] = await tx
           .select()
           .from(payments)
@@ -457,13 +461,17 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
             .where(eq(loans.id, payment.loanId))
         }
 
-        return updatedPayment
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { updated: updatedPayment, txid }
       })
 
       revalidatePath("/payments")
       revalidatePath(`/loans/${updated.loanId}`)
 
-      return { data: updated }
+      return { data: updated, txid }
     } catch (e: any) {
       if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
       if (e?._tag === "LoanNotFound") return { error: "Loan not found" }

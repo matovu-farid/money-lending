@@ -7,6 +7,8 @@ import {
   recordPaymentAction,
   editPaymentAction,
   deletePaymentAction,
+  markPaymentWrongAction,
+  unmarkPaymentWrongAction,
 } from "@/actions/payment.actions"
 import type {
   RecordPaymentInput,
@@ -48,6 +50,13 @@ const pendingUpdateInputs = new Map<string, EditPaymentInput>()
  */
 const pendingDeleteReasons = new Map<string, string>()
 
+/**
+ * Side-channel for mark-wrong reasons. The `markedWrongReason` is a column,
+ * but we want to forward the user-provided reason verbatim to the action,
+ * which performs additional ledger reversal logic beyond a plain row update.
+ */
+const pendingMarkWrongReasons = new Map<string, string>()
+
 export const paymentCollection = createCollection(
   electricCollectionOptions<PaymentRow>({
     id: "payments",
@@ -81,7 +90,43 @@ export const paymentCollection = createCollection(
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
-      const { original } = transaction.mutations[0]
+      const { original, changes } = transaction.mutations[0]
+      const loanId = (original as PaymentRow).loanId
+
+      // Detect a mark-wrong / unmark-wrong update by inspecting the draft delta.
+      // These mutations dispatch to dedicated server actions that also reverse
+      // (or re-post) ledger journal entries — not a plain payment edit.
+      const markedWrongChanged = (changes as Partial<PaymentRow>).markedWrong !== undefined
+      if (markedWrongChanged) {
+        const nextMarkedWrong = (changes as Partial<PaymentRow>).markedWrong as boolean
+        let result: { data?: unknown; txid?: number; error?: string }
+        if (nextMarkedWrong) {
+          const reason = pendingMarkWrongReasons.get(original.id)
+          if (!reason) {
+            throw new Error("Missing mark-wrong reason for optimistic update")
+          }
+          result = await markPaymentWrongAction(original.id, reason)
+          pendingMarkWrongReasons.delete(original.id)
+        } else {
+          result = await unmarkPaymentWrongAction(original.id)
+        }
+        if ("error" in result && result.error) {
+          throw new Error(result.error)
+        }
+        // Cross-cutting refreshes (dashboard / reports / location balances)
+        // — Electric handles payments+loans rows automatically once txid lands.
+        const qc = getQueryClient()
+        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
+        qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+        qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+        qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+        qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+        qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+        return { txid: result.txid }
+      }
+
       const input = pendingUpdateInputs.get(original.id)
       if (!input) {
         throw new Error("Missing payment update input for optimistic update")
@@ -93,7 +138,6 @@ export const paymentCollection = createCollection(
       }
       // Invalidate query-based collections
       const qc = getQueryClient()
-      const loanId = (original as PaymentRow).loanId
       qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
@@ -170,4 +214,30 @@ export function updatePaymentWithInput(
 export function deletePaymentWithReason(id: string, reason: string) {
   pendingDeleteReasons.set(id, reason)
   paymentCollection.delete(id)
+}
+
+/**
+ * Mark a payment as wrong via the collection (optimistic). The draft is
+ * mutated to flip `markedWrong`, and onUpdate routes to markPaymentWrongAction.
+ */
+export function markPaymentWrongOptimistic(id: string, reason: string) {
+  pendingMarkWrongReasons.set(id, reason)
+  paymentCollection.update(id, (draft) => {
+    const d = draft as PaymentRow
+    d.markedWrong = true
+    d.markedWrongReason = reason
+  })
+}
+
+/**
+ * Unmark a payment as wrong via the collection (optimistic). onUpdate routes
+ * to unmarkPaymentWrongAction.
+ */
+export function unmarkPaymentWrongOptimistic(id: string) {
+  paymentCollection.update(id, (draft) => {
+    const d = draft as PaymentRow
+    d.markedWrong = false
+    d.markedWrongReason = null
+    d.markedWrongBy = null
+  })
 }

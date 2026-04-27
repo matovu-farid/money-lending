@@ -560,22 +560,36 @@ export const waivePenaltyAction = withAction<string, any>({
   forbiddenMessage: "Only admins can waive penalties",
   action: async (session, loanId) => {
     try {
-      const [loan] = await db
-        .select({ id: loans.id })
-        .from(loans)
-        .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      const result = await db.transaction(async (tx) => {
+        const [loan] = await tx
+          .select({ id: loans.id })
+          .from(loans)
+          .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
 
-      if (!loan) return { error: "Loan not found" }
+        if (!loan) return { notFound: true as const }
 
-      await db.update(loans).set({
-        penaltyWaived: true,
-        penaltyWaivedBy: session.user.id,
-        penaltyWaivedAt: new Date(),
-      }).where(eq(loans.id, loanId))
+        const [updated] = await tx
+          .update(loans)
+          .set({
+            penaltyWaived: true,
+            penaltyWaivedBy: session.user.id,
+            penaltyWaivedAt: new Date(),
+          })
+          .where(eq(loans.id, loanId))
+          .returning()
+
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { data: updated, txid }
+      })
+
+      if ("notFound" in result) return { error: "Loan not found" }
 
       revalidatePath("/loans")
       revalidatePath(`/loans/${loanId}`)
-      return { success: true }
+      return { data: result.data, txid: result.txid }
     } catch {
       return { error: "Internal server error" }
     }
@@ -596,20 +610,34 @@ const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: 
     }
 
     try {
-      const [loan] = await db
-        .select({ id: loans.id })
-        .from(loans)
-        .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      const result = await db.transaction(async (tx) => {
+        const [loan] = await tx
+          .select({ id: loans.id })
+          .from(loans)
+          .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
 
-      if (!loan) return { error: "Loan not found" }
+        if (!loan) return { notFound: true as const }
 
-      await db.update(loans).set({
-        penaltyMultiplier: value.toFixed(4),
-      }).where(eq(loans.id, loanId))
+        const [updated] = await tx
+          .update(loans)
+          .set({
+            penaltyMultiplier: value.toFixed(4),
+          })
+          .where(eq(loans.id, loanId))
+          .returning()
+
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { data: updated, txid }
+      })
+
+      if ("notFound" in result) return { error: "Loan not found" }
 
       revalidatePath("/loans")
       revalidatePath(`/loans/${loanId}`)
-      return { success: true }
+      return { data: result.data, txid: result.txid }
     } catch {
       return { error: "Internal server error" }
     }

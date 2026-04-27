@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useLiveQuery } from "@tanstack/react-db"
-import { paymentCollection, updatePaymentWithInput } from "@/collections/payments"
+import { paymentCollection, updatePaymentWithInput, markPaymentWrongOptimistic } from "@/collections/payments"
 import { loanCollection } from "@/collections/loans"
 import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
 import BigNumber from "bignumber.js"
@@ -30,9 +30,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { markPaymentWrongAction } from "@/actions/payment.actions"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { useSession } from "@/lib/auth-client"
@@ -308,26 +305,16 @@ function PaymentsContent({
   function handleMarkWrongSubmit() {
     if (!markWrongTarget) return
     startMarkWrongTransition(async () => {
-      const result = await markPaymentWrongAction(markWrongTarget.id, markWrongReason)
-      if ("error" in result) {
-        toast.error(result.error ?? "Failed to mark payment as wrong")
-        return
+      try {
+        // Routes through paymentCollection.onUpdate → markPaymentWrongAction
+        // (which returns txid). Cross-cutting cache refreshes are handled by
+        // the collection handler.
+        markPaymentWrongOptimistic(markWrongTarget.id, markWrongReason)
+        toast.success("Payment marked as wrong")
+        closeMarkWrong()
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Failed to mark payment as wrong")
       }
-      toast.success("Payment marked as wrong")
-      closeMarkWrong()
-      // Invalidate caches — markPaymentWrongAction bypasses TanStack DB collections
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.payments.all })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
-      qc.invalidateQueries({ queryKey: queryKeys.loans.all })
-      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(markWrongTarget.loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
     })
   }
 
