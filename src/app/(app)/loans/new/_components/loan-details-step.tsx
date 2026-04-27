@@ -1,6 +1,7 @@
-import React, { useEffect } from "react"
+import React, { useEffect, useRef } from "react"
 import type { UseFormRegister, UseFormWatch, Control, FieldErrors } from "react-hook-form"
 import type { LoanType } from "@/types"
+import BigNumber from "bignumber.js"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -39,6 +40,7 @@ interface LoanDetailsStepProps {
   startDate: string
   principalAmount: string
   locationBalances: Record<"cash" | "bank" | "strong_room", string> | null | undefined
+  bankAccountBalances?: Record<string, string>
   userRole: UserRole
   onNext: () => void
 }
@@ -58,6 +60,7 @@ export function LoanDetailsStep({
   startDate,
   principalAmount,
   locationBalances,
+  bankAccountBalances,
   userRole,
   onNext,
 }: LoanDetailsStepProps) {
@@ -100,12 +103,24 @@ export function LoanDetailsStep({
           />
         )}
 
+        <MoneyInput
+          name="principalAmount"
+          control={control}
+          label="Principal Amount (UGX)"
+          required="Principal amount is required"
+          id="principalAmount"
+        />
+        {userRole === "loanOfficer" && parseFloat(principalAmount?.replace(/,/g, "") || "0") > 4_000_000 && (
+          <p className="text-sm text-destructive">Loan officers cannot issue more than 4,000,000 UGX.</p>
+        )}
+
         <LoanTypeSelector
           loanType={loanType}
           setLoanType={setLoanType}
           disabled={!!activeLoanData}
           principalAmount={principalAmount}
           userRole={userRole}
+          activeLoanData={activeLoanData}
         />
 
         {loanType !== "perpetual" && (
@@ -121,17 +136,6 @@ export function LoanDetailsStep({
               placeholder="e.g. 6"
             />
           </div>
-        )}
-
-        <MoneyInput
-          name="principalAmount"
-          control={control}
-          label="Principal Amount (UGX)"
-          required="Principal amount is required"
-          id="principalAmount"
-        />
-        {userRole === "loanOfficer" && parseFloat(principalAmount?.replace(/,/g, "") || "0") > 4_000_000 && (
-          <p className="text-sm text-destructive">Loan officers cannot issue more than 4,000,000 UGX.</p>
         )}
 
         {!activeLoanData && (
@@ -157,6 +161,7 @@ export function LoanDetailsStep({
           name="disbursementSource"
           control={control}
           locationBalances={locationBalances}
+          bankAccountBalances={bankAccountBalances}
           amount={principalAmount}
           userRole={userRole}
           subLocationName="subLocationId"
@@ -178,15 +183,22 @@ function LoanTypeSelector({
   disabled,
   principalAmount,
   userRole,
+  activeLoanData,
 }: {
   loanType: LoanType
   setLoanType: (t: LoanType) => void
   disabled: boolean
   principalAmount: string
   userRole: UserRole
+  activeLoanData: ActiveLoanInfo | null | undefined
 }) {
-  const amount = parseFloat(principalAmount?.replace(/,/g, "") || "0")
-  const perpetualAllowed = amount >= PERPETUAL_LOAN_MIN_AMOUNT
+  const enteredAmount = new BigNumber(principalAmount?.replace(/,/g, "") || "0")
+  const effectiveAmount = activeLoanData
+    ? enteredAmount
+        .plus(new BigNumber(activeLoanData.outstandingPrincipal))
+        .plus(new BigNumber(activeLoanData.accruedInterest))
+    : enteredAmount
+  const perpetualAllowed = effectiveAmount.gte(PERPETUAL_LOAN_MIN_AMOUNT)
   const reducingBalanceAllowed = userRole !== "loanOfficer"
 
   const allOptions: { value: LoanType; label: string }[] = [
@@ -201,12 +213,23 @@ function LoanTypeSelector({
     return true
   })
 
-  // Auto-switch if current selection is no longer available
+  // Track whether the user explicitly picked a loan type — if not, default to
+  // perpetual whenever the amount qualifies.
+  const userPickedRef = useRef(false)
+  const handlePick = (t: LoanType) => {
+    userPickedRef.current = true
+    setLoanType(t)
+  }
+
   useEffect(() => {
     if (disabled) return
     const isCurrentAvailable = availableOptions.some((o) => o.value === loanType)
     if (!isCurrentAvailable) {
       setLoanType(availableOptions[0]?.value ?? "fixed_rate")
+      return
+    }
+    if (!userPickedRef.current && perpetualAllowed && loanType !== "perpetual") {
+      setLoanType("perpetual")
     }
   }, [perpetualAllowed, reducingBalanceAllowed, loanType, disabled]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -241,7 +264,7 @@ function LoanTypeSelector({
               name="loanType"
               value={option.value}
               checked={loanType === option.value}
-              onChange={(e) => setLoanType(e.target.value as LoanType)}
+              onChange={(e) => handlePick(e.target.value as LoanType)}
               className="accent-primary"
               disabled={disabled}
             />
@@ -249,9 +272,11 @@ function LoanTypeSelector({
           </label>
         ))}
       </div>
-      {!perpetualAllowed && amount > 0 && (
+      {!perpetualAllowed && effectiveAmount.gt(0) && (
         <p className="text-xs text-muted-foreground">
-          Perpetual loans require a minimum of 2,000,000 UGX.
+          {activeLoanData
+            ? "Perpetual loans require an effective principal (entered + rollover) of 2,000,000 UGX or more."
+            : "Perpetual loans require a minimum of 2,000,000 UGX."}
         </p>
       )}
       {!reducingBalanceAllowed && (
