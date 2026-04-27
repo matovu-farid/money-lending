@@ -35,26 +35,64 @@ describe("Expense CRUD", () => {
     cy.get("#expense-notes").should("be.visible");
   });
 
-  it("records a new expense successfully", () => {
+  it("records a new expense by typing a new category and submitting", () => {
     cy.visit("/expenses");
     cy.contains("button", "Add Expense", { timeout: 15000 })
       .scrollIntoView()
       .click();
 
-    // Fill in the expense form
     cy.get("#expense-date").type("2026-03-21");
-    // Select or create a category
-    cy.contains("+ Add Category").click();
-    cy.get("#new-category-name").type("Office Supplies");
-    cy.contains("button", "Add").click();
-
+    // Type a brand-new category and submit — it should be auto-created
+    cy.get("#expense-category").type("Office Supplies");
     cy.get("#expense-amount").type("50000");
     cy.get("#expense-notes").type("Printer paper and ink");
     cy.contains("button", "Record Expense").click();
 
-    // Should see the expense in the table
+    cy.contains('Created category "Office Supplies"', { timeout: 10000 }).should("be.visible");
     cy.contains("50,000", { timeout: 10000 }).should("be.visible");
     cy.contains("Office Supplies").should("be.visible");
+  });
+
+  it("creates and selects a category when pressing Enter on the input", () => {
+    cy.visit("/expenses");
+    cy.contains("button", "Add Expense", { timeout: 15000 })
+      .scrollIntoView()
+      .click();
+
+    cy.get("#expense-date").type("2026-03-21");
+    cy.get("#expense-category").type("Transport{enter}");
+    cy.contains('Created category "Transport"', { timeout: 10000 }).should("be.visible");
+    // After Enter, the input shows the new selection (no spinner stuck)
+    cy.get("#expense-category").should("have.value", "Transport");
+
+    cy.get("#expense-amount").type("15000");
+    cy.contains("button", "Record Expense").click();
+    cy.contains("15,000", { timeout: 10000 }).should("be.visible");
+    cy.contains("Transport").should("be.visible");
+  });
+
+  it("reuses an existing category when retyping the same name", () => {
+    cy.visit("/expenses");
+    // Create the category once
+    cy.contains("button", "Add Expense", { timeout: 15000 })
+      .scrollIntoView()
+      .click();
+    cy.get("#expense-date").type("2026-03-21");
+    cy.get("#expense-category").type("Utilities{enter}");
+    cy.get("#expense-amount").type("10000");
+    cy.contains("button", "Record Expense").click();
+    cy.contains("Utilities", { timeout: 10000 }).should("be.visible");
+
+    // Open again and pick the existing one via dropdown — no second create
+    cy.contains("button", "Add Expense").click();
+    cy.get("#expense-date").type("2026-03-21");
+    cy.get("#expense-category").type("Util");
+    cy.contains("button", "Utilities").click();
+    cy.get("#expense-amount").type("20000");
+    cy.contains("button", "Record Expense").click();
+    cy.contains("20,000", { timeout: 10000 }).should("be.visible");
+    // Only one "Created category" toast should ever have appeared
+    cy.contains('Created category "Utilities"').should("not.exist");
   });
 
   it("disables add button while mutation is pending", () => {
@@ -70,9 +108,7 @@ describe("Expense CRUD", () => {
       .scrollIntoView()
       .click()
     cy.get("#expense-date").type("2026-03-21")
-    cy.contains("+ Add Category").click()
-    cy.get("#new-category-name").type("Test Category")
-    cy.contains("button", "Add").click()
+    cy.get("#expense-category").type("Test Category{enter}")
     cy.get("#expense-amount").type("10000")
 
     // Click submit
@@ -92,9 +128,7 @@ describe("Expense CRUD", () => {
       .scrollIntoView()
       .click();
     cy.get("#expense-date").type("2026-03-21");
-    cy.contains("+ Add Category").click();
-    cy.get("#new-category-name").type("Transport");
-    cy.contains("button", "Add").click();
+    cy.get("#expense-category").type("Transport{enter}");
     cy.get("#expense-amount").type("30000");
     cy.get("#expense-notes").type("Fuel for site visits");
     cy.contains("button", "Record Expense").click();

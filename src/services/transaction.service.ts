@@ -173,11 +173,12 @@ export const recordExpense = (
     try: async () => {
       return await db.transaction(async (tx) => {
         const groupId = randomUUID()
+        const expenseCategoryId = await getOrCreateCategory(tx, input.categoryName, "expense")
         const [debitTx] = await tx
           .insert(transactions)
           .values({
             ...(input.id ? { id: input.id } : {}),
-            type: "debit", amount: input.amount, categoryId: input.categoryId,
+            type: "debit", amount: input.amount, categoryId: expenseCategoryId,
             description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
             recordedBy: actorId, journalGroupId: groupId,
           })
@@ -218,11 +219,12 @@ export const recordIncome = (
           recordedBy: actorId, depositLocation: input.location, subLocationId: input.subLocationId ?? null, journalGroupId: groupId,
         })
 
+        const revenueCategoryId = await getOrCreateCategory(tx, input.categoryName, "revenue")
         const [creditTx] = await tx
           .insert(transactions)
           .values({
             ...(input.id ? { id: input.id } : {}),
-            type: "credit", amount: input.amount, categoryId: input.categoryId,
+            type: "credit", amount: input.amount, categoryId: revenueCategoryId,
             description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
             recordedBy: actorId, journalGroupId: groupId,
           })

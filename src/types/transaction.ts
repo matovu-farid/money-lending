@@ -10,7 +10,7 @@ export type FinancialSnapshot = InferSelectModel<typeof financialSnapshots>
 
 export interface CreateTransactionInput {
   id?: string
-  categoryId: string
+  categoryName: string
   amount: string
   transactionDate: string
   notes?: string
@@ -56,6 +56,13 @@ export type TransactionShapeRow = {
   subLocationId: string | null
   journalGroupId: string | null
   createdAt: string
+  /**
+   * Client-only field stamped onto optimistic rows so the table can display
+   * the user-typed category name immediately, before the category collection
+   * syncs the newly-created category row back.
+   * Synced rows from Electric do not carry this field.
+   */
+  categoryName?: string
 }
 
 /** UI-facing category shape */

@@ -18,13 +18,16 @@ export const listIncomeCategoriesAction = withAction({
   effect: () => listCategories("revenue"),
 })
 
-export const recordIncomeAction = withAction<CreateTransactionInput, { success: true } | { error: string }>({
+export const recordIncomeAction = withAction<
+  CreateTransactionInput,
+  { success: true; resolvedCategory: { id: string; name: string } } | { error: string }
+>({
   permission: "income:create",
   action: async (session, input) => {
     if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
       return { error: "A valid positive amount is required" }
     }
-    if (!input.categoryId?.trim()) return { error: "Category is required" }
+    if (!input.categoryName?.trim()) return { error: "Category is required" }
     if (!input.transactionDate?.trim() || isNaN(Date.parse(input.transactionDate))) {
       return { error: "A valid date is required" }
     }
@@ -52,11 +55,15 @@ export const recordIncomeAction = withAction<CreateTransactionInput, { success: 
     }
 
     try {
-      await Effect.runPromise(recordIncome(input, session.user.id))
+      const creditTx = await Effect.runPromise(recordIncome(input, session.user.id))
       revalidatePath("/income")
       revalidatePath("/transactions")
-      return { success: true as const }
-    } catch {
+      return {
+        success: true as const,
+        resolvedCategory: { id: creditTx.categoryId, name: input.categoryName.trim() },
+      }
+    } catch (err) {
+      console.error("[recordIncomeAction]", err)
       return { error: "Internal server error" }
     }
   },

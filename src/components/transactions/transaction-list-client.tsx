@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useRef, useState, useTransition } from "react"
+import { useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useLiveQuery } from "@tanstack/react-db"
 import BigNumber from "bignumber.js"
@@ -27,11 +27,11 @@ import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PageHeader } from "@/components/ui/page-header"
-import type { CreateCategoryInput, CreateTransactionInput, TransactionRow, TransactionShapeRow, CategoryRow, DepositLocation } from "@/types"
+import type { CreateTransactionInput, TransactionRow, TransactionShapeRow, CategoryRow, DepositLocation } from "@/types"
 
 interface TransactionFormValues {
   date: string
-  categoryId: string
+  categoryName: string
   amount: string
   notes: string
   backdateNote: string
@@ -44,10 +44,6 @@ interface TransactionListClientProps {
   categories: CategoryRow[]
   /** "income" or "expense" — drives labels and optimistic transaction type */
   variant: "income" | "expense"
-  /** Server action to create a category */
-  createCategoryAction: (input: CreateCategoryInput) => Promise<
-    { error: string } | { data: { id: string; name: string; type: string; isDefault: boolean; [key: string]: unknown } }
-  >
 }
 
 const LABELS = {
@@ -95,7 +91,6 @@ export function TransactionListClient({
   transactions: initialTransactions,
   categories: initialCategories,
   variant,
-  createCategoryAction,
 }: TransactionListClientProps) {
   const labels = LABELS[variant]
   const idPrefix = variant === "income" ? "income" : "expense"
@@ -108,13 +103,9 @@ export function TransactionListClient({
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [isAddPending, setIsAddPending] = useState(false)
   const [isDeletePending, setIsDeletePending] = useState(false)
-  const [optimisticCategories, setOptimisticCategories] = useState<CategoryRow[]>([])
-  const [_isCategoryPending, startCategoryTransition] = useTransition()
 
   // Category combobox state
-  const [categoryQuery, setCategoryQuery] = useState("")
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
-  const categoryInputRef = useRef<HTMLInputElement>(null)
 
   const {
     register,
@@ -125,10 +116,10 @@ export function TransactionListClient({
     control,
     formState: { errors },
   } = useForm<TransactionFormValues>({
-    defaultValues: { date: todayDateString(), categoryId: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation, subLocationId: "" },
+    defaultValues: { date: todayDateString(), categoryName: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation, subLocationId: "" },
   })
 
-  const watchedCategoryId = watch("categoryId")
+  const watchedCategoryName = watch("categoryName")
   const watchedDate = watch("date")
   const watchedAmount = watch("amount")
   const watchedLocation = watch("location")
@@ -155,11 +146,6 @@ export function TransactionListClient({
 
   const displayedTransactions = initialTransactions
 
-  const displayedCategories = useMemo(
-    () => [...initialCategories, ...optimisticCategories],
-    [initialCategories, optimisticCategories],
-  )
-
   // Compute backdating info
   const backdateDays = useMemo(() => {
     if (!watchedDate) return 0
@@ -171,33 +157,36 @@ export function TransactionListClient({
   }, [watchedDate])
   const isBackdated = backdateDays > 0
 
-  // Filtered categories for combobox
+  // Filtered category suggestions for the combobox dropdown.
+  // Categories are reference data; the typed name is what gets persisted.
   const filteredCategories = useMemo(() => {
-    if (!categoryQuery.trim()) return displayedCategories
-    const q = categoryQuery.toLowerCase()
-    return displayedCategories.filter((c) => c.name.toLowerCase().includes(q))
-  }, [displayedCategories, categoryQuery])
-
-  const exactMatchExists = useMemo(() => {
-    const q = categoryQuery.trim().toLowerCase()
-    return q !== "" && displayedCategories.some((c) => c.name.toLowerCase() === q)
-  }, [displayedCategories, categoryQuery])
-
-  // The name shown in the category input
-  const selectedCategoryName = useMemo(() => {
-    if (!watchedCategoryId) return ""
-    return displayedCategories.find((c) => c.id === watchedCategoryId)?.name ?? ""
-  }, [watchedCategoryId, displayedCategories])
-
-  // Collection-based add and delete — no manual optimistic updates or invalidation needed
+    const q = watchedCategoryName.trim().toLowerCase()
+    if (!q) return initialCategories
+    return initialCategories.filter((c) => c.name.toLowerCase().includes(q))
+  }, [initialCategories, watchedCategoryName])
 
   function onFormSubmit(data: TransactionFormValues) {
     try {
       setIsAddPending(true)
+
+      const categoryName = data.categoryName.trim()
+      if (!categoryName) {
+        toast.error("Category is required")
+        return
+      }
+
+      // Best-effort: if the typed name matches an existing category, reuse its
+      // id for the optimistic row so the table shows the right name immediately.
+      // Otherwise the row briefly shows the typed name from the form input
+      // until the synced row arrives with the server-resolved categoryId.
+      const matched = initialCategories.find(
+        (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
+      )
+
       const id = generateClientId()
       const input: CreateTransactionInput = {
         id,
-        categoryId: data.categoryId,
+        categoryName,
         amount: data.amount,
         transactionDate: data.date,
         notes: data.notes || undefined,
@@ -209,7 +198,8 @@ export function TransactionListClient({
         id,
         type: labels.txType,
         amount: data.amount,
-        categoryId: data.categoryId,
+        categoryId: matched?.id ?? "",
+        categoryName,
         description: data.notes || null,
         transactionDate: data.date,
         recordedBy: "",
@@ -225,7 +215,6 @@ export function TransactionListClient({
       toast.success(labels.successRecord)
       setIsSheetOpen(false)
       reset()
-      setCategoryQuery("")
     } catch {
       toast.error(labels.failRecord)
     } finally {
@@ -248,33 +237,8 @@ export function TransactionListClient({
   }
 
   function handleSelectCategory(cat: CategoryRow) {
-    setValue("categoryId", cat.id, { shouldValidate: true })
-    setCategoryQuery("")
+    setValue("categoryName", cat.name, { shouldValidate: true })
     setCategoryDropdownOpen(false)
-  }
-
-  function handleCreateAndSelectCategory(name: string) {
-    startCategoryTransition(async () => {
-      try {
-        const created = await createCategoryAction({ name: name.trim(), type: labels.categoryType as CreateCategoryInput["type"] })
-        if ("error" in created) {
-          toast.error(created.error)
-          return
-        }
-        const newCat: CategoryRow = {
-          id: created.data.id,
-          name: created.data.name,
-          type: created.data.type,
-          isDefault: created.data.isDefault,
-        }
-        setOptimisticCategories((prev) => [...prev, newCat])
-        setValue("categoryId", newCat.id, { shouldValidate: true })
-        setCategoryQuery("")
-        setCategoryDropdownOpen(false)
-      } catch {
-        toast.error("Failed to add category.")
-      }
-    })
   }
 
   return (
@@ -282,7 +246,7 @@ export function TransactionListClient({
       <div className="space-y-4">
         <PageHeader title={labels.title} subtitle={labels.subtitle}>
           <Button
-            onClick={() => { reset({ date: todayDateString(), categoryId: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation, subLocationId: "" }); setCategoryQuery(""); setIsSheetOpen(true) }}
+            onClick={() => { reset({ date: todayDateString(), categoryName: "", amount: "", notes: "", backdateNote: "", location: "cash" as DepositLocation, subLocationId: "" }); setIsSheetOpen(true) }}
             disabled={isAddPending}
           >
             {labels.addButton}
@@ -352,7 +316,7 @@ export function TransactionListClient({
         />
 
         {/* Add Form Dialog */}
-        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) { reset(); setCategoryQuery("") } }}>
+        <DrawerDialog open={isSheetOpen} onOpenChange={(open) => { setIsSheetOpen(open); if (!open) reset() }}>
           <DrawerDialogContent className="sm:max-w-sm">
             <DialogHeader>
               <DialogTitle>{labels.addButton}</DialogTitle>
@@ -405,81 +369,49 @@ export function TransactionListClient({
                 <Label htmlFor={`${idPrefix}-category`}>Category</Label>
                 <div className="relative">
                   <Input
-                    ref={categoryInputRef}
                     id={`${idPrefix}-category`}
                     autoComplete="off"
-                    placeholder={watchedCategoryId ? selectedCategoryName : labels.categoryPlaceholder}
-                    value={categoryDropdownOpen ? categoryQuery : selectedCategoryName}
-                    onChange={(e) => {
-                      setCategoryQuery(e.target.value)
-                      setCategoryDropdownOpen(true)
-                      // Clear selection when user starts typing something new
-                      if (watchedCategoryId && e.target.value !== selectedCategoryName) {
-                        setValue("categoryId", "", { shouldValidate: false })
+                    placeholder={labels.categoryPlaceholder}
+                    {...register("categoryName", {
+                      required: "Category is required",
+                      validate: (v) => v.trim().length > 0 || "Category is required",
+                    })}
+                    onFocus={() => setCategoryDropdownOpen(true)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && filteredCategories.length === 1) {
+                        e.preventDefault()
+                        handleSelectCategory(filteredCategories[0])
+                      } else if (e.key === "Escape") {
+                        setCategoryDropdownOpen(false)
                       }
                     }}
-                    onFocus={() => setCategoryDropdownOpen(true)}
                     onBlur={() => {
                       // Delay so click on dropdown item registers first
-                      setTimeout(() => {
-                        setCategoryDropdownOpen(false)
-                        // If nothing selected, revert query
-                        if (!watchedCategoryId) setCategoryQuery("")
-                      }, 150)
+                      setTimeout(() => setCategoryDropdownOpen(false), 150)
                     }}
                   />
-                  {watchedCategoryId && !categoryDropdownOpen && (
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground text-xs"
-                      onClick={() => {
-                        setValue("categoryId", "", { shouldValidate: false })
-                        setCategoryQuery("")
-                        categoryInputRef.current?.focus()
-                      }}
-                    >
-                      &times;
-                    </button>
-                  )}
-                  {categoryDropdownOpen && (
+                  {categoryDropdownOpen && filteredCategories.length > 0 && (
                     <div
                       className="absolute left-0 right-0 z-[9999] mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover text-popover-foreground shadow-md"
                       onMouseDown={(e) => e.preventDefault()}
                     >
-                      {filteredCategories.length > 0 ? (
-                        <ul className="py-1">
-                          {filteredCategories.map((cat) => (
-                            <li key={cat.id}>
-                              <button
-                                type="button"
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
-                                onClick={() => handleSelectCategory(cat)}
-                              >
-                                {cat.name}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : categoryQuery.trim() && !exactMatchExists ? (
-                        <button
-                          type="button"
-                          className="w-full text-left px-3 py-2 text-sm text-primary hover:bg-muted transition-colors"
-                          onClick={() => handleCreateAndSelectCategory(categoryQuery)}
-                          disabled={_isCategoryPending}
-                        >
-                          {_isCategoryPending ? "Creating..." : `+ Create "${categoryQuery.trim()}"`}
-                        </button>
-                      ) : (
-                        <p className="px-3 py-2 text-sm text-muted-foreground">No categories found</p>
-                      )}
+                      <ul className="py-1">
+                        {filteredCategories.map((cat) => (
+                          <li key={cat.id}>
+                            <button
+                              type="button"
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
+                              onClick={() => handleSelectCategory(cat)}
+                            >
+                              {cat.name}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
                     </div>
                   )}
                 </div>
-                <input
-                  type="hidden"
-                  {...register("categoryId", { required: "Category is required" })}
-                />
-                {errors.categoryId && <p className="text-sm text-destructive">{errors.categoryId.message}</p>}
+                {errors.categoryName && <p className="text-sm text-destructive">{errors.categoryName.message}</p>}
               </div>
 
               <MoneyInput

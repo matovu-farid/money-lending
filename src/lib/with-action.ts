@@ -103,6 +103,7 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
         if (tag && opts.errors && tag in opts.errors) {
           return { error: opts.errors[tag] }
         }
+        console.error("[withAction]", error)
         return { error: "Internal server error" }
       }
     }

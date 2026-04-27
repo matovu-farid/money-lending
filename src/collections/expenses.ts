@@ -19,15 +19,26 @@ import { queryKeys } from "@/lib/query-keys"
  */
 const pendingInsertInputs = new Map<string, CreateTransactionInput>()
 
+/**
+ * Side-channel cache: categoryId → categoryName for categories the server just
+ * resolved/created. Populated from `recordExpenseAction`'s response so the
+ * expenses page can render the right category name on the synced row even
+ * before the `transaction_categories` shape pushes the new row.
+ */
+const recentCategoryNames = new Map<string, string>()
+export function getRecentExpenseCategoryName(id: string): string | undefined {
+  return recentCategoryNames.get(id)
+}
+
 export const expenseCollection = createCollection(
   electricCollectionOptions<TransactionShapeRow>({
     id: "expenses",
     getKey: (expense) => expense.id,
     shapeOptions: {
       url: shapeUrl("transactions"),
-      params: {
-        where: '"type" = \'debit\' AND "reference_type" IS NULL',
-      },
+      // Electric 1.5.x rejects WHERE clauses on user-defined enum columns
+      // (`transaction_type`). Sync the full table here and filter by
+      // `type === "debit" && referenceType == null` in the live-query consumer.
       columnMapper: snakeCamelMapper(),
       onError: shapeOnError("transactions[expenses]"),
     },
@@ -42,6 +53,7 @@ export const expenseCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      recentCategoryNames.set(result.resolvedCategory.id, result.resolvedCategory.name)
       // Invalidate query-based collections
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })

@@ -1,8 +1,8 @@
 "use client"
 
 import { Suspense, useMemo } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { expenseCollection } from "@/collections/expenses"
+import { useLiveSuspenseQuery, eq, and, isNull } from "@tanstack/react-db"
+import { expenseCollection, getRecentExpenseCategoryName } from "@/collections/expenses"
 import { expenseCategoryCollection } from "@/collections/expense-categories"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -41,11 +41,17 @@ export default function ExpensesPage() {
 
 function ExpensesContent() {
   const { data: allExpenses } = useLiveSuspenseQuery((q) =>
-    q.from({ e: expenseCollection }).select(({ e }) => e)
+    q
+      .from({ e: expenseCollection })
+      .where(({ e }) => and(eq(e.type, "debit"), isNull(e.referenceType)))
+      .select(({ e }) => e)
   )
 
   const { data: rawCategories } = useLiveSuspenseQuery((q) =>
-    q.from({ c: expenseCategoryCollection }).select(({ c }) => c)
+    q
+      .from({ c: expenseCategoryCollection })
+      .where(({ c }) => eq(c.type, "expense"))
+      .select(({ c }) => c)
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const categories = (rawCategories ?? []) as any[]
@@ -61,7 +67,11 @@ function ExpensesContent() {
       type: e.type,
       amount: e.amount,
       categoryId: e.categoryId,
-      categoryName: catMap.get(e.categoryId) ?? "Unknown",
+      categoryName:
+        catMap.get(e.categoryId)
+        ?? getRecentExpenseCategoryName(e.categoryId)
+        ?? e.categoryName
+        ?? "Unknown",
       description: e.description,
       transactionDate: new Date(e.transactionDate),
       recordedBy: e.recordedBy,

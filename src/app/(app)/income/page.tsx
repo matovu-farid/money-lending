@@ -1,8 +1,8 @@
 "use client"
 
 import { Suspense, useMemo } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
-import { incomeCollection } from "@/collections/income"
+import { useLiveSuspenseQuery, eq, and, isNull } from "@tanstack/react-db"
+import { incomeCollection, getRecentIncomeCategoryName } from "@/collections/income"
 import { incomeCategoryCollection } from "@/collections/income-categories"
 import { IncomeListClient } from "./IncomeListClient"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -41,11 +41,17 @@ export default function IncomePage() {
 
 function IncomeContent() {
   const { data: allIncome } = useLiveSuspenseQuery((q) =>
-    q.from({ i: incomeCollection }).select(({ i }) => i)
+    q
+      .from({ i: incomeCollection })
+      .where(({ i }) => and(eq(i.type, "credit"), isNull(i.referenceType)))
+      .select(({ i }) => i)
   )
 
   const { data: rawCategories } = useLiveSuspenseQuery((q) =>
-    q.from({ c: incomeCategoryCollection }).select(({ c }) => c)
+    q
+      .from({ c: incomeCategoryCollection })
+      .where(({ c }) => eq(c.type, "revenue"))
+      .select(({ c }) => c)
   )
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const categories = (rawCategories ?? []) as any[]
@@ -61,7 +67,11 @@ function IncomeContent() {
       type: i.type,
       amount: i.amount,
       categoryId: i.categoryId,
-      categoryName: catMap.get(i.categoryId) ?? "Unknown",
+      categoryName:
+        catMap.get(i.categoryId)
+        ?? getRecentIncomeCategoryName(i.categoryId)
+        ?? i.categoryName
+        ?? "Unknown",
       description: i.description,
       transactionDate: new Date(i.transactionDate),
       recordedBy: i.recordedBy,

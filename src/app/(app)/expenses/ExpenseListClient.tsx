@@ -1,7 +1,6 @@
 "use client"
 
 import { TransactionListClient } from "@/components/transactions/transaction-list-client"
-import { createExpenseCategoryAction } from "@/actions/expense.actions"
 import type { TransactionRow, CategoryRow } from "@/types"
 
 interface ExpenseListClientProps {
@@ -15,7 +14,6 @@ export function ExpenseListClient({ transactions, categories }: ExpenseListClien
       transactions={transactions}
       categories={categories}
       variant="expense"
-      createCategoryAction={createExpenseCategoryAction}
     />
   )
 }

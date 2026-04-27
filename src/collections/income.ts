@@ -19,15 +19,20 @@ import { queryKeys } from "@/lib/query-keys"
  */
 const pendingInsertInputs = new Map<string, CreateTransactionInput>()
 
+const recentCategoryNames = new Map<string, string>()
+export function getRecentIncomeCategoryName(id: string): string | undefined {
+  return recentCategoryNames.get(id)
+}
+
 export const incomeCollection = createCollection(
   electricCollectionOptions<TransactionShapeRow>({
     id: "income",
     getKey: (income) => income.id,
     shapeOptions: {
       url: shapeUrl("transactions"),
-      params: {
-        where: '"type" = \'credit\' AND "reference_type" IS NULL',
-      },
+      // Electric 1.5.x rejects WHERE clauses on user-defined enum columns
+      // (`transaction_type`). Sync the full table here and filter by
+      // `type === "credit" && referenceType == null` in the live-query consumer.
       columnMapper: snakeCamelMapper(),
       onError: shapeOnError("transactions[income]"),
     },
@@ -42,6 +47,7 @@ export const incomeCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      recentCategoryNames.set(result.resolvedCategory.id, result.resolvedCategory.name)
       // Invalidate query-based collections
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
