@@ -50,6 +50,31 @@ export function shapeUrl(table: string): string {
  */
 const activeSubscriptions = new Map<string, { keys: (readonly string[])[] }>()
 
+// Coalesces invalidations across all subscribers within a microtask window so
+// that when multiple Electric shape streams tick in the same JS turn, each
+// unique query key is only invalidated once.
+const pendingInvalidations = new Map<QueryClient, Set<string>>()
+
+function scheduleInvalidation(queryClient: QueryClient, key: readonly string[]) {
+  let pending = pendingInvalidations.get(queryClient)
+  const wasEmpty = !pending || pending.size === 0
+  if (!pending) {
+    pending = new Set<string>()
+    pendingInvalidations.set(queryClient, pending)
+  }
+  pending.add(JSON.stringify(key))
+  if (wasEmpty) {
+    queueMicrotask(() => {
+      const set = pendingInvalidations.get(queryClient)
+      if (!set) return
+      for (const serialized of set) {
+        queryClient.invalidateQueries({ queryKey: JSON.parse(serialized) as unknown[] })
+      }
+      set.clear()
+    })
+  }
+}
+
 export function subscribeToTableChanges(
   table: string,
   queryClient: QueryClient,
@@ -87,9 +112,9 @@ export function subscribeToTableChanges(
         return
       }
 
-      // Live change detected — invalidate ALL registered query keys for this table
+      // Live change detected — schedule coalesced invalidation for each key
       for (const key of state.keys) {
-        queryClient.invalidateQueries({ queryKey: [...key] })
+        scheduleInvalidation(queryClient, key)
       }
     },
     (err) => {
