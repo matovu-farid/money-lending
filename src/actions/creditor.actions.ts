@@ -5,7 +5,8 @@ import { withAction } from "@/lib/with-action"
 import { revalidatePath } from "next/cache"
 import {
   createCreditor,
-  updateCreditor,
+  createCreditorWithTxid,
+  updateCreditorWithTxid,
   addInvestment,
   recordCreditorRepayment,
   listCreditors,
@@ -14,6 +15,7 @@ import {
   getCreditorMonthlySummary,
   getCreditorsPageData,
 } from "@/services/creditor.service"
+import { getErrorTag } from "@/lib/action-utils"
 import type {
   CreateCreditorInput,
   CreateCreditorWithInvestmentInput,
@@ -58,8 +60,22 @@ export async function updateCreditorAction(
 
 const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInput }, any>({
   permission: "creditor:update",
-  effect: (session, { id, input }) => updateCreditor(id, input, session.user.id),
-  revalidate: (input) => ["/creditors", `/creditors/${input.id}`],
+  action: async (session, { id, input }) => {
+    try {
+      const { creditor, txid } = await Effect.runPromise(
+        updateCreditorWithTxid(id, input, session.user.id)
+      )
+      revalidatePath("/creditors")
+      revalidatePath(`/creditors/${id}`)
+      return { data: creditor, txid }
+    } catch (error) {
+      if (getErrorTag(error) === "CreditorNotFound") {
+        return { error: "Creditor not found" }
+      }
+      console.error("[updateCreditorAction]", error)
+      return { error: "Internal server error" }
+    }
+  },
 })
 
 export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithInvestmentInput, any>({
@@ -76,7 +92,7 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
     }
 
     try {
-      const creditor = await Effect.runPromise(createCreditor({
+      const { creditor, txid } = await Effect.runPromise(createCreditorWithTxid({
         id: input.id,
         name: input.name.trim(),
         contact: input.contact.trim(),
@@ -92,7 +108,7 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
       }, session.user.id))
 
       revalidatePath("/creditors")
-      return { data: creditor }
+      return { data: creditor, txid }
     } catch {
       return { error: "Internal server error" }
     }

@@ -43,6 +43,7 @@ export const creditorCollection = createCollection(
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
       const { original, changes } = transaction.mutations[0]
@@ -54,6 +55,7 @@ export const creditorCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      return { txid: result.txid }
     },
   })
 )

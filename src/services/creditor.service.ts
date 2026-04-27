@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { creditors } from "@/lib/db/schema/creditors";
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
-import { eq, asc, inArray } from "drizzle-orm";
+import { eq, asc, inArray, sql } from "drizzle-orm";
 import {
   DatabaseError,
   CreditorNotFound,
@@ -73,6 +73,53 @@ export const createCreditor = (
     )
   );
 
+/**
+ * Like createCreditor but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const createCreditorWithTxid = (
+  input: CreateCreditorInput,
+  actorId: string,
+): Effect.Effect<{ creditor: Creditor; txid: number }, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      return await db.transaction(async (tx) => {
+        const [creditor] = await tx
+          .insert(creditors)
+          .values({
+            ...(input.id ? { id: input.id } : {}),
+            name: input.name,
+            contact: input.contact,
+            address: input.address,
+          })
+          .returning();
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "creditor.create",
+          entityType: "creditor",
+          entityId: creditor.id,
+          beforeValue: null,
+          afterValue: creditor,
+        });
+
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        );
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid);
+        return { creditor, txid };
+      });
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  }).pipe(
+    Effect.catchIf(
+      (e) => !!input.id && isUniqueConstraintError(e.cause),
+      () => createCreditorWithTxid({ ...input, id: undefined }, actorId)
+    )
+  );
+
 export const updateCreditor = (
   id: string,
   input: UpdateCreditorInput,
@@ -112,6 +159,58 @@ export const updateCreditor = (
         });
 
         return updated;
+      });
+    },
+    catch: (e: any) => {
+      if (e?._tag === "CreditorNotFound")
+        return new CreditorNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
+    },
+  });
+
+export const updateCreditorWithTxid = (
+  id: string,
+  input: UpdateCreditorInput,
+  actorId: string,
+): Effect.Effect<{ creditor: Creditor; txid: number }, CreditorNotFound | DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const [existing] = await db
+        .select()
+        .from(creditors)
+        .where(eq(creditors.id, id));
+      if (!existing) throw { _tag: "CreditorNotFound", id };
+
+      const beforeValue = { ...existing };
+
+      return await db.transaction(async (tx) => {
+        const updates: Partial<typeof existing> & { updatedAt: Date } = {
+          updatedAt: new Date(),
+        };
+        if (input.name !== undefined) updates.name = input.name;
+        if (input.contact !== undefined) updates.contact = input.contact;
+        if (input.address !== undefined) updates.address = input.address;
+
+        const [updated] = await tx
+          .update(creditors)
+          .set(updates)
+          .where(eq(creditors.id, id))
+          .returning();
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "creditor.update",
+          entityType: "creditor",
+          entityId: id,
+          beforeValue,
+          afterValue: updated,
+        });
+
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        );
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid);
+        return { creditor: updated, txid };
       });
     },
     catch: (e: any) => {

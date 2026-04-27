@@ -5,7 +5,7 @@ import { withAction } from "@/lib/with-action"
 import { getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
-import { recordPayment, editPayment, deletePayment, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
+import { recordPaymentWithTxid, editPaymentWithTxid, deletePaymentWithTxid, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
@@ -43,7 +43,7 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
     }
 
     try {
-      const data = await Effect.runPromise(recordPayment(input, session.user.id))
+      const { payment, txid } = await Effect.runPromise(recordPaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${input.loanId}`)
       revalidatePath("/payments")
       void sendAdminNotification("payment.created", {
@@ -53,7 +53,7 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
         amount: input.amount,
         timestamp: new Date(),
       })
-      return { data }
+      return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
@@ -90,17 +90,17 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
     }
 
     try {
-      const data = await Effect.runPromise(editPayment(input, session.user.id))
-      revalidatePath(`/loans/${data.loanId}`)
+      const { payment, txid } = await Effect.runPromise(editPaymentWithTxid(input, session.user.id))
+      revalidatePath(`/loans/${payment.loanId}`)
       revalidatePath("/payments")
       void sendAdminNotification("payment.updated", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,
-        loanRef: `LOAN-${shortId(data.loanId).toUpperCase()}`,
-        amount: data.amount,
+        loanRef: `LOAN-${shortId(payment.loanId).toUpperCase()}`,
+        amount: payment.amount,
         timestamp: new Date(),
       })
-      return { data }
+      return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "PaymentNotFound") {
         return { error: "Payment not found" }
@@ -140,17 +140,17 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
     }
 
     try {
-      const data = await Effect.runPromise(deletePayment(input, session.user.id))
-      revalidatePath(`/loans/${data.loanId}`)
+      const { payment, txid } = await Effect.runPromise(deletePaymentWithTxid(input, session.user.id))
+      revalidatePath(`/loans/${payment.loanId}`)
       revalidatePath("/payments")
       void sendAdminNotification("payment.deleted", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,
-        loanRef: `LOAN-${shortId(data.loanId).toUpperCase()}`,
-        amount: data.amount,
+        loanRef: `LOAN-${shortId(payment.loanId).toUpperCase()}`,
+        amount: payment.amount,
         timestamp: new Date(),
       })
-      return { data }
+      return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "PaymentNotFound") {
         return { error: "Payment not found" }

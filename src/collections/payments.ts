@@ -78,6 +78,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
       qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -101,6 +102,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
       qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      return { txid: result.txid }
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -127,6 +129,7 @@ export const paymentCollection = createCollection(
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
       qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      return { txid: result.txid }
     },
   })
 )

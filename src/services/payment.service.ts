@@ -90,6 +90,18 @@ export const recordPayment = (
   input: RecordPaymentInput,
   actorId: string
 ): Effect.Effect<Payment & { allocation: ReturnType<typeof allocatePayment> }, LoanNotFound | ValidationError | DatabaseError> =>
+  Effect.map(recordPaymentWithTxid(input, actorId), ({ payment }) => payment)
+
+/**
+ * Like recordPayment but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const recordPaymentWithTxid = (
+  input: RecordPaymentInput,
+  actorId: string
+): Effect.Effect<{ payment: Payment & { allocation: ReturnType<typeof allocatePayment> }; txid: number }, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
@@ -288,7 +300,11 @@ export const recordPayment = (
             .where(eq(loans.id, input.loanId))
         }
 
-        return { ...newPayment, allocation }
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { payment: { ...newPayment, allocation }, txid }
       })
     },
     catch: (e: any) => {
@@ -299,7 +315,7 @@ export const recordPayment = (
   }).pipe(
     Effect.catchIf(
       (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
-      () => recordPayment({ ...input, id: undefined }, actorId)
+      () => recordPaymentWithTxid({ ...input, id: undefined }, actorId)
     )
   )
 
@@ -307,6 +323,18 @@ export const editPayment = (
   input: EditPaymentInput,
   actorId: string
 ): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | ValidationError | DatabaseError> =>
+  Effect.map(editPaymentWithTxid(input, actorId), ({ payment }) => payment)
+
+/**
+ * Like editPayment but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const editPaymentWithTxid = (
+  input: EditPaymentInput,
+  actorId: string
+): Effect.Effect<{ payment: Payment; txid: number }, PaymentNotFound | LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
@@ -560,7 +588,11 @@ export const editPayment = (
           afterValue: { ...updatedPayment, reason: input.reason },
         })
 
-        return updatedPayment
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { payment: updatedPayment, txid }
       })
     },
     catch: (e: any) => {
@@ -575,6 +607,18 @@ export const deletePayment = (
   input: DeletePaymentInput,
   actorId: string
 ): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | DatabaseError> =>
+  Effect.map(deletePaymentWithTxid(input, actorId), ({ payment }) => payment)
+
+/**
+ * Like deletePayment but also returns the Postgres transaction ID.
+ * Required for Electric collections so the client can wait for the
+ * specific transaction to appear in the shape stream before clearing
+ * optimistic state.
+ */
+export const deletePaymentWithTxid = (
+  input: DeletePaymentInput,
+  actorId: string
+): Effect.Effect<{ payment: Payment; txid: number }, PaymentNotFound | LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
@@ -669,7 +713,12 @@ export const deletePayment = (
           .select()
           .from(payments)
           .where(eq(payments.id, input.paymentId))
-        return deletedRow
+
+        const txidRows = await tx.execute<{ txid: string }>(
+          sql`SELECT pg_current_xact_id()::text as txid`
+        )
+        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        return { payment: deletedRow, txid }
       })
     },
     catch: (e: any) => {

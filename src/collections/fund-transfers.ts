@@ -39,12 +39,14 @@ export const fundTransferCollection = createCollection(
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const injectionInput = pendingInjectionInputs.get(modified.id)
+      let txid: number
       if (injectionInput) {
         const result = await createCapitalInjectionAction(injectionInput)
         pendingInjectionInputs.delete(modified.id)
         if ("error" in result) {
           throw new Error(result.error)
         }
+        txid = result.txid
       } else {
         const input = pendingInsertInputs.get(modified.id)
         if (!input) {
@@ -55,8 +57,10 @@ export const fundTransferCollection = createCollection(
         if ("error" in result) {
           throw new Error(result.error)
         }
+        txid = result.txid
       }
       getQueryClient().invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      return { txid }
     },
   })
 )

@@ -3,7 +3,7 @@
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
 import { validatePositiveDecimal } from "@/lib/validators"
-import { createFundTransfer, createCapitalInjection, listFundTransfers } from "@/services/fund-transfer.service"
+import { createFundTransferWithTxid, createCapitalInjectionWithTxid, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 
@@ -36,8 +36,8 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
     if (amountErr) return { error: amountErr }
 
     try {
-      const data = await Effect.runPromise(createFundTransfer(input, session.user.id))
-      return { data }
+      const { transfer, txid } = await Effect.runPromise(createFundTransferWithTxid(input, session.user.id))
+      return { data: transfer, txid }
     } catch {
       return { error: "Internal server error" }
     }
@@ -58,8 +58,8 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
     if (amountErr) return { error: amountErr }
 
     try {
-      const data = await Effect.runPromise(createCapitalInjection(input, session.user.id))
-      return { data }
+      const { transfer, txid } = await Effect.runPromise(createCapitalInjectionWithTxid(input, session.user.id))
+      return { data: transfer, txid }
     } catch {
       return { error: "Internal server error" }
     }
