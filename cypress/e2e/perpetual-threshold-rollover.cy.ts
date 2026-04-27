@@ -8,9 +8,24 @@
 
 const PERPETUAL_RADIO = "input[name='loanType'][value='perpetual']"
 
+let ninCounter = 0
+/**
+ * NIN format must match /^[CA][MF]\d{8}[A-Z0-9]{4}$/ (see customer-form-fields.tsx).
+ * Tests share a TanStack DB replica that survives `cy.task("db:reset")`, so each
+ * NIN must be unique across all runs in the session — derive it from Date.now()
+ * plus a counter to guarantee no collisions.
+ */
+function freshNin(): string {
+  const t = Date.now() + ninCounter++
+  const digits = (t % 100000000).toString().padStart(8, "0")
+  const suffix = (t % 10000).toString().padStart(4, "0")
+  return `CM${digits}${suffix}`
+}
+
 function registerCustomer(name: string, contact: string): Cypress.Chainable<string> {
   cy.visit("/customers/new")
   cy.get("#fullName").type(name)
+  cy.get("#nin").type(freshNin())
   cy.get("#contact").type(contact)
   cy.get("#address").type("Kampala, Uganda")
   cy.contains("button", "Register Customer").click()
@@ -38,6 +53,21 @@ describe("Perpetual loan threshold — rollover-aware", () => {
 
   beforeEach(() => {
     cy.task("db:reset")
+    // The TanStack DB client caches Electric shape offsets in localStorage and
+    // IndexedDB. After `db:reset` the server's row offsets reset but the cached
+    // offsets do not — that leaves Electric long-polling on a stale offset and
+    // the form's `tx.isPersisted.promise` never resolves. Clear browser
+    // storage so each test starts from offset=-1.
+    cy.clearLocalStorage()
+    cy.window().then((win) => {
+      if (win.indexedDB) {
+        win.indexedDB.databases?.().then((dbs) => {
+          for (const db of dbs ?? []) {
+            if (db.name) win.indexedDB.deleteDatabase(db.name)
+          }
+        })
+      }
+    })
     cy.registerAndLogin({ name: "Threshold Officer" })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
   })
