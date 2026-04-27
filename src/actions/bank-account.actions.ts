@@ -2,7 +2,7 @@
 
 import { withAction } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
-import { createBankAccount, updateBankAccount, listBankAccounts } from "@/services/bank-account.service"
+import { createBankAccountWithTxid, updateBankAccountWithTxid, listBankAccounts } from "@/services/bank-account.service"
 import type { CreateBankAccountInput, UpdateBankAccountInput } from "@/types"
 
 export const createBankAccountAction = withAction<CreateBankAccountInput, any>({
@@ -18,8 +18,8 @@ export const createBankAccountAction = withAction<CreateBankAccountInput, any>({
 
     try {
       const { Effect } = await import("effect")
-      const data = await Effect.runPromise(createBankAccount(input, session.user.id))
-      return { data }
+      const { account, txid } = await Effect.runPromise(createBankAccountWithTxid(input, session.user.id))
+      return { data: account, txid }
     } catch {
       return { error: "Failed to create bank account. Name may already be in use." }
     }
@@ -49,8 +49,8 @@ export const updateBankAccountAction = withAction<UpdateBankAccountInput, any>({
 
     try {
       const { Effect } = await import("effect")
-      const data = await Effect.runPromise(updateBankAccount(input, session.user.id))
-      return { data }
+      const { account, txid } = await Effect.runPromise(updateBankAccountWithTxid(input, session.user.id))
+      return { data: account, txid }
     } catch {
       return { error: "Failed to update bank account" }
     }

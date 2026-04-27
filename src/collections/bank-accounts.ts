@@ -38,6 +38,7 @@ export const bankAccountCollection = createCollection(
       // Invalidate query-based collections that depend on bank account data
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
@@ -50,6 +51,7 @@ export const bankAccountCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      return { txid: result.txid }
     },
   })
 )
