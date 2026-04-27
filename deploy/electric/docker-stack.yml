@@ -53,7 +53,10 @@ services:
     volumes:
       - nginx_cache:/var/cache/nginx/electric
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/v1/health"]
+      # Hits the nginx-local endpoint, NOT a proxied path — nginx liveness
+      # must not depend on Electric being reachable, otherwise an Electric
+      # outage cascades into nginx restart loops.
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/nginx-health"]
       interval: 10s
       timeout: 3s
       retries: 5
