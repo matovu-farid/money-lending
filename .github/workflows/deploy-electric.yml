@@ -152,14 +152,16 @@ jobs:
               fi
             done
 
-            # Smoke test: confirm nginx is actually in front (not bypassed by an
-            # old config). The X-Cache-Status header is added by our nginx.conf,
-            # so its presence is a positive signal that traffic is going through it.
+            # Smoke test: confirm nginx is actually in front. nginx always
+            # rewrites the Server: header to "nginx/<version>"; Electric's
+            # native server is Bandit (Elixir). If we see nginx, the proxy
+            # is in the path. /v1/health bypasses the cache, so we can't
+            # use X-Cache-Status here, but Server is set on all responses.
             echo "Verifying nginx caching layer is in the request path..."
             HEADERS=$(curl -sI http://127.0.0.1:3001/v1/health)
             echo "$HEADERS"
-            if ! echo "$HEADERS" | grep -qi '^x-cache-status:'; then
-              echo "ERROR: X-Cache-Status header missing — request did not traverse nginx."
+            if ! echo "$HEADERS" | grep -qiE '^server:[[:space:]]*nginx'; then
+              echo "ERROR: Server header is not nginx — request did not traverse the proxy."
               exit 1
             fi
             echo "nginx caching layer confirmed in request path."
