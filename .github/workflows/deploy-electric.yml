@@ -23,6 +23,7 @@ jobs:
         env:
           ELECTRIC_DATABASE_URL: postgres://stub
           ELECTRIC_SECRET: stub
+          NGINX_CONF_HASH: stub
         run: |
           # `docker compose config` understands the v3.8 compose schema and
           # will fail fast on YAML errors, unknown keys, or bad references.
@@ -87,6 +88,12 @@ jobs:
             export ELECTRIC_DATABASE_URL="$ELECTRIC_DATABASE_URL"
             export ELECTRIC_SECRET="$ELECTRIC_SECRET"
             export ELECTRIC_LOG_LEVEL=info
+
+            # Hash nginx.conf content so the swarm config gets a new name
+            # whenever content changes — swarm configs are immutable, this
+            # is the standard rotation pattern.
+            export NGINX_CONF_HASH=$(sha256sum nginx.conf | cut -c1-12)
+            echo "nginx.conf hash: $NGINX_CONF_HASH"
 
             # If a previous deployment has electric_electric publishing port
             # 3001 directly (pre-nginx layout), nginx can't claim that ingress
@@ -156,3 +163,13 @@ jobs:
               exit 1
             fi
             echo "nginx caching layer confirmed in request path."
+
+            # Clean up orphaned versions of the nginx config (older hashes
+            # that no service references). Best-effort — `docker config rm`
+            # refuses to remove configs still in use, which is what we want.
+            echo "Cleaning up orphaned nginx config versions..."
+            for cfg in $(docker config ls --filter name=electric_nginx_ --format '{{.Name}}'); do
+              if [ "$cfg" != "electric_nginx_$NGINX_CONF_HASH" ]; then
+                docker config rm "$cfg" 2>/dev/null && echo "  removed $cfg" || true
+              fi
+            done

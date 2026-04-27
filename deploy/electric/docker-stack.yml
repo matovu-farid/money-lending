@@ -75,6 +75,11 @@ services:
 
 configs:
   electric_nginx_conf:
+    # Swarm configs are immutable — to change content you must publish a
+    # new config under a new name. The deploy script sets NGINX_CONF_HASH
+    # to a SHA256 prefix of nginx.conf so the name auto-rotates only when
+    # content actually changes. Identical content → identical name → noop.
+    name: electric_nginx_${NGINX_CONF_HASH:?NGINX_CONF_HASH must be set by deploy script}
     file: ./nginx.conf
 
 volumes:

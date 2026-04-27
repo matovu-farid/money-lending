@@ -41,6 +41,11 @@ if echo "$ELECTRIC_DATABASE_URL" | grep -q "pooler"; then
   exit 1
 fi
 
+# Hash nginx.conf content so the swarm config name auto-rotates on content
+# changes (swarm configs are immutable; only the name can carry new content).
+export NGINX_CONF_HASH=$(sha256sum "$SCRIPT_DIR/nginx.conf" | cut -c1-12)
+echo "nginx.conf hash: $NGINX_CONF_HASH"
+
 echo "Deploying ElectricSQL stack..."
 docker stack deploy \
   -c "$SCRIPT_DIR/docker-stack.yml" \
