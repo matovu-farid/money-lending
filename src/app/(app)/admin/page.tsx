@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useMemo, Suspense } from "react"
-import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
+import { useState, useMemo } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { delegationCollection } from "@/collections/delegations"
@@ -74,11 +74,7 @@ export default function AdminPage() {
     )
   }
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <AdminContent has={has} session={session} actorRole={actorRole} actorLevel={actorLevel} />
-    </Suspense>
-  )
+  return <AdminContent has={has} session={session} actorRole={actorRole} actorLevel={actorLevel} />
 }
 
 interface AdminContentProps {
@@ -89,10 +85,10 @@ interface AdminContentProps {
 }
 
 function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps) {
-  const { data: users = [] } = useAdminUsers()
+  const { data: users = [], isLoading: usersLoading } = useAdminUsers()
 
   // Live delegation collection — optimistic insert/delete handled by TanStack DB
-  const { data: allDelegations = [] } = useLiveSuspenseQuery((q) =>
+  const { data: allDelegations = [], isLoading: delegationsLoading } = useLiveQuery((q) =>
     q.from({ d: delegationCollection }).select(({ d }) => d)
   )
   const activeDelegations = allDelegations.filter((d) => !d.revokedAt)
@@ -159,6 +155,10 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
   }
 
   const roleOptions = getRoleOptions(actorRole)
+
+  if ((usersLoading && users.length === 0) || (delegationsLoading && allDelegations.length === 0)) {
+    return <LoadingSkeleton />
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -369,7 +369,7 @@ function InvitationsSection({
 
   const roleOptions = getRoleOptions(actorRole)
 
-  const { data: allInvitations = [] } = useLiveSuspenseQuery((q) =>
+  const { data: allInvitations = [] } = useLiveQuery((q) =>
     q.from({ i: invitationCollection }).select(({ i }) => i)
   )
 

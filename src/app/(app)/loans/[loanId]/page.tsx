@@ -1,8 +1,8 @@
 "use client"
 
-import { Suspense, use, useEffect } from "react"
+import { use, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { customerCollection } from "@/collections/customers"
 import { toast } from "sonner"
@@ -17,14 +17,14 @@ export default function LoanDetailPage({
   const router = useRouter()
 
   // Read loan from loanCollection — instant if optimistic data exists
-  const { data: loans } = useLiveSuspenseQuery(
+  const { data: loans, isLoading: loanLoading } = useLiveQuery(
     (q) =>
       q
         .from({ loan: loanCollection })
         .where(({ loan }) => eq(loan.id, loanId)),
     [loanId]
   )
-  const loanEntry = loans[0] ?? null
+  const loanEntry = loans?.[0] ?? null
 
   // Read customer from customerCollection for the name
   const customerId = loanEntry?.customerId
@@ -39,25 +39,25 @@ export default function LoanDetailPage({
   )
   const customerName = customersData?.[0]?.fullName ?? loanEntry?.customerName ?? null
 
-  // Rollback handling: loan disappeared from collection after optimistic insert rolled back
+  // Rollback handling: loan disappeared from collection after optimistic insert rolled back.
+  // Only redirect once the initial sync has completed — otherwise we'd bounce away
+  // during the loading window before data arrives.
   useEffect(() => {
-    if (!loanEntry) {
+    if (!loanLoading && loans !== undefined && !loanEntry) {
       toast.error("Loan not found")
       router.replace("/loans")
     }
-  }, [loanEntry, router])
+  }, [loanLoading, loans, loanEntry, router])
 
   if (!loanEntry) {
-    return null
+    return <LoanDetailSkeleton />
   }
 
   return (
-    <Suspense fallback={<LoanDetailSkeleton />}>
-      <LoanDetailClient
-        loanEntry={loanEntry}
-        customerName={customerName}
-      />
-    </Suspense>
+    <LoanDetailClient
+      loanEntry={loanEntry}
+      customerName={customerName}
+    />
   )
 }
 

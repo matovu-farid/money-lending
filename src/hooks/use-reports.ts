@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery, useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import {
   portfolioCollection,
   transactionReportCollection,
@@ -29,13 +29,13 @@ export type TransactionReportData = {
 }
 
 export function usePortfolioReport() {
-  const { data } = useLiveSuspenseQuery((q) =>
+  const { data, isLoading } = useLiveQuery((q) =>
     q.from({ r: portfolioCollection }).select(({ r }) => r)
   )
   const rows = data ?? []
   // Strip _key from rows to return PortfolioEntry[]
   const entries: PortfolioEntry[] = rows.map(({ _key, ...rest }) => rest)
-  return { data: entries }
+  return { data: entries, isLoading }
 }
 
 // Period-keyed reports use non-suspending queries. Each new period creates a
@@ -78,12 +78,12 @@ export function useRetainedEarningsReport(period: string) {
 }
 
 export function useTransactionReportData() {
-  const { data } = useLiveSuspenseQuery((q) =>
+  const { data, isLoading } = useLiveQuery((q) =>
     q.from({ r: transactionReportCollection }).select(({ r }) => r)
   )
   const row = data?.[0]
   const txData: TransactionReportData | undefined = row
     ? { transactions: row.transactions, categories: row.categories }
     : undefined
-  return { data: txData }
+  return { data: txData, isLoading }
 }

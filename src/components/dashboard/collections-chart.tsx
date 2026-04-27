@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { formatCurrency } from "@/lib/utils"
@@ -66,7 +66,7 @@ function formatYAxis(value: number): string {
 }
 
 export function CollectionsChart() {
-  const { data: payments } = useLiveSuspenseQuery((q) =>
+  const { data: payments } = useLiveQuery((q) =>
     q
       .from({ p: paymentCollection })
       .select(({ p }) => ({
@@ -76,7 +76,7 @@ export function CollectionsChart() {
   )
 
   const chartData = useMemo(
-    () => aggregateDailyCollections(payments as unknown as Array<{ paymentDate: Date; amount: string }>),
+    () => aggregateDailyCollections((payments ?? []) as unknown as Array<{ paymentDate: Date; amount: string }>),
     [payments]
   )
 

@@ -1,7 +1,7 @@
 "use client"
 
-import { Suspense, useMemo } from "react"
-import { useLiveSuspenseQuery, eq, and, isNull } from "@tanstack/react-db"
+import { useMemo } from "react"
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
 import { incomeCollection, getRecentIncomeCategoryName } from "@/collections/income"
 import { incomeCategoryCollection } from "@/collections/income-categories"
 import { IncomeListClient } from "./IncomeListClient"
@@ -32,27 +32,26 @@ export default function IncomePage() {
     )
   }
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <IncomeContent />
-    </Suspense>
-  )
+  return <IncomeContent />
 }
 
 function IncomeContent() {
-  const { data: allIncome } = useLiveSuspenseQuery((q) =>
+  const { data: allIncome, isLoading: incomeLoading } = useLiveQuery((q) =>
     q
       .from({ i: incomeCollection })
       .where(({ i }) => and(eq(i.type, "credit"), isNull(i.referenceType)))
       .select(({ i }) => i)
   )
 
-  const { data: rawCategories } = useLiveSuspenseQuery((q) =>
+  const { data: rawCategories, isLoading: categoriesLoading } = useLiveQuery((q) =>
     q
       .from({ c: incomeCategoryCollection })
       .where(({ c }) => eq(c.type, "revenue"))
       .select(({ c }) => c)
   )
+
+  const isInitialLoading =
+    (incomeLoading && !allIncome) || (categoriesLoading && !rawCategories)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const categories = (rawCategories ?? []) as any[]
 
@@ -80,6 +79,10 @@ function IncomeContent() {
       createdAt: new Date(i.createdAt),
     }))
   }, [allIncome, categories])
+
+  if (isInitialLoading) {
+    return <LoadingSkeleton />
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4">

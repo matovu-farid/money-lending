@@ -1,7 +1,7 @@
 "use client"
 
-import { Suspense, useState } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useState } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
 import { creditorCollection } from "@/collections/creditors"
 import { creditorsPageDataCollection } from "@/collections/creditors-page-data"
 import { Button } from "@/components/ui/button"
@@ -39,17 +39,24 @@ function LoadingSkeleton() {
 function CreditorsContent() {
   const [dialogOpen, setDialogOpen] = useState(false)
 
-  const { data: allCreditors } = useLiveSuspenseQuery((q) =>
+  const { data: allCreditors, isLoading: creditorsLoading } = useLiveQuery((q) =>
     q.from({ c: creditorCollection }).select(({ c }) => c)
   )
   const creditors = allCreditors ?? []
 
-  const { data: pageDataRows } = useLiveSuspenseQuery((q) =>
+  const { data: pageDataRows, isLoading: pageDataLoading } = useLiveQuery((q) =>
     q.from({ p: creditorsPageDataCollection }).select(({ p }) => p)
   )
   const pageData = pageDataRows?.[0]
   const capital = pageData?.capital ?? defaultCapital
   const monthlyDue = pageData?.monthlyDue ?? {}
+
+  const isInitialLoading =
+    (creditorsLoading && !allCreditors) || (pageDataLoading && !pageDataRows)
+
+  if (isInitialLoading) {
+    return <LoadingSkeleton />
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">
@@ -163,9 +170,5 @@ export default function CreditorsPage() {
     )
   }
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <CreditorsContent />
-    </Suspense>
-  )
+  return <CreditorsContent />
 }

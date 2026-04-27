@@ -1,12 +1,12 @@
 "use client"
 
 import { useMemo, useCallback } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { permissionsCollection } from "@/collections/permissions"
 import type { Permission } from "@/types"
 
 export function usePermissions() {
-  const { data } = useLiveSuspenseQuery((q) =>
+  const { data, isLoading } = useLiveQuery((q) =>
     q.from({ p: permissionsCollection }).select(({ p }) => p)
   )
   const permissions = (data?.[0]?.permissions ?? []) as Permission[]
@@ -14,5 +14,5 @@ export function usePermissions() {
   const has = useCallback((p: Permission) => permSet.has(p), [permSet])
   const hasAny = useCallback((...ps: Permission[]) => ps.some((p) => permSet.has(p)), [permSet])
 
-  return { permissions: permSet, has, hasAny }
+  return { permissions: permSet, has, hasAny, isLoading }
 }

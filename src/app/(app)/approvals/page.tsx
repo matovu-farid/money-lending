@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useTransition, useMemo, Suspense } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useState, useTransition, useMemo } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
 import { rateChangeRequestCollection, reviewRateChangeRequest } from "@/collections/rate-change-requests"
@@ -89,30 +89,31 @@ export default function ApprovalsPage() {
     )
   }
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <ApprovalsContent has={has} />
-    </Suspense>
-  )
+  return <ApprovalsContent has={has} />
 }
 
 function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
   const [isPending, startTransition] = useTransition()
 
-  const { data: rawRequests = [] } = useLiveSuspenseQuery(
+  const { data: rawRequests = [], isLoading: requestsLoading } = useLiveQuery(
     (q) => q.from({ r: rateChangeRequestCollection }),
     []
   )
 
-  const { data: allLoans = [] } = useLiveSuspenseQuery(
+  const { data: allLoans = [], isLoading: loansLoading } = useLiveQuery(
     (q) => q.from({ l: loanCollection }),
     []
   )
 
-  const { data: allCustomers = [] } = useLiveSuspenseQuery(
+  const { data: allCustomers = [], isLoading: customersLoading } = useLiveQuery(
     (q) => q.from({ c: customerCollection }),
     []
   )
+
+  const isInitialLoading =
+    (requestsLoading && rawRequests.length === 0) ||
+    (loansLoading && allLoans.length === 0) ||
+    (customersLoading && allCustomers.length === 0)
 
   // Build lookup maps for O(1) resolution
   const loanMap = useMemo(() => {
@@ -175,6 +176,10 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
 
   const pendingRequests = requests.filter((r) => r.status === "pending")
   const reviewedRequests = requests.filter((r) => r.status !== "pending")
+
+  if (isInitialLoading) {
+    return <LoadingSkeleton />
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-6">

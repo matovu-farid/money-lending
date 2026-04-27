@@ -1,8 +1,8 @@
 "use client";
 
-import { Suspense, useEffect, useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db";
+import { useLiveQuery, eq } from "@tanstack/react-db";
 import { customerCollection } from "@/collections/customers";
 import { loanCollection } from "@/collections/loans";
 import { paymentCollection } from "@/collections/payments";
@@ -66,7 +66,7 @@ interface LoanWithOverdue {
 
 function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
   const [expanded, setExpanded] = useState(false);
-  const { data: rawPayments } = useLiveSuspenseQuery(
+  const { data: rawPayments } = useLiveQuery(
     (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, item.loan.id)),
     [item.loan.id]
   );
@@ -240,15 +240,15 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
   const router = useRouter();
 
   // Read customer from customerCollection
-  const { data: customersData } = useLiveSuspenseQuery(
+  const { data: customersData, isLoading: customerLoading } = useLiveQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, customerId)),
     [customerId]
   );
   const customer = customersData?.[0] ?? null;
-  const notFound = !customer;
+  const notFound = !customerLoading && customersData !== undefined && !customer;
 
   // Read loans from loanCollection, filtered by customer
-  const { data: customerLoans } = useLiveSuspenseQuery(
+  const { data: customerLoans } = useLiveQuery(
     (q) => q.from({ loan: loanCollection }).where(({ loan }) => eq(loan.customerId, customerId)),
     [customerId]
   );
@@ -367,8 +367,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
   }
 
   if (!customer) {
-    // Initial render before query starts (prevents hydration mismatch)
-    return null;
+    return <LoadingSkeleton />;
   }
 
   const isBlacklisted = pendingStatus === "blacklisted";
@@ -595,9 +594,5 @@ export default function CustomerProfilePage() {
   const params = useParams();
   const customerId = params.id as string;
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <CustomerProfileContent customerId={customerId} />
-    </Suspense>
-  );
+  return <CustomerProfileContent customerId={customerId} />;
 }

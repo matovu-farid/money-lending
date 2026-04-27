@@ -19,7 +19,7 @@ import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { generateClientId } from "@/lib/client-id"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import type { UserRole, RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
@@ -60,7 +60,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
   // Fetch userRole via collection
-  const { data: userRoleRows } = useLiveSuspenseQuery((q) =>
+  const { data: userRoleRows } = useLiveQuery((q) =>
     q.from({ r: currentUserRoleCollection }).select(({ r }) => r)
   )
   const userRole: UserRole = userRoleRows?.[0]?.role ?? ("unassigned" as UserRole)
@@ -86,7 +86,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // (PaymentTable, SimulatorPanel) already type against. customerName is
   // already known on this page (passed in via props), and portions / balances
   // are derived below from `currentPortions` + `runningBalanceMap`.
-  const { data: rawPayments } = useLiveSuspenseQuery(
+  const { data: rawPayments } = useLiveQuery(
     (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, loan.id)),
     [loan.id]
   )
@@ -181,7 +181,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const [isAdjustingPenalty, startAdjustPenaltyTransition] = useTransition()
 
   // Fetch rate change requests for this loan from collection
-  const { data: rateChangeRequests = [] } = useLiveSuspenseQuery(
+  const { data: rateChangeRequests = [] } = useLiveQuery(
     (q) => q.from({ r: rateChangeRequestCollection }).where(({ r }) => eq(r.loanId, loan.id)),
     [loan.id]
   )

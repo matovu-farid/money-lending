@@ -1,9 +1,9 @@
 "use client"
 
-import { Suspense, useMemo, useState, useTransition } from "react"
+import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { paymentCollection, updatePaymentWithInput } from "@/collections/payments"
 import { loanCollection } from "@/collections/loans"
 import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
@@ -82,11 +82,7 @@ export function PaymentsClient() {
   const isAdmin = has("payment:edit-any")
   const isSupervisor = has("payment:edit-any")
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <PaymentsContent has={has} isAdmin={isAdmin} isSupervisor={isSupervisor} />
-    </Suspense>
-  )
+  return <PaymentsContent has={has} isAdmin={isAdmin} isSupervisor={isSupervisor} />
 }
 
 function PaymentsContent({
@@ -144,14 +140,16 @@ function PaymentsContent({
   const pageSize = 25
 
   // TanStack DB live query for all payments (raw rows from Electric shape)
-  const { data: rawPayments } = useLiveSuspenseQuery((q) =>
+  const { data: rawPayments, isLoading: paymentsLoading } = useLiveQuery((q) =>
     q.from({ p: paymentCollection }).select(({ p }) => p)
   )
 
   // Loans drive the customer join (loanCollection already has customerName + customerId)
-  const { data: allLoans } = useLiveSuspenseQuery((q) =>
+  const { data: allLoans, isLoading: loansLoading } = useLiveQuery((q) =>
     q.from({ l: loanCollection }).select(({ l }) => l)
   )
+
+  const isInitialLoading = (paymentsLoading && !rawPayments) || (loansLoading && !allLoans)
 
   // Resolve recordedBy → display name via the user-name-map collection
   const uniqueRecorderIdsKey = useMemo(
@@ -335,6 +333,10 @@ function PaymentsContent({
 
   const start = (page - 1) * pageSize + 1
   const end = Math.min(page * pageSize, total)
+
+  if (isInitialLoading) {
+    return <LoadingSkeleton />
+  }
 
   const paymentColumns: Column<PaymentWithCustomer>[] = [
     {

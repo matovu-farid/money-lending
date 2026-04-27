@@ -3,7 +3,7 @@
 import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
-import { useLiveSuspenseQuery, useLiveQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { getLoanBalanceCollection } from "@/collections/loan-balance"
 import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
@@ -71,7 +71,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   })
 
   // Get active loans from collection, sorted by last payment activity
-  const { data: allActiveLoans = [] } = useLiveSuspenseQuery(
+  const { data: allActiveLoans = [] } = useLiveQuery(
     (q) => q.from({ l: loanCollection }),
     []
   )

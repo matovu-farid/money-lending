@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useLiveSuspenseQuery, useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { customerCollection } from "@/collections/customers"
 import { getLoanBalanceCollection } from "@/collections/loan-balance"
@@ -11,17 +11,16 @@ import { RecordPaymentForm } from "./record-payment-form"
 export default function RecordPaymentPage() {
   const { loanId } = useParams<{ loanId: string }>()
 
-  // Loan + customer come from globally-synced Electric collections, so
-  // suspending here is fine — the data is already in memory after the app's
-  // initial sync. The cost was the per-loan balance below.
-  const { data: loans } = useLiveSuspenseQuery(
+  // Loan + customer come from globally-synced Electric collections. They render
+  // immediately when in cache; otherwise we show a brief loading skeleton.
+  const { data: loans, isLoading: loansLoading } = useLiveQuery(
     (q) => q.from({ l: loanCollection }).where(({ l }) => eq(l.id, loanId)),
     [loanId]
   )
   const loan = loans?.[0] ?? null
 
-  const loanLoading = false
-  const { data: customers } = useLiveSuspenseQuery(
+  const loanLoading = loansLoading && !loan
+  const { data: customers } = useLiveQuery(
     (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, loan?.customerId ?? "")),
     [loan?.customerId]
   )

@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { PieChart, Pie, ResponsiveContainer, Tooltip } from "recharts"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
@@ -40,7 +40,7 @@ function computeDistribution(
 }
 
 export function LoanDistributionChart() {
-  const { data: loans } = useLiveSuspenseQuery((q) =>
+  const { data: loans } = useLiveQuery((q) =>
     q
       .from({ l: loanCollection })
       .select(({ l }) => ({
@@ -48,7 +48,7 @@ export function LoanDistributionChart() {
       }))
   )
 
-  const distribution = useMemo(() => computeDistribution(loans as unknown as Array<{ status: string }>), [loans])
+  const distribution = useMemo(() => computeDistribution((loans ?? []) as unknown as Array<{ status: string }>), [loans])
   const total = useMemo(
     () => distribution.reduce((sum, d) => sum + d.value, 0),
     [distribution]

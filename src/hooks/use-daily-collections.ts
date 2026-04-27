@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery, useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { getDailyCollectionsCollection, loansDueTodayCollection } from "@/collections/daily-collections"
 import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 
@@ -8,7 +8,7 @@ import type { DailyCollectionsSummary, LoanDueToday } from "@/types"
 // otherwise blanks the page on every change while the new date's data fetches.
 export function useDailyCollections(date: string) {
   const collection = getDailyCollectionsCollection(date)
-  const { data } = useLiveQuery(
+  const { data, isLoading } = useLiveQuery(
     (q) => q.from({ d: collection }).select(({ d }) => d),
     [date]
   )
@@ -16,13 +16,13 @@ export function useDailyCollections(date: string) {
   const summary: DailyCollectionsSummary | undefined = row
     ? { ...row, _key: undefined } as unknown as DailyCollectionsSummary
     : undefined
-  return { data: summary }
+  return { data: summary, isLoading }
 }
 
 export function useLoansDueToday() {
-  const { data } = useLiveSuspenseQuery((q) =>
+  const { data, isLoading } = useLiveQuery((q) =>
     q.from({ l: loansDueTodayCollection }).select(({ l }) => l)
   )
   const loans: LoanDueToday[] = (data ?? []).map(({ _key, ...rest }) => rest)
-  return { data: loans }
+  return { data: loans, isLoading }
 }

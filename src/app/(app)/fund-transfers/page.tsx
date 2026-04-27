@@ -1,7 +1,7 @@
 "use client"
 
-import { Suspense, useState } from "react"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useState } from "react"
+import { useLiveQuery } from "@tanstack/react-db"
 import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections/fund-transfers"
 import { bankAccountCollection, insertBankAccountWithInput, updateBankAccountWithInput } from "@/collections/bank-accounts"
 import { locationBalancesCollection } from "@/collections/loan-extras"
@@ -89,21 +89,26 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
 
   const bankAccountForm = useForm<{ name: string }>({ defaultValues: { name: "" } })
 
-  const { data: allTransfers } = useLiveSuspenseQuery((q) =>
+  const { data: allTransfers, isLoading: transfersLoading } = useLiveQuery((q) =>
     q.from({ ft: fundTransferCollection }).select(({ ft }) => ft)
   )
   const transfers = allTransfers ?? []
 
-  const { data: allBankAccounts } = useLiveSuspenseQuery((q) =>
+  const { data: allBankAccounts, isLoading: bankAccountsLoading } = useLiveQuery((q) =>
     q.from({ ba: bankAccountCollection }).select(({ ba }) => ba)
   )
   const bankAccountsList = allBankAccounts ?? []
 
-  const { data: locationBalanceRows } = useLiveSuspenseQuery((q) =>
+  const { data: locationBalanceRows, isLoading: balancesLoading } = useLiveQuery((q) =>
     q.from({ lb: locationBalancesCollection }).select(({ lb }) => lb)
   )
   const locationBalances = locationBalanceRows?.[0] ?? null
   const bankAccountBalances = (locationBalances as any)?.bankAccounts ?? {}
+
+  const isInitialLoading =
+    (transfersLoading && !allTransfers) ||
+    (bankAccountsLoading && !allBankAccounts) ||
+    (balancesLoading && !locationBalanceRows)
 
   const {
     control,
@@ -230,6 +235,10 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to record transfer")
     }
+  }
+
+  if (isInitialLoading) {
+    return <LoadingSkeleton />
   }
 
   return (
@@ -675,9 +684,5 @@ export default function FundTransfersPage() {
     )
   }
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <FundTransfersContent session={session} />
-    </Suspense>
-  )
+  return <FundTransfersContent session={session} />
 }

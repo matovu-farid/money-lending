@@ -42,18 +42,18 @@ function LoadingSkeleton() {
 }
 
 export default function DashboardPage() {
-  const { has } = usePermissions()
+  const { has, isLoading: permissionsLoading } = usePermissions()
   const isAdmin = has("settings:read")
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <DashboardContent has={has} isAdmin={isAdmin} />
-    </Suspense>
-  )
+  if (permissionsLoading) {
+    return <LoadingSkeleton />
+  }
+
+  return <DashboardContent has={has} isAdmin={isAdmin} />
 }
 
 function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => boolean; isAdmin: boolean }) {
-  const { data } = useDashboard()
+  const { data, isLoading: dashboardLoading } = useDashboard()
   const kpis = data?.kpis ?? null
 
   const { data: activityRows, isLoading: activityLoading } = useLiveQuery((q) =>
@@ -62,6 +62,10 @@ function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => b
 
   const activity = activityRows?.[0]?.items ?? []
   const activityReady = !activityLoading && activityRows !== undefined
+
+  if (dashboardLoading && !kpis) {
+    return <LoadingSkeleton />
+  }
 
   return (
     <div className="space-y-8">

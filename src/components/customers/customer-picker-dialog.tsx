@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { Search, Loader2 } from "lucide-react"
 import { searchCustomersAction } from "@/actions/customer.actions"
 import { customerCollection } from "@/collections/customers"
@@ -24,7 +24,7 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Fetch all customers from collection, then derive 3 most recent
-  const { data: allCustomers = [] } = useLiveSuspenseQuery(
+  const { data: allCustomers = [] } = useLiveQuery(
     (q) => q.from({ c: customerCollection }),
     []
   )

@@ -3,7 +3,7 @@
 import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { useLiveSuspenseQuery } from "@tanstack/react-db"
+import { useLiveQuery } from "@tanstack/react-db"
 import { customerCollection } from "@/collections/customers"
 import { loanCollection } from "@/collections/loans"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
@@ -23,12 +23,23 @@ export default function CustomersPage() {
   const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useState<CustomerSearchParams>({})
 
-  const { data: allCustomers } = useLiveSuspenseQuery((q) =>
+  const { data: allCustomers, isLoading: customersLoading } = useLiveQuery((q) =>
     q.from({ c: customerCollection }).select(({ c }) => c)
   )
 
-  const { data: allLoans } = useLiveSuspenseQuery((q) =>
-    q.from({ l: loanCollection }).select(({ l }) => l)
+  // Only sync the loan collection when a loan-based filter is active. The
+  // loan collection is backed by a slow server action (listLoansWithOverdueAction);
+  // pulling it on every customers-page visit was the main source of latency.
+  const needsLoans =
+    !!searchParams.loanStatus?.length ||
+    (!!searchParams.daysRemainingFilter && searchParams.daysRemainingFilter !== "any")
+
+  const { data: allLoans, isLoading: loansLoading } = useLiveQuery(
+    (q) =>
+      needsLoans
+        ? q.from({ l: loanCollection }).select(({ l }) => l)
+        : undefined,
+    [needsLoans]
   )
 
   // Client-side filtering
@@ -89,7 +100,7 @@ export default function CustomersPage() {
     setSearchParams({})
   }, [])
 
-  const isLoading = false
+  const isLoading = customersLoading || (needsLoans && loansLoading)
 
   const handlePrefetch = useCallback((customerId: string) => {
     if (customerId.startsWith("optimistic-")) return

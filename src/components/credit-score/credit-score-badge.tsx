@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { useLiveSuspenseQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { paymentCollection } from "@/collections/payments"
 import { calculateCreditScore } from "@/lib/credit-score"
@@ -15,14 +15,14 @@ interface CreditScoreBadgeProps {
 }
 
 export function CreditScoreBadge({ customerId, className }: CreditScoreBadgeProps) {
-  const { data: customerLoans } = useLiveSuspenseQuery(
+  const { data: customerLoans } = useLiveQuery(
     (q) => q.from({ loan: loanCollection }).where(({ loan }) => eq(loan.customerId, customerId)),
     [customerId],
   )
 
   // Payments are now a raw row stream (no customerId). Filter client-side by
   // matching loanIds for this customer.
-  const { data: allPayments } = useLiveSuspenseQuery(
+  const { data: allPayments } = useLiveQuery(
     (q) => q.from({ p: paymentCollection }).select(({ p }) => p),
     [],
   )

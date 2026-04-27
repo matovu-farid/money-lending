@@ -1,7 +1,7 @@
 "use client"
 
-import { Suspense, useMemo } from "react"
-import { useLiveSuspenseQuery, eq, and, isNull } from "@tanstack/react-db"
+import { useMemo } from "react"
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
 import { expenseCollection, getRecentExpenseCategoryName } from "@/collections/expenses"
 import { expenseCategoryCollection } from "@/collections/expense-categories"
 import { ExpenseListClient } from "./ExpenseListClient"
@@ -32,27 +32,26 @@ export default function ExpensesPage() {
     )
   }
 
-  return (
-    <Suspense fallback={<LoadingSkeleton />}>
-      <ExpensesContent />
-    </Suspense>
-  )
+  return <ExpensesContent />
 }
 
 function ExpensesContent() {
-  const { data: allExpenses } = useLiveSuspenseQuery((q) =>
+  const { data: allExpenses, isLoading: expensesLoading } = useLiveQuery((q) =>
     q
       .from({ e: expenseCollection })
       .where(({ e }) => and(eq(e.type, "debit"), isNull(e.referenceType)))
       .select(({ e }) => e)
   )
 
-  const { data: rawCategories } = useLiveSuspenseQuery((q) =>
+  const { data: rawCategories, isLoading: categoriesLoading } = useLiveQuery((q) =>
     q
       .from({ c: expenseCategoryCollection })
       .where(({ c }) => eq(c.type, "expense"))
       .select(({ c }) => c)
   )
+
+  const isInitialLoading =
+    (expensesLoading && !allExpenses) || (categoriesLoading && !rawCategories)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const categories = (rawCategories ?? []) as any[]
 
@@ -80,6 +79,10 @@ function ExpensesContent() {
       createdAt: new Date(e.createdAt),
     }))
   }, [allExpenses, categories])
+
+  if (isInitialLoading) {
+    return <LoadingSkeleton />
+  }
 
   return (
     <div className="p-4 md:p-6 space-y-4">
