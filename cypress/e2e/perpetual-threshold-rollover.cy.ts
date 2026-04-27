@@ -53,21 +53,7 @@ describe("Perpetual loan threshold — rollover-aware", () => {
 
   beforeEach(() => {
     cy.task("db:reset")
-    // The TanStack DB client caches Electric shape offsets in localStorage and
-    // IndexedDB. After `db:reset` the server's row offsets reset but the cached
-    // offsets do not — that leaves Electric long-polling on a stale offset and
-    // the form's `tx.isPersisted.promise` never resolves. Clear browser
-    // storage so each test starts from offset=-1.
-    cy.clearLocalStorage()
-    cy.window().then((win) => {
-      if (win.indexedDB) {
-        win.indexedDB.databases?.().then((dbs) => {
-          for (const db of dbs ?? []) {
-            if (db.name) win.indexedDB.deleteDatabase(db.name)
-          }
-        })
-      }
-    })
+    cy.clearAppPersistence()
     cy.registerAndLogin({ name: "Threshold Officer" })
     cy.url({ timeout: 15000 }).should("include", "/dashboard")
   })

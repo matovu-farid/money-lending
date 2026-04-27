@@ -36,6 +36,19 @@ declare global {
        * Clears existing cookies and sets the new user's session cookies.
        */
       loginAsTestUser(cookies: Array<{ name: string; value: string; domain?: string; path?: string }>): Chainable<void>
+
+      /**
+       * Clear all client-side state for the app origin: cookies,
+       * localStorage, sessionStorage, AND IndexedDB. Cypress's default
+       * test isolation already clears the first three between tests, but
+       * NOT IndexedDB — and the TanStack DB collections persist Electric
+       * shape handles + offsets there. After cy.task("db:reset") the DB
+       * is empty but the cached offsets are far ahead of the now-empty
+       * server, so live-queries long-poll forever and form `tx.isPersisted`
+       * promises never resolve. Call this after `db:reset` to break the
+       * stale-offset loop.
+       */
+      clearAppPersistence(): Chainable<void>
     }
   }
 }
@@ -148,5 +161,39 @@ Cypress.Commands.add(
     }
   }
 )
+
+Cypress.Commands.add("clearAppPersistence", () => {
+  cy.clearAllCookies()
+  cy.clearAllLocalStorage()
+  cy.clearAllSessionStorage()
+
+  // IndexedDB cleanup: Cypress doesn't have a built-in helper. We need an
+  // existing window context with a same-origin document — visit a static
+  // route first, then enumerate and delete every database the app stored.
+  cy.visit("/login")
+  cy.window({ log: false }).then((win) => {
+    if (typeof win.indexedDB?.databases !== "function") return
+    return new Cypress.Promise<void>((resolve) => {
+      win.indexedDB.databases().then((dbs) => {
+        if (!dbs.length) return resolve()
+        let remaining = dbs.length
+        const done = () => {
+          remaining -= 1
+          if (remaining <= 0) resolve()
+        }
+        for (const db of dbs) {
+          if (!db.name) {
+            done()
+            continue
+          }
+          const req = win.indexedDB.deleteDatabase(db.name)
+          req.onsuccess = done
+          req.onerror = done
+          req.onblocked = done
+        }
+      }, () => resolve())
+    })
+  })
+})
 
 export {}
