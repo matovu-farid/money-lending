@@ -1,5 +1,6 @@
 "use server"
 
+import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { createBankAccountWithTxid, updateBankAccountWithTxid, listBankAccounts } from "@/services/bank-account.service"
@@ -17,7 +18,6 @@ export const createBankAccountAction = withAction<CreateBankAccountInput, any>({
     }
 
     try {
-      const { Effect } = await import("effect")
       const { account, txid } = await Effect.runPromise(createBankAccountWithTxid(input, session.user.id))
       return { data: account, txid }
     } catch {
@@ -48,7 +48,6 @@ export const updateBankAccountAction = withAction<UpdateBankAccountInput, any>({
     }
 
     try {
-      const { Effect } = await import("effect")
       const { account, txid } = await Effect.runPromise(updateBankAccountWithTxid(input, session.user.id))
       return { data: account, txid }
     } catch {
