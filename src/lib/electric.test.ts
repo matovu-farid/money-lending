@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 import type { QueryClient } from "@tanstack/react-query"
 
 // --- Mock @electric-sql/client ----------------------------------------------
@@ -74,9 +74,6 @@ const liveChange = [
   { key: "row-1", value: { id: 1 }, headers: { operation: "insert" } },
 ] as unknown[]
 
-// Helper: yield to the microtask queue so queueMicrotask callbacks run.
-const flushMicrotasks = () => Promise.resolve()
-
 // Each test gets a fresh module so the module-level Maps are reset.
 async function loadFreshModule() {
   streams.length = 0
@@ -86,11 +83,16 @@ async function loadFreshModule() {
 
 beforeEach(() => {
   streams.length = 0
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] })
+})
+
+afterEach(() => {
+  vi.useRealTimers()
 })
 
 describe("subscribeToTableChanges — coalesced invalidation", () => {
   it("invalidates a shared key only ONCE when two tables tick in the same turn", async () => {
-    const { subscribeToTableChanges } = await loadFreshModule()
+    const { subscribeToTableChanges, __INVALIDATION_DEBOUNCE_MS__ } = await loadFreshModule()
     const { client, calls } = makeQueryClient()
 
     const sharedKey = ["dashboard", "kpis"] as const
@@ -109,15 +111,15 @@ describe("subscribeToTableChanges — coalesced invalidation", () => {
     loansStream.emit(liveChange)
     paymentsStream.emit(liveChange)
 
-    // Coalescing happens via queueMicrotask — flush it.
-    await flushMicrotasks()
+    // Coalescing happens via setTimeout — advance fake time.
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
 
     expect(calls).toHaveLength(1)
     expect(calls[0].queryKey).toEqual([...sharedKey])
   })
 
   it("invalidates each unique key once when two different keys are registered", async () => {
-    const { subscribeToTableChanges } = await loadFreshModule()
+    const { subscribeToTableChanges, __INVALIDATION_DEBOUNCE_MS__ } = await loadFreshModule()
     const { client, calls } = makeQueryClient()
 
     const keyA = ["dashboard", "kpis"] as const
@@ -131,7 +133,7 @@ describe("subscribeToTableChanges — coalesced invalidation", () => {
     loansStream.emit(upToDateMessage) // initial sync
     loansStream.emit(liveChange) // live tick
 
-    await flushMicrotasks()
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
 
     expect(calls).toHaveLength(2)
     const seen = calls.map((c) => c.queryKey)
@@ -140,7 +142,7 @@ describe("subscribeToTableChanges — coalesced invalidation", () => {
   })
 
   it("does NOT invalidate during the initial sync phase", async () => {
-    const { subscribeToTableChanges } = await loadFreshModule()
+    const { subscribeToTableChanges, __INVALIDATION_DEBOUNCE_MS__ } = await loadFreshModule()
     const { client, calls } = makeQueryClient()
 
     subscribeToTableChanges("loans", client, [["dashboard", "kpis"] as const])
@@ -154,12 +156,40 @@ describe("subscribeToTableChanges — coalesced invalidation", () => {
     // Then up-to-date arrives — also must not trigger invalidation (it only flips the flag).
     loansStream.emit(upToDateMessage)
 
-    await flushMicrotasks()
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
 
     expect(calls).toHaveLength(0)
   })
 
-  it("a second tick AFTER the microtask flush produces a fresh invalidation", async () => {
+  it("a second tick AFTER the flush produces a fresh invalidation", async () => {
+    const { subscribeToTableChanges, __INVALIDATION_DEBOUNCE_MS__ } = await loadFreshModule()
+    const { client, calls } = makeQueryClient()
+
+    const sharedKey = ["dashboard", "kpis"] as const
+
+    subscribeToTableChanges("loans", client, [sharedKey])
+    subscribeToTableChanges("payments", client, [sharedKey])
+
+    const [loansStream, paymentsStream] = streams
+
+    loansStream.emit(upToDateMessage)
+    paymentsStream.emit(upToDateMessage)
+
+    // Window 1: both streams tick.
+    loansStream.emit(liveChange)
+    paymentsStream.emit(liveChange)
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
+    expect(calls).toHaveLength(1)
+
+    // Window 2: another live change arrives — coalescing window has reset, so we
+    // should see a fresh invalidation.
+    loansStream.emit(liveChange)
+    await vi.advanceTimersByTimeAsync(__INVALIDATION_DEBOUNCE_MS__)
+    expect(calls).toHaveLength(2)
+    expect(calls[1].queryKey).toEqual([...sharedKey])
+  })
+
+  it("ticks arriving 30ms apart are coalesced into a single invalidation", async () => {
     const { subscribeToTableChanges } = await loadFreshModule()
     const { client, calls } = makeQueryClient()
 
@@ -173,16 +203,43 @@ describe("subscribeToTableChanges — coalesced invalidation", () => {
     loansStream.emit(upToDateMessage)
     paymentsStream.emit(upToDateMessage)
 
-    // Turn 1: both streams tick.
+    // Tick on stream A starts the 50ms window.
     loansStream.emit(liveChange)
+    // Advance 30ms — still within the window.
+    await vi.advanceTimersByTimeAsync(30)
+    // Tick on stream B with the SAME key — should join the same window.
     paymentsStream.emit(liveChange)
-    await flushMicrotasks()
+    // Advance the remaining 20ms to reach 50ms total — flush should fire once.
+    await vi.advanceTimersByTimeAsync(20)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].queryKey).toEqual([...sharedKey])
+  })
+
+  it("ticks arriving >50ms apart produce TWO separate invalidations", async () => {
+    const { subscribeToTableChanges } = await loadFreshModule()
+    const { client, calls } = makeQueryClient()
+
+    const sharedKey = ["dashboard", "kpis"] as const
+
+    subscribeToTableChanges("loans", client, [sharedKey])
+    subscribeToTableChanges("payments", client, [sharedKey])
+
+    const [loansStream, paymentsStream] = streams
+
+    loansStream.emit(upToDateMessage)
+    paymentsStream.emit(upToDateMessage)
+
+    // Tick on stream A starts the first 50ms window.
+    loansStream.emit(liveChange)
+    // Advance 60ms — first window has already flushed.
+    await vi.advanceTimersByTimeAsync(60)
     expect(calls).toHaveLength(1)
 
-    // Turn 2: another live change arrives — coalescing window has reset, so we
-    // should see a fresh invalidation.
-    loansStream.emit(liveChange)
-    await flushMicrotasks()
+    // Tick on stream B with the SAME key — starts a fresh window.
+    paymentsStream.emit(liveChange)
+    await vi.advanceTimersByTimeAsync(50)
+
     expect(calls).toHaveLength(2)
     expect(calls[1].queryKey).toEqual([...sharedKey])
   })

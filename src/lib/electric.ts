@@ -50,28 +50,35 @@ export function shapeUrl(table: string): string {
  */
 const activeSubscriptions = new Map<string, { keys: (readonly string[])[] }>()
 
-// Coalesces invalidations across all subscribers within a microtask window so
-// that when multiple Electric shape streams tick in the same JS turn, each
-// unique query key is only invalidated once.
-const pendingInvalidations = new Map<QueryClient, Set<string>>()
+// Coalesces invalidations across all subscribers within a 50ms window so
+// that when multiple Electric shape streams tick within ~50ms of each other,
+// each unique query key is only invalidated once.
+export const __INVALIDATION_DEBOUNCE_MS__ = 50
+
+interface PendingEntry {
+  keys: Set<string>
+  timer: ReturnType<typeof setTimeout> | null
+}
+
+const pendingInvalidations = new Map<QueryClient, PendingEntry>()
 
 function scheduleInvalidation(queryClient: QueryClient, key: readonly string[]) {
   let pending = pendingInvalidations.get(queryClient)
-  const wasEmpty = !pending || pending.size === 0
   if (!pending) {
-    pending = new Set<string>()
+    pending = { keys: new Set<string>(), timer: null }
     pendingInvalidations.set(queryClient, pending)
   }
-  pending.add(JSON.stringify(key))
-  if (wasEmpty) {
-    queueMicrotask(() => {
-      const set = pendingInvalidations.get(queryClient)
-      if (!set) return
-      for (const serialized of set) {
+  pending.keys.add(JSON.stringify(key))
+  if (pending.timer === null) {
+    pending.timer = setTimeout(() => {
+      const entry = pendingInvalidations.get(queryClient)
+      if (!entry) return
+      const snapshot = entry.keys
+      pendingInvalidations.delete(queryClient)
+      for (const serialized of snapshot) {
         queryClient.invalidateQueries({ queryKey: JSON.parse(serialized) as unknown[] })
       }
-      set.clear()
-    })
+    }, __INVALIDATION_DEBOUNCE_MS__)
   }
 }
 

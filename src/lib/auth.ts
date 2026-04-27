@@ -89,7 +89,7 @@ export const auth = betterAuth({
     // 5 minutes is the better-auth-recommended default.
     cookieCache: {
       enabled: true,
-      maxAge: 5 * 60,
+      maxAge: 15 * 60,
     },
   },
   databaseHooks: {
