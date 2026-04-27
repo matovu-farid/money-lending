@@ -4,7 +4,7 @@ import { useState, useTransition, useMemo } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
-import { rateChangeRequestCollection, reviewRateChangeRequest } from "@/collections/rate-change-requests"
+import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import { loanCollection } from "@/collections/loans"
 import { customerCollection } from "@/collections/customers"
 import type { Permission, RateChangeRequest } from "@/types"
@@ -163,11 +163,11 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
 
   function handleReviewSubmit() {
     if (!reviewingRequest) return
+    const trimmedNote = reviewNote.trim() || null
     startTransition(() => {
-      reviewRateChangeRequest(reviewingRequest.id, {
-        requestId: reviewingRequest.id,
-        action: reviewAction,
-        reviewNote: reviewNote.trim() || undefined,
+      rateChangeRequestCollection.update(reviewingRequest.id, (draft) => {
+        draft.status = reviewAction
+        draft.reviewNote = trimmedNote
       })
       toast.success(reviewAction === "approved" ? "Rate change approved and applied" : "Rate change request rejected")
       closeReviewDialog()

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert } from "lucide-react"
-import { settleLoanWithCollateral } from "@/collections/loans"
+import { loanCollection } from "@/collections/loans"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -45,7 +45,13 @@ export function SettleCollateralDialog({
       return
     }
 
-    settleLoanWithCollateral(loanId, reason.trim())
+    loanCollection.update(
+      loanId,
+      { metadata: { intent: "settle", reason: reason.trim() } },
+      (draft) => {
+        draft.status = "fully_paid"
+      },
+    )
     toast.success("Loan settled with collateral")
     onOpenChange(false)
     setReason("")

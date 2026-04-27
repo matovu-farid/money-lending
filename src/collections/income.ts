@@ -7,17 +7,30 @@ import {
   recordIncomeAction,
   deleteIncomeAction,
 } from "@/actions/income.actions"
-import type { TransactionShapeRow, CreateTransactionInput } from "@/types"
+import type {
+  TransactionShapeRow,
+  CreateTransactionInput,
+  DepositLocation,
+} from "@/types"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
 /**
- * Side-channel map: stores the original form input keyed by client-generated ID.
- * The onInsert handler reads from here because CreateTransactionInput has fields
- * (categoryId, location, backdateNote, etc.) that aren't part of TransactionShapeRow.
+ * Extra context for the onInsert handler that isn't part of the
+ * `TransactionShapeRow` (categoryName resolution, deposit location for the
+ * cash leg, optional backdating note). Pass via TanStack DB's `metadata`:
+ *
+ *   incomeCollection.insert(optimisticRow, {
+ *     metadata: { categoryName, location, subLocationId, backdateNote },
+ *   })
  */
-const pendingInsertInputs = new Map<string, CreateTransactionInput>()
+export interface IncomeInsertMetadata {
+  categoryName: string
+  location: DepositLocation
+  subLocationId?: string
+  backdateNote?: string
+}
 
 const recentCategoryNames = new Map<string, string>()
 export function getRecentIncomeCategoryName(id: string): string | undefined {
@@ -37,13 +50,22 @@ export const incomeCollection = createCollection(
       onError: shapeOnError("transactions[income]"),
     },
     onInsert: async ({ transaction }) => {
-      const { modified } = transaction.mutations[0]
-      const input = pendingInsertInputs.get(modified.id)
-      if (!input) {
-        throw new Error("Missing income input for optimistic insert")
+      const { modified, metadata } = transaction.mutations[0]
+      const meta = metadata as IncomeInsertMetadata | undefined
+      if (!meta?.categoryName || !meta.location) {
+        throw new Error("Missing income metadata for optimistic insert")
+      }
+      const input: CreateTransactionInput = {
+        id: modified.id,
+        categoryName: meta.categoryName,
+        amount: modified.amount,
+        transactionDate: modified.transactionDate,
+        notes: modified.description ?? undefined,
+        location: meta.location,
+        subLocationId: meta.subLocationId,
+        backdateNote: meta.backdateNote,
       }
       const result = await recordIncomeAction(input)
-      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
@@ -70,17 +92,3 @@ export const incomeCollection = createCollection(
     },
   })
 )
-
-/**
- * Insert an income transaction with its full form input.
- * Call this instead of incomeCollection.insert() directly so the onInsert
- * handler can access the original CreateTransactionInput via the side-channel map.
- */
-export function insertIncomeWithInput(
-  id: string,
-  optimistic: TransactionShapeRow,
-  input: CreateTransactionInput
-) {
-  pendingInsertInputs.set(id, input)
-  incomeCollection.insert(optimistic)
-}

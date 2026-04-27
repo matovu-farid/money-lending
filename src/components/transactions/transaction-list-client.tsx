@@ -5,8 +5,8 @@ import { useForm } from "react-hook-form"
 import { useLiveQuery } from "@tanstack/react-db"
 import BigNumber from "bignumber.js"
 import { toast } from "sonner"
-import { expenseCollection, insertExpenseWithInput } from "@/collections/expenses"
-import { incomeCollection, insertIncomeWithInput } from "@/collections/income"
+import { expenseCollection, type ExpenseInsertMetadata } from "@/collections/expenses"
+import { incomeCollection, type IncomeInsertMetadata } from "@/collections/income"
 import { locationBalancesCollection } from "@/collections/loan-extras"
 import { generateClientId } from "@/lib/client-id"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
@@ -27,7 +27,7 @@ import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PageHeader } from "@/components/ui/page-header"
-import type { CreateTransactionInput, TransactionRow, TransactionShapeRow, CategoryRow, DepositLocation } from "@/types"
+import type { TransactionRow, TransactionShapeRow, CategoryRow, DepositLocation } from "@/types"
 
 interface TransactionFormValues {
   date: string
@@ -95,7 +95,6 @@ export function TransactionListClient({
   const labels = LABELS[variant]
   const idPrefix = variant === "income" ? "income" : "expense"
   const collection = variant === "income" ? incomeCollection : expenseCollection
-  const insertWithInput = variant === "income" ? insertIncomeWithInput : insertExpenseWithInput
   const { has } = usePermissions()
   const canManageFunds = has("fund-transfer:create")
 
@@ -189,16 +188,6 @@ export function TransactionListClient({
       )
 
       const id = generateClientId()
-      const input: CreateTransactionInput = {
-        id,
-        categoryName,
-        amount: data.amount,
-        transactionDate: data.date,
-        notes: data.notes || undefined,
-        location: data.location,
-        subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
-        backdateNote: data.backdateNote?.trim() || undefined,
-      }
       const optimistic: TransactionShapeRow = {
         id,
         type: labels.txType,
@@ -216,7 +205,13 @@ export function TransactionListClient({
         journalGroupId: null,
         createdAt: new Date().toISOString(),
       }
-      insertWithInput(id, optimistic, input)
+      const metadata: IncomeInsertMetadata & ExpenseInsertMetadata = {
+        categoryName,
+        location: data.location,
+        subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
+        backdateNote: data.backdateNote?.trim() || undefined,
+      }
+      collection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
       toast.success(labels.successRecord)
       setIsSheetOpen(false)
       reset()

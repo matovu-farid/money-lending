@@ -1,20 +1,11 @@
 export { customerCollection } from "./customers"
-export { loanCollection, insertLoanWithInput, settleLoanWithCollateral } from "./loans"
-export {
-  paymentCollection,
-  insertPaymentWithInput,
-  updatePaymentWithInput,
-  deletePaymentWithReason,
-} from "./payments"
-export { expenseCollection, insertExpenseWithInput } from "./expenses"
-export { incomeCollection, insertIncomeWithInput } from "./income"
-export { creditorCollection, insertCreditorWithInput } from "./creditors"
-export { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "./fund-transfers"
-export {
-  rateChangeRequestCollection,
-  insertRateChangeRequestWithInput,
-  reviewRateChangeRequest,
-} from "./rate-change-requests"
+export { loanCollection, insertLoanWithInput } from "./loans"
+export { paymentCollection } from "./payments"
+export { expenseCollection } from "./expenses"
+export { incomeCollection } from "./income"
+export { creditorCollection } from "./creditors"
+export { fundTransferCollection } from "./fund-transfers"
+export { rateChangeRequestCollection } from "./rate-change-requests"
 export { delegationCollection, type DelegationRow } from "./delegations"
 export { invitationCollection, type InvitationRow } from "./invitations"
 

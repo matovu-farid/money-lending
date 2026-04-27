@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiveQuery, eq } from "@tanstack/react-db";
-import { customerCollection, changeCustomerStatusWithInput } from "@/collections/customers";
+import { customerCollection } from "@/collections/customers";
 import { loanCollection } from "@/collections/loans";
 import { paymentCollection } from "@/collections/payments";
 import { getPaymentPortionsCollection } from "@/collections/loan-extras";
@@ -326,10 +326,12 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
       try {
         // Optimistically updates the collection; onUpdate dispatches the
         // status-change server action with the supplied reason.
-        changeCustomerStatusWithInput(
+        customerCollection.update(
           customer.id,
-          pendingStatus,
-          statusReason,
+          { metadata: { intent: "change-status", reason: statusReason } },
+          (draft) => {
+            draft.status = pendingStatus;
+          },
         );
         setStatusDialogOpen(false);
         toast.success(

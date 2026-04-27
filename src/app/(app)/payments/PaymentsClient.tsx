@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useLiveQuery } from "@tanstack/react-db"
-import { paymentCollection, updatePaymentWithInput, markPaymentWrongOptimistic } from "@/collections/payments"
+import { paymentCollection } from "@/collections/payments"
 import { loanCollection } from "@/collections/loans"
 import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
 import BigNumber from "bignumber.js"
@@ -283,16 +283,14 @@ function PaymentsContent({
     if (!selectedPayment) return
     try {
       setIsEditPending(true)
-      const input = {
-        paymentId: selectedPayment.id,
-        amount: editAmount || undefined,
-        paymentDate: editDate || undefined,
-        reason: editReason,
-      }
-      updatePaymentWithInput(selectedPayment.id, input, (draft) => {
-        if (editAmount) draft.amount = editAmount
-        if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
-      })
+      paymentCollection.update(
+        selectedPayment.id,
+        { metadata: { intent: "edit", reason: editReason } },
+        (draft) => {
+          if (editAmount) draft.amount = editAmount
+          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
+        },
+      )
       toast.success("Payment updated")
       closeEdit()
     } catch {
@@ -309,7 +307,15 @@ function PaymentsContent({
         // Routes through paymentCollection.onUpdate → markPaymentWrongAction
         // (which returns txid). Cross-cutting cache refreshes are handled by
         // the collection handler.
-        markPaymentWrongOptimistic(markWrongTarget.id, markWrongReason)
+        paymentCollection.update(
+          markWrongTarget.id,
+          { metadata: { intent: "mark-wrong", reason: markWrongReason } },
+          (draft) => {
+            const d = draft as typeof draft & { markedWrong: boolean; markedWrongReason: string | null }
+            d.markedWrong = true
+            d.markedWrongReason = markWrongReason
+          },
+        )
         toast.success("Payment marked as wrong")
         closeMarkWrong()
       } catch (e) {

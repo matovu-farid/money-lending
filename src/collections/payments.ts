@@ -33,29 +33,36 @@ import { queryKeys } from "@/lib/query-keys"
 export type PaymentRow = Payment
 
 /**
- * Side-channel map: stores the original form input keyed by client-generated ID.
- * The onInsert handler reads from here because RecordPaymentInput has fields
- * (loanId, depositLocation, note, etc.) that aren't part of the Electric row
- * (no `customerId`/`customerName` on the row).
+ * Metadata shapes routed through the `metadata` parameter of
+ * `collection.insert/update/delete`. The handler reads `mutation.metadata`
+ * to decide which server action to dispatch and to recover audit reasons /
+ * extra inputs that aren't part of the row schema.
  */
-const pendingInsertInputs = new Map<string, RecordPaymentInput>()
+type PaymentInsertMetadata = {
+  // The full RecordPaymentInput — carries `note`, `subLocationId`, etc.
+  // that may differ from what's persisted on the row (or that the server
+  // needs verbatim from the form).
+  input: RecordPaymentInput
+}
 
-/**
- * Side-channel map for update reasons. The `reason` audit field isn't a column.
- */
-const pendingUpdateInputs = new Map<string, EditPaymentInput>()
+type PaymentUpdateMetadata =
+  | { intent?: "edit"; reason: string }
+  | { intent: "mark-wrong"; reason: string }
+  | { intent: "unmark-wrong" }
 
-/**
- * Side-channel map for delete reasons. Same idea — `reason` isn't on the row.
- */
-const pendingDeleteReasons = new Map<string, string>()
+type PaymentDeleteMetadata = { reason: string }
 
-/**
- * Side-channel for mark-wrong reasons. The `markedWrongReason` is a column,
- * but we want to forward the user-provided reason verbatim to the action,
- * which performs additional ledger reversal logic beyond a plain row update.
- */
-const pendingMarkWrongReasons = new Map<string, string>()
+function invalidateCrossCutting(loanId: string) {
+  const qc = getQueryClient()
+  qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
+  qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+  qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+  qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
+  qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+  qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+  qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+  qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+}
 
 export const paymentCollection = createCollection(
   electricCollectionOptions<PaymentRow>({
@@ -67,177 +74,108 @@ export const paymentCollection = createCollection(
       onError: shapeOnError("payments"),
     },
     onInsert: async ({ transaction }) => {
-      const { modified } = transaction.mutations[0]
-      const input = pendingInsertInputs.get(modified.id)
-      if (!input) {
-        throw new Error("Missing payment input for optimistic insert")
+      const { modified, metadata } = transaction.mutations[0]
+      const meta = metadata as PaymentInsertMetadata | undefined
+      // The recordPaymentAction signature wants RecordPaymentInput. The form
+      // passes that verbatim through metadata; if missing, fall back to
+      // building it from the row (handles plain `collection.insert(row)` calls).
+      const input: RecordPaymentInput = meta?.input ?? {
+        id: modified.id,
+        loanId: modified.loanId,
+        paymentDate:
+          modified.paymentDate instanceof Date
+            ? modified.paymentDate.toISOString()
+            : String(modified.paymentDate),
+        amount: modified.amount,
+        depositLocation: modified.depositLocation,
+        subLocationId: modified.subLocationId ?? undefined,
       }
       const result = await recordPaymentAction(input)
-      pendingInsertInputs.delete(modified.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate query-based collections (Electric handles payments/loans auto-refresh)
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(input.loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      invalidateCrossCutting(input.loanId)
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
-      const { original, changes } = transaction.mutations[0]
+      const { original, changes, metadata } = transaction.mutations[0]
       const loanId = (original as PaymentRow).loanId
+      const meta = metadata as PaymentUpdateMetadata | undefined
 
-      // Detect a mark-wrong / unmark-wrong update by inspecting the draft delta.
-      // These mutations dispatch to dedicated server actions that also reverse
-      // (or re-post) ledger journal entries — not a plain payment edit.
-      const markedWrongChanged = (changes as Partial<PaymentRow>).markedWrong !== undefined
-      if (markedWrongChanged) {
-        const nextMarkedWrong = (changes as Partial<PaymentRow>).markedWrong as boolean
-        let result: { data?: unknown; txid?: number; error?: string }
-        if (nextMarkedWrong) {
-          const reason = pendingMarkWrongReasons.get(original.id)
-          if (!reason) {
-            throw new Error("Missing mark-wrong reason for optimistic update")
-          }
-          result = await markPaymentWrongAction(original.id, reason)
-          pendingMarkWrongReasons.delete(original.id)
-        } else {
-          result = await unmarkPaymentWrongAction(original.id)
-        }
+      // Mark-wrong / unmark-wrong dispatch to dedicated server actions that
+      // also reverse (or re-post) ledger journal entries — not a plain edit.
+      if (meta?.intent === "mark-wrong") {
+        const result = await markPaymentWrongAction(original.id, meta.reason)
         if ("error" in result && result.error) {
           throw new Error(result.error)
         }
-        // Cross-cutting refreshes (dashboard / reports / location balances)
-        // — Electric handles payments+loans rows automatically once txid lands.
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
-        qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-        qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-        qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-        qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+        invalidateCrossCutting(loanId)
         return { txid: result.txid }
       }
 
-      const input = pendingUpdateInputs.get(original.id)
-      if (!input) {
-        throw new Error("Missing payment update input for optimistic update")
+      if (meta?.intent === "unmark-wrong") {
+        const result = await unmarkPaymentWrongAction(original.id)
+        if ("error" in result && result.error) {
+          throw new Error(result.error)
+        }
+        invalidateCrossCutting(loanId)
+        return { txid: result.txid }
       }
-      const result = await editPaymentAction(input)
-      pendingUpdateInputs.delete(original.id)
+
+      // Plain payment edit (amount / date) — the audit reason rides through
+      // metadata since it's not a column.
+      if (!meta?.reason) {
+        throw new Error("Payment edits must include metadata.reason")
+      }
+      const editInput: EditPaymentInput = {
+        paymentId: original.id,
+        reason: meta.reason,
+      }
+      const changedAmount = (changes as Partial<PaymentRow>).amount
+      if (changedAmount !== undefined) editInput.amount = changedAmount
+      const changedDate = (changes as Partial<PaymentRow>).paymentDate
+      if (changedDate !== undefined) {
+        editInput.paymentDate =
+          changedDate instanceof Date ? changedDate.toISOString() : String(changedDate)
+      }
+      const result = await editPaymentAction(editInput)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate query-based collections
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      invalidateCrossCutting(loanId)
       return { txid: result.txid }
     },
     onDelete: async ({ transaction }) => {
-      const { original } = transaction.mutations[0]
-      const reason = pendingDeleteReasons.get(original.id)
-      if (!reason) {
-        throw new Error("Missing payment delete reason for optimistic delete")
+      const { original, metadata } = transaction.mutations[0]
+      const meta = metadata as PaymentDeleteMetadata | undefined
+      if (!meta?.reason) {
+        throw new Error("Payment deletes must include metadata.reason")
       }
       const result = await deletePaymentAction({
         paymentId: original.id,
-        reason,
+        reason: meta.reason,
       })
-      pendingDeleteReasons.delete(original.id)
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate query-based collections
-      const qc = getQueryClient()
-      const loanId = (original as PaymentRow).loanId
-      qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+      invalidateCrossCutting((original as PaymentRow).loanId)
       return { txid: result.txid }
     },
   })
 )
 
 /**
- * Insert a payment with its full form input.
- * Call this instead of paymentCollection.insert() directly so the onInsert
- * handler can access the original RecordPaymentInput via the side-channel map.
+ * Thin convenience wrapper for the new-payment forms. Equivalent to:
+ *   paymentCollection.insert(optimistic, { metadata: { input } })
+ * Kept because the form code passes the full RecordPaymentInput verbatim
+ * (note, subLocationId, etc.) which the row alone can't fully represent.
  */
 export function insertPaymentWithInput(
-  id: string,
+  _id: string,
   optimistic: PaymentRow,
-  input: RecordPaymentInput
+  input: RecordPaymentInput,
 ) {
-  pendingInsertInputs.set(id, input)
-  paymentCollection.insert(optimistic)
-}
-
-/**
- * Update a payment with the full edit input (includes reason for audit).
- * Sets up the side-channel before calling collection.update().
- */
-export function updatePaymentWithInput(
-  id: string,
-  input: EditPaymentInput,
-  applyOptimistic: (draft: PaymentRow) => void
-) {
-  pendingUpdateInputs.set(id, input)
-  paymentCollection.update(id, (draft) => {
-    applyOptimistic(draft as PaymentRow)
-  })
-}
-
-/**
- * Delete a payment with an audit reason.
- * Sets up the side-channel before calling collection.delete().
- */
-export function deletePaymentWithReason(id: string, reason: string) {
-  pendingDeleteReasons.set(id, reason)
-  paymentCollection.delete(id)
-}
-
-/**
- * Mark a payment as wrong via the collection (optimistic). The draft is
- * mutated to flip `markedWrong`, and onUpdate routes to markPaymentWrongAction.
- */
-export function markPaymentWrongOptimistic(id: string, reason: string) {
-  pendingMarkWrongReasons.set(id, reason)
-  paymentCollection.update(id, (draft) => {
-    const d = draft as PaymentRow
-    d.markedWrong = true
-    d.markedWrongReason = reason
-  })
-}
-
-/**
- * Unmark a payment as wrong via the collection (optimistic). onUpdate routes
- * to unmarkPaymentWrongAction.
- */
-export function unmarkPaymentWrongOptimistic(id: string) {
-  paymentCollection.update(id, (draft) => {
-    const d = draft as PaymentRow
-    d.markedWrong = false
-    d.markedWrongReason = null
-    d.markedWrongBy = null
+  paymentCollection.insert(optimistic, {
+    metadata: { input } satisfies PaymentInsertMetadata,
   })
 }

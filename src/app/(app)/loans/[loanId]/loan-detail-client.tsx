@@ -10,19 +10,14 @@ import {
   ShieldAlert,
   PlusCircle,
 } from "lucide-react"
-import { updatePaymentWithInput, deletePaymentWithReason } from "@/collections/payments"
+import { paymentCollection } from "@/collections/payments"
 import { currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
 import { getLoanBalanceCollection } from "@/collections/loan-balance"
-import { insertRateChangeRequestWithInput } from "@/collections/rate-change-requests"
-import {
-  waiveLoanPenaltyWithInput,
-  adjustLoanPenaltyMultiplierWithInput,
-} from "@/collections/loans"
+import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
+import { loanCollection } from "@/collections/loans"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { generateClientId } from "@/lib/client-id"
 import { useLiveQuery, eq } from "@tanstack/react-db"
-import { paymentCollection } from "@/collections/payments"
-import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import type { UserRole, RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
@@ -261,16 +256,14 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   function handleEditSubmit() {
     if (!editingPayment) return
     try {
-      const input = {
-        paymentId: editingPayment.id,
-        amount: editAmount.trim(),
-        paymentDate: editDate ? editDate + "T12:00:00" : undefined,
-        reason: editReason.trim(),
-      }
-      updatePaymentWithInput(editingPayment.id, input, (draft) => {
-        if (editAmount.trim()) draft.amount = editAmount.trim()
-        if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
-      })
+      paymentCollection.update(
+        editingPayment.id,
+        { metadata: { intent: "edit", reason: editReason.trim() } },
+        (draft) => {
+          if (editAmount.trim()) draft.amount = editAmount.trim()
+          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
+        },
+      )
       toast.success("Payment updated")
       closePaymentEdit()
     } catch {
@@ -281,7 +274,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   function handleDeleteSubmit() {
     if (!deletingPayment) return
     try {
-      deletePaymentWithReason(deletingPayment.id, deleteReason.trim())
+      paymentCollection.delete(deletingPayment.id, {
+        metadata: { reason: deleteReason.trim() },
+      })
       toast.success("Payment deleted")
       closePaymentDelete()
     } catch {
@@ -309,10 +304,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     }
 
     try {
-      insertRateChangeRequestWithInput(id, optimistic, {
-        loanId: loan.id,
-        requestedRate: rateDecimal,
-      })
+      rateChangeRequestCollection.insert(optimistic)
       toast.success("Rate change request submitted")
       closeRateChange()
     } catch {
@@ -322,7 +314,14 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
   function handleWaivePenalty() {
     try {
-      waiveLoanPenaltyWithInput(loan.id)
+      loanCollection.update(
+        loan.id,
+        { metadata: { intent: "waive-penalty" } },
+        (draft) => {
+          draft.penaltyWaived = true
+          draft.penaltyWaivedAt = new Date()
+        },
+      )
       toast.success("Penalty waived")
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to waive penalty")
@@ -332,7 +331,13 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   function handleAdjustPenaltySave() {
     try {
       const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4)
-      adjustLoanPenaltyMultiplierWithInput(loan.id, decimal)
+      loanCollection.update(
+        loan.id,
+        { metadata: { intent: "adjust-penalty", multiplier: decimal } },
+        (draft) => {
+          draft.penaltyMultiplier = decimal
+        },
+      )
       toast.success("Penalty rate adjusted")
       closePenaltyAdjust()
     } catch (err) {

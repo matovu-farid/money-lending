@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
-import { fundTransferCollection, insertFundTransferWithInput, insertCapitalInjectionWithInput } from "@/collections/fund-transfers"
+import { fundTransferCollection } from "@/collections/fund-transfers"
 import { bankAccountCollection } from "@/collections/bank-accounts"
 import { locationBalancesCollection } from "@/collections/loan-extras"
 import { useForm, Controller } from "react-hook-form"
@@ -166,13 +166,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
 
   function onInjectionSubmit(data: InjectionFormValues) {
     const id = generateClientId()
-    const input = {
-      id,
-      toLocation: data.toLocation,
-      amount: data.amount.trim(),
-      note: data.note.trim() || undefined,
-      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
-    }
     const optimistic: FundTransfer = {
       id,
       transferType: "capital_injection",
@@ -187,7 +180,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     try {
-      insertCapitalInjectionWithInput(id, optimistic, input)
+      fundTransferCollection.insert(optimistic)
       toast.success("Capital injection recorded")
       injectionForm.reset()
       setInjectionDialogOpen(false)
@@ -203,15 +196,6 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     const id = generateClientId()
-    const input = {
-      id,
-      fromLocation: data.fromLocation,
-      toLocation: data.toLocation,
-      amount: data.amount.trim(),
-      note: data.note.trim() || undefined,
-      fromSubLocationId: data.fromLocation === "bank" ? data.fromSubLocationId : undefined,
-      toSubLocationId: data.toLocation === "bank" ? data.toSubLocationId : undefined,
-    }
     const optimistic: FundTransfer = {
       id,
       transferType: "internal",
@@ -226,7 +210,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     try {
-      insertFundTransferWithInput(id, optimistic, input)
+      fundTransferCollection.insert(optimistic)
       toast.success("Fund transfer recorded")
       reset()
       setDialogOpen(false)

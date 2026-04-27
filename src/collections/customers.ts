@@ -16,11 +16,16 @@ import type {
 } from "@/types/customer"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 
-// Side-channel for status-change reasons. The collection's `onUpdate` only
-// sees the diff between original/changes, but a status change requires a
-// reason that lives off-record (audit log only). We stash it here keyed by
-// customer id so the handler can pull it out when it sees `status` changed.
-const pendingStatusInputs = new Map<string, { status: CustomerStatus; reason: string }>()
+/**
+ * Metadata routed through `customerCollection.update(id, { metadata }, draft)`.
+ * The status-change path needs an audit `reason` that isn't a column, so the
+ * caller passes it via metadata and the handler dispatches the dedicated
+ * server action with reason + status.
+ */
+type CustomerUpdateMetadata = {
+  intent: "change-status"
+  reason: string
+}
 
 export const customerCollection = createCollection(
   electricCollectionOptions<Customer>({
@@ -47,23 +52,21 @@ export const customerCollection = createCollection(
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
-      const { original, changes } = transaction.mutations[0]
+      const { original, changes, metadata } = transaction.mutations[0]
+      const meta = metadata as CustomerUpdateMetadata | undefined
 
       // Status change path — requires reason + audit log
-      if (changes.status !== undefined) {
-        const pending = pendingStatusInputs.get(original.id)
-        pendingStatusInputs.delete(original.id)
-        const reason = pending?.reason
-        const newStatus = (pending?.status ?? changes.status) as CustomerStatus
-        if (!reason) {
+      if (meta?.intent === "change-status") {
+        const newStatus = changes.status as CustomerStatus | undefined
+        if (!newStatus) {
           throw new Error(
-            "Customer status changes must go through changeCustomerStatusWithInput",
+            "change-status update must include a draft.status change",
           )
         }
         const result = await changeCustomerStatusAction({
           customerId: original.id,
           newStatus,
-          reason,
+          reason: meta.reason,
         })
         if ("error" in result) {
           throw new Error(result.error)
@@ -85,26 +88,3 @@ export const customerCollection = createCollection(
     },
   })
 )
-
-/**
- * Optimistic status change. Updates `customerCollection` immediately so the UI
- * reflects the new status, while the collection's `onUpdate` dispatches
- * `changeCustomerStatusAction` (with the reason supplied here) on the server.
- *
- * Throws if the server rejects the change so callers can surface a toast.
- */
-export function changeCustomerStatusWithInput(
-  customerId: string,
-  newStatus: CustomerStatus,
-  reason: string,
-) {
-  pendingStatusInputs.set(customerId, { status: newStatus, reason })
-  try {
-    customerCollection.update(customerId, (draft) => {
-      draft.status = newStatus
-    })
-  } catch (err) {
-    pendingStatusInputs.delete(customerId)
-    throw err
-  }
-}

@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
-import { insertCreditorWithInput } from "@/collections/creditors"
+import { creditorCollection } from "@/collections/creditors"
 import { generateClientId } from "@/lib/client-id"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
@@ -62,8 +62,7 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
       const id = generateClientId()
       const now = new Date()
 
-      insertCreditorWithInput(
-        id,
+      creditorCollection.insert(
         {
           id,
           name: data.name.trim(),
@@ -73,15 +72,15 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
           updatedAt: now,
         },
         {
-          id,
-          name: data.name.trim(),
-          contact: data.contact.trim(),
-          address: data.address.trim(),
-          amount: data.amount.trim(),
-          interestRateMonthly: (Number(data.interestRateMonthly) / 100).toString(),
-          investmentDate: data.investmentDate,
-          depositLocation: "bank",
-          subLocationId: data.bankAccountId,
+          metadata: {
+            investment: {
+              amount: data.amount.trim(),
+              interestRateMonthly: (Number(data.interestRateMonthly) / 100).toString(),
+              investmentDate: data.investmentDate,
+              depositLocation: "bank",
+              subLocationId: data.bankAccountId,
+            },
+          },
         }
       )
 

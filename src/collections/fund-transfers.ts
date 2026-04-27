@@ -7,7 +7,12 @@ import {
   createFundTransferAction,
   createCapitalInjectionAction,
 } from "@/actions/fund-transfer.actions"
-import type { FundTransfer, CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types/fund-transfer"
+import type {
+  FundTransfer,
+  CreateFundTransferInput,
+  CreateCapitalInjectionInput,
+} from "@/types/fund-transfer"
+import type { DepositLocation } from "@/types/common"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
@@ -18,14 +23,6 @@ import { queryKeys } from "@/lib/query-keys"
 // dependent collections (locationBalances, reports.balanceSheet) already
 // auto-invalidate via subscribeToTableChanges on `transactions` and
 // `fund_transfers`, so manually invalidating them would be redundant.
-
-/**
- * Side-channel map: stores the original form input keyed by client-generated ID.
- * The onInsert handler reads from here because CreateFundTransferInput has fields
- * (fromLocation, toLocation, amount, note) that don't map 1:1 to FundTransfer columns.
- */
-const pendingInsertInputs = new Map<string, CreateFundTransferInput>()
-const pendingInjectionInputs = new Map<string, CreateCapitalInjectionInput>()
 
 export const fundTransferCollection = createCollection(
   electricCollectionOptions<FundTransfer>({
@@ -38,22 +35,31 @@ export const fundTransferCollection = createCollection(
     },
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
-      const injectionInput = pendingInjectionInputs.get(modified.id)
       let txid: number
-      if (injectionInput) {
-        const result = await createCapitalInjectionAction(injectionInput)
-        pendingInjectionInputs.delete(modified.id)
+      if (modified.transferType === "capital_injection") {
+        const input: CreateCapitalInjectionInput = {
+          id: modified.id,
+          toLocation: modified.toLocation as DepositLocation,
+          toSubLocationId: modified.toSubLocationId ?? undefined,
+          amount: modified.amount,
+          note: modified.note ?? undefined,
+        }
+        const result = await createCapitalInjectionAction(input)
         if ("error" in result) {
           throw new Error(result.error)
         }
         txid = result.txid
       } else {
-        const input = pendingInsertInputs.get(modified.id)
-        if (!input) {
-          throw new Error("Missing fund transfer input for optimistic insert")
+        const input: CreateFundTransferInput = {
+          id: modified.id,
+          fromLocation: modified.fromLocation as DepositLocation,
+          toLocation: modified.toLocation as DepositLocation,
+          fromSubLocationId: modified.fromSubLocationId ?? undefined,
+          toSubLocationId: modified.toSubLocationId ?? undefined,
+          amount: modified.amount,
+          note: modified.note ?? undefined,
         }
         const result = await createFundTransferAction(input)
-        pendingInsertInputs.delete(modified.id)
         if ("error" in result) {
           throw new Error(result.error)
         }
@@ -64,26 +70,3 @@ export const fundTransferCollection = createCollection(
     },
   })
 )
-
-/**
- * Insert a fund transfer with its full form input.
- * Call this instead of fundTransferCollection.insert() directly so the onInsert
- * handler can access the original CreateFundTransferInput via the side-channel map.
- */
-export function insertFundTransferWithInput(
-  id: string,
-  optimistic: FundTransfer,
-  input: CreateFundTransferInput
-) {
-  pendingInsertInputs.set(id, input)
-  fundTransferCollection.insert(optimistic)
-}
-
-export function insertCapitalInjectionWithInput(
-  id: string,
-  optimistic: FundTransfer,
-  input: CreateCapitalInjectionInput
-) {
-  pendingInjectionInputs.set(id, input)
-  fundTransferCollection.insert(optimistic)
-}
