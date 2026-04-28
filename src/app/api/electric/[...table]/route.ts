@@ -53,6 +53,7 @@ function cookiePresenceCacheSet(cookieValue: string): void {
 const ALLOWED_TABLES = new Set([
   "customers",
   "loans",
+  "loan_balances",          // ← add this line
   "payments",
   "transactions",
   "creditors",
