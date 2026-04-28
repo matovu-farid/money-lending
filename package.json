@@ -19,6 +19,7 @@
     "validate": "tsc --noEmit && vitest run && cypress run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:projections": "tsx scripts/db-projections.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "cypress:open": "cypress open",
