@@ -3,9 +3,9 @@
 import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useLoansWithBalances } from "@/collections/loan-views"
-import { getLoanBalanceCollection } from "@/collections/loan-balance"
+import { loanBalanceCollection } from "@/collections/loan-balances"
 import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
 import { toast } from "sonner"
 import { Card, CardContent } from "@/components/ui/card"
@@ -81,14 +81,23 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     [allActiveLoans]
   )
 
-  // Fetch balance for selected loan via collection
+  // Fetch balance for selected loan from the Electric-synced loan_balances projection.
   const selectedLoanId = selectedLoan?.loanId ?? ""
-  const balanceColl = getLoanBalanceCollection(selectedLoanId)
   const { data: balanceRows } = useLiveQuery(
-    (q) => q.from({ b: balanceColl }).select(({ b }) => b),
+    (q) => q.from({ b: loanBalanceCollection }).where(({ b }) => eq(b.loanId, selectedLoanId)),
     [selectedLoanId]
   )
-  const balanceData = balanceRows?.[0] ?? null
+  const balanceRow = balanceRows?.[0] ?? null
+  // Map Electric field names to the shape this component displays.
+  const balanceData = balanceRow
+    ? {
+        outstandingPrincipal: balanceRow.outstandingBalance,
+        accruedInterest: balanceRow.unpaidInterest,
+        totalBalance: String(
+          parseFloat(balanceRow.outstandingBalance) + parseFloat(balanceRow.unpaidInterest)
+        ),
+      }
+    : null
 
   function resetForm() {
     setSelectedLoan(null)

@@ -4,7 +4,7 @@ import { useParams } from "next/navigation"
 import { useLiveQuery, eq } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { customerCollection } from "@/collections/customers"
-import { getLoanBalanceCollection } from "@/collections/loan-balance"
+import { loanBalanceCollection } from "@/collections/loan-balances"
 import { shortId } from "@/lib/utils"
 import { RecordPaymentForm } from "./record-payment-form"
 
@@ -26,17 +26,24 @@ export default function RecordPaymentPage() {
   )
   const customerName = customers?.[0]?.fullName ?? ""
 
-  // Per-loan balance is a query collection that fetches fresh from the server
-  // for every loan. Don't suspend on it — the form can render and let the
-  // user start typing; balance-aware UI fills in once the data arrives.
-  const balanceColl = getLoanBalanceCollection(loanId)
+  // Per-loan balance from the Electric-synced loan_balances projection table.
+  // Don't suspend on it — the form can render and let the user start typing;
+  // balance-aware UI fills in once the data arrives.
   const { data: balanceRows } = useLiveQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
+    (q) => q.from({ b: loanBalanceCollection }).where(({ b }) => eq(b.loanId, loanId)),
     [loanId]
   )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const balanceData = (balanceRows as any)?.[0] ?? null
+  const balanceRow = balanceRows?.[0] ?? null
+  // Map Electric field names to the shape RecordPaymentForm expects.
+  const balanceData = balanceRow
+    ? {
+        outstandingPrincipal: balanceRow.outstandingBalance,
+        accruedInterest: balanceRow.unpaidInterest,
+        totalBalance: String(
+          parseFloat(balanceRow.outstandingBalance) + parseFloat(balanceRow.unpaidInterest)
+        ),
+      }
+    : null
   const balanceLoading = !balanceData
 
   if (loanLoading) {

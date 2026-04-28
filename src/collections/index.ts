@@ -53,7 +53,6 @@ export { adminUserCollection, type AdminUser } from "./admin-users"
 
 export { permissionsCollection, type PermissionsRow } from "./permissions"
 
-export { getLoanBalanceCollection, type LoanBalanceRow } from "./loan-balance"
 
 export {
   collateralNaturesCollection,

@@ -6,7 +6,6 @@ import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useForm } from "react-hook-form"
 import { customerCollection } from "@/collections/customers"
 import { collateralNaturesCollection, locationBalancesCollection, getActiveLoanCheckCollection, getLoanCollateralCollection } from "@/collections/loan-extras"
-import { getLoanBalanceCollection } from "@/collections/loan-balance"
 import { generateClientId } from "@/lib/client-id"
 import { insertLoanWithInput } from "@/collections/loans"
 import { useSession } from "@/lib/auth-client"
@@ -93,9 +92,9 @@ function NewLoanPageInner() {
     const id = receiptData?.loanId
     if (!id) return
     router.prefetch(`/loans/${id}`)
-    // Touching these getters is enough — the collections use `startSync: true`,
-    // so creation kicks off the queryFn immediately.
-    getLoanBalanceCollection(id)
+    // Touching this getter warms the collateral collection (startSync: true).
+    // The loan_balances projection is globally synced via loanBalanceCollection
+    // (Electric direct) — no explicit warmup needed.
     getLoanCollateralCollection(id)
   }, [receiptData?.loanId, router])
 

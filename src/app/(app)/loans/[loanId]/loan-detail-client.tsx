@@ -12,7 +12,7 @@ import {
 } from "lucide-react"
 import { paymentCollection } from "@/collections/payments"
 import { currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
-import { getLoanBalanceCollection } from "@/collections/loan-balance"
+import { loanBalanceCollection } from "@/collections/loan-balances"
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import { loanCollection } from "@/collections/loans"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
@@ -183,18 +183,15 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     [loan.id]
   )
 
-  // Balance collection — non-suspending. The page already has a fallback
-  // outstanding balance from the loan list entry (loanEntry.outstandingBalance),
+  // Balance collection — Electric-synced projection table. The page already has
+  // a fallback outstanding balance from the loan list entry (loanEntry.outstandingBalance),
   // so the only consumers that strictly need this data — SimulatorPanel and
   // SettleCollateralDialog — can wait for it without blocking initial render.
-  const balanceColl = getLoanBalanceCollection(loan.id)
   const { data: balanceRows } = useLiveQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (q) => q.from({ b: balanceColl as any }).select(({ b }: any) => b),
+    (q) => q.from({ b: loanBalanceCollection }).where(({ b }) => eq(b.loanId, loan.id)),
     [loan.id]
   )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const balanceData = (balanceRows as any)?.[0] ?? null
+  const balanceData = balanceRows?.[0] ?? null
 
   // Route prefetch for record-payment page
   useEffect(() => {
@@ -565,7 +562,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         <SimulatorPanel
           loan={loan}
           payments={payments}
-          ledgerBalance={balanceData?.outstandingPrincipal ?? ledgerBalance}
+          ledgerBalance={balanceData?.outstandingBalance ?? ledgerBalance}
           totalInterestPaid={Object.values(currentPortions).reduce(
             (sum, p) => sum.plus(p.interestPortion), new BigNumber(0)
           ).toFixed(0)}
@@ -609,8 +606,8 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
           open={settlingCollateral}
           onOpenChange={(v) => { if (!v) closeSettleCollateral() }}
           loanId={loan.id}
-          outstandingPrincipal={balanceData.outstandingPrincipal}
-          accruedInterest={balanceData.accruedInterest}
+          outstandingPrincipal={balanceData.outstandingBalance}
+          accruedInterest={balanceData.unpaidInterest}
           collateralNature={collateralNature}
           collateralDescription={collateralDescription ?? null}
         />
