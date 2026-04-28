@@ -3,9 +3,16 @@ import { defineConfig } from "cypress"
 import postgres, { type Sql } from "postgres"
 
 const DB_URL = process.env.DATABASE_URL_TEST ?? "postgres://localhost:5432/money_lending"
+// Neon DB is what the dev server uses when not running with CYPRESS=true.
+// Tasks that need to seed/query the same DB the server reads must use this URL.
+const NEON_URL = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? DB_URL
 
 function freshSql(): Sql {
   return postgres(DB_URL, { max: 1 })
+}
+
+function freshNeonSql(): Sql {
+  return postgres(NEON_URL, { max: 1, ssl: NEON_URL.includes("neon.tech") ? "require" : false })
 }
 
 /** Run a callback with a disposable connection that is always closed afterwards. */
@@ -18,11 +25,21 @@ async function withSql<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
   }
 }
 
+async function withNeonSql<T>(fn: (sql: Sql) => Promise<T>): Promise<T> {
+  const sql = freshNeonSql()
+  try {
+    return await fn(sql)
+  } finally {
+    await sql.end({ timeout: 5 })
+  }
+}
+
 export default defineConfig({
   e2e: {
     baseUrl: "http://localhost:3000",
     supportFile: "cypress/support/e2e.ts",
     specPattern: "cypress/e2e/**/*.cy.ts",
+    pageLoadTimeout: 120000,
     setupNodeEvents(on) {
       on("task", {
         async "db:reset"() {
@@ -270,6 +287,114 @@ export default defineConfig({
         async "db:cleanInvitations"() {
           return withSql(async (sql) => {
             await sql`DELETE FROM invitation`
+            return null
+          })
+        },
+
+        // ── Neon-backed tasks ──────────────────────────────────────────────
+        // These tasks connect to the same DB the dev server uses (DATABASE_URL_UNPOOLED).
+        // Use them when the dev server is NOT running with CYPRESS=true, so
+        // the test DB and app DB are the same Neon instance.
+
+        async "db:neon:seedCustomerAndLoan"({
+          customerName,
+          contact,
+          nin,
+          principalAmount,
+          issuedBy,
+        }: {
+          customerName: string
+          contact: string
+          nin: string
+          principalAmount: string
+          issuedBy: string
+        }) {
+          return withNeonSql(async (sql) => {
+            const customers = await sql`
+              INSERT INTO customers (full_name, nin, contact, address, status)
+              VALUES (${customerName}, ${nin}, ${contact}, 'Kampala, Uganda', 'active')
+              RETURNING id
+            `
+            const customerId = customers[0].id
+
+            const loans = await sql`
+              INSERT INTO loans (
+                customer_id, principal_amount, issuance_fee, interest_rate,
+                min_interest_days, start_date, status, issued_by, disbursement_source, loan_type
+              )
+              VALUES (
+                ${customerId}, ${principalAmount}, '50000', '0.1000',
+                30, CURRENT_DATE, 'active', ${issuedBy}, 'cash', 'perpetual'
+              )
+              RETURNING id
+            `
+            const loanId = loans[0].id
+
+            // Insert collateral
+            await sql`
+              INSERT INTO collateral (loan_id, nature, description)
+              VALUES (${loanId}, 'Land Title', 'Plot 42, Nakawa')
+            `
+
+            // Insert Loans Receivable debit transaction so loan_balances trigger fires
+            let lrCats = await sql`SELECT id FROM transaction_categories WHERE name = 'Loans Receivable'`
+            if (lrCats.length === 0) {
+              lrCats = await sql`INSERT INTO transaction_categories (name, type) VALUES ('Loans Receivable', 'asset') RETURNING id`
+            }
+            const journalGroupId = crypto.randomUUID()
+            await sql`
+              INSERT INTO transactions (category_id, loan_id, amount, type, description, transaction_date, recorded_by, reference_type, reference_id, journal_group_id)
+              VALUES (${lrCats[0].id}, ${loanId}, ${principalAmount}, 'debit', 'Loan disbursement', CURRENT_DATE, ${issuedBy}, 'loan', ${loanId}, ${journalGroupId})
+            `
+
+            return { customerId, loanId }
+          })
+        },
+
+        async "db:neon:getLoanBalance"({ loanId }: { loanId: string }) {
+          return withNeonSql(async (sql) => {
+            const rows = await sql`
+              SELECT outstanding_balance, unpaid_interest, last_payment_date
+              FROM loan_balances WHERE loan_id = ${loanId}
+            `
+            return rows[0] ?? null
+          })
+        },
+
+        async "db:neon:postLoansReceivableCredit"({
+          loanId,
+          amount,
+        }: {
+          loanId: string
+          amount: string
+        }) {
+          return withNeonSql(async (sql) => {
+            const users = await sql`SELECT id FROM "user" LIMIT 1`
+            const actorId = users[0]?.id ?? "test-actor"
+            let lrCats = await sql`SELECT id FROM transaction_categories WHERE name = 'Loans Receivable'`
+            if (lrCats.length === 0) {
+              lrCats = await sql`INSERT INTO transaction_categories (name, type) VALUES ('Loans Receivable', 'asset') RETURNING id`
+            }
+            const journalGroupId = crypto.randomUUID()
+            await sql`
+              INSERT INTO transactions (category_id, loan_id, amount, type, description, transaction_date, recorded_by, reference_type, reference_id, journal_group_id)
+              VALUES (${lrCats[0].id}, ${loanId}, ${amount}, 'credit', 'Test credit', NOW(), ${actorId}, 'test', ${loanId}, ${journalGroupId})
+            `
+            return null
+          })
+        },
+
+        async "db:neon:cleanupTestLoan"({ loanId }: { loanId: string }) {
+          return withNeonSql(async (sql) => {
+            // Delete in dependency order
+            await sql`DELETE FROM transactions WHERE loan_id = ${loanId}`
+            await sql`DELETE FROM payments WHERE loan_id = ${loanId}`
+            await sql`DELETE FROM collateral WHERE loan_id = ${loanId}`
+            const loanRows = await sql`SELECT customer_id FROM loans WHERE id = ${loanId}`
+            await sql`DELETE FROM loans WHERE id = ${loanId}`
+            if (loanRows.length > 0) {
+              await sql`DELETE FROM customers WHERE id = ${loanRows[0].customer_id}`
+            }
             return null
           })
         },

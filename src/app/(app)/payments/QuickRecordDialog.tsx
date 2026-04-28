@@ -4,7 +4,7 @@ import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
 import { useForm } from "react-hook-form"
 import { useLiveQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections/loans"
+import { useLoansWithBalances } from "@/collections/loan-views"
 import { getLoanBalanceCollection } from "@/collections/loan-balance"
 import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
 import { toast } from "sonner"
@@ -70,11 +70,8 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     },
   })
 
-  // Get active loans from collection, sorted by last payment activity
-  const { data: allActiveLoans = [] } = useLiveQuery(
-    (q) => q.from({ l: loanCollection }),
-    []
-  )
+  // Get active loans from projection hook (includes customerName + lastPaymentDate)
+  const { data: allActiveLoans = [] } = useLoansWithBalances()
   const recentLoans = useMemo(
     () => allActiveLoans
       .filter((l) => l.status === "active" && l.lastPaymentDate)

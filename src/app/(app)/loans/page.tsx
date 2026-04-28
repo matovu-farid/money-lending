@@ -2,8 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { useLiveQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections/loans"
+import { useLoansWithBalances } from "@/collections/loan-views"
 import { Plus, ChevronRight, Loader2 } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
@@ -39,9 +38,7 @@ function criticalityRank(entry: LoanListEntry): number {
 
 export default function LoansPage() {
   const router = useRouter()
-  const { data, isLoading } = useLiveQuery((q) =>
-    q.from({ loan: loanCollection }).select(({ loan }) => loan)
-  )
+  const { data, isLoading } = useLoansWithBalances()
   const entries = data ?? []
   const error: string | null = null
   const calculatedAt = new Date()

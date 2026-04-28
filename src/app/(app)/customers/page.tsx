@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useLiveQuery } from "@tanstack/react-db"
 import { customerCollection } from "@/collections/customers"
-import { loanCollection } from "@/collections/loans"
+import { useLoansWithBalances } from "@/collections/loan-views"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
 import type { CustomerSearchParams } from "@/types"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
@@ -34,13 +34,8 @@ export default function CustomersPage() {
     !!searchParams.loanStatus?.length ||
     (!!searchParams.daysRemainingFilter && searchParams.daysRemainingFilter !== "any")
 
-  const { data: allLoans, isLoading: loansLoading } = useLiveQuery(
-    (q) =>
-      needsLoans
-        ? q.from({ l: loanCollection }).select(({ l }) => l)
-        : undefined,
-    [needsLoans]
-  )
+  const { data: allLoansData, isLoading: loansLoading } = useLoansWithBalances()
+  const allLoans = needsLoans ? allLoansData : undefined
 
   // Client-side filtering
   const filtered = useMemo(() => {

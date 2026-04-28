@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { useLiveQuery, eq, ilike, gte, lte } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { loanCollection } from "@/collections/loans"
+import { useLoansWithBalances } from "@/collections/loan-views"
 import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
 import BigNumber from "bignumber.js"
 import { toast } from "sonner"
@@ -142,15 +143,24 @@ function PaymentsContent({
   const { data: rawPayments, isLoading: paymentsLoading } = useLiveQuery((q) =>
     q.from({ p: paymentCollection }).select(({ p }) => p)
   )
-  const { data: allLoans, isLoading: loansLoading } = useLiveQuery((q) =>
+  const { data: allLoansRaw, isLoading: loansRawLoading } = useLiveQuery((q) =>
     q.from({ l: loanCollection }).select(({ l }) => l)
   )
+  // Projected loans — provides customerName + other enriched fields
+  const { data: allLoans, isLoading: loansLoading } = useLoansWithBalances()
+
+  // Build a map of loanId → { customerName, customerId } from projected data
+  const loanInfoMap = useMemo(() => {
+    const m = new Map<string, { customerName: string; customerId: string }>()
+    for (const l of allLoans ?? []) {
+      m.set(l.id, { customerName: l.customerName, customerId: l.customerId })
+    }
+    return m
+  }, [allLoans])
 
   // Display query: JOINs paymentCollection + loanCollection and pushes the
-  // customerName + date filters into the differential dataflow so keystrokes
-  // re-evaluate incrementally instead of re-running JS over the full set.
-  // The amount filter stays JS (string-typed, lex comparison breaks) and
-  // pagination is also JS so we keep a single total count.
+  // date filters into the differential dataflow. customerName filtering is
+  // done in JS (post-join) since the raw loanCollection row has no customerName.
   const dateFromTime = useMemo(
     () => (dateFrom ? new Date(dateFrom).getTime() : null),
     [dateFrom],
@@ -160,14 +170,11 @@ function PaymentsContent({
     [dateTo],
   )
 
-  const { data: filteredJoinedRows } = useLiveQuery(
+  const { data: joinedRows } = useLiveQuery(
     (q) => {
       let qb = q
         .from({ p: paymentCollection })
         .join({ l: loanCollection }, ({ p, l }) => eq(p.loanId, l.id), "inner")
-      if (customerName) {
-        qb = qb.where(({ l }) => ilike(l.customerName, `%${customerName}%`))
-      }
       if (dateFromTime !== null) {
         qb = qb.where(({ p }) => gte(p.paymentDate, new Date(dateFromTime)))
       }
@@ -183,13 +190,27 @@ function PaymentsContent({
         depositLocation: p.depositLocation,
         createdAt: p.createdAt,
         customerId: l.customerId,
-        customerName: l.customerName,
       }))
     },
-    [customerName, dateFromTime, dateToTime],
+    [dateFromTime, dateToTime],
   )
 
-  const isInitialLoading = (paymentsLoading && !rawPayments) || (loansLoading && !allLoans)
+  // Merge projected customerName into joined rows, then apply customerName filter in JS
+  const filteredJoinedRows = useMemo(() => {
+    const rows = (joinedRows ?? []).map((r) => {
+      const info = loanInfoMap.get(r.loanId)
+      return {
+        ...r,
+        customerId: info?.customerId ?? r.customerId,
+        customerName: info?.customerName ?? "Unknown",
+      }
+    })
+    if (!customerName) return rows
+    const term = customerName.toLowerCase()
+    return rows.filter((r) => r.customerName.toLowerCase().includes(term))
+  }, [joinedRows, loanInfoMap, customerName])
+
+  const isInitialLoading = (paymentsLoading && !rawPayments) || (loansRawLoading && !allLoansRaw)
 
   // Resolve recordedBy → display name via the user-name-map collection
   const uniqueRecorderIdsKey = useMemo(
@@ -235,7 +256,7 @@ function PaymentsContent({
   // data here would understate the balance for survivors).
   const balanceAfterMap = useMemo(() => {
     const loanPrincipal = new Map<string, string>()
-    for (const l of allLoans ?? []) {
+    for (const l of allLoansRaw ?? []) {
       loanPrincipal.set(l.id, l.principalAmount)
     }
     const byLoan = new Map<string, typeof rawPayments>()
@@ -263,7 +284,7 @@ function PaymentsContent({
       }
     }
     return map
-  }, [rawPayments, allLoans, portionsMap])
+  }, [rawPayments, allLoansRaw, portionsMap])
 
   // Project the filtered + joined rows into the PaymentWithCustomer shape the
   // rest of the page consumes. customerName + dates are already filtered by

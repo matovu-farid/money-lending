@@ -4,7 +4,7 @@ import { useEffect, useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiveQuery, eq } from "@tanstack/react-db";
 import { customerCollection } from "@/collections/customers";
-import { loanCollection } from "@/collections/loans";
+import { useLoansForCustomer } from "@/collections/loan-views";
 import { paymentCollection } from "@/collections/payments";
 import { getPaymentPortionsCollection } from "@/collections/loan-extras";
 import { useForm } from "react-hook-form";
@@ -244,11 +244,8 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
   const customer = customersData?.[0] ?? null;
   const notFound = !customerLoading && customersData !== undefined && !customer;
 
-  // Read loans from loanCollection, filtered by customer
-  const { data: customerLoans } = useLiveQuery(
-    (q) => q.from({ loan: loanCollection }).where(({ loan }) => eq(loan.customerId, customerId)),
-    [customerId]
-  );
+  // Read loans via join hook (returns LoanListEntry shape with daysOverdue, customerName, etc.)
+  const { data: customerLoans } = useLoansForCustomer(customerId);
   const loanItems: LoanWithOverdue[] = (customerLoans ?? []).map((entry) => ({
     loan: entry as unknown as Loan,
     daysOverdue: entry.daysOverdue,

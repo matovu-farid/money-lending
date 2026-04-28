@@ -2,8 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { Clock, Search, X } from "lucide-react"
-import { useLiveQuery } from "@tanstack/react-db"
-import { loanCollection } from "@/collections/loans"
+import { useLoansWithBalances } from "@/collections/loan-views"
 import { Input } from "@/components/ui/input"
 import { formatNumberWithCommas, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
@@ -27,9 +26,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
   const sideOffset = 4
 
   const isSearchMode = query.trim().length >= 2
-  const { data: allLoans } = useLiveQuery((q) =>
-    q.from({ loan: loanCollection }).select(({ loan }) => loan)
-  )
+  const { data: allLoans } = useLoansWithBalances()
   const results: ActiveLoanSearchResult[] = useMemo(() => {
     if (!isSearchMode) return []
     const q = query.toLowerCase()

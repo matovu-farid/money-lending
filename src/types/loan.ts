@@ -6,6 +6,15 @@ import type { DepositLocation } from "./common"
 export type Loan = InferSelectModel<typeof loans>
 export type NewLoan = InferInsertModel<typeof loans>
 export type LoanWithCustomer = Loan & { customerName: string; customerContact: string | null }
+/**
+ * Consumer-facing loan row. Produced client-side by `useLoansWithBalances`
+ * and friends in `src/collections/loan-views.ts` by joining the raw loan
+ * row (`LoanBaseRow`) with `loanBalanceCollection` (the Postgres-maintained
+ * projection) and `customerCollection`. This is NOT the wire shape of
+ * `loanCollection` — raw `loanCollection` rows are `LoanBaseRow`. All
+ * derived / balance fields (`outstandingBalance`, `unpaidInterest`,
+ * `daysOverdue`, etc.) live here, not on the collection.
+ */
 export type LoanListEntry = LoanWithCustomer & {
   daysOverdue: number          // 0 for non-overdue or non-active loans
   outstandingBalance: string   // ledger-derived outstanding principal (Loans Receivable DR - CR)

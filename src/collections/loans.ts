@@ -1,32 +1,34 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { electricCollectionOptions } from "@tanstack/electric-db-collection"
+import { snakeCamelMapper } from "@electric-sql/client"
 import {
-  listLoansWithOverdueAction,
   createLoanAction,
   waivePenaltyAction,
   adjustPenaltyMultiplierAction,
 } from "@/actions/loan.actions"
 import { settleWithCollateralAction } from "@/actions/settlement.actions"
-import type { LoanListEntry, CreateLoanInput } from "@/types/loan"
+import type { CreateLoanInput } from "@/types/loan"
+import { loanRowSchema, type LoanBaseRow } from "@/lib/schemas/collections"
+import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
-
-// Auto-refresh when loans table changes via Electric
-subscribeToTableChanges("loans", getQueryClient(), [
-  queryKeys.loans.all,
-  queryKeys.loans.dueToday,
-])
 
 /**
- * Metadata shape passed via `collection.insert(row, { metadata })` and
- * `collection.update(id, { metadata }, draft)`. The row schema only carries
- * persisted columns; everything else (creation-only fields like `collateral`,
- * action-routing intents like "settle"/"waive-penalty", and audit reasons)
- * goes through metadata so the handler can dispatch the right server action.
+ * Row shape synced via Electric — mirrors the `loans` DB table after
+ * snake_case → camelCase mapping AND `loanRowSchema` coercion (timestamp
+ * columns arrive as ISO strings on the wire and are coerced to `Date` here).
+ *
+ * Server-only enrichments (customerName, customerContact, outstandingBalance,
+ * unpaidInterest, lastPaymentDate, daysOverdue, dailyRate) are NOT on this row.
+ * Consumers read them via the `useLoansWithBalances` / `useLoanWithBalance`
+ * hooks in `src/collections/loan-views.ts`, which join with
+ * `customerCollection` and `loanBalanceCollection` and compute the
+ * date-dependent fields client-side.
  */
+export type LoanRow = LoanBaseRow
+
 type LoanInsertMetadata = {
   intent: "create"
   input: CreateLoanInput
@@ -38,17 +40,31 @@ type LoanUpdateMetadata =
   | { intent: "adjust-penalty"; multiplier: string }
 
 export const loanCollection = createCollection(
-  queryCollectionOptions<LoanListEntry>({
-    queryKey: [...queryKeys.loans.all],
-    queryClient: getQueryClient(),
-    queryFn: async (_ctx): Promise<Array<LoanListEntry>> => {
-      const result = await listLoansWithOverdueAction()
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      return result.data
-    },
+  electricCollectionOptions({
+    id: "loans",
+    schema: loanRowSchema,
     getKey: (loan) => loan.id,
+    shapeOptions: {
+      url: shapeUrl("loans"),
+      columnMapper: snakeCamelMapper(),
+      onError: shapeOnError("loans"),
+    },
+    onInsert: async ({ transaction }) => {
+      const { metadata } = transaction.mutations[0]
+      const meta = metadata as LoanInsertMetadata | undefined
+      if (!meta?.input) {
+        throw new Error("Loan inserts must include metadata.input (CreateLoanInput)")
+      }
+      const result = await createLoanAction(meta.input)
+      if ("error" in result) throw new Error(result.error)
+      // Cross-cutting invalidations for surfaces NOT yet projection-backed.
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+    },
     onUpdate: async ({ transaction }) => {
       const { original, metadata } = transaction.mutations[0]
       const meta = metadata as LoanUpdateMetadata | undefined
@@ -62,65 +78,38 @@ export const loanCollection = createCollection(
           reason: meta.reason,
         })
         if ("error" in result) throw new Error(result.error)
-        // Invalidate only query-based collections (Electric handles loans auto-refresh)
         const qc = getQueryClient()
         qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
         qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
         qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-        return
+        return { txid: result.txid }
       }
 
       if (meta.intent === "waive-penalty") {
         const result = await waivePenaltyAction(original.id)
         if ("error" in result) throw new Error(result.error)
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
-        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(original.id) })
-        return
+        return { txid: result.txid }
       }
 
       if (meta.intent === "adjust-penalty") {
-        const result = await adjustPenaltyMultiplierAction(
-          original.id,
-          meta.multiplier
-        )
+        const result = await adjustPenaltyMultiplierAction(original.id, meta.multiplier)
         if ("error" in result) throw new Error(result.error)
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loans.all })
-        qc.invalidateQueries({ queryKey: queryKeys.loans.balance(original.id) })
-        return
+        return { txid: result.txid }
       }
+
+      throw new Error(`Unknown loan update intent: ${(meta as { intent: string }).intent}`)
     },
-    onInsert: async ({ transaction }) => {
-      const { metadata } = transaction.mutations[0]
-      const meta = metadata as LoanInsertMetadata | undefined
-      if (!meta?.input) {
-        throw new Error("Loan inserts must include metadata.input (CreateLoanInput)")
-      }
-      const result = await createLoanAction(meta.input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
-      // Invalidate only query-based collections (Electric handles auto-refresh for table-backed ones)
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-    },
-  })
+  }),
 )
 
 /**
  * Thin wrapper kept because the call site needs to pass an off-row
  * `CreateLoanInput` (collateral, rollover, etc.) via the metadata channel.
- * Equivalent to `loanCollection.insert(optimistic, { metadata: { intent: "create", input } })`.
  */
 export function insertLoanWithInput(
   _id: string,
-  optimistic: LoanListEntry,
-  input: CreateLoanInput
+  optimistic: LoanRow,
+  input: CreateLoanInput,
 ) {
   loanCollection.insert(optimistic, {
     metadata: { intent: "create", input } satisfies LoanInsertMetadata,

@@ -77,3 +77,5 @@ export {
 } from "./creditor-extras"
 
 export { bankAccountCollection } from "./bank-accounts"
+
+export { useLoansWithBalances, useLoanWithBalance, useLoansForCustomer } from "./loan-views"

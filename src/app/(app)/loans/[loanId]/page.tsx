@@ -1,10 +1,8 @@
 "use client"
 
-import { use, useEffect } from "react"
+import { use, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-import { useLiveQuery, eq } from "@tanstack/react-db"
-import { loanCollection } from "@/collections/loans"
-import { customerCollection } from "@/collections/customers"
+import { useLoanWithBalance } from "@/collections/loan-views"
 import { toast } from "sonner"
 import { LoanDetailClient } from "./loan-detail-client"
 
@@ -16,34 +14,27 @@ export default function LoanDetailPage({
   const { loanId } = use(params)
   const router = useRouter()
 
-  // Read loan from loanCollection — instant if optimistic data exists
-  const { data: loans, isLoading: loanLoading } = useLiveQuery(
-    (q) =>
-      q
-        .from({ loan: loanCollection })
-        .where(({ loan }) => eq(loan.id, loanId)),
-    [loanId]
-  )
+  // Read loan from join hook — returns LoanListEntry shape (includes customerName)
+  const { data: loans, isLoading: loanLoading } = useLoanWithBalance(loanId)
   const loanEntry = loans?.[0] ?? null
 
-  // Read customer from customerCollection for the name
-  const customerId = loanEntry?.customerId
-  const { data: customersData } = useLiveQuery(
-    (q) =>
-      customerId
-        ? q
-            .from({ c: customerCollection })
-            .where(({ c }) => eq(c.id, customerId))
-        : undefined,
-    [customerId]
-  )
-  const customerName = customersData?.[0]?.fullName ?? loanEntry?.customerName ?? null
+  // customerName comes from the projected LoanListEntry
+  const customerName = loanEntry?.customerName ?? null
+
+  // Guard against redirecting during Electric's IndexedDB re-hydration window.
+  // On a fresh page load the collection status briefly cycles idle → loading →
+  // ready before IndexedDB restores cached rows. If we redirect the moment
+  // isLoading=false with 0 rows we'd bounce valid deep-links to /loans.
+  // Once we've seen the loan entry at least once we know the ID is real and
+  // we must never redirect, even during a transient empty window.
+  const hasSeenEntry = useRef(false)
+  if (loanEntry) hasSeenEntry.current = true
 
   // Rollback handling: loan disappeared from collection after optimistic insert rolled back.
   // Only redirect once the initial sync has completed — otherwise we'd bounce away
   // during the loading window before data arrives.
   useEffect(() => {
-    if (!loanLoading && loans !== undefined && !loanEntry) {
+    if (!loanLoading && loans !== undefined && !loanEntry && !hasSeenEntry.current) {
       toast.error("Loan not found")
       router.replace("/loans")
     }
