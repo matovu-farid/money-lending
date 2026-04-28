@@ -23,6 +23,7 @@ import {
   payments,
   customers,
   loans,
+  loanBalances,
   bankAccounts,
   creditors,
   creditorInvestments,
@@ -59,6 +60,9 @@ export type CreditorRepaymentRow = typeof creditorRepaymentSchema._zod.output
 
 export const fundTransferSchema = createSelectSchema(fundTransfers)
 export type FundTransferRow = typeof fundTransferSchema._zod.output
+
+export const loanBalanceSchema = createSelectSchema(loanBalances)
+export type LoanBalanceRow = typeof loanBalanceSchema._zod.output
 
 // `categoryName` is a client-only optimistic field stamped onto optimistic
 // rows so the income/expense tables can show the user-typed category name
