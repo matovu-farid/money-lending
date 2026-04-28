@@ -110,9 +110,8 @@ function createPnlCollection(period: string) {
         return [{ ...(result.data as PnlData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
-      // Safe: this factory is only called from getPnlCollection() when a caller
-      // actually needs the report for `period`, so eager sync never fires for
-      // unused params.
+      // Eager sync: factory only runs when getPnlCollection is called for a
+      // period the user actually opened, so this never fires for unused params.
       startSync: true,
     })
   )
@@ -125,7 +124,7 @@ export function getPnlCollection(period: string) {
   let collection = pnlCollections.get(period)
   if (!collection) {
     collection = createPnlCollection(period)
-    boundedSet(pnlCollections, period, collection, MAX_REPORT_CACHED)
+    boundedSet(pnlCollections, period, collection, MAX_REPORT_CACHED, (c) => c.cleanup())
   }
   return collection
 }
@@ -143,9 +142,7 @@ function createBalanceSheetCollection(period: string) {
         return [{ ...(result.data as BalanceSheetData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
-      // Safe: this factory is only called from getBalanceSheetCollection()
-      // when a caller actually needs the report for `period`, so eager sync
-      // never fires for unused params.
+      // Eager sync: see createPnlCollection for the reasoning.
       startSync: true,
     })
   )
@@ -158,7 +155,7 @@ export function getBalanceSheetCollection(period: string) {
   let collection = balanceSheetCollections.get(period)
   if (!collection) {
     collection = createBalanceSheetCollection(period)
-    boundedSet(balanceSheetCollections, period, collection, MAX_REPORT_CACHED)
+    boundedSet(balanceSheetCollections, period, collection, MAX_REPORT_CACHED, (c) => c.cleanup())
   }
   return collection
 }
@@ -176,9 +173,7 @@ function createRetainedEarningsCollection(period: string) {
         return [{ ...(result.data as RetainedEarningsData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
-      // Safe: this factory is only called from getRetainedEarningsCollection()
-      // when a caller actually needs the report for `period`, so eager sync
-      // never fires for unused params.
+      // Eager sync: see createPnlCollection for the reasoning.
       startSync: true,
     })
   )
@@ -191,7 +186,7 @@ export function getRetainedEarningsCollection(period: string) {
   let collection = retainedEarningsCollections.get(period)
   if (!collection) {
     collection = createRetainedEarningsCollection(period)
-    boundedSet(retainedEarningsCollections, period, collection, MAX_REPORT_CACHED)
+    boundedSet(retainedEarningsCollections, period, collection, MAX_REPORT_CACHED, (c) => c.cleanup())
   }
   return collection
 }

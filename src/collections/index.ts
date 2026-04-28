@@ -4,6 +4,8 @@ export { paymentCollection } from "./payments"
 export { expenseCollection } from "./expenses"
 export { incomeCollection } from "./income"
 export { creditorCollection } from "./creditors"
+export { creditorInvestmentCollection } from "./creditor-investments"
+export { creditorRepaymentCollection } from "./creditor-repayments"
 export { fundTransferCollection } from "./fund-transfers"
 export { rateChangeRequestCollection } from "./rate-change-requests"
 export { delegationCollection, type DelegationRow } from "./delegations"
@@ -68,11 +70,9 @@ export { incomeCategoryCollection } from "./income-categories"
 export {
   systemCapitalCollection,
   creditorMonthlyDueCollection,
+  getCreditorDashboardCollection,
+  getCreditorMonthlySummaryCollection,
+  getCreditorRepaymentPortionsCollection,
 } from "./creditor-extras"
-
-export {
-  creditorsPageDataCollection,
-  type CreditorsPageDataRow,
-} from "./creditors-page-data"
 
 export { bankAccountCollection } from "./bank-accounts"

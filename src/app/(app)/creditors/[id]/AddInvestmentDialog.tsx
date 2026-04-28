@@ -4,9 +4,7 @@ import { useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
-import { addInvestmentAction } from "@/actions/creditor.actions"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
+import { addInvestment } from "@/collections/creditor-actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -63,7 +61,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
   function onSubmit(data: InvestmentFormValues) {
     startTransition(async () => {
       try {
-        const result = await addInvestmentAction({
+        const tx = addInvestment({
           creditorId,
           amount: data.amount.trim(),
           interestRateMonthly: (Number(data.interestRate) / 100).toString(),
@@ -71,18 +69,10 @@ export function AddInvestmentDialog({ creditorId }: Props) {
           depositLocation: "bank",
           subLocationId: data.bankAccountId,
         })
-        if ("error" in result) {
-          toast.error(result.error)
-          return
-        }
-
+        await tx.isPersisted.promise
         toast.success("Investment added successfully")
         setOpen(false)
         resetForm()
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
-        qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to add investment")
       }

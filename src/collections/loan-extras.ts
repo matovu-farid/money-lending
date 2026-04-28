@@ -15,6 +15,12 @@ import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import type { UserRole, PaymentPortionsMap } from "@/types"
 import { subscribeToTableChanges } from "@/lib/electric"
+import { boundedSet } from "@/lib/bounded-map"
+
+// Cap on each per-id collection cache. Each entry has `startSync: true` and
+// holds a live query observer; without bounding, long sessions accumulate
+// dozens of background subscriptions for loans/customers no longer in view.
+const MAX_PER_ID_CACHED = 32
 
 // Auto-refresh location balances when financial tables change via Electric
 subscribeToTableChanges("loans", getQueryClient(), [queryKeys.locationBalances.all])
@@ -35,6 +41,8 @@ export const collateralNaturesCollection = createCollection(
       return natures.map((nature) => ({ _key: nature, nature }))
     },
     getKey: (row) => row._key,
+    // Reference data — admin-managed and rarely changes; 1h is plenty.
+    staleTime: 60 * 60 * 1000,
   })
 )
 
@@ -79,6 +87,12 @@ export const currentUserRoleCollection = createCollection(
       return [{ _key: "singleton", role }]
     },
     getKey: (row) => row._key,
+    // Auth-adjacent, no Electric backing. Short staleTime so any new
+    // useLiveQuery mount within a tab refetches if the underlying role
+    // could have changed. Server enforces actual permissions; this is
+    // just UI freshness. (QueryCollectionConfig doesn't expose
+    // refetchOnWindowFocus per-collection, so we rely on staleTime.)
+    staleTime: 30_000,
   })
 )
 
@@ -120,7 +134,7 @@ export function getUserNameMapCollection(userIds: string[]) {
   let collection = userNameMapCollections.get(key)
   if (!collection) {
     collection = createUserNameMapCollection(userIds)
-    userNameMapCollections.set(key, collection)
+    boundedSet(userNameMapCollections, key, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
   }
   return collection
 }
@@ -152,7 +166,7 @@ export function getLoanCollateralCollection(loanId: string) {
   let collection = loanCollateralCollections.get(loanId)
   if (!collection) {
     collection = createLoanCollateralCollection(loanId)
-    loanCollateralCollections.set(loanId, collection)
+    boundedSet(loanCollateralCollections, loanId, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
   }
   return collection
 }
@@ -203,7 +217,7 @@ export function getActiveLoanCheckCollection(customerId: string) {
   let collection = activeLoanCheckCollections.get(customerId)
   if (!collection) {
     collection = createActiveLoanCheckCollection(customerId)
-    activeLoanCheckCollections.set(customerId, collection)
+    boundedSet(activeLoanCheckCollections, customerId, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
   }
   return collection
 }
@@ -246,7 +260,7 @@ export function getPaymentPortionsCollection(loanId: string, paymentIds: string[
   let collection = paymentPortionsCollections.get(key)
   if (!collection) {
     collection = createPaymentPortionsCollection(loanId, paymentIds)
-    paymentPortionsCollections.set(key, collection)
+    boundedSet(paymentPortionsCollections, key, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
   }
   return collection
 }

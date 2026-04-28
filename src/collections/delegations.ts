@@ -7,21 +7,15 @@ import {
   createDelegationAction,
   revokeDelegationAction,
 } from "@/actions/delegation.actions"
+import { delegationSchema, type DelegationRow } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 
-/** Row shape synced from the raw delegation table via Electric */
-export type DelegationRow = {
-  id: string
-  userId: string
-  delegatedBy: string
-  createdAt: string
-  revokedAt: string | null
-  revokedBy: string | null
-}
+export type { DelegationRow }
 
 export const delegationCollection = createCollection(
-  electricCollectionOptions<DelegationRow>({
+  electricCollectionOptions({
     id: "delegations",
+    schema: delegationSchema,
     getKey: (delegation) => delegation.id,
     shapeOptions: {
       url: shapeUrl("delegation"),

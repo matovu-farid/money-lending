@@ -14,7 +14,9 @@ import {
   getCreditorMonthlyInterestDue,
   getCreditorMonthlySummary,
   getCreditorsPageData,
+  getCreditorDashboard,
 } from "@/services/creditor.service"
+import { getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { getErrorTag } from "@/lib/action-utils"
 import type {
   CreateCreditorInput,
@@ -182,6 +184,35 @@ export const getCreditorMonthlySummaryAction = withAction<string, any>({
   action: async (_session, creditorId) => {
     try {
       const data = await Effect.runPromise(getCreditorMonthlySummary(creditorId))
+      return { data }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+export const getCreditorDashboardAction = withAction<string, any>({
+  permission: "creditor:read",
+  action: async (_session, creditorId) => {
+    try {
+      const data = await Effect.runPromise(getCreditorDashboard(creditorId))
+      return { data }
+    } catch (e) {
+      const tag = getErrorTag(e)
+      if (tag === "CreditorNotFound") return { error: "Creditor not found" }
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+export const getCreditorRepaymentPortionsAction = withAction<string[], any>({
+  permission: "creditor:read",
+  action: async (_session, repaymentIds) => {
+    if (repaymentIds.length === 0) return { data: {} }
+    try {
+      const map = await getCreditorRepaymentPortionsFromLedger(repaymentIds)
+      const data: Record<string, { interestPortion: string; principalPortion: string }> = {}
+      for (const [k, v] of map) data[k] = v
       return { data }
     } catch {
       return { error: "Internal server error" }

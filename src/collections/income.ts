@@ -8,10 +8,10 @@ import {
   deleteIncomeAction,
 } from "@/actions/income.actions"
 import type {
-  TransactionShapeRow,
   CreateTransactionInput,
   DepositLocation,
 } from "@/types"
+import { transactionSchema } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
@@ -38,8 +38,9 @@ export function getRecentIncomeCategoryName(id: string): string | undefined {
 }
 
 export const incomeCollection = createCollection(
-  electricCollectionOptions<TransactionShapeRow>({
+  electricCollectionOptions({
     id: "income",
+    schema: transactionSchema,
     getKey: (income) => income.id,
     shapeOptions: {
       url: shapeUrl("transactions"),
@@ -59,7 +60,7 @@ export const incomeCollection = createCollection(
         id: modified.id,
         categoryName: meta.categoryName,
         amount: modified.amount,
-        transactionDate: modified.transactionDate,
+        transactionDate: modified.transactionDate.toISOString(),
         notes: modified.description ?? undefined,
         location: meta.location,
         subLocationId: meta.subLocationId,

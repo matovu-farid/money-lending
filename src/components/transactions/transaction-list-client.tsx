@@ -195,7 +195,7 @@ export function TransactionListClient({
         categoryId: matched?.id ?? "",
         categoryName,
         description: data.notes || null,
-        transactionDate: data.date,
+        transactionDate: new Date(data.date),
         recordedBy: "",
         referenceType: null,
         referenceId: null,
@@ -203,7 +203,7 @@ export function TransactionListClient({
         depositLocation: data.location || null,
         subLocationId: data.location === "bank" ? data.subLocationId || null : null,
         journalGroupId: null,
-        createdAt: new Date().toISOString(),
+        createdAt: new Date(),
       }
       const metadata: IncomeInsertMetadata & ExpenseInsertMetadata = {
         categoryName,

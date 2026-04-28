@@ -7,25 +7,16 @@ import {
   createInviteAction,
   revokeInviteAction,
 } from "@/actions/invitation.actions"
+import { invitationSchema, type InvitationRow } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import type { UserRole } from "@/types"
 
-/** Row shape synced from the raw invitation table via Electric (token excluded for security) */
-export type InvitationRow = {
-  id: string
-  email: string
-  name: string
-  role: string
-  status: string
-  invitedBy: string
-  expiresAt: string
-  createdAt: string
-  acceptedAt: string | null
-}
+export type { InvitationRow }
 
 export const invitationCollection = createCollection(
-  electricCollectionOptions<InvitationRow>({
+  electricCollectionOptions({
     id: "invitations",
+    schema: invitationSchema,
     getKey: (invitation) => invitation.id,
     shapeOptions: {
       url: shapeUrl("invitation"),

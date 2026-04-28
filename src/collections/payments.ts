@@ -13,16 +13,18 @@ import {
 import type {
   RecordPaymentInput,
   EditPaymentInput,
-  Payment,
 } from "@/types/payment"
+import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
 /**
  * Row shape synced via Electric — mirrors the `payments` DB table after
- * snake_case → camelCase mapping. Server-only enrichments that used to live
- * on `PaymentWithCustomer` (customerName, recorderName, interest/principal
+ * snake_case → camelCase mapping AND `paymentSchema` coercion (date columns
+ * arrive as ISO strings on the wire and are coerced to `Date` here).
+ *
+ * Server-only enrichments (customerName, recorderName, interest/principal
  * portions, balances) are NOT on this row. Consumers join them client-side:
  *   - customerId / customerName: loanCollection.customerId, loanCollection.customerName
  *   - interestPortion / principalPortion: getPaymentPortionsCollection(loanId, ids)
@@ -30,7 +32,7 @@ import { queryKeys } from "@/lib/query-keys"
  *     loan-detail-client.tsx)
  *   - recorderName: getUserNameMapCollection(recordedBy ids)
  */
-export type PaymentRow = Payment
+export type { PaymentRow }
 
 /**
  * Metadata shapes routed through the `metadata` parameter of
@@ -65,8 +67,9 @@ function invalidateCrossCutting(loanId: string) {
 }
 
 export const paymentCollection = createCollection(
-  electricCollectionOptions<PaymentRow>({
+  electricCollectionOptions({
     id: "payments",
+    schema: paymentSchema,
     getKey: (payment) => payment.id,
     shapeOptions: {
       url: shapeUrl("payments"),
@@ -82,10 +85,7 @@ export const paymentCollection = createCollection(
       const input: RecordPaymentInput = meta?.input ?? {
         id: modified.id,
         loanId: modified.loanId,
-        paymentDate:
-          modified.paymentDate instanceof Date
-            ? modified.paymentDate.toISOString()
-            : String(modified.paymentDate),
+        paymentDate: modified.paymentDate.toISOString(),
         amount: modified.amount,
         depositLocation: modified.depositLocation,
         subLocationId: modified.subLocationId ?? undefined,
@@ -135,8 +135,7 @@ export const paymentCollection = createCollection(
       if (changedAmount !== undefined) editInput.amount = changedAmount
       const changedDate = (changes as Partial<PaymentRow>).paymentDate
       if (changedDate !== undefined) {
-        editInput.paymentDate =
-          changedDate instanceof Date ? changedDate.toISOString() : String(changedDate)
+        editInput.paymentDate = changedDate.toISOString()
       }
       const result = await editPaymentAction(editInput)
       if ("error" in result) {

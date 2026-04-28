@@ -4,9 +4,7 @@ import { useState, useTransition } from "react"
 import { useForm } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
-import { recordCreditorRepaymentAction } from "@/actions/creditor.actions"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
+import { recordCreditorRepayment } from "@/collections/creditor-actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -73,23 +71,16 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
   function onSubmit(data: RepaymentFormValues) {
     startTransition(async () => {
       try {
-        const result = await recordCreditorRepaymentAction({
+        const tx = recordCreditorRepayment({
+          creditorId,
           investmentId: data.investmentId,
           amount: data.amount.trim(),
           repaymentDate: data.date,
         })
-        if ("error" in result) {
-          toast.error(result.error)
-          return
-        }
-
+        await tx.isPersisted.promise
         toast.success("Repayment recorded successfully")
         setOpen(false)
         resetForm()
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
-        qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to record repayment")
       }

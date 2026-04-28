@@ -6,6 +6,12 @@ import { getActivitiesAction } from "@/actions/activity.actions"
 import type { GetActivitiesResult } from "@/types/activity"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { boundedSet } from "@/lib/bounded-map"
+
+// Cap distinct (filter, page) combos kept alive at once. A user paging
+// through filtered activity views can otherwise accumulate dozens of
+// inactive collections; eviction tears down the underlying sync.
+const MAX_ACTIVITIES_CACHED = 32
 
 export const ACTIVITIES_PAGE_SIZE = 25
 
@@ -43,11 +49,9 @@ function createActivitiesCollection(params: ActivityFilterParams, page: number) 
 }
 
 type ActivitiesCollectionType = ReturnType<typeof createActivitiesCollection>
-// Session-scoped cache: keyed by (params, page). Entries persist for the
-// lifetime of the page so back-navigation to a previously-visited filter/page
-// combo serves cached results instantly (no server round-trip). The cache is
-// bounded only by the set of distinct filter+page combos a user actually
-// visits in one session, which is small in practice.
+// Session-scoped cache: keyed by (params, page). Bounded by
+// MAX_ACTIVITIES_CACHED — eviction calls collection.cleanup() so the
+// underlying TanStack DB query observer is released.
 const activitiesCollections = new Map<string, ActivitiesCollectionType>()
 
 export function getActivitiesCollection(params: ActivityFilterParams, page: number) {
@@ -55,7 +59,13 @@ export function getActivitiesCollection(params: ActivityFilterParams, page: numb
   let collection = activitiesCollections.get(key)
   if (!collection) {
     collection = createActivitiesCollection(params, page)
-    activitiesCollections.set(key, collection)
+    boundedSet(
+      activitiesCollections,
+      key,
+      collection,
+      MAX_ACTIVITIES_CACHED,
+      (c) => c.cleanup(),
+    )
   }
   return collection
 }

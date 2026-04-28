@@ -17,5 +17,9 @@ export const permissionsCollection = createCollection(
       return [{ _key: "singleton", permissions }]
     },
     getKey: (row) => row._key,
+    // Auth-adjacent, no Electric backing. Short staleTime so revoked
+    // permissions are picked up on the next mount within the tab.
+    // Server enforces; this is UI freshness only.
+    staleTime: 30_000,
   })
 )

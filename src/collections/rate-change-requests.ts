@@ -7,14 +7,15 @@ import {
   requestRateChangeAction,
   reviewRateChangeRequestAction,
 } from "@/actions/rate-change-request.actions"
-import type { RateChangeRequest } from "@/types/rate-change"
+import { rateChangeRequestSchema } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
 export const rateChangeRequestCollection = createCollection(
-  electricCollectionOptions<RateChangeRequest>({
+  electricCollectionOptions({
     id: "rate-change-requests",
+    schema: rateChangeRequestSchema,
     getKey: (request) => request.id,
     shapeOptions: {
       url: shapeUrl("rate_change_requests"),

@@ -1,172 +1,31 @@
-import { Effect } from "effect"
-import { notFound, redirect } from "next/navigation"
-import { getSession, getUserRole } from "@/lib/action-utils"
-import { ROLE_LEVELS } from "@/types"
-import { getCreditor, getCreditorDashboard, getCreditorMonthlySummary } from "@/services/creditor.service"
-import { db } from "@/lib/db"
-import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
-import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
-import { eq, asc, inArray } from "drizzle-orm"
-import { KpiCard } from "@/components/dashboard/kpi-card"
+"use client"
+
+import { use } from "react"
 import { CreditorProfileClient } from "./CreditorProfileClient"
-import type { CreditorRepayment, CreditorInvestment, PaymentPortionsMap, MonthlySummaryRow } from "@/types"
-import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
-import { formatCurrency } from "@/lib/utils"
-import { PageHeader } from "@/components/ui/page-header"
-import { InfoPopover } from "@/components/ui/info-popover"
-import { getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service"
+import { usePermissions } from "@/hooks/use-permissions"
+import { PermissionInfo } from "@/components/ui/permission-info"
 
 interface Props {
   params: Promise<{ id: string }>
 }
 
-export default async function CreditorProfilePage({ params }: Props) {
-  const session = await getSession()
-  if (!session) redirect("/sign-in")
-  const role = getUserRole(session)
-  if (ROLE_LEVELS[role] < ROLE_LEVELS.admin) redirect("/creditors")
+export default function CreditorProfilePage({ params }: Props) {
+  const { id } = use(params)
+  const { has } = usePermissions()
 
-  const { id } = await params
-
-  let creditor
-  let dashboard
-  let investments: CreditorInvestment[] = []
-  let repayments: CreditorRepayment[] = []
-  const repaymentPortions: PaymentPortionsMap = {}
-  let monthlySummary: MonthlySummaryRow[] = []
-
-  try {
-    ;[creditor, dashboard] = await Promise.all([
-      Effect.runPromise(getCreditor(id)),
-      Effect.runPromise(getCreditorDashboard(id)),
-    ])
-
-    // Fetch raw investments and repayments for the tabs
-    investments = await db
-      .select()
-      .from(creditorInvestments)
-      .where(eq(creditorInvestments.creditorId, id))
-      .orderBy(asc(creditorInvestments.investmentDate))
-
-    if (investments.length > 0) {
-      repayments = await db
-        .select()
-        .from(creditorRepayments)
-        .where(
-          inArray(
-            creditorRepayments.investmentId,
-            investments.map((inv) => inv.id)
-          )
-        )
-        .orderBy(asc(creditorRepayments.repaymentDate))
-
-      // Derive portions from ledger instead of cached columns
-      if (repayments.length > 0) {
-        try {
-          const portionsMap = await getCreditorRepaymentPortionsFromLedger(
-            repayments.map((r) => r.id)
-          )
-          for (const [key, value] of portionsMap.entries()) {
-            repaymentPortions[key] = value
-          }
-        } catch {
-          // Non-critical — page renders without portion breakdown
-        }
-      }
-    }
-
-    try {
-      monthlySummary = await Effect.runPromise(getCreditorMonthlySummary(id))
-    } catch {
-      // Non-critical — page renders without monthly summary
-    }
-  } catch (e) {
-    if (e && typeof e === "object" && "_tag" in e && e._tag === "CreditorNotFound") {
-      notFound()
-    }
-    throw e
-  }
-
-  return (
-    <div className="p-4 md:p-6 space-y-6">
-      <div>
-        <PageHeader title={creditor.name} subtitle="Creditor profile" />
-        <p className="text-sm text-muted-foreground mt-0.5">
-          {creditor.contact} &bull; {creditor.address}
+  if (!has("creditor:read")) {
+    return (
+      <div className="p-4 md:p-6 space-y-2">
+        <div className="flex items-center gap-2">
+          <PermissionInfo requiredRole="admin" action="View creditor profile" locked />
+          <p className="text-destructive font-medium">Access denied.</p>
+        </div>
+        <p className="text-muted-foreground text-sm">
+          You need Admin or higher permissions to view creditor profiles.
         </p>
       </div>
+    )
+  }
 
-      {/* KPI Cards — CRED-05 */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
-          label="Total Invested"
-          value={formatCurrency(dashboard.totalInvested)}
-          icon={Landmark}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Total Invested</p>
-              <p className="text-xs text-muted-foreground">
-                Sum of all capital this creditor has invested. Each investment is tracked separately with its own interest rate and repayment schedule.
-              </p>
-            </InfoPopover>
-          }
-        />
-        <KpiCard
-          label="Interest Accrued"
-          value={formatCurrency(dashboard.interestAccrued)}
-          icon={TrendingUp}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Interest Accrued</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                Total interest owed to this creditor based on their investment balances and agreed rates.
-              </p>
-              <p className="text-xs font-mono bg-muted rounded px-2 py-1">
-                Per investment: Balance &times; (Rate &divide; 30) &times; Days Since Last Repayment
-              </p>
-            </InfoPopover>
-          }
-        />
-        <KpiCard
-          label="Repayments Made"
-          value={formatCurrency(dashboard.repaymentsMade)}
-          icon={CreditCard}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Repayments Made</p>
-              <p className="text-xs text-muted-foreground">
-                Total amount paid back to this creditor, including both principal and interest portions. Each repayment covers interest first, then reduces the principal balance.
-              </p>
-            </InfoPopover>
-          }
-        />
-        <KpiCard
-          label="Outstanding Balance"
-          value={formatCurrency(dashboard.outstandingBalance)}
-          icon={DollarSign}
-          labelExtra={
-            <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Outstanding Balance</p>
-              <p className="text-xs text-muted-foreground mb-2">
-                Current total obligation to this creditor.
-              </p>
-              <p className="text-xs font-mono bg-muted rounded px-2 py-1">
-                Remaining Principal + Accrued Interest
-              </p>
-            </InfoPopover>
-          }
-        />
-      </div>
-
-      <CreditorProfileClient
-        creditorId={id}
-        creditor={creditor}
-        dashboard={dashboard}
-        investments={investments}
-        repayments={repayments}
-        repaymentPortions={repaymentPortions}
-        monthlySummary={monthlySummary}
-      />
-    </div>
-  )
+  return <CreditorProfileClient creditorId={id} />
 }

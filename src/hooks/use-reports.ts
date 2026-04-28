@@ -51,8 +51,9 @@ export function usePnlReport(period: string) {
     [period]
   )
   const row = data?.[0]
-  const pnlData: PnlData | undefined = row ? { ...row, _key: undefined } as unknown as PnlData : undefined
-  return { data: pnlData }
+  if (!row) return { data: undefined }
+  const { _key, ...pnlData } = row
+  return { data: pnlData satisfies PnlData }
 }
 
 export function useBalanceSheetReport(period: string) {
@@ -62,8 +63,9 @@ export function useBalanceSheetReport(period: string) {
     [period]
   )
   const row = data?.[0]
-  const bsData: BalanceSheetData | undefined = row ? { ...row, _key: undefined } as unknown as BalanceSheetData : undefined
-  return { data: bsData }
+  if (!row) return { data: undefined }
+  const { _key, ...bsData } = row
+  return { data: bsData satisfies BalanceSheetData }
 }
 
 export function useRetainedEarningsReport(period: string) {
@@ -73,8 +75,9 @@ export function useRetainedEarningsReport(period: string) {
     [period]
   )
   const row = data?.[0]
-  const reData: RetainedEarningsData | undefined = row ? { ...row, _key: undefined } as unknown as RetainedEarningsData : undefined
-  return { data: reData }
+  if (!row) return { data: undefined }
+  const { _key, ...reData } = row
+  return { data: reData satisfies RetainedEarningsData }
 }
 
 export function useTransactionReportData() {

@@ -5,6 +5,12 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { getLoanBalanceAction } from "@/actions/payment.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { boundedSet } from "@/lib/bounded-map"
+
+// Cap on simultaneously-cached per-loan balance collections. Each entry has
+// `startSync: true` and keeps a query observer alive forever; without the
+// cap, a session that browses 50+ loans accumulates 50+ background polls.
+const MAX_LOAN_BALANCE_CACHED = 32
 
 export type LoanBalanceRow = {
   _key: string
@@ -48,7 +54,13 @@ export function getLoanBalanceCollection(loanId: string) {
   let collection = loanBalanceCollections.get(loanId)
   if (!collection) {
     collection = createLoanBalanceCollection(loanId)
-    loanBalanceCollections.set(loanId, collection)
+    boundedSet(
+      loanBalanceCollections,
+      loanId,
+      collection,
+      MAX_LOAN_BALANCE_CACHED,
+      (c) => c.cleanup(),
+    )
   }
   return collection
 }

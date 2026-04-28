@@ -9,11 +9,11 @@ import {
   updateCustomerAction,
 } from "@/actions/customer.actions"
 import type {
-  Customer,
   CreateCustomerInput,
   CustomerStatus,
   UpdateCustomerInput,
 } from "@/types/customer"
+import { customerSchema } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 
 /**
@@ -28,8 +28,9 @@ type CustomerUpdateMetadata = {
 }
 
 export const customerCollection = createCollection(
-  electricCollectionOptions<Customer>({
+  electricCollectionOptions({
     id: "customers",
+    schema: customerSchema,
     getKey: (customer) => customer.id,
     shapeOptions: {
       url: shapeUrl("customers"),

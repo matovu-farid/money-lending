@@ -50,7 +50,7 @@ export function getDailyCollectionsCollection(date: string) {
   let collection = dailyCollectionsMap.get(date)
   if (!collection) {
     collection = createDailyCollection(date)
-    boundedSet(dailyCollectionsMap, date, collection, MAX_DAILY_CACHED)
+    boundedSet(dailyCollectionsMap, date, collection, MAX_DAILY_CACHED, (c) => c.cleanup())
   }
   return collection
 }

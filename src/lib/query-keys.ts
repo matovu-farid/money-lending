@@ -65,6 +65,9 @@ export const queryKeys = {
     all: ["creditors"] as const,
     capital: ["creditors", "capital"] as const,
     monthlyDue: ["creditors", "monthly-due"] as const,
+    dashboard: (creditorId: string) => ["creditors", creditorId, "dashboard"] as const,
+    monthlySummary: (creditorId: string) => ["creditors", creditorId, "monthly-summary"] as const,
+    repaymentPortions: (key: string) => ["creditors", "repayment-portions", key] as const,
   },
 
   // ── Rate Change Requests ─────────────────────────────────────────────

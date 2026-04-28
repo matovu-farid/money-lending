@@ -8,10 +8,10 @@ import {
   updateCreditorAction,
 } from "@/actions/creditor.actions"
 import type {
-  Creditor,
   CreateCreditorWithInvestmentInput,
   UpdateCreditorInput,
 } from "@/types/creditor"
+import { creditorSchema } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
@@ -35,8 +35,9 @@ export interface CreditorInsertMetadata {
 }
 
 export const creditorCollection = createCollection(
-  electricCollectionOptions<Creditor>({
+  electricCollectionOptions({
     id: "creditors",
+    schema: creditorSchema,
     getKey: (creditor) => creditor.id,
     shapeOptions: {
       url: shapeUrl("creditors"),

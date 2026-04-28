@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { creditorCollection } from "@/collections/creditors"
-import { creditorsPageDataCollection } from "@/collections/creditors-page-data"
+import { systemCapitalCollection, creditorMonthlyDueCollection } from "@/collections/creditor-extras"
 import { Button } from "@/components/ui/button"
 import { KpiCard } from "@/components/dashboard/kpi-card"
 import { CreditorsTable } from "./creditors-table"
@@ -44,15 +44,25 @@ function CreditorsContent() {
   )
   const creditors = allCreditors ?? []
 
-  const { data: pageDataRows, isLoading: pageDataLoading } = useLiveQuery((q) =>
-    q.from({ p: creditorsPageDataCollection }).select(({ p }) => p)
+  const { data: capitalRows, isLoading: capitalLoading } = useLiveQuery((q) =>
+    q.from({ s: systemCapitalCollection }).select(({ s }) => s)
   )
-  const pageData = pageDataRows?.[0]
-  const capital = pageData?.capital ?? defaultCapital
-  const monthlyDue = pageData?.monthlyDue ?? {}
+  const { data: monthlyDueRows } = useLiveQuery((q) =>
+    q.from({ m: creditorMonthlyDueCollection }).select(({ m }) => m)
+  )
+  const capitalRow = capitalRows?.[0]
+  const capital = capitalRow
+    ? {
+        totalInvested: capitalRow.totalInvested,
+        totalInterestAccrued: capitalRow.totalInterestAccrued,
+        totalRepaymentsMade: capitalRow.totalRepaymentsMade,
+        totalOutstanding: capitalRow.totalOutstanding,
+      }
+    : defaultCapital
+  const monthlyDue = monthlyDueRows?.[0]?.data ?? {}
 
   const isInitialLoading =
-    (creditorsLoading && !allCreditors) || (pageDataLoading && !pageDataRows)
+    (creditorsLoading && !allCreditors) || (capitalLoading && !capitalRows)
 
   if (isInitialLoading) {
     return <LoadingSkeleton />

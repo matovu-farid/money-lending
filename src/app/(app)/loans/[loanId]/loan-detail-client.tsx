@@ -67,12 +67,10 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // here was making post-issuance navigation wait on a server round-trip.
   const collateralColl = getLoanCollateralCollection(loan.id)
   const { data: collateralRows } = useLiveQuery(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (q) => q.from({ c: collateralColl as any }).select(({ c }: any) => c),
+    (q) => q.from({ c: collateralColl }).select(({ c }) => c),
     [loan.id]
   )
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const collateralData = (collateralRows as any)?.[0] ?? null
+  const collateralData = collateralRows?.[0] ?? null
   const collateralNature = collateralData?.nature
   const collateralDescription = collateralData?.description ?? null
 
@@ -142,7 +140,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         loanId: p.loanId,
         customerId: loan.customerId,
         customerName: customerName ?? "",
-        paymentDate: p.paymentDate instanceof Date ? p.paymentDate : new Date(p.paymentDate),
+        paymentDate: p.paymentDate,
         amount: p.amount,
         interestPortion: portion?.interestPortion ?? "0",
         principalPortion: portion?.principalPortion ?? "0",
@@ -151,7 +149,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         recordedBy: p.recordedBy,
         recorderName: userNameMap[p.recordedBy] ?? "",
         depositLocation: p.depositLocation,
-        createdAt: p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt),
+        createdAt: p.createdAt,
       }
     })
   }, [rawPaymentsArr, currentPortions, userNameMap, loan.customerId, customerName])
@@ -215,7 +213,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
 
   const activePayments = [...payments]
-    .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime())
+    .sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime())
   // Use ledger-derived balance from server; fall back to principalAmount
   const outstandingBalance = ledgerBalance ?? loan.principalAmount
 
@@ -242,7 +240,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     let balance = new BigNumber(loan.principalAmount)
     // Use non-deleted payments sorted by date
     const sorted = payments
-      .sort((a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime() || new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
+      .sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime() || a.createdAt.getTime() - b.createdAt.getTime())
     for (const p of sorted) {
       const principal = currentPortions[p.id]?.principalPortion ?? "0"
       balance = balance.minus(new BigNumber(principal))
@@ -261,7 +259,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         { metadata: { intent: "edit", reason: editReason.trim() } },
         (draft) => {
           if (editAmount.trim()) draft.amount = editAmount.trim()
-          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
+          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00")
         },
       )
       toast.success("Payment updated")

@@ -40,30 +40,17 @@ export interface TransactionRow {
   isOptimistic?: boolean
 }
 
-/** Raw transaction shape from Electric shape sync (no JOINed categoryName). */
-export type TransactionShapeRow = {
-  id: string
-  type: string
-  amount: string
-  categoryId: string
-  referenceType: string | null
-  referenceId: string | null
-  loanId: string | null
-  description: string | null
-  transactionDate: string
-  recordedBy: string
-  depositLocation: string | null
-  subLocationId: string | null
-  journalGroupId: string | null
-  createdAt: string
-  /**
-   * Client-only field stamped onto optimistic rows so the table can display
-   * the user-typed category name immediately, before the category collection
-   * syncs the newly-created category row back.
-   * Synced rows from Electric do not carry this field.
-   */
-  categoryName?: string
-}
+/**
+ * Raw transaction shape from Electric shape sync (no JOINed categoryName).
+ * This is a re-export of the schema-derived `TransactionRow` from
+ * `@/lib/schemas/collections` — kept here under the old name for callers that
+ * already import `TransactionShapeRow` from `@/types`.
+ *
+ * Date columns (`transactionDate`, `createdAt`) are coerced to `Date` by the
+ * collection schema, so consumers can call `.getTime()` directly without
+ * defensive `instanceof Date` checks.
+ */
+export type { TransactionRow as TransactionShapeRow } from "@/lib/schemas/collections"
 
 /** UI-facing category shape */
 export interface CategoryRow {

@@ -7,14 +7,16 @@ import {
   createBankAccountAction,
   updateBankAccountAction,
 } from "@/actions/bank-account.actions"
-import type { BankAccount, UpdateBankAccountInput } from "@/types"
+import type { UpdateBankAccountInput } from "@/types"
+import { bankAccountSchema } from "@/lib/schemas/collections"
 import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
 export const bankAccountCollection = createCollection(
-  electricCollectionOptions<BankAccount>({
+  electricCollectionOptions({
     id: "bank-accounts",
+    schema: bankAccountSchema,
     getKey: (account) => account.id,
     shapeOptions: {
       url: shapeUrl("bank_accounts"),

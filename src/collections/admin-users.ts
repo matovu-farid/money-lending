@@ -40,5 +40,8 @@ export const adminUserCollection = createCollection(
         qc.invalidateQueries({ queryKey: queryKeys.auth.effectivePermissions })
       }
     },
+    // Auth-adjacent, no Electric backing. Short staleTime so admin views
+    // pick up role changes / bans on next mount instead of waiting 60s.
+    staleTime: 30_000,
   })
 )

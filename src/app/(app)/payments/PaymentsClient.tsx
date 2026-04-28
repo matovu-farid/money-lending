@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useLiveQuery } from "@tanstack/react-db"
+import { useLiveQuery, eq, ilike, gte, lte } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { loanCollection } from "@/collections/loans"
 import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
@@ -136,14 +136,57 @@ function PaymentsContent({
 
   const pageSize = 25
 
-  // TanStack DB live query for all payments (raw rows from Electric shape)
+  // Unfiltered payments + loans — needed to compute the running principal
+  // balance per loan accurately. Filtering these out would corrupt the
+  // balanceAfterMap for the filtered subset.
   const { data: rawPayments, isLoading: paymentsLoading } = useLiveQuery((q) =>
     q.from({ p: paymentCollection }).select(({ p }) => p)
   )
-
-  // Loans drive the customer join (loanCollection already has customerName + customerId)
   const { data: allLoans, isLoading: loansLoading } = useLiveQuery((q) =>
     q.from({ l: loanCollection }).select(({ l }) => l)
+  )
+
+  // Display query: JOINs paymentCollection + loanCollection and pushes the
+  // customerName + date filters into the differential dataflow so keystrokes
+  // re-evaluate incrementally instead of re-running JS over the full set.
+  // The amount filter stays JS (string-typed, lex comparison breaks) and
+  // pagination is also JS so we keep a single total count.
+  const dateFromTime = useMemo(
+    () => (dateFrom ? new Date(dateFrom).getTime() : null),
+    [dateFrom],
+  )
+  const dateToTime = useMemo(
+    () => (dateTo ? new Date(dateTo).getTime() : null),
+    [dateTo],
+  )
+
+  const { data: filteredJoinedRows } = useLiveQuery(
+    (q) => {
+      let qb = q
+        .from({ p: paymentCollection })
+        .join({ l: loanCollection }, ({ p, l }) => eq(p.loanId, l.id), "inner")
+      if (customerName) {
+        qb = qb.where(({ l }) => ilike(l.customerName, `%${customerName}%`))
+      }
+      if (dateFromTime !== null) {
+        qb = qb.where(({ p }) => gte(p.paymentDate, new Date(dateFromTime)))
+      }
+      if (dateToTime !== null) {
+        qb = qb.where(({ p }) => lte(p.paymentDate, new Date(dateToTime)))
+      }
+      return qb.select(({ p, l }) => ({
+        id: p.id,
+        loanId: p.loanId,
+        paymentDate: p.paymentDate,
+        amount: p.amount,
+        recordedBy: p.recordedBy,
+        depositLocation: p.depositLocation,
+        createdAt: p.createdAt,
+        customerId: l.customerId,
+        customerName: l.customerName,
+      }))
+    },
+    [customerName, dateFromTime, dateToTime],
   )
 
   const isInitialLoading = (paymentsLoading && !rawPayments) || (loansLoading && !allLoans)
@@ -187,84 +230,72 @@ function PaymentsContent({
   )
   const portionsMap = portionsRows?.[0]?.portions ?? {}
 
-  // Build the joined PaymentWithCustomer-shaped rows that the rest of this
-  // component already consumes (customerName, recorderName, interestPortion,
-  // principalPortion, principalBalanceAfter, outstandingBalance).
-  const allPayments: PaymentWithCustomer[] = useMemo(() => {
-    const loanMap = new Map<string, { customerId: string; customerName: string; principalAmount: string }>()
+  // Running principal balance per payment, computed across the FULL set of
+  // payments per loan (filters can hide earlier payments — using filtered
+  // data here would understate the balance for survivors).
+  const balanceAfterMap = useMemo(() => {
+    const loanPrincipal = new Map<string, string>()
     for (const l of allLoans ?? []) {
-      loanMap.set(l.id, {
-        customerId: l.customerId,
-        customerName: l.customerName ?? "Unknown",
-        principalAmount: l.principalAmount,
-      })
+      loanPrincipal.set(l.id, l.principalAmount)
     }
-
-    // Group payments by loanId so we can compute a running principal balance
-    // (principalBalanceAfter) chronologically per loan — same logic that used
-    // to be enriched server-side.
     const byLoan = new Map<string, typeof rawPayments>()
     for (const p of rawPayments ?? []) {
       const list = byLoan.get(p.loanId) ?? []
       list.push(p)
       byLoan.set(p.loanId, list)
     }
-    const balanceAfterMap: Record<string, string> = {}
+    const map: Record<string, string> = {}
     for (const [loanId, plist] of byLoan) {
-      const loanInfo = loanMap.get(loanId)
-      if (!loanInfo) continue
+      const principal = loanPrincipal.get(loanId)
+      if (!principal) continue
       const sorted = [...plist].sort((a, b) => {
-        const da = new Date(a.paymentDate).getTime()
-        const db = new Date(b.paymentDate).getTime()
+        const da = a.paymentDate.getTime()
+        const db = b.paymentDate.getTime()
         if (da !== db) return da - db
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        return a.createdAt.getTime() - b.createdAt.getTime()
       })
-      let bal = new BigNumber(loanInfo.principalAmount)
+      let bal = new BigNumber(principal)
       for (const p of sorted) {
-        const principal = portionsMap[p.id]?.principalPortion ?? "0"
-        bal = bal.minus(new BigNumber(principal))
+        const portion = portionsMap[p.id]?.principalPortion ?? "0"
+        bal = bal.minus(new BigNumber(portion))
         if (bal.isLessThan(0)) bal = new BigNumber(0)
-        balanceAfterMap[p.id] = bal.toFixed(0)
+        map[p.id] = bal.toFixed(0)
       }
     }
+    return map
+  }, [rawPayments, allLoans, portionsMap])
 
-    return (rawPayments ?? []).map((p) => {
-      const info = loanMap.get(p.loanId)
-      const portion = portionsMap[p.id]
-      return {
-        id: p.id,
-        loanId: p.loanId,
-        customerId: info?.customerId ?? "",
-        customerName: info?.customerName ?? "Unknown",
-        paymentDate: p.paymentDate instanceof Date ? p.paymentDate : new Date(p.paymentDate),
-        amount: p.amount,
-        interestPortion: portion?.interestPortion ?? "0",
-        principalPortion: portion?.principalPortion ?? "0",
-        principalBalanceAfter: balanceAfterMap[p.id] ?? "0",
-        outstandingBalance: balanceAfterMap[p.id] ?? "0",
-        recordedBy: p.recordedBy,
-        recorderName: userNameMap[p.recordedBy] ?? "",
-        depositLocation: p.depositLocation,
-        createdAt: p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt),
-      }
-    })
-  }, [rawPayments, allLoans, portionsMap, userNameMap])
+  // Project the filtered + joined rows into the PaymentWithCustomer shape the
+  // rest of the page consumes. customerName + dates are already filtered by
+  // the live query above; we only need to apply amount + pagination here.
+  const allFilteredPayments: PaymentWithCustomer[] = useMemo(
+    () =>
+      (filteredJoinedRows ?? []).map((p) => {
+        const portion = portionsMap[p.id]
+        return {
+          id: p.id,
+          loanId: p.loanId,
+          customerId: p.customerId,
+          customerName: p.customerName ?? "Unknown",
+          paymentDate: p.paymentDate,
+          amount: p.amount,
+          interestPortion: portion?.interestPortion ?? "0",
+          principalPortion: portion?.principalPortion ?? "0",
+          principalBalanceAfter: balanceAfterMap[p.id] ?? "0",
+          outstandingBalance: balanceAfterMap[p.id] ?? "0",
+          recordedBy: p.recordedBy,
+          recorderName: userNameMap[p.recordedBy] ?? "",
+          depositLocation: p.depositLocation,
+          createdAt: p.createdAt,
+        }
+      }),
+    [filteredJoinedRows, portionsMap, userNameMap, balanceAfterMap],
+  )
 
-  // Client-side filtering
+  // Amount filter stays in JS — `amount` is a numeric string and TanStack DB's
+  // gt/lt would do lexicographic compare ("9" > "100"). Pagination follows.
   const filtered = useMemo(() => {
-    let result = allPayments
-    if (customerName) {
-      const term = customerName.toLowerCase()
-      result = result.filter((p) => p.customerName.toLowerCase().includes(term))
-    }
-    if (dateFrom) {
-      const from = new Date(dateFrom)
-      result = result.filter((p) => new Date(p.paymentDate) >= from)
-    }
-    if (dateTo) {
-      const to = new Date(dateTo)
-      result = result.filter((p) => new Date(p.paymentDate) <= to)
-    }
+    let result = allFilteredPayments
     if (amountMin) {
       const min = parseFloat(amountMin)
       if (!isNaN(min)) result = result.filter((p) => parseFloat(p.amount) >= min)
@@ -274,7 +305,7 @@ function PaymentsContent({
       if (!isNaN(max)) result = result.filter((p) => parseFloat(p.amount) <= max)
     }
     return result
-  }, [allPayments, customerName, dateFrom, dateTo, amountMin, amountMax])
+  }, [allFilteredPayments, amountMin, amountMax])
 
   const total = filtered.length
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize)
@@ -288,7 +319,7 @@ function PaymentsContent({
         { metadata: { intent: "edit", reason: editReason } },
         (draft) => {
           if (editAmount) draft.amount = editAmount
-          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00") as unknown as typeof draft.paymentDate
+          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00")
         },
       )
       toast.success("Payment updated")
