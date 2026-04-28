@@ -13,8 +13,12 @@ export const pendingVerifications = new Map<string, string>()
 const isTest = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
 const isCypress = process.env.CYPRESS === "true"
 
+let _resend: Resend | null = null
+function getResend(): Resend {
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY)
+  return _resend
+}
 
-const resend = new Resend(process.env.RESEND_API_KEY)
 const emailFrom = process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>"
 
 export const auth = betterAuth({
@@ -26,7 +30,7 @@ export const auth = betterAuth({
     requireEmailVerification: !isTest,
     sendResetPassword: async ({ user, url }) => {
       if (isTest) return // skip in test
-      await resend.emails.send({
+      await getResend().emails.send({
         from: emailFrom,
         to: user.email,
         subject: "Reset your password",
@@ -64,7 +68,7 @@ export const auth = betterAuth({
 
       console.log("[Email Debug] Proceeding to send email via Resend")
       try {
-        const result = await resend.emails.send({
+        const result = await getResend().emails.send({
           from: emailFrom,
           to: user.email,
           subject: "Verify your email address",

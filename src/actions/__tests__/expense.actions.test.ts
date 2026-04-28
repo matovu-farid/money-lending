@@ -141,10 +141,10 @@ describe("Expense Actions", () => {
   describe("recordExpenseAction", () => {
     const validInput = {
       amount: "50000",
-      categoryId: "cat1",
+      categoryName: "Office Supplies",
       transactionDate: "2026-04-01",
       description: "Office rent",
-      sourceLocation: "cash",
+      location: "cash",
       backdateNote: "Backdated entry for prior month rent",
     }
 
@@ -169,7 +169,7 @@ describe("Expense Actions", () => {
 
     it("returns error for missing category", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      const result = await recordExpenseAction({ ...validInput, categoryId: "" } as any)
+      const result = await recordExpenseAction({ ...validInput, categoryName: "" } as any)
       expect(result).toEqual({ error: "Category is required" })
     })
 
@@ -181,11 +181,11 @@ describe("Expense Actions", () => {
 
     it("records expense and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRecordExpense.mockReturnValue(Effect.succeed(undefined) as any)
+      mockRecordExpense.mockReturnValue(Effect.succeed({ categoryId: "cat-resolved" }) as any)
       mockGetLocationBalances.mockReturnValue(Effect.succeed({ cash: "1000000", bank: "0", strong_room: "0" }) as any)
 
       const result = await recordExpenseAction(validInput as any)
-      expect(result).toEqual({ success: true })
+      expect(result).toEqual({ success: true, resolvedCategory: { id: "cat-resolved", name: "Office Supplies" } })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/expenses")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/transactions")
     })

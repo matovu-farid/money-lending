@@ -137,6 +137,7 @@ describe("Payment Service", () => {
         delete: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -205,6 +206,7 @@ describe("Payment Service", () => {
         delete: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -275,6 +277,7 @@ describe("Payment Service", () => {
         delete: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue(undefined),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -544,6 +547,7 @@ describe("Payment Service", () => {
             returning: vi.fn().mockResolvedValue([editedPayment]),
           }),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -613,6 +617,7 @@ describe("Payment Service", () => {
             returning: vi.fn().mockResolvedValue([editedPayment]),
           }),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -676,6 +681,7 @@ describe("Payment Service", () => {
             returning: vi.fn().mockResolvedValue([]),
           }),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -751,6 +757,7 @@ describe("Payment Service", () => {
             returning: vi.fn().mockResolvedValue([]),
           }),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
@@ -816,6 +823,7 @@ describe("Payment Service", () => {
             returning: vi.fn().mockResolvedValue([]),
           }),
         }),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)

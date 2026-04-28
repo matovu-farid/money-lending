@@ -26,8 +26,8 @@ vi.mock("next/cache", () => ({
 }))
 
 vi.mock("@/services/fund-transfer.service", () => ({
-  createFundTransfer: vi.fn(),
-  createCapitalInjection: vi.fn(),
+  createFundTransferWithTxid: vi.fn(),
+  createCapitalInjectionWithTxid: vi.fn(),
   listFundTransfers: vi.fn(),
 }))
 
@@ -36,8 +36,8 @@ vi.mock("@/services/fund-transfer.service", () => ({
 import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import {
-  createFundTransfer,
-  createCapitalInjection,
+  createFundTransferWithTxid,
+  createCapitalInjectionWithTxid,
   listFundTransfers,
 } from "@/services/fund-transfer.service"
 
@@ -52,8 +52,8 @@ const mockGetSession = vi.mocked(getSession)
 const mockRequireRole = vi.mocked(requireRole)
 const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
-const mockCreateFundTransfer = vi.mocked(createFundTransfer)
-const mockCreateCapitalInjection = vi.mocked(createCapitalInjection)
+const mockCreateFundTransferWithTxid = vi.mocked(createFundTransferWithTxid)
+const mockCreateCapitalInjectionWithTxid = vi.mocked(createCapitalInjectionWithTxid)
 const mockListFundTransfers = vi.mocked(listFundTransfers)
 
 // ---------- Tests ----------
@@ -114,10 +114,10 @@ describe("Fund Transfer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
       const created = { id: "ft1" }
-      mockCreateFundTransfer.mockReturnValue(Effect.succeed(created) as any)
+      mockCreateFundTransferWithTxid.mockReturnValue(Effect.succeed({ transfer: created, txid: "tx_123" }) as any)
 
       const result = await createFundTransferAction(validInput as any)
-      expect(result).toEqual({ data: created })
+      expect(result).toEqual({ data: created, txid: "tx_123" })
       expect(mockRevalidatePath).not.toHaveBeenCalled()
     })
   })
@@ -154,10 +154,10 @@ describe("Fund Transfer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
       const created = { id: "ci1" }
-      mockCreateCapitalInjection.mockReturnValue(Effect.succeed(created) as any)
+      mockCreateCapitalInjectionWithTxid.mockReturnValue(Effect.succeed({ transfer: created, txid: "tx_456" }) as any)
 
       const result = await createCapitalInjectionAction(validInput as any)
-      expect(result).toEqual({ data: created })
+      expect(result).toEqual({ data: created, txid: "tx_456" })
       expect(mockRevalidatePath).not.toHaveBeenCalled()
     })
   })

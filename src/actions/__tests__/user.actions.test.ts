@@ -12,6 +12,7 @@ vi.mock("@/lib/action-utils", () => ({
   getEffectivePermissions: vi.fn(async (_userId: string, role: UserRole): Promise<Set<Permission>> => {
     return getPermissionsForRole(role)
   }),
+  invalidateUserPermissions: vi.fn(),
 }))
 
 vi.mock("@/lib/auth", () => ({

@@ -43,9 +43,9 @@ vi.mock("next/cache", () => ({
 }))
 
 vi.mock("@/services/payment.service", () => ({
-  recordPayment: vi.fn(),
-  editPayment: vi.fn(),
-  deletePayment: vi.fn(),
+  recordPaymentWithTxid: vi.fn(),
+  editPaymentWithTxid: vi.fn(),
+  deletePaymentWithTxid: vi.fn(),
   listPayments: vi.fn(),
   searchActiveLoans: vi.fn(),
   getRecentlyCollectedLoans: vi.fn(),
@@ -113,9 +113,9 @@ import { getSession, getUserRole, requireRole } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import {
-  recordPayment,
-  editPayment,
-  deletePayment,
+  recordPaymentWithTxid,
+  editPaymentWithTxid,
+  deletePaymentWithTxid,
   listPayments,
   searchActiveLoans,
 } from "@/services/payment.service"
@@ -134,9 +134,9 @@ const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)
 const mockRequireRole = vi.mocked(requireRole)
 const mockRevalidatePath = vi.mocked(revalidatePath)
-const mockRecordPayment = vi.mocked(recordPayment)
-const mockEditPayment = vi.mocked(editPayment)
-const mockDeletePayment = vi.mocked(deletePayment)
+const mockRecordPayment = vi.mocked(recordPaymentWithTxid)
+const mockEditPayment = vi.mocked(editPaymentWithTxid)
+const mockDeletePayment = vi.mocked(deletePaymentWithTxid)
 const mockListPayments = vi.mocked(listPayments)
 const mockSearchActiveLoans = vi.mocked(searchActiveLoans)
 
@@ -198,11 +198,11 @@ describe("Payment Actions", () => {
     it("records payment and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const recorded = { id: "p1", loanId: "loan-123", amount: "50000" }
-      mockRecordPayment.mockReturnValue(Effect.succeed(recorded) as any)
+      mockRecordPayment.mockReturnValue(Effect.succeed({ payment: recorded, txid: "tx_001" }) as any)
 
       const result = await recordPaymentAction(validInput)
 
-      expect(result).toEqual({ data: recorded })
+      expect(result).toEqual({ data: recorded, txid: "tx_001" })
       expect(mockRecordPayment).toHaveBeenCalledWith(validInput, "u1")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/loans/loan-123")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/payments")
@@ -255,11 +255,11 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       const edited = { id: "p1", loanId: "loan-1", amount: "60000" }
-      mockEditPayment.mockReturnValue(Effect.succeed(edited) as any)
+      mockEditPayment.mockReturnValue(Effect.succeed({ payment: edited, txid: "tx_002" }) as any)
 
       const result = await editPaymentAction(validInput)
 
-      expect(result).toEqual({ data: edited })
+      expect(result).toEqual({ data: edited, txid: "tx_002" })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/loans/loan-1")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/payments")
     })
@@ -304,11 +304,11 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       const deleted = { id: "p1", loanId: "loan-1", amount: "50000" }
-      mockDeletePayment.mockReturnValue(Effect.succeed(deleted) as any)
+      mockDeletePayment.mockReturnValue(Effect.succeed({ payment: deleted, txid: "tx_003" }) as any)
 
       const result = await deletePaymentAction(validInput)
 
-      expect(result).toEqual({ data: deleted })
+      expect(result).toEqual({ data: deleted, txid: "tx_003" })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/loans/loan-1")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/payments")
     })

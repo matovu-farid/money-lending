@@ -85,7 +85,7 @@ describe("Income Actions", () => {
   describe("recordIncomeAction", () => {
     const validInput = {
       amount: "100000",
-      categoryId: "cat1",
+      categoryName: "Consulting",
       transactionDate: "2026-04-01",
       description: "Consulting fee",
       depositLocation: "bank",
@@ -113,7 +113,7 @@ describe("Income Actions", () => {
 
     it("returns error for missing category", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      const result = await recordIncomeAction({ ...validInput, categoryId: "" } as any)
+      const result = await recordIncomeAction({ ...validInput, categoryName: "" } as any)
       expect(result).toEqual({ error: "Category is required" })
     })
 
@@ -125,10 +125,10 @@ describe("Income Actions", () => {
 
     it("records income and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRecordIncome.mockReturnValue(Effect.succeed(undefined) as any)
+      mockRecordIncome.mockReturnValue(Effect.succeed({ categoryId: "cat-resolved" }) as any)
 
       const result = await recordIncomeAction(validInput as any)
-      expect(result).toEqual({ success: true })
+      expect(result).toEqual({ success: true, resolvedCategory: { id: "cat-resolved", name: "Consulting" } })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/income")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/transactions")
     })
