@@ -4,7 +4,7 @@ import path from "path"
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/services/__integration__/*.test.ts"],
+    include: ["src/**/__integration__/*.test.ts"],
     globals: true,
     setupFiles: ["src/services/__integration__/setup.ts"],
     // Run sequentially — each test suite truncates tables
