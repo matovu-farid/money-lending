@@ -1,5 +1,6 @@
 export { customerCollection } from "./customers"
 export { loanCollection, insertLoanWithInput } from "./loans"
+export { loanBalanceCollection } from "./loan-balances"
 export { paymentCollection } from "./payments"
 export { expenseCollection } from "./expenses"
 export { incomeCollection } from "./income"
