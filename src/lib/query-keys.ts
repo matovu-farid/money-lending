@@ -14,7 +14,6 @@ export const queryKeys = {
   // ── Loans ────────────────────────────────────────────────────────────
   loans: {
     all: ["loans"] as const,
-    balance: (loanId: string) => ["loans", loanId, "balance"] as const,
     collateral: (loanId: string) => ["loans", loanId, "collateral"] as const,
     activeLoanCheck: (customerId: string) => ["active-loan-check", customerId] as const,
     dueToday: ["loans-due-today"] as const,

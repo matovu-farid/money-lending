@@ -56,7 +56,6 @@ type PaymentDeleteMetadata = { reason: string }
 
 function invalidateCrossCutting(loanId: string) {
   const qc = getQueryClient()
-  qc.invalidateQueries({ queryKey: queryKeys.loans.balance(loanId) })
   qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
   qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
   qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
