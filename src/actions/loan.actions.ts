@@ -467,18 +467,6 @@ export const getCustomerLoansWithOverdueAction = withAction<string, any>({
   },
 })
 
-export const listLoansWithOverdueAction = withAction({
-  permission: "loan:read",
-  action: async () => {
-    try {
-      const allLoans = await Effect.runPromise(listLoans())
-      return { data: await computeOverdue(allLoans) }
-    } catch {
-      return { error: "Internal server error" }
-    }
-  },
-})
-
 export const getLoanStatusCountsAction = withAction({
   permission: "loan:read",
   action: async () => {
