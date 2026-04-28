@@ -1,6 +1,7 @@
 export * from "./bank-accounts"
 export * from "./customers"
 export * from "./loans"
+export * from "./loan-balances"
 export * from "./collateral"
 export * from "./payments"
 export * from "./audit"
