@@ -54,12 +54,14 @@ export function scheduleIdlePrefetch(): void {
 async function runPrefetch(): Promise<void> {
   const [
     { loanCollection },
+    { loanBalanceCollection },
     { customerCollection },
     { paymentCollection },
     { dashboardCollection },
     { bankAccountCollection },
   ] = await Promise.all([
     import("@/collections/loans"),
+    import("@/collections/loan-balances"),
     import("@/collections/customers"),
     import("@/collections/payments"),
     import("@/collections/dashboard"),
@@ -67,6 +69,7 @@ async function runPrefetch(): Promise<void> {
   ])
   for (const c of [
     loanCollection,
+    loanBalanceCollection,
     customerCollection,
     paymentCollection,
     dashboardCollection,
