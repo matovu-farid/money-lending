@@ -4,6 +4,14 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Infrastructure: self-hosted ElectricSQL
+
+We run our **own** ElectricSQL instance plus an nginx caching proxy as a Docker Swarm stack on `node1` (Hetzner). It is **not** Electric Cloud. Anything related to Electric — the proxy in `src/app/api/electric/[...table]/route.ts`, sync transport, bandwidth, caching, deployment — connects to this stack.
+
+- Stack source: `deploy/electric/` (see `deploy/electric/README.md` for full details)
+- CI: `.github/workflows/deploy-electric.yml` deploys on push to `main` when `deploy/electric/**` changes
+- SSH access to the host: `ssh node1` (configured in the user's `~/.ssh/config`). Use it to inspect `docker service ls`, follow logs, or curl `http://127.0.0.1:3001/v1/health` directly.
+
 # Verification Policy: Cypress Tests Replace Manual Verification
 
 **This project does NOT use `checkpoint:human-verify` tasks for manual/visual verification.**
