@@ -13,6 +13,7 @@ interface DisbursementReceiptData {
   date: string
   customerName: string
   customerNin?: string
+  customerPhone?: string
   loanAmount: string
   issuanceFee: string
   interestRate: string
@@ -74,6 +75,7 @@ export function DisbursementReceiptButton({
             date={receiptData.date}
             customerName={receiptData.customerName}
             customerNin={receiptData.customerNin}
+            customerPhone={receiptData.customerPhone}
             loanAmount={receiptData.loanAmount}
             issuanceFee={receiptData.issuanceFee}
             interestRate={receiptData.interestRate}

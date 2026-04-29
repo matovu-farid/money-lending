@@ -19,6 +19,7 @@ export interface ReceiptData {
   loanId: string
   customerId: string
   customerName: string
+  customerPhone?: string
   loanAmount: string
   issuanceFee: string
   interestRate: string

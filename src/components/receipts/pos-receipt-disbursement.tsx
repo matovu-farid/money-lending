@@ -7,6 +7,7 @@ interface PosReceiptDisbursementProps {
   date: string
   customerName: string
   customerNin?: string
+  customerPhone?: string
   loanAmount: string
   issuanceFee?: string
   interestRate: string
@@ -22,6 +23,7 @@ export function PosReceiptDisbursement({
   date,
   customerName,
   customerNin,
+  customerPhone,
   loanAmount,
   issuanceFee,
   interestRate,
@@ -53,6 +55,7 @@ export function PosReceiptDisbursement({
       {/* Receipt # and Date on separate lines */}
       <div>{receiptNumber}</div>
       <div>{formatDate(date)}</div>
+      <div>Issued by: {officerName}</div>
 
       {/* Separator */}
       <div className="border-t border-dashed border-black my-2" />
@@ -60,6 +63,7 @@ export function PosReceiptDisbursement({
       {/* Customer */}
       <div>
         <div>Customer: {customerName}</div>
+        {customerPhone && <div>Phone: {customerPhone}</div>}
         {customerNin && <div>NIN: {customerNin}</div>}
       </div>
 
@@ -117,9 +121,6 @@ export function PosReceiptDisbursement({
 
       {/* Separator */}
       <div className="border-t border-dashed border-black my-2" />
-
-      {/* Officer */}
-      <div>Issued by: {officerName}</div>
 
       {/* Signature */}
       <div className="mt-6">

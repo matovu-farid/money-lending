@@ -102,6 +102,7 @@ export const getLoanReceiptDataAction = withAction<string, any>({
         date: loan.startDate.toISOString(),
         customerName: customer?.fullName ?? "\u2014",
         customerNin: customer?.nin,
+        customerPhone: customer?.contact,
         loanAmount: isRollover
           ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
           : loan.principalAmount,

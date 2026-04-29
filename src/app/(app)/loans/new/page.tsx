@@ -144,6 +144,7 @@ function NewLoanPageInner() {
     [prefilledCustomerId]
   )
   const customerName = matchedCustomers?.[0]?.fullName ?? null
+  const customerPhone = matchedCustomers?.[0]?.contact ?? null
 
   const activeLoanCheckColl = customerId ? getActiveLoanCheckCollection(customerId) : null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -327,6 +328,7 @@ function NewLoanPageInner() {
       loanId: id,
       customerId: data.customerId,
       customerName: customerName ?? "Customer",
+      customerPhone: customerPhone ?? undefined,
       loanAmount: data.principalAmount,
       issuanceFee: fee,
       interestRate: `${data.interestRateDisplay}%`,
@@ -436,6 +438,7 @@ function NewLoanPageInner() {
             receiptNumber={receiptData.receiptNumber}
             date={receiptData.date}
             customerName={receiptData.customerName}
+            customerPhone={receiptData.customerPhone}
             loanAmount={receiptData.loanAmount}
             issuanceFee={receiptData.issuanceFee}
             interestRate={receiptData.interestRate}
