@@ -20,11 +20,11 @@ export function ResetPasswordTemplate({ url }: ResetPasswordProps) {
   return (
     <Html>
       <Head />
-      <Preview>Reset your password for Lending Manager</Preview>
+      <Preview>Reset your password for Kaks Credit</Preview>
       <Body style={body}>
         <Container style={container}>
           <Section style={header}>
-            <Text style={headerText}>Lending Manager</Text>
+            <Text style={headerText}>Kaks Credit</Text>
           </Section>
           <Section style={content}>
             <Heading style={heading}>Reset your password</Heading>
@@ -50,7 +50,7 @@ export function ResetPasswordTemplate({ url }: ResetPasswordProps) {
             If you did not request this, you can safely ignore this email.
           </Text>
           <Text style={copyright}>
-            &copy; {new Date().getFullYear()} Lending Manager
+            &copy; {new Date().getFullYear()} Kaks Credit
           </Text>
         </Container>
       </Body>

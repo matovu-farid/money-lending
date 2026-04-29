@@ -56,7 +56,7 @@ describe("Optimistic Loan Creation", () => {
     cy.contains("button", "Issue Loan").click()
 
     // POS Receipt modal appears
-    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
     cy.contains("LOAN DISBURSEMENT").should("be.visible")
 
     // Close receipt — should navigate to /loans/{uuid}
@@ -73,7 +73,7 @@ describe("Optimistic Loan Creation", () => {
     cy.contains("button", "Issue Loan").click()
 
     // Receipt modal should show the optimistic data immediately
-    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
     cy.contains("LOAN DISBURSEMENT").should("be.visible")
     // Receipt shows the principal amount
     cy.contains("750,000").should("be.visible")
@@ -108,7 +108,7 @@ describe("Optimistic Loan Creation", () => {
     cy.contains("button", "Issue Loan").click()
 
     // Receipt modal should still appear (optimistic)
-    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
     cy.contains("button", "Close").click()
 
     // After server failure, the loan should be rolled back from the collection.

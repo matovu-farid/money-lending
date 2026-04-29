@@ -43,7 +43,7 @@ describe("Optimistic Payment Recording", () => {
     cy.contains("button", "Confirm & Record").click()
 
     // POS Receipt modal should appear (optimistic — instant)
-    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
 
     // Close receipt — should navigate back to loan detail page
     cy.contains("button", "Close").click()
@@ -74,7 +74,7 @@ describe("Optimistic Payment Recording", () => {
     cy.contains("button", "Confirm & Record").click()
 
     // Receipt appears optimistically
-    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
     cy.contains("button", "Close").click()
 
     // After server failure, we should end up on the loan detail page

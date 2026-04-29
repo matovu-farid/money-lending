@@ -38,7 +38,7 @@ export function AdminNotificationTemplate({
       <Body style={body}>
         <Container style={container}>
           <Section style={header}>
-            <Text style={headerText}>Lending Manager</Text>
+            <Text style={headerText}>Kaks Credit</Text>
           </Section>
           <Section style={content}>
             <Heading style={heading}>{eventLabel}</Heading>
@@ -76,7 +76,7 @@ export function AdminNotificationTemplate({
             This is an automated notification from the lending system.
           </Text>
           <Text style={copyright}>
-            &copy; {new Date().getFullYear()} Lending Manager
+            &copy; {new Date().getFullYear()} Kaks Credit
           </Text>
         </Container>
       </Body>

@@ -1,7 +1,7 @@
 /**
- * Design System — Sovereign Ledger Smoke Tests
+ * Design System — Kaks Credit Smoke Tests
  *
- * This file validates that the Sovereign Ledger design tokens are correctly applied.
+ * This file validates that the Kaks Credit design tokens are correctly applied.
  * All tests are enabled — all plans (01-06) have been executed.
  */
 
@@ -90,7 +90,7 @@ function resolveColorVar(
 
 // ---------------------------------------------------------------------------
 
-describe("Design System — Sovereign Ledger", () => {
+describe("Design System — Kaks Credit", () => {
   beforeEach(() => {
     cy.task("db:reset")
     cy.registerAndLogin({ name: "Design Test User" })

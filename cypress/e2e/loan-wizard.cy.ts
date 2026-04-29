@@ -104,7 +104,7 @@ describe("Loan Issuance Wizard", () => {
     cy.contains("button", "Issue Loan").click()
 
     // POS Receipt modal should appear
-    cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+    cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
     cy.contains("LOAN DISBURSEMENT").should("be.visible")
     cy.contains("Print Receipt").should("be.visible")
 

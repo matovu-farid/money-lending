@@ -20,11 +20,11 @@ export function VerifyEmailTemplate({ url }: VerifyEmailProps) {
   return (
     <Html>
       <Head />
-      <Preview>Verify your email address for Lending Manager</Preview>
+      <Preview>Verify your email address for Kaks Credit</Preview>
       <Body style={body}>
         <Container style={container}>
           <Section style={header}>
-            <Text style={headerText}>Lending Manager</Text>
+            <Text style={headerText}>Kaks Credit</Text>
           </Section>
           <Section style={content}>
             <Heading style={heading}>Verify your email</Heading>
@@ -49,7 +49,7 @@ export function VerifyEmailTemplate({ url }: VerifyEmailProps) {
             If you did not create an account, you can safely ignore this email.
           </Text>
           <Text style={copyright}>
-            &copy; {new Date().getFullYear()} Lending Manager
+            &copy; {new Date().getFullYear()} Kaks Credit
           </Text>
         </Container>
       </Body>

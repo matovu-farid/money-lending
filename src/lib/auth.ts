@@ -19,7 +19,7 @@ function getResend(): Resend {
   return _resend
 }
 
-const emailFrom = process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>"
+const emailFrom = process.env.EMAIL_FROM || "Kaks Credit <noreply@fidexa.org>"
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: "pg" }),

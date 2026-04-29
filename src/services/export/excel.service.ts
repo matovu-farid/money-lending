@@ -317,14 +317,14 @@ export async function generateLoansExcel(
   data: LoanListEntry[]
 ): Promise<Buffer> {
   const workbook = new ExcelJS.Workbook()
-  workbook.creator = "Sovereign Ledger"
+  workbook.creator = "Kaks Credit"
   workbook.created = new Date()
 
   const sheet = workbook.addWorksheet("Active Loans")
 
   // Title row
   const titleRow = sheet.addRow([
-    `Sovereign Ledger — Active Loans Report`,
+    `Kaks Credit — Active Loans Report`,
     "",
     "",
     "",

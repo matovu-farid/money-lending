@@ -78,7 +78,7 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
         <CardContent className="pt-6">
           {/* Formal Accounting Header */}
           <div className="text-center mb-6">
-            <p className="text-base font-semibold">Sovereign Ledger</p>
+            <p className="text-base font-semibold">Kaks Credit</p>
             <p className="text-sm font-medium">Balance Sheet</p>
             <p className="text-sm text-muted-foreground">
               As at {formatPeriodDate(period, "end")}

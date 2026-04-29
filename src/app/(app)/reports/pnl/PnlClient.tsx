@@ -52,7 +52,7 @@ export function PnlClient({ period }: PnlClientProps) {
           <CardContent className="pt-6">
             {/* Formal Accounting Header */}
             <div className="text-center mb-6">
-              <p className="text-base font-semibold">Sovereign Ledger</p>
+              <p className="text-base font-semibold">Kaks Credit</p>
               <p className="text-sm font-medium">Income Statement</p>
               <p className="text-sm text-muted-foreground">
                 For the Month Ended {formatPeriodDate(period, "end")}

@@ -31,16 +31,16 @@ export function InviteUserTemplate({ url, inviterName, role, inviteeName }: Invi
   return (
     <Html>
       <Head />
-      <Preview>{inviterName} invited you to join Lending Manager</Preview>
+      <Preview>{inviterName} invited you to join Kaks Credit</Preview>
       <Body style={body}>
         <Container style={container}>
           <Section style={header}>
-            <Text style={headerText}>Lending Manager</Text>
+            <Text style={headerText}>Kaks Credit</Text>
           </Section>
           <Section style={content}>
             <Heading style={heading}>You&apos;re invited!</Heading>
             <Text style={paragraph}>
-              Hi {inviteeName}, {inviterName} has invited you to join Lending Manager
+              Hi {inviteeName}, {inviterName} has invited you to join Kaks Credit
               as a <strong>{roleLabel}</strong>.
             </Text>
             <Text style={paragraph}>
@@ -60,7 +60,7 @@ export function InviteUserTemplate({ url, inviterName, role, inviteeName }: Invi
             If you were not expecting this invitation, you can safely ignore this email.
           </Text>
           <Text style={copyright}>
-            &copy; {new Date().getFullYear()} Lending Manager
+            &copy; {new Date().getFullYear()} Kaks Credit
           </Text>
         </Container>
       </Body>

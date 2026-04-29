@@ -50,7 +50,7 @@ export async function sendAdminNotification(
     })
 
     await resend.emails.send({
-      from: process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>",
+      from: process.env.EMAIL_FROM || "Kaks Credit <noreply@fidexa.org>",
       to: adminEmails,
       subject,
       react: AdminNotificationTemplate({

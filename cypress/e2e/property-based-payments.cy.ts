@@ -46,7 +46,7 @@ describe("Property-Based: Payment Recording", () => {
       cy.contains("button", "Next").click()
       cy.contains("button", "Issue Loan").click()
       // Close the POS receipt modal
-      cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+      cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
       cy.contains("button", "Close").click()
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 

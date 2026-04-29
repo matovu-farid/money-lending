@@ -29,12 +29,12 @@ export function TopBar() {
             aria-label="Collapse sidebar"
           >
             <LogoMark size={26} />
-            Lending Manager
+            Kaks Credit
           </button>
         )}
         <span className="md:hidden inline-flex items-center gap-2 font-semibold text-lg tracking-tight">
           <LogoMark size={24} />
-          Lending Manager
+          Kaks Credit
         </span>
       </div>
       <div className="flex items-center gap-2">

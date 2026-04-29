@@ -9,7 +9,7 @@ import { InviteUserTemplate } from "@/lib/emails"
 import type { UserRole } from "@/types"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
-const emailFrom = process.env.EMAIL_FROM || "Lending Manager <noreply@fidexa.org>"
+const emailFrom = process.env.EMAIL_FROM || "Kaks Credit <noreply@fidexa.org>"
 const isTest = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
 
 // In-memory store for test mode (same pattern as pendingVerifications in auth.ts)
@@ -86,7 +86,7 @@ export async function createInvitation(input: {
     await resend.emails.send({
       from: emailFrom,
       to: input.email,
-      subject: `${input.inviterName} invited you to join Lending Manager`,
+      subject: `${input.inviterName} invited you to join Kaks Credit`,
       react: InviteUserTemplate({
         url: inviteUrl,
         inviterName: input.inviterName,
@@ -148,7 +148,7 @@ export async function resendInvitation(invitationId: string, inviterName: string
     await resend.emails.send({
       from: emailFrom,
       to: existing.email,
-      subject: `${inviterName} invited you to join Lending Manager`,
+      subject: `${inviterName} invited you to join Kaks Credit`,
       react: InviteUserTemplate({
         url: inviteUrl,
         inviterName,

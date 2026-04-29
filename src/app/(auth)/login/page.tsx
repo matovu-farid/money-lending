@@ -73,7 +73,7 @@ export default function LoginPage() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">Sign in to Lending Manager</CardTitle>
+        <CardTitle className="text-xl">Sign in to Kaks Credit</CardTitle>
         <CardDescription>Enter your email and password to continue</CardDescription>
       </CardHeader>
       <CardContent>

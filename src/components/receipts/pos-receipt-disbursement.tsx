@@ -45,7 +45,7 @@ export function PosReceiptDisbursement({
     <div className="pos-receipt max-w-[300px] mx-auto font-mono text-[11px] leading-tight bg-white text-black p-4">
       {/* Header */}
       <div className="text-center font-bold text-sm uppercase tracking-wide">
-        SOVEREIGN LEDGER
+        KAKS CREDIT
       </div>
       <div className="text-center text-[10px] mt-0.5">LOAN DISBURSEMENT</div>
 
@@ -131,7 +131,7 @@ export function PosReceiptDisbursement({
       {/* Footer */}
       <div className="border-t border-dashed border-black my-2" />
       <div className="text-center text-[10px]">Thank you for your business</div>
-      <div className="text-center text-[10px] mt-0.5">--- Sovereign Ledger ---</div>
+      <div className="text-center text-[10px] mt-0.5">--- Kaks Credit ---</div>
     </div>
   )
 }

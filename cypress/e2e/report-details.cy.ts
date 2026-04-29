@@ -10,7 +10,7 @@ describe("Report Detail Pages", () => {
       cy.visit("/reports/balance-sheet")
       cy.contains("Balance Sheet", { timeout: 15000 }).should("be.visible")
       cy.contains("Assets, liabilities, and equity").should("be.visible")
-      cy.contains("Sovereign Ledger").should("be.visible")
+      cy.contains("Kaks Credit").should("be.visible")
     })
 
     it("shows Assets section with current and non-current assets", () => {
@@ -70,8 +70,8 @@ describe("Report Detail Pages", () => {
       cy.visit("/reports/pnl")
       // Either shows the report card or the empty state
       cy.get("body", { timeout: 15000 }).then(($body) => {
-        if ($body.text().includes("Sovereign Ledger")) {
-          cy.contains("Sovereign Ledger").should("be.visible")
+        if ($body.text().includes("Kaks Credit")) {
+          cy.contains("Kaks Credit").should("be.visible")
           cy.contains("Income Statement").should("be.visible")
         } else {
           cy.contains("No data available for the selected period").should("be.visible")
@@ -110,7 +110,7 @@ describe("Report Detail Pages", () => {
 
     it("shows the statement of retained earnings", () => {
       cy.visit("/reports/retained-earnings")
-      cy.contains("Sovereign Ledger", { timeout: 15000 }).should("be.visible")
+      cy.contains("Kaks Credit", { timeout: 15000 }).should("be.visible")
       cy.contains("Statement of Retained Earnings").should("be.visible")
       cy.contains("Add: Net Income").should("be.visible")
     })

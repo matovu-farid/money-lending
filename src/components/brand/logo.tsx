@@ -6,7 +6,7 @@ interface LogoMarkProps {
   title?: string
 }
 
-export function LogoMark({ className, size = 24, title = "Lending Manager" }: LogoMarkProps) {
+export function LogoMark({ className, size = 24, title = "Kaks Credit" }: LogoMarkProps) {
   return (
     <svg
       width={size}
@@ -66,7 +66,7 @@ export function Logo({ className, size = 28, showWordmark = true }: LogoProps) {
     <span className={cn("inline-flex items-center gap-2", className)}>
       <LogoMark size={size} />
       {showWordmark && (
-        <span className="font-semibold text-lg tracking-tight">Lending Manager</span>
+        <span className="font-semibold text-lg tracking-tight">Kaks Credit</span>
       )}
     </span>
   )

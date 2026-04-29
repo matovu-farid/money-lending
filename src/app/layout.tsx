@@ -26,19 +26,19 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: { default: "Sovereign Ledger", template: "%s | Sovereign Ledger" },
+  title: { default: "Kaks Credit", template: "%s | Kaks Credit" },
   description: "Loan portfolio management for money-lending operations.",
-  applicationName: "Sovereign Ledger",
+  applicationName: "Kaks Credit",
   manifest: "/manifest.json",
   openGraph: {
     type: "website",
     locale: "en_UG",
-    title: "Sovereign Ledger",
+    title: "Kaks Credit",
     description: "Loan portfolio management for money-lending operations.",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Sovereign Ledger",
+    title: "Kaks Credit",
     description: "Loan portfolio management for money-lending operations.",
   },
   appleWebApp: {

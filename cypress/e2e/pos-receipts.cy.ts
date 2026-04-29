@@ -44,7 +44,7 @@ describe("POS Receipts", () => {
       fillLoanWizard()
 
       // Dialog should be visible with receipt content
-      cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+      cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
       cy.contains("LOAN DISBURSEMENT").should("be.visible")
 
       // Receipt number should match pattern RCP-XXXXXXXX-XXXX
@@ -77,7 +77,7 @@ describe("POS Receipts", () => {
       fillLoanWizard()
 
       // Wait for modal
-      cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+      cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
 
       // Close the modal
       cy.contains("button", "Close").click()
@@ -90,7 +90,7 @@ describe("POS Receipts", () => {
       fillLoanWizard()
 
       // Wait for modal
-      cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+      cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
 
       // Print button should be clickable (not disabled)
       cy.contains("button", "Print Receipt")
@@ -107,7 +107,7 @@ describe("POS Receipts", () => {
       fillLoanWizard()
 
       // Close the disbursement receipt modal
-      cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+      cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
       cy.contains("button", "Close").click()
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 
@@ -126,7 +126,7 @@ describe("POS Receipts", () => {
         cy.contains("button", "Record Payment").click()
 
         // POS Receipt modal should appear
-        cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+        cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
         cy.contains("PAYMENT RECEIPT").should("be.visible")
 
         // Receipt number
@@ -154,7 +154,7 @@ describe("POS Receipts", () => {
         cy.contains("button", "Record Payment").click()
 
         // Wait for modal
-        cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+        cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
 
         // Close the modal
         cy.contains("button", "Close").click()

@@ -52,7 +52,7 @@ describe("Receipt Pages (Direct URL)", () => {
         cy.visit(`/receipts/disbursement/${loanId}`)
 
         // Header
-        cy.contains("Sovereign Ledger", { timeout: 15000 }).should("be.visible")
+        cy.contains("Kaks Credit", { timeout: 15000 }).should("be.visible")
         cy.contains("Loan Disbursement Receipt").should("be.visible")
 
         // Receipt number
@@ -114,7 +114,7 @@ describe("Receipt Pages (Direct URL)", () => {
         cy.contains("button", "Record Payment").click()
 
         // Close the POS modal
-        cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+        cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
         cy.contains("button", "Close").click()
         cy.url({ timeout: 10000 }).should("include", `/loans/${loanId}`)
       })
@@ -129,7 +129,7 @@ describe("Receipt Pages (Direct URL)", () => {
         cy.visit(`/receipts/repayment/${paymentId}`)
 
         // Header
-        cy.contains("Sovereign Ledger", { timeout: 15000 }).should("be.visible")
+        cy.contains("Kaks Credit", { timeout: 15000 }).should("be.visible")
         cy.contains("Payment Receipt").should("be.visible")
 
         // Receipt number

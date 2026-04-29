@@ -116,7 +116,7 @@ Cypress.Commands.add("promoteUser", (email: string, role: string) => {
 })
 
 Cypress.Commands.add("dismissReceiptModal", () => {
-  cy.contains("SOVEREIGN LEDGER", { timeout: 10000 }).should("be.visible")
+  cy.contains("KAKS CREDIT", { timeout: 10000 }).should("be.visible")
   cy.contains("button", "Close").click()
 })
 
