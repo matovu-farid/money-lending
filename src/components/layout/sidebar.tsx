@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useCallback, useRef, useState } from "react"
-import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -16,31 +16,31 @@ import {
   ClipboardCheck,
   ArrowRightLeft,
   Activity,
-} from "lucide-react"
-import { cn } from "@/lib/utils"
-import type { Permission } from "@/types"
-import { usePermissions } from "@/hooks/use-permissions"
-import { signOut, useSession } from "@/lib/auth-client"
-import { useSidebarStore } from "@/lib/stores/sidebar"
-import { Button } from "@/components/ui/button"
-import { ChangeNameDialog } from "@/components/layout/change-name-dialog"
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import type { Permission } from "@/types";
+import { usePermissions } from "@/hooks/use-permissions";
+import { signOut, useSession } from "@/lib/auth-client";
+import { useSidebarStore } from "@/lib/stores/sidebar";
+import { Button } from "@/components/ui/button";
+import { ChangeNameDialog } from "@/components/layout/change-name-dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@/components/ui/tooltip"
+} from "@/components/ui/tooltip";
 
 interface NavItem {
-  label: string
-  href: string
-  icon: React.ElementType
-  disabled?: boolean
+  label: string;
+  href: string;
+  icon: React.ElementType;
+  disabled?: boolean;
 }
 
 interface NavGroup {
-  label?: string
-  items: NavItem[]
+  label?: string;
+  items: NavItem[];
 }
 
 function getNavGroups(has: (p: Permission) => boolean): NavGroup[] {
@@ -48,73 +48,84 @@ function getNavGroups(has: (p: Permission) => boolean): NavGroup[] {
     { label: "Customers", href: "/customers", icon: Users },
     { label: "Loans", href: "/loans", icon: Banknote },
     { label: "Payments", href: "/payments", icon: CreditCard },
-  ]
+  ];
   if (has("rate-change:approve-standard")) {
-    operationsItems.push({ label: "Approvals", href: "/approvals", icon: ClipboardCheck })
+    operationsItems.push({
+      label: "Approvals",
+      href: "/approvals",
+      icon: ClipboardCheck,
+    });
   }
 
-  const topItems: NavItem[] = []
+  const topItems: NavItem[] = [];
   if (has("dashboard:read")) {
-    topItems.push({ label: "Dashboard", href: "/dashboard", icon: LayoutDashboard })
+    topItems.push({
+      label: "Dashboard",
+      href: "/dashboard",
+      icon: LayoutDashboard,
+    });
   }
 
-  const capitalItems: NavItem[] = []
+  const capitalItems: NavItem[] = [];
   if (has("expense:read")) {
-    capitalItems.push({ label: "Expenses", href: "/expenses", icon: Receipt })
+    capitalItems.push({ label: "Expenses", href: "/expenses", icon: Receipt });
   }
   if (has("fund-transfer:read")) {
-    capitalItems.push({ label: "Fund Transfers", href: "/fund-transfers", icon: ArrowRightLeft })
+    capitalItems.push({
+      label: "Fund Transfers",
+      href: "/fund-transfers",
+      icon: ArrowRightLeft,
+    });
   }
   if (has("creditor:read")) {
-    capitalItems.push({ label: "Creditors", href: "/creditors", icon: Landmark })
+    capitalItems.push({
+      label: "Creditors",
+      href: "/creditors",
+      icon: Landmark,
+    });
   }
 
-  const systemItems: NavItem[] = []
+  const systemItems: NavItem[] = [];
   if (has("user:list")) {
-    systemItems.push({ label: "Admin", href: "/admin", icon: Shield })
+    systemItems.push({ label: "Admin", href: "/admin", icon: Shield });
   }
 
   return [
     { items: topItems },
     { label: "Operations", items: operationsItems },
     { label: "Capital", items: capitalItems },
-    { label: "Insights", items: [
-      { label: "Reports", href: "/reports", icon: BarChart3 },
-      ...(has("activity:read") ? [{ label: "Activities", href: "/activities", icon: Activity }] : []),
-    ] },
-    ...(systemItems.length > 0 ? [{ label: "System", items: systemItems }] : []),
-  ]
+    {
+      label: "Insights",
+      items: [
+        { label: "Reports", href: "/reports", icon: BarChart3 },
+        ...(has("activity:read")
+          ? [{ label: "Activities", href: "/activities", icon: Activity }]
+          : []),
+      ],
+    },
+    ...(systemItems.length > 0
+      ? [{ label: "System", items: systemItems }]
+      : []),
+  ];
 }
 
 interface SidebarProps {
-  open?: boolean
-  onClose?: () => void
+  open?: boolean;
+  onClose?: () => void;
 }
 
 export function Sidebar({ onClose }: SidebarProps) {
-  const { collapsed } = useSidebarStore()
-  const pathname = usePathname()
-  const router = useRouter()
-  const { data: session } = useSession()
-  const prefetchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-  const [changeNameOpen, setChangeNameOpen] = useState(false)
+  const collapsed = useSidebarStore((s) => s.collapsed);
+  const pathname = usePathname();
+  const { data: session } = useSession();
+  const [changeNameOpen, setChangeNameOpen] = useState(false);
 
-  const user = session?.user
-  const { has } = usePermissions()
+  const user = session?.user;
+  const { has } = usePermissions();
 
-  // Prefetch route on hover with debounce
-  const handlePrefetch = useCallback((href: string) => {
-    clearTimeout(prefetchTimerRef.current)
-    prefetchTimerRef.current = setTimeout(() => {
-      router.prefetch(href)
-    }, 100)
-  }, [router])
-
-  const cancelPrefetch = useCallback(() => {
-    clearTimeout(prefetchTimerRef.current)
-  }, [])
-
-  const filteredNavGroups = getNavGroups(has).filter((group) => group.items.length > 0)
+  const filteredNavGroups = getNavGroups(has).filter(
+    (group) => group.items.length > 0,
+  );
 
   const initials = user?.name
     ? user.name
@@ -123,11 +134,11 @@ export function Sidebar({ onClose }: SidebarProps) {
         .slice(0, 2)
         .join("")
         .toUpperCase()
-    : "?"
+    : "?";
 
   async function handleSignOut() {
-    await signOut()
-    window.location.href = "/login"
+    await signOut();
+    window.location.href = "/login";
   }
 
   return (
@@ -135,11 +146,15 @@ export function Sidebar({ onClose }: SidebarProps) {
       <aside
         className={cn(
           "flex flex-col h-full bg-sidebar transition-all duration-200",
-          collapsed ? "w-[60px]" : "w-[240px]"
+          collapsed ? "w-[60px]" : "w-[240px]",
         )}
       >
         {/* Navigation */}
-        <nav aria-label="Main navigation" data-testid="sidebar-nav" className="flex-1 overflow-y-auto py-3 space-y-4">
+        <nav
+          aria-label="Main navigation"
+          data-testid="sidebar-nav"
+          className="flex-1 overflow-y-auto py-3 space-y-4"
+        >
           {filteredNavGroups.map((group, groupIndex) => (
             <div key={groupIndex}>
               {group.label && !collapsed && (
@@ -153,8 +168,9 @@ export function Sidebar({ onClose }: SidebarProps) {
               <ul className="space-y-0.5 px-2">
                 {group.items.map((item) => {
                   const isActive =
-                    pathname === item.href || pathname.startsWith(item.href + "/")
-                  const Icon = item.icon
+                    pathname === item.href ||
+                    pathname.startsWith(item.href + "/");
+                  const Icon = item.icon;
 
                   const navLink = (
                     <>
@@ -163,7 +179,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                           className={cn(
                             "flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
                             "opacity-50 pointer-events-none cursor-default",
-                            "text-sidebar-foreground"
+                            "text-sidebar-foreground",
                           )}
                         >
                           <Icon className="h-4 w-4 shrink-0" />
@@ -172,16 +188,15 @@ export function Sidebar({ onClose }: SidebarProps) {
                       ) : (
                         <Link
                           href={item.href}
-                          onClick={() => { onClose?.() }}
-                          onMouseEnter={() => handlePrefetch(item.href)}
-                          onFocus={() => handlePrefetch(item.href)}
-                          onMouseLeave={cancelPrefetch}
+                          onClick={() => {
+                            onClose?.();
+                          }}
                           aria-current={isActive ? "page" : undefined}
                           className={cn(
                             "flex items-center gap-3 rounded-md px-2 py-2 text-sm transition-colors",
                             isActive
                               ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                              : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
                           )}
                         >
                           <Icon className="h-4 w-4 shrink-0" />
@@ -189,14 +204,16 @@ export function Sidebar({ onClose }: SidebarProps) {
                         </Link>
                       )}
                     </>
-                  )
+                  );
 
                   // Always wrap in tooltip when collapsed
                   if (collapsed) {
                     return (
                       <li key={item.href}>
                         <Tooltip>
-                          <TooltipTrigger render={<span className="block w-full" />}>
+                          <TooltipTrigger
+                            render={<span className="block w-full" />}
+                          >
                             {navLink}
                           </TooltipTrigger>
                           <TooltipContent side="right">
@@ -205,7 +222,7 @@ export function Sidebar({ onClose }: SidebarProps) {
                           </TooltipContent>
                         </Tooltip>
                       </li>
-                    )
+                    );
                   }
 
                   // Wrap disabled items in tooltip when expanded
@@ -213,16 +230,20 @@ export function Sidebar({ onClose }: SidebarProps) {
                     return (
                       <li key={item.href}>
                         <Tooltip>
-                          <TooltipTrigger render={<span className="block w-full" />}>
+                          <TooltipTrigger
+                            render={<span className="block w-full" />}
+                          >
                             {navLink}
                           </TooltipTrigger>
-                          <TooltipContent side="right">Coming soon</TooltipContent>
+                          <TooltipContent side="right">
+                            Coming soon
+                          </TooltipContent>
                         </Tooltip>
                       </li>
-                    )
+                    );
                   }
 
-                  return <li key={item.href}>{navLink}</li>
+                  return <li key={item.href}>{navLink}</li>;
                 })}
               </ul>
             </div>
@@ -234,7 +255,7 @@ export function Sidebar({ onClose }: SidebarProps) {
           <div
             className={cn(
               "flex items-center gap-2 rounded-md px-2 py-2",
-              collapsed ? "justify-center" : ""
+              collapsed ? "justify-center" : "",
             )}
           >
             {/* Avatar + name area — clickable to change name */}
@@ -242,7 +263,7 @@ export function Sidebar({ onClose }: SidebarProps) {
               type="button"
               className={cn(
                 "flex items-center gap-2 min-w-0 rounded-md hover:bg-sidebar-accent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                collapsed ? "" : "flex-1 px-1 py-1 -mx-1"
+                collapsed ? "" : "flex-1 px-1 py-1 -mx-1",
               )}
               onClick={() => setChangeNameOpen(true)}
               aria-label="Change name"
@@ -297,5 +318,5 @@ export function Sidebar({ onClose }: SidebarProps) {
         />
       </aside>
     </TooltipProvider>
-  )
+  );
 }

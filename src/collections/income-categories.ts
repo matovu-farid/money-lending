@@ -1,29 +1,31 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { queryCollectionOptions } from "@/lib/collection-options"
+import { listIncomeCategoriesAction } from "@/actions/income.actions"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
-export type IncomeCategoryRow = {
-  id: string
-  name: string
-  type: string
-  isDefault: boolean
-  createdAt: string
-}
+/**
+ * Distinct user-typed income category labels backing the combobox dropdown.
+ * The list comes from `SELECT DISTINCT category FROM transactions WHERE
+ * type='credit' AND category IS NOT NULL` (see
+ * `listDistinctTransactionCategories`). Invalidated whenever a new income is
+ * recorded, so a freshly-typed name appears in the dropdown after one save.
+ */
+export type IncomeCategoryRow = { name: string }
 
 export const incomeCategoryCollection = createCollection(
-  electricCollectionOptions<IncomeCategoryRow>({
-    id: "income-categories",
-    getKey: (row) => row.id,
-    shapeOptions: {
-      url: shapeUrl("transaction_categories"),
-      // Electric 1.5.x rejects WHERE clauses on user-defined enum columns
-      // (`category_type`). Sync the full table here and filter by `type` in
-      // the live-query consumer.
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("transaction_categories[revenue]"),
+  queryCollectionOptions<IncomeCategoryRow>({
+    queryKey: [...queryKeys.income.categories],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = (await listIncomeCategoriesAction()) as
+        | { data: string[] }
+        | { error: string }
+      if ("error" in result) throw new Error(result.error)
+      return result.data.map((name) => ({ name }))
     },
+    getKey: (row) => row.name,
   })
 )

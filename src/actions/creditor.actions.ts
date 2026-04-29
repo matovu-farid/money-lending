@@ -107,6 +107,7 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
         interestRateMonthly: input.interestRateMonthly,
         investmentDate: input.investmentDate,
         depositLocation: input.depositLocation,
+        subLocationId: input.subLocationId,
       }, session.user.id))
 
       revalidatePath("/creditors")

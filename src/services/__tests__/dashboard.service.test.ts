@@ -11,11 +11,6 @@ vi.mock("drizzle-orm", async () => {
   return actual
 })
 
-vi.mock("@/services/ledger-queries.service", () => ({
-  getLoanBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
-  getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
-}))
-
 vi.mock("@/lib/interest/overdue", () => ({
   computeLoanOverdueInfo: vi.fn().mockReturnValue({ daysOverdue: 0, dailyRate: "0", unpaidInterest: "0" }),
 }))
@@ -178,6 +173,7 @@ describe("Dashboard Service — Unit", () => {
         selectCallCount++
         if (selectCallCount === 1) return ledgerQuery([])
         if (selectCallCount === 2) return simpleWhere([overdueLoan]) // active loans
+        if (selectCallCount === 3) return simpleWhere([]) // loan_balances projection — empty triggers fallback
         return whereOrderBy([]) // no payments
       })
 
@@ -210,6 +206,7 @@ describe("Dashboard Service — Unit", () => {
         selectCallCount++
         if (selectCallCount === 1) return ledgerQuery([])
         if (selectCallCount === 2) return simpleWhere(activeLoans)
+        if (selectCallCount === 3) return simpleWhere([]) // loan_balances projection
         return whereOrderBy([]) // no payments
       })
 

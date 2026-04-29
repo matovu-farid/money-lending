@@ -25,7 +25,6 @@ export async function resetDb() {
       collateral,
       loans,
       audit_log,
-      notifications,
       customers,
       system_settings,
       verification,

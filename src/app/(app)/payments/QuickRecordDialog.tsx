@@ -50,7 +50,7 @@ interface QuickRecordFormValues {
 export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps) {
   const { data: session } = useSession()
   const [selectedLoan, setSelectedLoan] = useState<ActiveLoanSearchResult | null>(null)
-  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
+  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string; totalBalanceBefore?: string } | null>(null)
   const [isPending] = useTransition()
   const [confirmStep, setConfirmStep] = useState(false)
   const [pendingData, setPendingData] = useState<QuickRecordFormValues | null>(null)
@@ -135,7 +135,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
     setConfirmStep(true)
   }
 
-  function handleConfirmedSubmit() {
+  async function handleConfirmedSubmit() {
     if (!selectedLoan || !pendingData) return
     setConfirmStep(false)
 
@@ -172,8 +172,16 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
 
     // Compute receipt allocation from available balance data
     const allocation = computeReceiptAllocation(pendingData.amount, balanceData)
+    const totalBalanceBefore = balanceData?.totalBalance
 
-    insertPaymentWithInput(id, optimistic, input)
+    const tx = insertPaymentWithInput(id, optimistic, input)
+    try {
+      await tx.isPersisted.promise
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to record payment"
+      toast.error(message)
+      return
+    }
     toast.success("Payment recorded successfully")
 
     setReceiptData({
@@ -183,6 +191,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
         allocation,
       } as unknown as ReceiptPaymentData,
       receiptNumber: generateReceiptNumber(),
+      totalBalanceBefore,
     })
   }
 
@@ -380,7 +389,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
           interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
           principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
           balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
-          outstandingBalance={receiptData.payment.allocation?.outstandingBalanceAfter}
+          outstandingBalance={receiptData.totalBalanceBefore}
           depositLocation={receiptData.payment.depositLocationValue}
           officerName={session?.user?.name ?? "Officer"}
         />

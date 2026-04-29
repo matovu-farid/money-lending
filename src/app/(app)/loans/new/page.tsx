@@ -84,19 +84,13 @@ function NewLoanPageInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []) // runs once on mount
 
-  // Warm the loan-detail route + its per-loan dynamic collections as soon as
-  // the receipt modal opens. By the time the user closes the receipt and
-  // navigates, the route bundle is loaded and the collateral/balance fetches
-  // have already started — eliminating the noticeable wait we saw post-issue.
+  // Warm only the per-loan collateral collection when the receipt modal opens.
+  // (No router.prefetch — explicit RSC prefetching has been removed app-wide.)
   useEffect(() => {
     const id = receiptData?.loanId
     if (!id) return
-    router.prefetch(`/loans/${id}`)
-    // Touching this getter warms the collateral collection (startSync: true).
-    // The loan_balances projection is globally synced via loanBalanceCollection
-    // (Electric direct) — no explicit warmup needed.
     getLoanCollateralCollection(id)
-  }, [receiptData?.loanId, router])
+  }, [receiptData?.loanId])
 
   // Sync form changes back to the store
   useEffect(() => {

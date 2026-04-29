@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { transactions } from "@/lib/db/schema/transactions"
-import { eq, and, count } from "drizzle-orm"
+import { eq, and, count, isNotNull } from "drizzle-orm"
 import {
   DatabaseError,
   CategoryInUseError,
@@ -30,6 +30,8 @@ const DEFAULT_REVENUE_CATEGORIES = [
   "Interest Earned",
   "Interest Receivable",
   "Issuance Fees",
+  // Sentinel category for user-typed manual income entries (mirrors User Expense).
+  "User Revenue",
 ]
 
 const DEFAULT_EXPENSE_CATEGORIES = [
@@ -39,6 +41,10 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   "Interest Payments",
   "Interest Payable",
   "DStv",
+  // Sentinel category for user-typed manual expense entries.
+  // The user-typed label is stored in transactions.category;
+  // categoryId stays NOT NULL so accounting-type semantics survive.
+  "User Expense",
 ]
 
 export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
@@ -186,6 +192,36 @@ export const deleteCategory = (
         return new CategoryInUseError({ categoryId: e.categoryId })
       return new DatabaseError({ cause: e })
     },
+  })
+
+/**
+ * Distinct user-typed category labels for the income/expense combobox.
+ * Reads `transactions.category` (set only on manual entries) — system
+ * journal lines have NULL there and are excluded.
+ *
+ * Postgres requires that any ORDER BY expression appear in the SELECT list
+ * for SELECT DISTINCT, so we order by the raw column and case-fold in JS.
+ */
+export const listDistinctTransactionCategories = (
+  txType: "credit" | "debit"
+): Effect.Effect<string[], DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const rows = await db
+        .selectDistinct({ category: transactions.category })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.type, txType),
+            isNotNull(transactions.category),
+          ),
+        )
+      return rows
+        .map((r) => r.category)
+        .filter((c): c is string => !!c)
+        .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
   })
 
 export const getCategoryByName = (

@@ -121,9 +121,7 @@ export default function LoansPage() {
     }
   }, [activeFilter, critical, atRisk, early, sortedEntries])
 
-  const handleLoanPrefetch = useCallback((loanId: string) => {
-    router.prefetch(`/loans/${loanId}`)
-  }, [router])
+
 
   const handleRowClick = useCallback((loanId: string) => {
     setNavigatingTo(loanId)
@@ -476,8 +474,7 @@ export default function LoansPage() {
                 "data-testid": "data-row",
                 className: `cursor-pointer hover:bg-muted/50 ${navigatingTo === e.id ? "opacity-70" : ""}`,
                 onClick: () => handleRowClick(e.id),
-                onMouseEnter: () => handleLoanPrefetch(e.id),
-                onFocus: () => handleLoanPrefetch(e.id),
+      
                 role: "button",
                 "aria-label": `View loan for ${e.customerName}`,
               })}

@@ -7,7 +7,7 @@ type TransactionRow = {
   id: string
   type: string
   amount: string
-  categoryName: string
+  category: string
   description: string | null
   transactionDate: Date
   recordedBy: string
@@ -306,7 +306,7 @@ export function generateTransactionsPdf(
     body: data.map((tx) => [
       formatDate(tx.transactionDate),
       tx.type,
-      categories.get(tx.categoryName) ?? tx.categoryName,
+      categories.get(tx.category) ?? tx.category,
       tx.description ?? "",
       formatUGX(tx.amount),
       tx.recordedBy,

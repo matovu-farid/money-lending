@@ -107,6 +107,35 @@ describe("Loans List (Unified)", () => {
       cy.contains("button", "Show all loans").click()
       cy.get("[data-testid='data-row']", { timeout: 10000 }).should("exist")
     })
+
+    // Regression: a same-day payment must not flip a brand-new loan to Critical.
+    // Pre-fix bug: allocatePayment charged a full 30 days of interest at day 0,
+    // booking ~10% of principal as Interest Earned. The watchlist then divided
+    // that figure by the daily rate and reported 30 days overdue. After the fix,
+    // pro-rata interest at day 0 is zero, so the entire payment reduces principal
+    // and daysOverdue stays at 0.
+    it("same-day payment on a new loan does not turn it Critical", () => {
+      cy.visit("/loans")
+      cy.get("[data-testid='data-row']", { timeout: 10000 })
+        .first()
+        .click()
+      cy.url({ timeout: 10000 }).should("match", /\/loans\/[a-zA-Z0-9-]+$/)
+      cy.contains("Record Payment", { timeout: 10000 }).click()
+      cy.get("#amount", { timeout: 10000 }).type("100000")
+      cy.contains("button", "Record Payment").click()
+      cy.url({ timeout: 10000 }).should("match", /\/loans\/[a-zA-Z0-9-]+$/)
+
+      cy.visit("/loans")
+      cy.get("[data-testid='data-row']", { timeout: 10000 }).should("exist")
+      // The loan must not appear under the Critical (30+) filter.
+      cy.contains("Critical (30+ days)", { timeout: 10000 }).closest("button").click()
+      cy.contains("h2", "No loans in this category.", { timeout: 10000 }).should("be.visible")
+      cy.contains("button", "Show all loans").click()
+      // Principal Balance reduced by the full payment (interest = 0 at day 0).
+      cy.contains("[data-testid='data-row']", "Test Borrower").within(() => {
+        cy.contains("900,000").should("exist")
+      })
+    })
   })
 
   context("navigation", () => {

@@ -41,7 +41,7 @@ export const getTransactionReportDataAction = withAction({
     Effect.map(listTransactions({}, 1, 10000), (result) => {
       const categories = new Map<string, string>()
       for (const tx of result.data) {
-        categories.set(tx.categoryName, tx.categoryName)
+        categories.set(tx.category, tx.category)
       }
       return {
         transactions: result.data,

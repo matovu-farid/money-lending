@@ -231,6 +231,7 @@ export const createLoan = (
             transactionDate: startDate,
             recordedBy: actorId,
             debitDepositLocation: input.disbursementSource,
+            debitSubLocationId: input.subLocationId,
             loanId: loan.id,
           })
         }
@@ -414,6 +415,7 @@ export const updateLoan = (
               amount: transactions.amount,
               transactionDate: transactions.transactionDate,
               depositLocation: transactions.depositLocation,
+              subLocationId: transactions.subLocationId,
               journalGroupId: transactions.journalGroupId,
             })
             .from(transactions)
@@ -439,6 +441,7 @@ export const updateLoan = (
               transactionDate: oldFeeTx.transactionDate,
               recordedBy: actorId,
               creditDepositLocation: oldFeeTx.depositLocation ?? undefined,
+              creditSubLocationId: oldFeeTx.subLocationId ?? undefined,
               loanId: input.loanId,
             })
           }
@@ -455,6 +458,7 @@ export const updateLoan = (
               transactionDate: oldFeeTx?.transactionDate ?? new Date(),
               recordedBy: actorId,
               debitDepositLocation: existingLoan.disbursementSource,
+              debitSubLocationId: existingLoan.subLocationId ?? undefined,
               loanId: input.loanId,
             })
           }
@@ -486,6 +490,7 @@ export const updateLoan = (
               transactionDate: oldDisbursement.transactionDate,
               recordedBy: actorId,
               debitDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+              debitSubLocationId: oldDisbursement.subLocationId ?? existingLoan.subLocationId ?? undefined,
               loanId: input.loanId,
             })
 
@@ -499,6 +504,7 @@ export const updateLoan = (
               transactionDate: oldDisbursement.transactionDate,
               recordedBy: actorId,
               creditDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
+              creditSubLocationId: oldDisbursement.subLocationId ?? existingLoan.subLocationId ?? undefined,
               loanId: input.loanId,
             })
           }
@@ -531,6 +537,7 @@ export const updateLoan = (
                   transactionDate: new Date(p.paymentDate),
                   recordedBy: actorId,
                   creditDepositLocation: p.depositLocation ?? undefined,
+                  creditSubLocationId: p.subLocationId ?? undefined,
                   loanId: input.loanId,
                 })
               }
@@ -546,6 +553,7 @@ export const updateLoan = (
                   transactionDate: new Date(p.paymentDate),
                   recordedBy: actorId,
                   creditDepositLocation: p.depositLocation ?? undefined,
+                  creditSubLocationId: p.subLocationId ?? undefined,
                   loanId: input.loanId,
                 })
               }
@@ -671,6 +679,7 @@ export const deleteLoan = (
             transactionDate: feeTx.transactionDate,
             recordedBy: actorId,
             creditDepositLocation: feeTx.depositLocation ?? undefined,
+            creditSubLocationId: feeTx.subLocationId ?? undefined,
             loanId: input.loanId,
           })
         }
@@ -700,6 +709,7 @@ export const deleteLoan = (
             transactionDate: disbursementTx.transactionDate,
             recordedBy: actorId,
             debitDepositLocation: disbursementTx.depositLocation ?? undefined,
+            debitSubLocationId: disbursementTx.subLocationId ?? undefined,
             loanId: input.loanId,
           })
         }
@@ -726,6 +736,7 @@ export const deleteLoan = (
               transactionDate: new Date(p.paymentDate),
               recordedBy: actorId,
               creditDepositLocation: p.depositLocation ?? undefined,
+              creditSubLocationId: p.subLocationId ?? undefined,
               loanId: input.loanId,
             })
           }
@@ -741,6 +752,7 @@ export const deleteLoan = (
                 transactionDate: new Date(p.paymentDate),
                 recordedBy: actorId,
                 creditDepositLocation: p.depositLocation ?? undefined,
+                creditSubLocationId: p.subLocationId ?? undefined,
                 loanId: input.loanId,
               })
             }

@@ -7,7 +7,8 @@ import { useCommandPalette } from "@/components/command-palette"
 import { LogoMark } from "@/components/brand/logo"
 
 export function TopBar() {
-  const { collapsed, toggle } = useSidebarStore()
+  const collapsed = useSidebarStore((s) => s.collapsed)
+  const toggle = useSidebarStore((s) => s.toggle)
   const { open: openCommandPalette } = useCommandPalette()
 
   return (

@@ -35,12 +35,14 @@ export const getPnlData = (
       const incomeMap = new Map<string, BigNumber>()
       const expenseMap = new Map<string, BigNumber>()
 
-      // Need category type to correctly net reversals (DR to revenue = income reversal, not expense)
+      // Need category type to correctly net reversals (DR to revenue = income reversal, not expense).
+      // Group label = user-typed transactions.category if set (manual income/expense),
+      // otherwise the chart-of-accounts category name.
       const catTypeRows = await db
         .select({
           type: transactions.type,
           amount: transactions.amount,
-          categoryName: transactionCategories.name,
+          categoryName: sql<string>`coalesce(${transactions.category}, ${transactionCategories.name})`,
           categoryType: transactionCategories.type,
         })
         .from(transactions)

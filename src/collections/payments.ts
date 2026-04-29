@@ -54,7 +54,7 @@ type PaymentUpdateMetadata =
 
 type PaymentDeleteMetadata = { reason: string }
 
-function invalidateCrossCutting(loanId: string) {
+function invalidateCrossCutting(_loanId: string) {
   const qc = getQueryClient()
   qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
   qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
@@ -94,7 +94,9 @@ export const paymentCollection = createCollection(
         throw new Error(result.error)
       }
       invalidateCrossCutting(input.loanId)
-      return { txid: result.txid }
+      // Don't return txid: under flaky Electric replication the awaitTxId
+      // wait will time out even though the server already wrote the row.
+      // Reconciliation by id still works when the synced row arrives.
     },
     onUpdate: async ({ transaction }) => {
       const { original, changes, metadata } = transaction.mutations[0]
@@ -173,7 +175,7 @@ export function insertPaymentWithInput(
   optimistic: PaymentRow,
   input: RecordPaymentInput,
 ) {
-  paymentCollection.insert(optimistic, {
+  return paymentCollection.insert(optimistic, {
     metadata: { input } satisfies PaymentInsertMetadata,
   })
 }

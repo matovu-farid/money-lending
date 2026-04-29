@@ -104,5 +104,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  // Static / PWA assets that the browser fetches without credentials and that
+  // never need session-gated content. Auth-redirecting these would cause the
+  // browser to follow the 307 to /register, generating phantom /register hits
+  // (manifest.json was the offender) and breaking PWA install / icon discovery.
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|manifest.json|manifest.webmanifest|robots.txt|sitemap.xml|apple-touch-icon.*\\.png|icon-.*\\.png).*)",
+  ],
 }

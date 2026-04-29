@@ -64,15 +64,10 @@ export type FundTransferRow = typeof fundTransferSchema._zod.output
 export const loanBalanceSchema = createSelectSchema(loanBalances)
 export type LoanBalanceRow = typeof loanBalanceSchema._zod.output
 
-// `categoryName` is a client-only optimistic field stamped onto optimistic
-// rows so the income/expense tables can show the user-typed category name
-// immediately, before the synced row arrives. Including it here lets the
-// optimistic insert pass schema validation without `.passthrough()`.
-import { z } from "zod"
-const baseTransactionSchema = createSelectSchema(transactions)
-export const transactionSchema = baseTransactionSchema.extend({
-  categoryName: z.string().optional(),
-})
+// `transactions.category` is the source of truth for the user-typed label on
+// manual income/expense rows. The base schema picks it up automatically; no
+// client-only field needed.
+export const transactionSchema = createSelectSchema(transactions)
 export type TransactionRow = typeof transactionSchema._zod.output
 
 export const rateChangeRequestSchema = createSelectSchema(rateChangeRequests)

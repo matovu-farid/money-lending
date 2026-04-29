@@ -13,7 +13,7 @@ import { DisbursementSourceSelect } from "@/components/loans/disbursement-source
 import { RolloverBanner } from "@/components/loans/rollover-banner"
 import type { LoanFormValues } from "../_types"
 import { todayDateString } from "@/lib/utils"
-import { PERPETUAL_LOAN_MIN_AMOUNT } from "@/lib/constants"
+import { PERPETUAL_LOAN_MIN_AMOUNT, PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
 import type { UserRole } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { CreditScoreBadge } from "@/components/credit-score/credit-score-badge"
@@ -109,6 +109,7 @@ export function LoanDetailsStep({
           label="Principal Amount (UGX)"
           required="Principal amount is required"
           id="principalAmount"
+          presets={PRINCIPAL_AMOUNT_PRESETS}
         />
         {userRole === "loanOfficer" && parseFloat(principalAmount?.replace(/,/g, "") || "0") > 4_000_000 && (
           <p className="text-sm text-destructive">Loan officers cannot issue more than 4,000,000 UGX.</p>

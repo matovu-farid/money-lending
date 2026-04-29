@@ -3,6 +3,7 @@ import { db } from "@/lib/db"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { transactions } from "@/lib/db/schema/transactions"
+import { loanBalances } from "@/lib/db/schema/loan-balances"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { auditLog } from "@/lib/db/schema/audit"
@@ -11,8 +12,6 @@ import { user } from "@/lib/db/schema/auth"
 import { eq, isNull, desc, and, inArray, asc, sql } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
-import { formatAmount as formatBigNumber } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { toLoanType, type DashboardKPIs, type ActivityFeedItem } from "@/types"
 
@@ -93,7 +92,21 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
 
       const loanIds = activeLoans.map((l) => l.id)
 
-      // Run the three loan-scoped queries in parallel — all only depend on loanIds.
+      // Read precomputed balances + interest-earned from the `loan_balances`
+      // projection (maintained by triggers in drizzle/projections/loan_balances.sql).
+      // This replaces two grouped aggregations over `transactions` with one
+      // primary-key indexed lookup.
+      const balanceRowsPromise = loanIds.length > 0
+        ? db
+            .select({
+              loanId: loanBalances.loanId,
+              outstandingBalance: loanBalances.outstandingBalance,
+              unpaidInterest: loanBalances.unpaidInterest,
+            })
+            .from(loanBalances)
+            .where(inArray(loanBalances.loanId, loanIds))
+        : Promise.resolve([])
+
       const paymentsPromise = loanIds.length > 0
         ? db
             .select()
@@ -101,11 +114,18 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
             .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
             .orderBy(asc(payments.paymentDate))
         : Promise.resolve([])
-      const [allPayments, ledgerBalances, interestEarnedMap] = await Promise.all([
+      const [allPayments, balanceRows] = await Promise.all([
         paymentsPromise,
-        getLoanBalancesFromLedger(loanIds),
-        getInterestEarnedFromLedger(loanIds),
+        balanceRowsPromise,
       ])
+
+      const balanceByLoanId = new Map<string, { outstandingBalance: string; unpaidInterest: string }>()
+      for (const row of balanceRows) {
+        balanceByLoanId.set(row.loanId, {
+          outstandingBalance: row.outstandingBalance,
+          unpaidInterest: row.unpaidInterest,
+        })
+      }
 
       const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
       for (const p of allPayments) {
@@ -119,20 +139,19 @@ export const getDashboardKPIs = (): Effect.Effect<DashboardKPIs, DatabaseError> 
       for (const loan of activeLoans) {
         const loanPayments = paymentsByLoanId.get(loan.id) ?? []
         const baseRate = getBaseRate(loan)
-        const ledgerBalance = ledgerBalances.get(loan.id)
-        if (ledgerBalance === undefined) {
-          console.warn(`[getDashboardKPIs] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+        const projection = balanceByLoanId.get(loan.id)
+        if (!projection) {
+          console.warn(`[getDashboardKPIs] No loan_balances projection row for loan ${loan.id}, using principalAmount as fallback`)
         }
-        const outstandingBalance = ledgerBalance !== undefined
-          ? ledgerBalance.toFixed(0)
-          : loan.principalAmount
+        const outstandingBalance = projection?.outstandingBalance ?? loan.principalAmount
+        const totalInterestPaid = projection?.unpaidInterest ?? "0"
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
           baseRate,
           startDate: new Date(loan.startDate),
           loanType: toLoanType(loan.loanType),
           termMonths: loan.termMonths,
-          totalInterestPaid: formatBigNumber(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+          totalInterestPaid,
           paymentCount: loanPayments.length,
           outstandingBalance,
           penaltyWaived: loan.penaltyWaived,

@@ -43,11 +43,11 @@ vi.mock("next/cache", () => ({
 vi.mock("@/services/transaction.service", () => ({
   recordIncome: vi.fn(),
   deleteTransaction: vi.fn(),
+  listTransactions: vi.fn(),
 }))
 
 vi.mock("@/services/category.service", () => ({
-  createCategory: vi.fn(),
-  deleteCategory: vi.fn(),
+  listDistinctTransactionCategories: vi.fn(),
 }))
 
 // ---------- Imports ----------
@@ -56,13 +56,12 @@ import { auth } from "@/lib/auth"
 import { checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction } from "@/services/transaction.service"
-import { createCategory, deleteCategory } from "@/services/category.service"
+import { listDistinctTransactionCategories } from "@/services/category.service"
 
 import {
+  listIncomeCategoriesAction,
   recordIncomeAction,
   deleteIncomeAction,
-  createIncomeCategoryAction,
-  deleteIncomeCategoryAction,
 } from "../income.actions"
 
 import { fakeSession, lowRoleSession } from "./test-utils"
@@ -71,14 +70,24 @@ const mockCheckPermission = vi.mocked(checkPermission)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockRecordIncome = vi.mocked(recordIncome)
 const mockDeleteTransaction = vi.mocked(deleteTransaction)
-const mockCreateCategory = vi.mocked(createCategory)
-const mockDeleteCategory = vi.mocked(deleteCategory)
+const mockListDistinctCategories = vi.mocked(listDistinctTransactionCategories)
 
 // ---------- Tests ----------
 
 describe("Income Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  // ===== listIncomeCategoriesAction =====
+  describe("listIncomeCategoriesAction", () => {
+    it("returns distinct user-typed category labels on success", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const names = ["Consulting", "Rental"]
+      mockListDistinctCategories.mockReturnValue(Effect.succeed(names) as any)
+      const result = await listIncomeCategoriesAction()
+      expect(result).toEqual({ data: names })
+    })
   })
 
   // ===== recordIncomeAction =====
@@ -128,7 +137,7 @@ describe("Income Actions", () => {
       mockRecordIncome.mockReturnValue(Effect.succeed({ categoryId: "cat-resolved" }) as any)
 
       const result = await recordIncomeAction(validInput as any)
-      expect(result).toEqual({ success: true, resolvedCategory: { id: "cat-resolved", name: "Consulting" } })
+      expect(result).toEqual({ success: true })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/income")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/transactions")
     })
@@ -157,43 +166,6 @@ describe("Income Actions", () => {
       expect(result).toEqual({ data: undefined })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/income")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/transactions")
-    })
-  })
-
-  // ===== createIncomeCategoryAction =====
-  describe("createIncomeCategoryAction", () => {
-    it("returns error when not authenticated", async () => {
-      mockGetSession.mockResolvedValue(null as any)
-      const result = await createIncomeCategoryAction({ name: "Fees", type: "income" } as any)
-      expect(result).toEqual({ error: "Unauthorized" })
-    })
-
-    it("creates category on success", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      const cat = { id: "cat1", name: "Fees" }
-      mockCreateCategory.mockReturnValue(Effect.succeed(cat) as any)
-
-      const result = await createIncomeCategoryAction({ name: "Fees", type: "income" } as any)
-      expect(result).toEqual({ data: cat })
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/income")
-    })
-  })
-
-  // ===== deleteIncomeCategoryAction =====
-  describe("deleteIncomeCategoryAction", () => {
-    it("returns error when not authenticated", async () => {
-      mockGetSession.mockResolvedValue(null as any)
-      const result = await deleteIncomeCategoryAction("cat1")
-      expect(result).toEqual({ error: "Unauthorized" })
-    })
-
-    it("deletes category and revalidates on success", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      mockDeleteCategory.mockReturnValue(Effect.succeed(undefined) as any)
-
-      const result = await deleteIncomeCategoryAction("cat1")
-      expect(result).toEqual({ data: undefined })
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/income")
     })
   })
 })

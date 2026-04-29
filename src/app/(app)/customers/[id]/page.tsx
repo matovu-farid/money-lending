@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useLiveQuery, eq } from "@tanstack/react-db";
 import { customerCollection } from "@/collections/customers";
@@ -270,11 +270,6 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
 
   const activeLoan = loanItems.find((item) => item.loan.status === "active");
 
-  useEffect(() => {
-    if (!activeLoan) return;
-    const loanId = activeLoan.loan.id;
-    router.prefetch(`/loans/${loanId}/payments/new`);
-  }, [activeLoan, router]);
 
   function handleEditStart() {
     if (!customer) return;

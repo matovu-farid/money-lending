@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, timestamp, text, boolean, index } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, timestamp, text, boolean, index, check } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 import { loans } from "./loans"
 import { depositLocationEnum } from "./fund-transfers"
@@ -29,4 +29,9 @@ export const payments = pgTable("payments", {
   index("idx_payments_loan_deleted")
     .on(table.loanId, table.paymentDate)
     .where(sql`deleted_at IS NULL`),
+  check(
+    "payments_bank_requires_sub_location",
+    sql`${table.depositLocation} <> 'bank' OR ${table.subLocationId} IS NOT NULL`,
+  ),
+  check("payments_amount_positive", sql`${table.amount} > 0`),
 ])

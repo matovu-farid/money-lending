@@ -30,7 +30,12 @@ export interface TransactionRow {
   type: string
   amount: string
   categoryId: string
-  categoryName: string
+  /**
+   * Display label. For manual income/expense rows this is the user-typed
+   * `transactions.category` text; for system journal lines it's the
+   * `transaction_categories.name` joined via `categoryId`.
+   */
+  category: string
   description: string | null
   transactionDate: Date
   recordedBy: string

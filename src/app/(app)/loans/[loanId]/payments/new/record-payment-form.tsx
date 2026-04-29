@@ -54,6 +54,7 @@ interface PaymentFormValues {
   paymentDate: string
   amount: string
   depositLocation: DepositLocation
+  subLocationId: string
   note: string
 }
 
@@ -64,7 +65,7 @@ function BalanceSkeleton() {
 export function RecordPaymentForm({ loanId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
   const router = useRouter()
   const { data: session } = useSession()
-  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string } | null>(null)
+  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string; totalBalanceBefore?: string } | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingData, setPendingData] = useState<PaymentFormValues | null>(null)
 
@@ -78,6 +79,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       paymentDate: todayDateString(),
       amount: "",
       depositLocation: "cash",
+      subLocationId: "",
       note: "",
     },
   })
@@ -88,7 +90,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
     setConfirmOpen(true)
   }
 
-  function handleConfirmedSubmit() {
+  async function handleConfirmedSubmit() {
     if (!pendingData) return
     setConfirmOpen(false)
 
@@ -102,7 +104,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       amount: pendingData.amount.trim(),
       recordedBy: "",
       depositLocation: pendingData.depositLocation,
-      subLocationId: null,
+      subLocationId: pendingData.depositLocation === "bank" ? pendingData.subLocationId || null : null,
       editReason: null,
       deletedAt: null,
       deletedBy: null,
@@ -120,13 +122,23 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       paymentDate: pendingData.paymentDate + "T12:00:00",
       amount: pendingData.amount.trim(),
       depositLocation: pendingData.depositLocation,
+      subLocationId: pendingData.depositLocation === "bank" ? pendingData.subLocationId || undefined : undefined,
       note: pendingData.note.trim() || undefined,
     }
 
     // Compute receipt allocation from available balance data
     const allocation = computeReceiptAllocation(pendingData.amount.trim(), balanceData)
+    const totalBalanceBefore = balanceData?.totalBalance
 
-    insertPaymentWithInput(id, optimistic, input)
+    const tx = insertPaymentWithInput(id, optimistic, input)
+    try {
+      await tx.isPersisted.promise
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to record payment"
+      toast.error(message)
+      setPendingData(null)
+      return
+    }
     toast.success("Payment recorded successfully")
 
     setReceiptData({
@@ -136,6 +148,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
         allocation,
       } as unknown as ReceiptPaymentData,
       receiptNumber: generateReceiptNumber(),
+      totalBalanceBefore,
     })
     setPendingData(null)
   }
@@ -245,6 +258,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
               control={control}
               label="Deposit Location"
               id="depositLocation"
+              subLocationName="subLocationId"
             />
 
             <div className="space-y-1">
@@ -344,7 +358,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
             interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
             principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
             balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
-            outstandingBalance={receiptData.payment.allocation?.outstandingBalanceAfter}
+            outstandingBalance={receiptData.totalBalanceBefore}
             depositLocation={receiptData.payment.depositLocationValue}
             officerName={session?.user?.name ?? "Officer"}
           />

@@ -25,7 +25,6 @@ export async function POST(request: NextRequest) {
           account,
           verification,
           audit_log,
-          notifications,
           payments,
           collateral,
           loans,

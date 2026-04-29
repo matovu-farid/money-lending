@@ -17,6 +17,7 @@ import {
   count,
   inArray,
   isNull,
+  sql,
 } from "drizzle-orm"
 import BigNumber from "bignumber.js"
 import {
@@ -173,12 +174,15 @@ export const recordExpense = (
     try: async () => {
       return await db.transaction(async (tx) => {
         const groupId = randomUUID()
-        const expenseCategoryId = await getOrCreateCategory(tx, input.categoryName, "expense")
+        // Sentinel categoryId keeps the accounting-type semantics ('expense')
+        // for the P&L; the user-typed label lives on transactions.category.
+        const expenseCategoryId = await getOrCreateCategory(tx, "User Expense", "expense")
         const [debitTx] = await tx
           .insert(transactions)
           .values({
             ...(input.id ? { id: input.id } : {}),
             type: "debit", amount: input.amount, categoryId: expenseCategoryId,
+            category: input.categoryName.trim(),
             description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
             recordedBy: actorId, journalGroupId: groupId,
           })
@@ -219,12 +223,15 @@ export const recordIncome = (
           recordedBy: actorId, depositLocation: input.location, subLocationId: input.subLocationId ?? null, journalGroupId: groupId,
         })
 
-        const revenueCategoryId = await getOrCreateCategory(tx, input.categoryName, "revenue")
+        // Sentinel categoryId for accounting-type semantics ('revenue'); the
+        // user-typed label lives on transactions.category.
+        const revenueCategoryId = await getOrCreateCategory(tx, "User Revenue", "revenue")
         const [creditTx] = await tx
           .insert(transactions)
           .values({
             ...(input.id ? { id: input.id } : {}),
             type: "credit", amount: input.amount, categoryId: revenueCategoryId,
+            category: input.categoryName.trim(),
             description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
             recordedBy: actorId, journalGroupId: groupId,
           })
@@ -253,7 +260,8 @@ export const listTransactions = (
       type: "credit" | "debit"
       amount: string
       categoryId: string
-      categoryName: string
+      /** Display label: user-typed `category` text or chart-of-accounts name. */
+      category: string
       referenceType: string | null
       referenceId: string | null
       description: string | null
@@ -301,7 +309,9 @@ export const listTransactions = (
             type: transactions.type,
             amount: transactions.amount,
             categoryId: transactions.categoryId,
-            categoryName: transactionCategories.name,
+            // User-typed label takes precedence; fall back to chart-of-accounts
+            // name for system-posted lines (loan disbursement, payments, etc.).
+            category: sql<string>`coalesce(${transactions.category}, ${transactionCategories.name})`,
             referenceType: transactions.referenceType,
             referenceId: transactions.referenceId,
             description: transactions.description,

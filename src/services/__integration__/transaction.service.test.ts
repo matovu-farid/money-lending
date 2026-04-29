@@ -294,8 +294,8 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
 
     expect(result.total).toBe(3)
     expect(result.data).toHaveLength(3)
-    // Each row should have categoryName
-    expect(result.data[0].categoryName).toBeDefined()
+    // Each row should have a display category label
+    expect(result.data[0].category).toBeDefined()
     // Ordered by transactionDate DESC
     expect(
       result.data[0].transactionDate >= result.data[1].transactionDate

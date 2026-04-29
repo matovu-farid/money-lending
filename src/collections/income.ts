@@ -16,25 +16,11 @@ import { shapeUrl, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
-/**
- * Extra context for the onInsert handler that isn't part of the
- * `TransactionShapeRow` (categoryName resolution, deposit location for the
- * cash leg, optional backdating note). Pass via TanStack DB's `metadata`:
- *
- *   incomeCollection.insert(optimisticRow, {
- *     metadata: { categoryName, location, subLocationId, backdateNote },
- *   })
- */
+/** Extra context for the onInsert handler that isn't part of the synced row. */
 export interface IncomeInsertMetadata {
-  categoryName: string
   location: DepositLocation
   subLocationId?: string
   backdateNote?: string
-}
-
-const recentCategoryNames = new Map<string, string>()
-export function getRecentIncomeCategoryName(id: string): string | undefined {
-  return recentCategoryNames.get(id)
 }
 
 export const incomeCollection = createCollection(
@@ -53,12 +39,15 @@ export const incomeCollection = createCollection(
     onInsert: async ({ transaction }) => {
       const { modified, metadata } = transaction.mutations[0]
       const meta = metadata as IncomeInsertMetadata | undefined
-      if (!meta?.categoryName || !meta.location) {
+      if (!meta?.location) {
         throw new Error("Missing income metadata for optimistic insert")
+      }
+      if (!modified.category) {
+        throw new Error("Optimistic income row is missing the category label")
       }
       const input: CreateTransactionInput = {
         id: modified.id,
-        categoryName: meta.categoryName,
+        categoryName: modified.category,
         amount: modified.amount,
         transactionDate: modified.transactionDate.toISOString(),
         notes: modified.description ?? undefined,
@@ -70,9 +59,8 @@ export const incomeCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
-      recentCategoryNames.set(result.resolvedCategory.id, result.resolvedCategory.name)
-      // Invalidate query-based collections
       const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.income.categories })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
@@ -84,8 +72,8 @@ export const incomeCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
-      // Invalidate query-based collections
       const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.income.categories })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })

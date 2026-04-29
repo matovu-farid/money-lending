@@ -67,7 +67,7 @@ export type TransactionReportData = {
     id: string
     type: string
     amount: string
-    categoryName: string
+    category: string
     description: string | null
     transactionDate: Date
     recordedBy: string

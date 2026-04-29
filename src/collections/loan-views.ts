@@ -5,7 +5,7 @@ import { useMemo } from "react"
 import { loanCollection } from "./loans"
 import { loanBalanceCollection } from "./loan-balances"
 import { customerCollection } from "./customers"
-import { computeDaysOverdue } from "@/lib/interest/overdue-client"
+import { computeDaysOverdue, computeUnpaidInterest } from "@/lib/interest/overdue-client"
 import { computeDailyRate } from "@/lib/interest/effective-rate-client"
 import type { LoanListEntry } from "@/types/loan"
 import type { LoanBaseRow, LoanBalanceRow, CustomerRow } from "@/lib/schemas/collections"
@@ -23,15 +23,22 @@ function projectLoanListEntry(
   today: Date,
 ): LoanListEntry {
   const outstandingBalance = bal?.outstandingBalance ?? "0"
-  const unpaidInterest = bal?.unpaidInterest ?? "0"
+  // The projection stores the net Interest Earned ledger balance under the
+  // `unpaidInterest` column name. Semantically it is cumulative interest paid;
+  // `computeDaysOverdue` and the Total Due math both treat it as such.
+  const totalInterestPaid = bal?.unpaidInterest ?? "0"
   return {
     ...loan,
     customerName: cust?.fullName ?? "—",
     customerContact: cust?.contact ?? null,
     outstandingBalance,
-    unpaidInterest,
+    // Re-expose unpaid-to-date as the legacy `unpaidInterest` field. Computed
+    // here as accruedToDate − paid (clamped at 0) so that consumers (Total
+    // Due column, badges, exports) see the true unpaid figure rather than
+    // the projection's raw revenue total.
+    unpaidInterest: computeUnpaidInterest(loan, totalInterestPaid, outstandingBalance, today),
     lastPaymentDate: bal?.lastPaymentDate ?? null,
-    daysOverdue: computeDaysOverdue(loan, unpaidInterest, outstandingBalance, today),
+    daysOverdue: computeDaysOverdue(loan, totalInterestPaid, outstandingBalance, today),
     dailyRate: computeDailyRate(loan, outstandingBalance),
   }
 }

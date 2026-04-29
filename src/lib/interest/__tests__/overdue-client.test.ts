@@ -19,26 +19,6 @@ const baseLoan = {
   startDate: new Date("2026-01-01"),
 }
 
-/**
- * Compute the full-precision unpaidInterest that would be stored in the
- * loan_balances projection for a perpetual loan with no prior principal
- * repayments. This is what the projection would contain in production.
- *
- * Formula mirrors server perpetual path:
- *   accrued = balance × (rate / 30) × daysElapsed
- *   unpaid  = max(accrued − totalInterestPaid, 0)
- */
-function analyticalUnpaidInterest(
-  balance: string,
-  rate: string,
-  daysElapsed: number,
-  totalInterestPaid: string,
-): string {
-  const dailyRate = new BigNumber(rate).dividedBy(30)
-  const accrued = new BigNumber(balance).multipliedBy(dailyRate).multipliedBy(daysElapsed)
-  return BigNumber.max(accrued.minus(totalInterestPaid), 0).toFixed(10)
-}
-
 function dateDiff(start: Date, end: Date): number {
   return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24))
 }
@@ -48,19 +28,21 @@ function dateDiff(start: Date, end: Date): number {
 describe("computeDaysOverdue — plan starter cases", () => {
   const today = new Date("2026-03-02") // 60 days after Jan 1
 
-  it("returns 0 when no interest is owed (unpaidInterest = '0')", () => {
-    expect(computeDaysOverdue(baseLoan, "0", "1000000", today)).toBe(0)
+  // Second arg is `totalInterestPaid` (cumulative) — when borrower has paid
+  // enough to cover all accrued, unpaid is 0.
+  it("returns 0 when paid >= accrued (200,000 paid against 60-day accrual)", () => {
+    expect(computeDaysOverdue(baseLoan, "200000", "1000000", today)).toBe(0)
   })
 
   it("returns 0 for non-active loans", () => {
     expect(
-      computeDaysOverdue({ ...baseLoan, status: "fully_paid" }, "100000", "1000000", today),
+      computeDaysOverdue({ ...baseLoan, status: "fully_paid" }, "0", "1000000", today),
     ).toBe(0)
   })
 
   it("returns 0 for pending loans", () => {
     expect(
-      computeDaysOverdue({ ...baseLoan, status: "pending" }, "100000", "1000000", today),
+      computeDaysOverdue({ ...baseLoan, status: "pending" }, "0", "1000000", today),
     ).toBe(0)
   })
 
@@ -68,8 +50,19 @@ describe("computeDaysOverdue — plan starter cases", () => {
     expect(computeDaysOverdue(baseLoan, "0", "1000000", baseLoan.startDate)).toBe(0)
   })
 
-  it("returns 0 when unpaidInterest is negative", () => {
-    expect(computeDaysOverdue(baseLoan, "-5000", "1000000", today)).toBe(0)
+  // Day 0 with full month's interest already paid (the screenshot bug case).
+  // Accrued at day 0 = 0, paid = 200,000, unpaid = max(0 − 200,000, 0) = 0.
+  it("returns 0 for a same-day loan with prior interest payment", () => {
+    const startDate = new Date("2026-04-28")
+    const sameDay = new Date("2026-04-28")
+    expect(
+      computeDaysOverdue(
+        { ...baseLoan, principalAmount: "2000000", startDate },
+        "200000",
+        "2000000",
+        sameDay,
+      ),
+    ).toBe(0)
   })
 })
 
@@ -81,9 +74,8 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
     const today = new Date("2026-03-02") // exactly 60 days
     expect(dateDiff(startDate, today)).toBe(60)
 
-    // The projection's unpaid_interest would hold full-precision accrued interest.
-    const unpaid = analyticalUnpaidInterest("1000000", "0.10", 60, "0")
-    const client = computeDaysOverdue({ ...baseLoan, startDate }, unpaid, "1000000", today)
+    const totalInterestPaid = "0"
+    const client = computeDaysOverdue({ ...baseLoan, startDate }, totalInterestPaid, "1000000", today)
 
     const srv = computeLoanOverdueInfo({
       principalAmount: "1000000",
@@ -91,7 +83,7 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
       startDate,
       loanType: "perpetual",
       termMonths: null,
-      totalInterestPaid: "0",
+      totalInterestPaid,
       paymentCount: 0,
       outstandingBalance: "1000000",
       penaltyWaived: false,
@@ -107,8 +99,7 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
     expect(dateDiff(startDate, today)).toBe(90)
 
     const totalInterestPaid = "100000"
-    const unpaid = analyticalUnpaidInterest("1000000", "0.10", 90, totalInterestPaid)
-    const client = computeDaysOverdue({ ...baseLoan, startDate }, unpaid, "1000000", today)
+    const client = computeDaysOverdue({ ...baseLoan, startDate }, totalInterestPaid, "1000000", today)
 
     const srv = computeLoanOverdueInfo({
       principalAmount: "1000000",
@@ -132,11 +123,9 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
     const outstandingBalance = "500000"
     const totalInterestPaid = "0"
 
-    // Server uses outstandingBalance for accrual
-    const unpaid = analyticalUnpaidInterest(outstandingBalance, "0.10", 60, totalInterestPaid)
     const client = computeDaysOverdue(
       { ...baseLoan, startDate },
-      unpaid,
+      totalInterestPaid,
       outstandingBalance,
       today,
     )
@@ -167,8 +156,8 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
     const today = new Date("2026-04-01") // 90 days
 
     const baseRate = getBaseRate(overrideLoan) // "0.08"
-    const unpaid = analyticalUnpaidInterest("1000000", baseRate, 90, "0")
-    const client = computeDaysOverdue({ ...overrideLoan, startDate }, unpaid, "1000000", today)
+    const totalInterestPaid = "0"
+    const client = computeDaysOverdue({ ...overrideLoan, startDate }, totalInterestPaid, "1000000", today)
 
     const srv = computeLoanOverdueInfo({
       principalAmount: "1000000",
@@ -176,7 +165,7 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
       startDate,
       loanType: "perpetual",
       termMonths: null,
-      totalInterestPaid: "0",
+      totalInterestPaid,
       paymentCount: 0,
       outstandingBalance: "1000000",
       penaltyWaived: false,
@@ -186,22 +175,18 @@ describe("computeDaysOverdue — server equivalence (perpetual loans)", () => {
     expect(client).toBe(srv.daysOverdue)
   })
 
-  it("fully paid → daysOverdue = 0 (equals server)", () => {
+  it("fully paid → daysOverdue = 0 (paid covers full accrual)", () => {
     const startDate = new Date("2026-01-01")
     const today = new Date("2026-03-02")
-    // If totalInterestPaid = totalInterestAccrued, unpaid = 0
-    const client = computeDaysOverdue({ ...baseLoan, startDate }, "0", "1000000", today)
+    // 60-day accrual on 1M at 10%/mo = 200,000. Paid 200K → unpaid 0.
+    const client = computeDaysOverdue({ ...baseLoan, startDate }, "200000", "1000000", today)
     expect(client).toBe(0)
   })
 
   it("penalty threshold: 60+ days → daysOverdue >= 60", () => {
     const startDate = new Date("2026-01-01")
     const today = new Date("2026-04-01") // 90 days, nothing paid
-    // accrued on 90 days = 1000000 * 0.10/30 * 90 = 299999.997 (BigNumber 10dp)
-    // dailyRate = 3333.3333
-    // daysOverdue = floor(299999.997 / 3333.3333) = floor(89.999...) = 89
-    const unpaid = analyticalUnpaidInterest("1000000", "0.10", 90, "0")
-    const client = computeDaysOverdue({ ...baseLoan, startDate }, unpaid, "1000000", today)
+    const client = computeDaysOverdue({ ...baseLoan, startDate }, "0", "1000000", today)
     expect(client).toBeGreaterThanOrEqual(60)
   })
 })
@@ -214,10 +199,10 @@ describe("computeDaysOverdue — backdated loan", () => {
     const today = new Date("2026-01-29") // 89 days later
     expect(dateDiff(startDate, today)).toBe(89)
 
-    const unpaid = analyticalUnpaidInterest("2000000", "0.10", 89, "0")
+    const totalInterestPaid = "0"
     const client = computeDaysOverdue(
       { ...baseLoan, principalAmount: "2000000", startDate },
-      unpaid,
+      totalInterestPaid,
       "2000000",
       today,
     )
@@ -228,7 +213,7 @@ describe("computeDaysOverdue — backdated loan", () => {
       startDate,
       loanType: "perpetual",
       termMonths: null,
-      totalInterestPaid: "0",
+      totalInterestPaid,
       paymentCount: 0,
       outstandingBalance: "2000000",
       penaltyWaived: false,
@@ -244,11 +229,9 @@ describe("computeDaysOverdue — backdated loan", () => {
 describe("computeDaysOverdue — edge cases", () => {
   it("falls back to principalAmount when outstandingBalance is '0'", () => {
     const today = new Date("2026-03-02")
-    // 60 days of accrual on principalAmount = 1M
-    const unpaid = analyticalUnpaidInterest("1000000", "0.10", 60, "0")
     // outstandingBalance = '0' → fallback to principalAmount
-    const withZeroBalance = computeDaysOverdue(baseLoan, unpaid, "0", today)
-    const withBalance = computeDaysOverdue(baseLoan, unpaid, "1000000", today)
+    const withZeroBalance = computeDaysOverdue(baseLoan, "0", "0", today)
+    const withBalance = computeDaysOverdue(baseLoan, "0", "1000000", today)
     expect(withZeroBalance).toBe(withBalance)
   })
 
@@ -270,10 +253,9 @@ describe("computeDaysOverdue — edge cases", () => {
 
   it("non-active statuses all return 0", () => {
     const today = new Date("2026-03-02")
-    const unpaid = "100000"
     const statuses = ["pending", "fully_paid", "settled_with_collateral", "rolled_over"] as const
     for (const status of statuses) {
-      expect(computeDaysOverdue({ ...baseLoan, status }, unpaid, "1000000", today)).toBe(0)
+      expect(computeDaysOverdue({ ...baseLoan, status }, "0", "1000000", today)).toBe(0)
     }
   })
 })

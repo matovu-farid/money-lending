@@ -97,10 +97,7 @@ export default function CustomersPage() {
 
   const isLoading = customersLoading || (needsLoans && loansLoading)
 
-  const handlePrefetch = useCallback((customerId: string) => {
-    if (customerId.startsWith("optimistic-")) return
-    router.prefetch(`/customers/${customerId}`)
-  }, [router])
+
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -189,8 +186,7 @@ export default function CustomersPage() {
               onClick: c.id.startsWith("optimistic-")
                 ? undefined
                 : () => router.push(`/customers/${c.id}`),
-              onMouseEnter: () => handlePrefetch(c.id),
-              onFocus: () => handlePrefetch(c.id),
+   
             })}
           />
 

@@ -115,26 +115,49 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
                       {formatCurrency(bsData.assets.cashBalance)}
                     </td>
                   </tr>
-                  {Object.keys(bsData.assets.bankAccountBalances ?? {}).length > 0 ? (
-                    Object.entries(bsData.assets.bankAccountBalances!).map(([accountId, balance]) => {
-                      const account = bankAccountsList?.find((a) => a.id === accountId)
+                  {(() => {
+                    const accounts = Object.entries(bsData.assets.bankAccountBalances ?? {})
+                    if (accounts.length === 0) {
                       return (
-                        <tr key={accountId}>
-                          <td className="py-1.5 pl-6">{account?.name ?? "Bank Account"}</td>
+                        <tr>
+                          <td className="py-1.5 pl-6">Bank</td>
                           <td className="py-1.5 text-right font-mono tabular-nums">
-                            {formatCurrency(balance)}
+                            {formatCurrency(bsData.assets.bankBalance)}
                           </td>
                         </tr>
                       )
-                    })
-                  ) : (
-                    <tr>
-                      <td className="py-1.5 pl-6">Bank</td>
-                      <td className="py-1.5 text-right font-mono tabular-nums">
-                        {formatCurrency(bsData.assets.bankBalance)}
-                      </td>
-                    </tr>
-                  )}
+                    }
+                    const accounted = accounts.reduce(
+                      (sum, [, bal]) => sum.plus(bal),
+                      new BigNumber(0),
+                    )
+                    const unallocated = new BigNumber(bsData.assets.bankBalance).minus(accounted)
+                    return (
+                      <>
+                        {accounts.map(([accountId, balance]) => {
+                          const account = bankAccountsList?.find((a) => a.id === accountId)
+                          return (
+                            <tr key={accountId}>
+                              <td className="py-1.5 pl-6">{account?.name ?? "Bank Account"}</td>
+                              <td className="py-1.5 text-right font-mono tabular-nums">
+                                {formatCurrency(balance)}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                        {!unallocated.isZero() && (
+                          <tr>
+                            <td className="py-1.5 pl-6 text-muted-foreground">
+                              Bank (unallocated)
+                            </td>
+                            <td className="py-1.5 text-right font-mono tabular-nums">
+                              {formatCurrency(unallocated.toFixed(0))}
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )
+                  })()}
                   <tr className="border-b">
                     <td className="py-1.5 pl-6">Strong Room</td>
                     <td className="py-1.5 text-right font-mono tabular-nums">

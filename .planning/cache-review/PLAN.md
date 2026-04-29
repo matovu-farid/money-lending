@@ -262,46 +262,23 @@ import { useEffect } from "react"
 import { useSession } from "@/lib/auth-client"
 import { scheduleIdlePrefetch } from "@/lib/idle-prefetch"
 
-export function IdlePrefetcher() {
-  const { data: session, isPending } = useSession()
-  useEffect(() => {
-    if (isPending || !session) return
-    scheduleIdlePrefetch()
-  }, [isPending, session])
-  return null
-}
-```
 
-```tsx
-// src/components/providers.tsx — sibling of <PersistGate>
-// (NOT inside — auth state is independent of persistence rehydrate; placing
-// outside means the idle prefetch can start as soon as auth resolves, even
-// if localStorage is still being read.)
-<>
-  <PersistGate>{children}</PersistGate>
-  <IdlePrefetcher />
-</>
-```
+
+
 
 **Out-of-scope side notes**:
 - `recentCategoryNames` plain Maps in `src/collections/income.ts` and `src/collections/expenses.ts` are *string* caches, not collection caches. They hold no live sync subscriptions, so eviction does not apply. Explicitly out of scope for Task 6.
-- The module-level `scheduled` flag in `idle-prefetch.ts` makes prefetch fire once per page load; if a user logs out and logs back in the same tab without reload, prefetch will not re-fire. Acceptable for pre-production. Add a one-line comment in the module noting this.
-
 **Why not a Worker**: TanStack DB collections live in the main thread bound to React. A Worker can't help here; `requestIdleCallback` already gives "yield until the browser has nothing else to do."
 
-**Why a module-level `scheduled` guard**: prevents double-invocation if the auth state hooks re-render the prefetcher.
+
 
 **Verify**: Open Network tab in dev, log in. After login completes and the dashboard renders, observe a small batch of additional shape/action requests fired during the next idle window (typically <1s).
 
-**Risk**: Idle prefetch fires once per session post-auth. If the network is throttled, it competes with user actions only when the browser thinks it's idle, by definition. Easy to disable if perf regresses.
-
----
 
 ## Task 8 — Update memory `feedback_performance_patterns`
 
 **File**: `~/.claude/projects/-Users-faridmatovu-projects-money-lending/memory/feedback_performance_patterns.md`
 
-**Why**: After Task 7 lands, the line about "sidebar eager prefetch" is stale. Replace with: "Idle-time data prefetch via `requestIdleCallback`, gated on auth-ready, runs once per session in `IdlePrefetcher`. Sidebar hover does Next.js route prefetch only (not data)."
 
 **Risk**: None.
 

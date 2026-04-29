@@ -792,8 +792,11 @@ function simulateLoanLifecycle(params: {
     const paymentDate = new Date(prevDate.getTime() + paymentDef.daysAfterPrev * 86400000)
     const days = daysBetween(prevDate, paymentDate)
 
-    // Calculate what's owed
-    const interest = calculateInterest(balance.toFixed(0), rate, days, minDays)
+    // Calculate what's owed at pro-rata. The min-period only kicks in on full
+    // payoff (handled inside allocatePayment); for the conservation invariants
+    // checked below, pro-rata interest matches what the engine charges on
+    // partial payments.
+    const interest = calculateInterest(balance.toFixed(0), rate, days, 0)
     const totalOwed = interest.plus(balance)
     if (totalOwed.isLessThanOrEqualTo(0)) break
 

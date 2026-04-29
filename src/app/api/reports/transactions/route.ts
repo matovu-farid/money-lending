@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
     const categories = new Map<string, string>()
     for (const tx of data) {
-      categories.set(tx.categoryName, tx.categoryName)
+      categories.set(tx.category, tx.category)
     }
 
     if (format === "excel") {

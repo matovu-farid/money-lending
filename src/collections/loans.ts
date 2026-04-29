@@ -1,6 +1,6 @@
 "use client"
 
-import { createCollection } from "@tanstack/react-db"
+import { createCollection, BasicIndex } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
 import { snakeCamelMapper } from "@electric-sql/client"
 import {
@@ -44,6 +44,8 @@ export const loanCollection = createCollection(
     id: "loans",
     schema: loanRowSchema,
     getKey: (loan) => loan.id,
+    autoIndex: "eager",
+    defaultIndexType: BasicIndex,
     shapeOptions: {
       url: shapeUrl("loans"),
       columnMapper: snakeCamelMapper(),

@@ -383,6 +383,7 @@ export const editPaymentWithTxid = (
             transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: payment.depositLocation ?? undefined,
+            creditSubLocationId: payment.subLocationId ?? undefined,
             loanId: payment.loanId,
           })
         }
@@ -398,6 +399,7 @@ export const editPaymentWithTxid = (
             transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: payment.depositLocation ?? undefined,
+            creditSubLocationId: payment.subLocationId ?? undefined,
             loanId: payment.loanId,
           })
         }
@@ -675,6 +677,7 @@ export const deletePaymentWithTxid = (
             transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: payment.depositLocation ?? undefined,
+            creditSubLocationId: payment.subLocationId ?? undefined,
             loanId: payment.loanId,
           })
         }
@@ -690,6 +693,7 @@ export const deletePaymentWithTxid = (
             transactionDate: new Date(payment.paymentDate),
             recordedBy: actorId,
             creditDepositLocation: payment.depositLocation ?? undefined,
+            creditSubLocationId: payment.subLocationId ?? undefined,
             loanId: payment.loanId,
           })
         }

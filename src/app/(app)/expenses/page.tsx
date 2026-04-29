@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
-import { expenseCollection, getRecentExpenseCategoryName } from "@/collections/expenses"
+import { expenseCollection } from "@/collections/expenses"
 import { expenseCategoryCollection } from "@/collections/expense-categories"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -44,33 +44,23 @@ function ExpensesContent() {
   )
 
   const { data: rawCategories, isLoading: categoriesLoading } = useLiveQuery((q) =>
-    q
-      .from({ c: expenseCategoryCollection })
-      .where(({ c }) => eq(c.type, "expense"))
-      .select(({ c }) => c)
+    q.from({ c: expenseCategoryCollection }).select(({ c }) => c)
   )
 
   const isInitialLoading =
     (expensesLoading && !allExpenses) || (categoriesLoading && !rawCategories)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const categories = (rawCategories ?? []) as any[]
+  const categories = useMemo(
+    () => (rawCategories ?? []).map((r) => r.name),
+    [rawCategories]
+  )
 
-  // Resolve categoryName from the category collection (Electric shapes don\'t JOIN)
   const transactions: TransactionRow[] = useMemo(() => {
-    const catMap = new Map<string, string>()
-    for (const c of categories) {
-      catMap.set(c.id, c.name)
-    }
     return ((allExpenses ?? []) as unknown as TransactionShapeRow[]).map((e) => ({
       id: e.id,
       type: e.type,
       amount: e.amount,
       categoryId: e.categoryId,
-      categoryName:
-        catMap.get(e.categoryId)
-        ?? getRecentExpenseCategoryName(e.categoryId)
-        ?? e.categoryName
-        ?? "Unknown",
+      category: e.category ?? "Unknown",
       description: e.description,
       transactionDate: new Date(e.transactionDate),
       recordedBy: e.recordedBy,
@@ -78,7 +68,7 @@ function ExpensesContent() {
       referenceId: e.referenceId,
       createdAt: new Date(e.createdAt),
     }))
-  }, [allExpenses, categories])
+  }, [allExpenses])
 
   if (isInitialLoading) {
     return <LoadingSkeleton />

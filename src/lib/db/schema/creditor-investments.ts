@@ -1,4 +1,5 @@
-import { pgTable, uuid, numeric, timestamp, text, index } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, timestamp, text, index, check } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 import { creditors } from "./creditors"
 
 export const creditorInvestments = pgTable("creditor_investments", {
@@ -12,4 +13,5 @@ export const creditorInvestments = pgTable("creditor_investments", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
   index("idx_creditor_investments_creditor_id").on(table.creditorId),
+  check("creditor_investments_amount_positive", sql`${table.amount} > 0`),
 ])

@@ -6,7 +6,7 @@ type TransactionRow = {
   id: string
   type: string
   amount: string
-  categoryName: string
+  category: string
   description: string | null
   transactionDate: Date
   recordedBy: string
@@ -298,7 +298,7 @@ export async function generateTransactionsExcel(
     const row = sheet.addRow([
       formatDateStr(tx.transactionDate),
       tx.type,
-      categories.get(tx.categoryName) ?? tx.categoryName,
+      categories.get(tx.category) ?? tx.category,
       tx.description ?? "",
       parseFloat(tx.amount),
       tx.recordedBy,

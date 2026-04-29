@@ -12,15 +12,20 @@ export function calculateDailyRate(monthlyRateDecimal: string): BigNumber {
 }
 
 /**
- * Calculates interest using the reducing-balance formula with minimum period enforcement.
+ * Calculates interest using the reducing-balance formula with optional minimum
+ * period enforcement.
  * Formula: interest = outstanding_balance × daily_rate × effective_days
  * Effective days = max(daysElapsed, minInterestDays)
+ *
+ * Default `minInterestDays = 0` gives pure pro-rata interest. Pass an explicit
+ * non-zero value at the rollover and collateral-settlement call sites where
+ * the business rule mandates a minimum interest period.
  */
 export function calculateInterest(
   outstandingBalance: string,
   monthlyRateDecimal: string,
   daysElapsed: number,
-  minInterestDays: number = 30
+  minInterestDays: number = 0
 ): BigNumber {
   const balance = new BigNumber(outstandingBalance)
   const dailyRate = calculateDailyRate(monthlyRateDecimal)
@@ -405,12 +410,31 @@ export function allocatePayment(params: {
     })
   }
 
-  // Default: perpetual logic (existing behavior)
+  // Default: perpetual logic.
+  //
+  // Rule: interest accrues pro-rata day-by-day. The min-interest period only
+  // applies when the borrower is fully paying off the loan — partial payments
+  // do not trigger the min. Rollover and collateral settlement apply the min
+  // separately at their own call sites (loan.service.ts, collateral-settlement.service.ts).
   const payment = new BigNumber(paymentAmount)
-  const grossInterest = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
-  // Subtract interest already collected by earlier payments in the same min-interest period
+  const balance = new BigNumber(principalBalanceBefore)
+  const dailyRate = calculateDailyRate(monthlyRateDecimal)
   const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
-  const interestOwed = BigNumber.max(grossInterest.minus(alreadyPaid), 0)
+
+  const proRataAccrued = balance.multipliedBy(dailyRate).multipliedBy(daysElapsed)
+  const proRataInterestOwed = BigNumber.max(proRataAccrued.minus(alreadyPaid), 0)
+
+  // Min-period interest = balance × dailyRate × minInterestDays. Equals one
+  // monthly interest charge when minInterestDays = 30. Used only on payoff.
+  const minPeriodAccrued = balance.multipliedBy(dailyRate).multipliedBy(minInterestDays)
+  const minInterestOwed = BigNumber.max(minPeriodAccrued.minus(alreadyPaid), 0)
+
+  // Detect payoff: payment is enough to clear the principal balance with
+  // pro-rata interest. When that happens, charge at least the min-period interest.
+  const isPayoff = payment.isGreaterThanOrEqualTo(proRataInterestOwed.plus(balance))
+  const interestOwed = isPayoff
+    ? BigNumber.max(proRataInterestOwed, minInterestOwed)
+    : proRataInterestOwed
 
   if (payment.isLessThanOrEqualTo(interestOwed)) {
     return {
@@ -423,14 +447,8 @@ export function allocatePayment(params: {
     }
   }
 
-  const principalPortion = BigNumber.min(
-    payment.minus(interestOwed),
-    new BigNumber(principalBalanceBefore)
-  )
-  const principalBalanceAfter = BigNumber.max(
-    new BigNumber(principalBalanceBefore).minus(principalPortion),
-    0
-  )
+  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance)
+  const principalBalanceAfter = BigNumber.max(balance.minus(principalPortion), 0)
 
   return {
     interestPortion: formatAmount(interestOwed),

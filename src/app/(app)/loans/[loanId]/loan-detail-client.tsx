@@ -193,11 +193,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   )
   const balanceData = balanceRows?.[0] ?? null
 
-  // Route prefetch for record-payment page
-  useEffect(() => {
-    if (loan.status !== "active") return;
-    router.prefetch(`/loans/${loan.id}/payments/new`);
-  }, [loan.id, loan.status, router]);
+ 
 
   const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
   const pendingRateRequest = rateChangeList.find((r: RateChangeRequest) => r.status === "pending")

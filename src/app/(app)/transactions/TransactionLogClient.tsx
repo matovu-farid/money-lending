@@ -85,7 +85,7 @@ export function TransactionLogClient({
     {
       key: "category",
       header: "Category",
-      render: (row) => <span>{row.categoryName}</span>,
+      render: (row) => <span>{row.category}</span>,
     },
     {
       key: "description",

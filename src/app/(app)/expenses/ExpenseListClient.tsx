@@ -1,11 +1,11 @@
 "use client"
 
 import { TransactionListClient } from "@/components/transactions/transaction-list-client"
-import type { TransactionRow, CategoryRow } from "@/types"
+import type { TransactionRow } from "@/types"
 
 interface ExpenseListClientProps {
   transactions: TransactionRow[]
-  categories: CategoryRow[]
+  categories: string[]
 }
 
 export function ExpenseListClient({ transactions, categories }: ExpenseListClientProps) {

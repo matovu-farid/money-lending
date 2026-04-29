@@ -50,9 +50,7 @@ vi.mock("@/services/transaction.service", () => ({
 }))
 
 vi.mock("@/services/category.service", () => ({
-  createCategory: vi.fn(),
-  deleteCategory: vi.fn(),
-  listCategories: vi.fn(),
+  listDistinctTransactionCategories: vi.fn(),
 }))
 
 vi.mock("@/services/report.service", () => ({
@@ -65,7 +63,7 @@ import { auth } from "@/lib/auth"
 import { checkPermission } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
-import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
+import { listDistinctTransactionCategories } from "@/services/category.service"
 import { getLocationBalances } from "@/services/report.service"
 
 import {
@@ -73,8 +71,6 @@ import {
   listExpenseCategoriesAction,
   recordExpenseAction,
   deleteExpenseAction,
-  createExpenseCategoryAction,
-  deleteExpenseCategoryAction,
 } from "../expense.actions"
 
 import { fakeSession, lowRoleSession } from "./test-utils"
@@ -84,9 +80,7 @@ const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockRecordExpense = vi.mocked(recordExpense)
 const mockDeleteTransaction = vi.mocked(deleteTransaction)
 const mockListTransactions = vi.mocked(listTransactions)
-const mockCreateCategory = vi.mocked(createCategory)
-const mockDeleteCategory = vi.mocked(deleteCategory)
-const mockListCategories = vi.mocked(listCategories)
+const mockListDistinctCategories = vi.mocked(listDistinctTransactionCategories)
 const mockGetLocationBalances = vi.mocked(getLocationBalances)
 
 // ---------- Tests ----------
@@ -128,12 +122,12 @@ describe("Expense Actions", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
-    it("returns categories on success", async () => {
+    it("returns distinct user-typed category labels on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      const cats = [{ id: "cat1", name: "Rent" }]
-      mockListCategories.mockReturnValue(Effect.succeed(cats) as any)
+      const names = ["Rent", "Utilities"]
+      mockListDistinctCategories.mockReturnValue(Effect.succeed(names) as any)
       const result = await listExpenseCategoriesAction()
-      expect(result).toEqual({ data: cats })
+      expect(result).toEqual({ data: names })
     })
   })
 
@@ -185,7 +179,7 @@ describe("Expense Actions", () => {
       mockGetLocationBalances.mockReturnValue(Effect.succeed({ cash: "1000000", bank: "0", strong_room: "0" }) as any)
 
       const result = await recordExpenseAction(validInput as any)
-      expect(result).toEqual({ success: true, resolvedCategory: { id: "cat-resolved", name: "Office Supplies" } })
+      expect(result).toEqual({ success: true })
       expect(mockRevalidatePath).toHaveBeenCalledWith("/expenses")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/transactions")
     })
@@ -216,22 +210,4 @@ describe("Expense Actions", () => {
     })
   })
 
-  // ===== createExpenseCategoryAction =====
-  describe("createExpenseCategoryAction", () => {
-    it("returns error when not authenticated", async () => {
-      mockGetSession.mockResolvedValue(null as any)
-      const result = await createExpenseCategoryAction({ name: "Rent", type: "expense" } as any)
-      expect(result).toEqual({ error: "Unauthorized" })
-    })
-
-    it("creates category on success", async () => {
-      mockGetSession.mockResolvedValue(fakeSession)
-      const cat = { id: "cat1", name: "Rent" }
-      mockCreateCategory.mockReturnValue(Effect.succeed(cat) as any)
-
-      const result = await createExpenseCategoryAction({ name: "Rent", type: "expense" } as any)
-      expect(result).toEqual({ data: cat })
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/expenses")
-    })
-  })
 })

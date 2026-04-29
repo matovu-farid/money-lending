@@ -108,7 +108,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await Effect.runPromise(
       recordExpense(
         {
-          categoryId: "cat-1",
+          categoryName: "Office Supplies",
           amount: "50000",
           transactionDate: "2026-03-01",
           notes: "Office supplies",
@@ -130,7 +130,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     await Effect.runPromise(
       recordExpense(
         {
-          categoryId: "cat-1",
+          categoryName: "Office Supplies",
           amount: "50000",
           transactionDate: "2026-03-01",
           notes: "Office supplies",
@@ -163,7 +163,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await Effect.runPromise(
       recordExpense(
         {
-          categoryId: "cat-1",
+          categoryName: "Office Supplies",
           amount: "50000",
           transactionDate: "2026-03-01",
           location: "cash",
@@ -180,7 +180,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const exit = await Effect.runPromiseExit(
       recordExpense(
-        { categoryId: "cat-1", amount: "50000", transactionDate: "2026-03-01", location: "cash" },
+        { categoryName: "Office Supplies", amount: "50000", transactionDate: "2026-03-01", location: "cash" },
         "actor-1"
       )
     )
@@ -197,7 +197,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await Effect.runPromise(
       recordIncome(
         {
-          categoryId: "cat-2",
+          categoryName: "Consulting",
           amount: "100000",
           transactionDate: "2026-03-01",
           notes: "Application fee",
@@ -219,7 +219,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     await Effect.runPromise(
       recordIncome(
         {
-          categoryId: "cat-2",
+          categoryName: "Consulting",
           amount: "100000",
           transactionDate: "2026-03-01",
           location: "cash",

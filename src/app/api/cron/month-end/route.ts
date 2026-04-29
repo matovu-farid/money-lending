@@ -4,7 +4,7 @@ import { accrueInterestForLoans, accrueInterestForCreditors } from "@/services/t
 import { NextResponse } from "next/server"
 import { periodBoundsUTC } from "@/lib/date-utils"
 
-export async function POST(request: Request) {
+export async function GET(request: Request) {
   // Fail-closed: reject if CRON_SECRET is not configured
   if (!process.env.CRON_SECRET) {
     return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 })

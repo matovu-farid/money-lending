@@ -11,7 +11,7 @@ import { toast } from "sonner"
 import { useSession } from "@/lib/auth-client"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PermissionInfo } from "@/components/ui/permission-info"
-import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS } from "@/lib/constants"
+import { DEPOSIT_LOCATION_OPTIONS, DEPOSIT_LOCATION_SHORT_LABELS, PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
 import { generateClientId } from "@/lib/client-id"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -302,6 +302,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 label="Amount (UGX)"
                 required="Amount is required"
                 id="injectionAmount"
+                presets={PRINCIPAL_AMOUNT_PRESETS}
               />
 
               <div className="space-y-1">
@@ -416,6 +417,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                 label="Amount (UGX)"
                 required="Amount is required"
                 id="transferAmount"
+                presets={PRINCIPAL_AMOUNT_PRESETS}
               />
 
               <div className="space-y-1">

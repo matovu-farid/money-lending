@@ -1,49 +1,41 @@
 // src/lib/interest/overdue-client.ts
 // Pure client-safe overdue computation. No DB access, no server imports.
 //
-// For PERPETUAL loans this replicates the server-side
-// `computeLoanOverdueInfo` formula exactly:
-//   daysOverdue = floor(unpaidInterest / dailyRate)
-// where dailyRate = currentBalance × (baseRate / 30).
+// Implements the formula documented in the loans-page InfoPopover:
 //
-// "unpaidInterest" is the value stored in `loan_balances.unpaid_interest`
-// (the net balance of the Interest Earned ledger account), which equals the
-// server's `totalInterestAccrued − totalInterestPaid` for the same loan.
+//   Total Interest Accrued = currentBalance × (rate / 30) × daysSinceStart
+//   Days Overdue           = (Total Interest Accrued − Total Interest Paid) ÷ Daily Interest Amount
 //
-// For TERM loans (fixed_rate, reducing_balance) the server uses
-//   daysOverdue = missedPayments × 30 (requires `paymentCount`)
-// which is NOT stored in the projection. The same
-//   floor(unpaidInterest / dailyRate)
-// formula is used here as the best available approximation.  It will differ
-// from the server by up to ±1 day due to amortization schedule rounding; the
-// difference is cosmetic and does not affect the 60-day penalty threshold.
+// where Daily Interest Amount = currentBalance × (rate / 30).
+//
+// Total Interest Paid is sourced from the `loan_balances` projection, which
+// stores the net Interest Earned ledger balance for each loan. That value
+// approximates cumulative cash interest paid (it is exact at steady state —
+// after each payment the accrual cron's reversal entries cancel out).
 //
 // Precision: mirrors engine.ts BigNumber config exactly.
 
 import BigNumber from "bignumber.js"
 import type { LoanBaseRow } from "@/lib/schemas/collections"
 
-// Mirror the precision config from engine.ts so BigNumber divisions match
-// the server's arithmetic exactly.
 BigNumber.config({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
 
 /**
- * Compute days overdue for a loan given its raw loan row, the unpaid-interest
- * amount from the loan_balances projection, the outstanding balance, and the
- * current date.
+ * Compute days overdue for a loan given its raw loan row, the cumulative
+ * interest paid, the outstanding balance, and the current date.
  *
- * @param loan              Subset of the raw loan row (from loanCollection).
- * @param unpaidInterest    `loan_balances.unpaidInterest` — net balance of the
- *                          Interest Earned account (= totalInterestAccrued − paid).
+ * @param loan               Subset of the raw loan row (from loanCollection).
+ * @param totalInterestPaid  `loan_balances.unpaidInterest` from the projection
+ *                           — net Interest Earned ledger balance (proxies
+ *                           cumulative cash interest paid).
  * @param outstandingBalance `loan_balances.outstandingBalance` — current principal.
- * @param today             Caller-supplied date. DO NOT use `new Date()` inside
- *                          — pass it in so callers control it (testability + SSR).
+ * @param today              Caller-supplied date — pass it in for testability.
  *
  * Returns 0 when:
  * - the loan is not active
  * - today <= startDate
- * - unpaidInterest is zero or negative
- * - dailyRate is zero (zero-rate loan)
+ * - dailyInterestAmount is zero (zero-rate loan)
+ * - paid >= accrued (no unpaid interest)
  */
 export function computeDaysOverdue(
   loan: Pick<
@@ -56,37 +48,81 @@ export function computeDaysOverdue(
     | "minInterestDays"
     | "startDate"
   >,
-  unpaidInterest: string,
+  totalInterestPaid: string,
   outstandingBalance: string,
   today: Date,
 ): number {
   if (loan.status !== "active") return 0
 
-  // Guard: today must be after startDate
   const startDate = loan.startDate instanceof Date ? loan.startDate : new Date(loan.startDate as string)
   if (today.getTime() <= startDate.getTime()) return 0
 
-  // Mirror server: use interestRateOverride when set (getBaseRate semantics from effective-rate.ts).
+  // Mirror server: use interestRateOverride when set (getBaseRate semantics).
   const baseRate = loan.interestRateOverride ?? loan.interestRate ?? "0"
 
-  // Mirror server perpetual path: use outstanding balance (not original principal).
-  // Falls back to principalAmount when outstandingBalance is zero/absent.
+  // Mirror server perpetual path: use outstanding balance (falls back to
+  // principalAmount when the projection has not yet recorded a balance).
   const currentBalance =
     new BigNumber(outstandingBalance).isGreaterThan(0)
       ? outstandingBalance
       : (loan.principalAmount ?? "0")
 
-  // dailyInterestAmount = currentBalance × (baseRate / 30)
-  // Mirrors: calculateDailyRate(baseRate) then balance × dailyRate
   const dailyRateBN = new BigNumber(baseRate).dividedBy(30)
   const dailyInterestAmount = new BigNumber(currentBalance).multipliedBy(dailyRateBN)
   if (dailyInterestAmount.isZero()) return 0
 
-  // unpaidInterest is the projection's net Interest Earned balance,
-  // which equals totalInterestAccrued − totalInterestPaid in steady state.
-  const unpaidBN = new BigNumber(unpaidInterest)
-  if (unpaidBN.isLessThanOrEqualTo(0)) return 0
+  const daysSinceStart = Math.floor(
+    (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  )
+  const totalAccrued = dailyInterestAmount.multipliedBy(daysSinceStart)
+  const paid = new BigNumber(totalInterestPaid)
+  const unpaid = BigNumber.max(totalAccrued.minus(paid), 0)
+  if (unpaid.isZero()) return 0
 
-  // Mirror server's calculateDaysOverdue: floor(unpaid / dailyRate)
-  return Math.floor(unpaidBN.dividedBy(dailyInterestAmount).toNumber())
+  return Math.floor(unpaid.dividedBy(dailyInterestAmount).toNumber())
+}
+
+/**
+ * Compute the unpaid-interest amount (`accruedToDate − paid`, clamped at 0)
+ * for display in the legacy `LoanListEntry.unpaidInterest` field.
+ *
+ * Uses the same formula as `computeDaysOverdue` so the Total Due column,
+ * the OverdueBadge, and the exported Excel columns all agree.
+ */
+export function computeUnpaidInterest(
+  loan: Pick<
+    LoanBaseRow,
+    | "status"
+    | "loanType"
+    | "principalAmount"
+    | "interestRate"
+    | "interestRateOverride"
+    | "minInterestDays"
+    | "startDate"
+  >,
+  totalInterestPaid: string,
+  outstandingBalance: string,
+  today: Date,
+): string {
+  if (loan.status !== "active") return "0"
+
+  const startDate = loan.startDate instanceof Date ? loan.startDate : new Date(loan.startDate as string)
+  if (today.getTime() <= startDate.getTime()) return "0"
+
+  const baseRate = loan.interestRateOverride ?? loan.interestRate ?? "0"
+  const currentBalance =
+    new BigNumber(outstandingBalance).isGreaterThan(0)
+      ? outstandingBalance
+      : (loan.principalAmount ?? "0")
+
+  const dailyRateBN = new BigNumber(baseRate).dividedBy(30)
+  const dailyInterestAmount = new BigNumber(currentBalance).multipliedBy(dailyRateBN)
+  if (dailyInterestAmount.isZero()) return "0"
+
+  const daysSinceStart = Math.floor(
+    (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+  )
+  const totalAccrued = dailyInterestAmount.multipliedBy(daysSinceStart)
+  const unpaid = BigNumber.max(totalAccrued.minus(new BigNumber(totalInterestPaid)), 0)
+  return unpaid.toFixed(0)
 }

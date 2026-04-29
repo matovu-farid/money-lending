@@ -2,7 +2,7 @@
 
 import { useMemo } from "react"
 import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
-import { incomeCollection, getRecentIncomeCategoryName } from "@/collections/income"
+import { incomeCollection } from "@/collections/income"
 import { incomeCategoryCollection } from "@/collections/income-categories"
 import { IncomeListClient } from "./IncomeListClient"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -44,33 +44,23 @@ function IncomeContent() {
   )
 
   const { data: rawCategories, isLoading: categoriesLoading } = useLiveQuery((q) =>
-    q
-      .from({ c: incomeCategoryCollection })
-      .where(({ c }) => eq(c.type, "revenue"))
-      .select(({ c }) => c)
+    q.from({ c: incomeCategoryCollection }).select(({ c }) => c)
   )
 
   const isInitialLoading =
     (incomeLoading && !allIncome) || (categoriesLoading && !rawCategories)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const categories = (rawCategories ?? []) as any[]
+  const categories = useMemo(
+    () => (rawCategories ?? []).map((r) => r.name),
+    [rawCategories]
+  )
 
-  // Resolve categoryName from the category collection (Electric shapes don\'t JOIN)
   const transactions: TransactionRow[] = useMemo(() => {
-    const catMap = new Map<string, string>()
-    for (const c of categories) {
-      catMap.set(c.id, c.name)
-    }
     return ((allIncome ?? []) as unknown as TransactionShapeRow[]).map((i) => ({
       id: i.id,
       type: i.type,
       amount: i.amount,
       categoryId: i.categoryId,
-      categoryName:
-        catMap.get(i.categoryId)
-        ?? getRecentIncomeCategoryName(i.categoryId)
-        ?? i.categoryName
-        ?? "Unknown",
+      category: i.category ?? "Unknown",
       description: i.description,
       transactionDate: new Date(i.transactionDate),
       recordedBy: i.recordedBy,
@@ -78,7 +68,7 @@ function IncomeContent() {
       referenceId: i.referenceId,
       createdAt: new Date(i.createdAt),
     }))
-  }, [allIncome, categories])
+  }, [allIncome])
 
   if (isInitialLoading) {
     return <LoadingSkeleton />

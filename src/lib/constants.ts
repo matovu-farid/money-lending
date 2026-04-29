@@ -45,3 +45,13 @@ export const AMOUNT_PRESETS = [
   { label: "1M", value: "1000000" },
   { label: "2M", value: "2000000" },
 ] as const
+
+/** Larger amount presets for principal-sized money (loans, investments, capital movements) */
+export const PRINCIPAL_AMOUNT_PRESETS = [
+  { label: "1M", value: "1000000" },
+  { label: "2M", value: "2000000" },
+  { label: "5M", value: "5000000" },
+  { label: "10M", value: "10000000" },
+  { label: "20M", value: "20000000" },
+  { label: "50M", value: "50000000" },
+] as const

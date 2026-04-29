@@ -10,7 +10,7 @@ import { formatAmount } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { toLoanType } from "@/types"
 
-export async function POST(request: NextRequest) {
+export async function GET(request: NextRequest) {
   // Fail-closed: reject if CRON_SECRET is not configured
   if (!process.env.CRON_SECRET) {
     return Response.json({ error: "CRON_SECRET not configured" }, { status: 500 })

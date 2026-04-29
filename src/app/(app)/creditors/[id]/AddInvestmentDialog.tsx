@@ -18,6 +18,7 @@ import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import { todayDateString } from "@/lib/utils"
+import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
 
 interface Props {
   creditorId: string
@@ -101,6 +102,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
             placeholder="e.g. 5,000,000"
             disabled={isPending}
             id="inv-amount"
+            presets={PRINCIPAL_AMOUNT_PRESETS}
           />
 
           <div className="space-y-1">

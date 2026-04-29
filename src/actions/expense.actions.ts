@@ -6,23 +6,24 @@ import { withAction } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
-import { createCategory, deleteCategory, listCategories } from "@/services/category.service"
+import { listDistinctTransactionCategories } from "@/services/category.service"
 import { getLocationBalances } from "@/services/report.service"
-import type { CreateTransactionInput, CreateCategoryInput, UserRole } from "@/types"
+import type { CreateTransactionInput, UserRole } from "@/types"
 
 export const listExpenseTransactionsAction = withAction({
   permission: "expense:read",
   effect: () => listTransactions({ type: "debit", manualOnly: true }, 1, 50),
 })
 
+/** Returns distinct user-typed expense categories for the combobox dropdown. */
 export const listExpenseCategoriesAction = withAction({
   permission: "expense:read",
-  effect: () => listCategories("expense"),
+  effect: () => listDistinctTransactionCategories("debit"),
 })
 
 export const recordExpenseAction = withAction<
   CreateTransactionInput,
-  { success: true; resolvedCategory: { id: string; name: string } } | { error: string }
+  { success: true } | { error: string }
 >({
   permission: "expense:create",
   action: async (session, input) => {
@@ -81,13 +82,10 @@ export const recordExpenseAction = withAction<
     }
 
     try {
-      const debitTx = await Effect.runPromise(recordExpense(input, session.user.id))
+      await Effect.runPromise(recordExpense(input, session.user.id))
       revalidatePath("/expenses")
       revalidatePath("/transactions")
-      return {
-        success: true as const,
-        resolvedCategory: { id: debitTx.categoryId, name: input.categoryName.trim() },
-      }
+      return { success: true as const }
     } catch (err) {
       console.error("[recordExpenseAction]", err)
       return { error: "Internal server error" }
@@ -99,16 +97,4 @@ export const deleteExpenseAction = withAction<string, any>({
   permission: "expense:create",
   effect: (session, id) => deleteTransaction(id, session.user.id, getUserRole(session) as string),
   revalidate: ["/expenses", "/transactions"],
-})
-
-export const createExpenseCategoryAction = withAction<CreateCategoryInput, any>({
-  permission: "expense:create",
-  effect: (session, input) => createCategory(input, session.user.id),
-  revalidate: ["/expenses"],
-})
-
-export const deleteExpenseCategoryAction = withAction<string, any>({
-  permission: "expense:create",
-  effect: (session, id) => deleteCategory(id, session.user.id),
-  revalidate: ["/expenses"],
 })

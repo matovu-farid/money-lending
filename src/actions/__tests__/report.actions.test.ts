@@ -148,9 +148,9 @@ describe("Report Actions", () => {
   describe("getTransactionReportDataAction", () => {
     it("deduplicates categories from transactions", async () => {
       const transactions = [
-        { id: "t1", categoryName: "Interest", type: "income", amount: "100" },
-        { id: "t2", categoryName: "Rent", type: "expense", amount: "200" },
-        { id: "t3", categoryName: "Interest", type: "income", amount: "150" },
+        { id: "t1", category: "Interest", type: "income", amount: "100" },
+        { id: "t2", category: "Rent", type: "expense", amount: "200" },
+        { id: "t3", category: "Interest", type: "income", amount: "150" },
       ]
       mockListTransactions.mockReturnValue(
         Effect.succeed({ data: transactions, total: 3 }) as any,

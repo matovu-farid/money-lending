@@ -27,7 +27,7 @@ import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
 import { usePermissions } from "@/hooks/use-permissions"
 import { PageHeader } from "@/components/ui/page-header"
-import type { TransactionRow, TransactionShapeRow, CategoryRow, DepositLocation } from "@/types"
+import type { TransactionRow, TransactionShapeRow, DepositLocation } from "@/types"
 
 interface TransactionFormValues {
   date: string
@@ -41,7 +41,8 @@ interface TransactionFormValues {
 
 interface TransactionListClientProps {
   transactions: TransactionRow[]
-  categories: CategoryRow[]
+  /** Distinct user-typed category labels for the searchable combobox. */
+  categories: string[]
   /** "income" or "expense" — drives labels and optimistic transaction type */
   variant: "income" | "expense"
 }
@@ -162,11 +163,12 @@ export function TransactionListClient({
   const isBackdated = backdateDays > 0
 
   // Filtered category suggestions for the combobox dropdown.
-  // Categories are reference data; the typed name is what gets persisted.
+  // The user can pick a previously-typed name or freely type a new one —
+  // either way the typed string is what gets persisted.
   const filteredCategories = useMemo(() => {
     const q = watchedCategoryName.trim().toLowerCase()
     if (!q) return initialCategories
-    return initialCategories.filter((c) => c.name.toLowerCase().includes(q))
+    return initialCategories.filter((name) => name.toLowerCase().includes(q))
   }, [initialCategories, watchedCategoryName])
 
   function onFormSubmit(data: TransactionFormValues) {
@@ -179,21 +181,17 @@ export function TransactionListClient({
         return
       }
 
-      // Best-effort: if the typed name matches an existing category, reuse its
-      // id for the optimistic row so the table shows the right name immediately.
-      // Otherwise the row briefly shows the typed name from the form input
-      // until the synced row arrives with the server-resolved categoryId.
-      const matched = initialCategories.find(
-        (c) => c.name.toLowerCase() === categoryName.toLowerCase(),
-      )
-
       const id = generateClientId()
       const optimistic: TransactionShapeRow = {
         id,
         type: labels.txType,
         amount: data.amount,
-        categoryId: matched?.id ?? "",
-        categoryName,
+        // categoryId is a uuid in the schema and points at the sentinel
+        // (User Expense / User Revenue) once the server resolves it. The
+        // optimistic row uses a placeholder so schema validation passes;
+        // the synced row replaces it.
+        categoryId: generateClientId(),
+        category: categoryName,
         description: data.notes || null,
         transactionDate: new Date(data.date),
         recordedBy: "",
@@ -206,7 +204,6 @@ export function TransactionListClient({
         createdAt: new Date(),
       }
       const metadata: IncomeInsertMetadata & ExpenseInsertMetadata = {
-        categoryName,
         location: data.location,
         subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
         backdateNote: data.backdateNote?.trim() || undefined,
@@ -236,8 +233,8 @@ export function TransactionListClient({
     }
   }
 
-  function handleSelectCategory(cat: CategoryRow) {
-    setValue("categoryName", cat.name, { shouldValidate: true })
+  function handleSelectCategory(name: string) {
+    setValue("categoryName", name, { shouldValidate: true })
     setCategoryDropdownOpen(false)
   }
 
@@ -264,7 +261,7 @@ export function TransactionListClient({
               key: "category",
               header: "Category",
               primary: true,
-              render: (tx) => tx.categoryName,
+              render: (tx) => tx.category,
             },
             {
               key: "amount",
@@ -396,14 +393,14 @@ export function TransactionListClient({
                       onMouseDown={(e) => e.preventDefault()}
                     >
                       <ul className="py-1">
-                        {filteredCategories.map((cat) => (
-                          <li key={cat.id}>
+                        {filteredCategories.map((name) => (
+                          <li key={name}>
                             <button
                               type="button"
                               className="w-full text-left px-3 py-2 text-sm hover:bg-muted transition-colors"
-                              onClick={() => handleSelectCategory(cat)}
+                              onClick={() => handleSelectCategory(name)}
                             >
-                              {cat.name}
+                              {name}
                             </button>
                           </li>
                         ))}

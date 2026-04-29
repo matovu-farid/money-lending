@@ -23,18 +23,6 @@ function findColumnNames(node: any): string[] {
 let capturedPaymentsWhere: unknown = undefined
 
 vi.mock("@/lib/db", () => {
-  // Chainable mock that records the WHERE clause for the payments query
-  const chainable = (overrides: Record<string, unknown> = {}) => {
-    const self: Record<string, any> = {}
-    for (const m of ["select", "from", "where", "orderBy"] as const) {
-      self[m] = vi.fn().mockReturnValue(self)
-    }
-    // Resolve to empty array by default (acts as thenable)
-    self.then = (resolve: any) => resolve([])
-    Object.assign(self, overrides)
-    return self
-  }
-
   const mockDb = {
     select: vi.fn().mockImplementation(() => {
       const chain: Record<string, any> = {}
@@ -101,7 +89,7 @@ vi.mock("@/lib/interest/engine", () => ({
 // ── helpers ────────────────────────────────────────────────────────────
 function buildRequest() {
   return new Request("http://localhost/api/cron/overdue", {
-    method: "POST",
+    method: "GET",
     headers: { authorization: "Bearer test-secret" },
   }) as any
 }
@@ -193,8 +181,8 @@ describe("Overdue cron – payment query filters", () => {
     })
 
     // Act
-    const { POST } = await import("@/app/api/cron/overdue/route")
-    await POST(buildRequest())
+    const { GET } = await import("@/app/api/cron/overdue/route")
+    await GET(buildRequest())
 
     // Assert – the WHERE clause for the payments query must include
     // eq(payments.markedWrong, false) alongside the other filters.

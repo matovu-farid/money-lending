@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { formatCurrency, todayDateString } from "@/lib/utils"
+import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
 import type { CreditorInvestment } from "@/types"
 
 interface Props {
@@ -156,6 +157,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
             placeholder="e.g. 500,000"
             disabled={isPending}
             id="repay-amount"
+            presets={PRINCIPAL_AMOUNT_PRESETS}
           />
 
           <div className="space-y-1">
