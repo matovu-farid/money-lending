@@ -76,6 +76,21 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
     // Drop any cached permissions for the target user so the new role
     // takes effect immediately rather than within the 30 s TTL window.
     invalidateUserPermissions(userId)
+
+    // Force-logout the target so they re-authenticate and pick up the new
+    // role. Without this, their existing session keeps stale role data on
+    // the client and they appear to retain old permissions until logout.
+    // Revoke failure must not mask the successful role change — at worst
+    // the user keeps old perms until the cookieCache window (~15 min) expires.
+    try {
+      await auth.api.revokeUserSessions({
+        body: { userId },
+        headers: await headers(),
+      })
+    } catch (err) {
+      console.warn("[assignRole] Failed to revoke sessions after role change", { userId, err })
+    }
+
     return { data: { role: targetRole } }
   } catch {
     return { error: "Failed to update role" }

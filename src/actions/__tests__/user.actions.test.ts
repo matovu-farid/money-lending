@@ -20,6 +20,7 @@ vi.mock("@/lib/auth", () => ({
     api: {
       getUser: vi.fn(),
       setRole: vi.fn(),
+      revokeUserSessions: vi.fn(),
     },
   },
 }))
@@ -38,6 +39,7 @@ import { fakeSession, lowRoleSession, superAdminSession, supervisorSession, loan
 const mockGetSession = vi.mocked(getSession)
 const mockGetUser = vi.mocked(auth.api.getUser)
 const mockSetRole = vi.mocked(auth.api.setRole)
+const mockRevokeUserSessions = vi.mocked(auth.api.revokeUserSessions)
 
 // ---------- Tests ----------
 
@@ -201,5 +203,46 @@ describe("User Actions — assignRole", () => {
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
 
     expect(result).toEqual({ data: { role: "loanOfficer" } })
+  })
+
+  // ===== Session revocation =====
+  it("revokes target user sessions on successful role change", async () => {
+    mockGetSession.mockResolvedValue(fakeSession) // admin level 3
+    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
+    mockSetRole.mockResolvedValue(undefined as any)
+    mockRevokeUserSessions.mockResolvedValue(undefined as any)
+
+    const result = await assignRole({ userId: "u9", role: "loanOfficer" })
+
+    expect(result).toEqual({ data: { role: "loanOfficer" } })
+    expect(mockRevokeUserSessions).toHaveBeenCalledWith({
+      body: { userId: "u9" },
+      headers: expect.anything(),
+    })
+  })
+
+  it("does not revoke sessions when role change fails", async () => {
+    mockGetSession.mockResolvedValue(fakeSession)
+    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
+    mockSetRole.mockRejectedValue(new Error("setRole failed"))
+
+    const result = await assignRole({ userId: "u9", role: "loanOfficer" })
+
+    expect(result).toEqual({ error: "Failed to update role" })
+    expect(mockRevokeUserSessions).not.toHaveBeenCalled()
+  })
+
+  it("succeeds even if session revocation fails", async () => {
+    mockGetSession.mockResolvedValue(fakeSession)
+    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
+    mockSetRole.mockResolvedValue(undefined as any)
+    mockRevokeUserSessions.mockRejectedValue(new Error("revoke failed"))
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
+
+    const result = await assignRole({ userId: "u9", role: "loanOfficer" })
+
+    expect(result).toEqual({ data: { role: "loanOfficer" } })
+    expect(warnSpy).toHaveBeenCalled()
+    warnSpy.mockRestore()
   })
 })
