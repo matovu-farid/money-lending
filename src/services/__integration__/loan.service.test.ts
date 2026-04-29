@@ -20,7 +20,7 @@ async function makeCustomer(overrides = {}) {
   return Effect.runPromise(
     createCustomer({
       fullName: "Test Customer",
-      nin: "CM00000000TEST",
+      nin: "C0000000000000",
       contact: "+256700000000",
       address: "Kampala, Uganda",
       ...overrides,
@@ -127,7 +127,7 @@ describe("Loan Service — Integration", () => {
       .insert(customers)
       .values({
         fullName: "Incomplete",
-        nin: "CM00000000TEST",
+        nin: "C0000000000000",
         contact: "+256700000000",
         address: "",
       })

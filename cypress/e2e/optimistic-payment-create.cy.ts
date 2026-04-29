@@ -11,7 +11,7 @@ describe("Optimistic Payment Recording", () => {
         cy.task("db:seedCustomerAndLoan", {
           customerName: "Payment Borrower",
           contact: "0771000002",
-          nin: "CM97027102X4CU",
+          nin: "C1234567890123",
           principalAmount: "500000",
           issuedBy: user.userId,
         }).then((result: any) => {

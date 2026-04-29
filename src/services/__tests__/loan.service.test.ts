@@ -34,7 +34,7 @@ vi.mock("drizzle-orm", async () => {
 const baseCustomer = {
   id: "cust-1",
   fullName: "John Doe",
-  nin: "CM00000000TEST",
+  nin: "C0000000000000",
   contact: "+256700000000",
   address: "Plot 12, Kampala",
   status: "active",

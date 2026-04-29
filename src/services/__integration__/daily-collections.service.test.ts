@@ -17,7 +17,7 @@ async function makeCustomer(overrides: { fullName?: string; contact?: string } =
   return Effect.runPromise(
     createCustomer({
       fullName: overrides.fullName ?? "Test Customer",
-      nin: "CM00000000TEST",
+      nin: "C0000000000000",
       contact: overrides.contact ?? "+256700000000",
       address: "Kampala, Uganda",
     })

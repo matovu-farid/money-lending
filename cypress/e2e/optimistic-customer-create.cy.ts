@@ -10,7 +10,7 @@ describe("Optimistic Customer Creation", () => {
 
     // Fill form fields
     cy.get("#fullName").type("John Mukasa")
-    cy.get("#nin").type("CM97027102X4CU")
+    cy.get("#nin").type("C1234567890123")
     cy.get("#contact").type("0771234567")
     cy.get("#address").type("Kampala, Uganda")
 
@@ -40,7 +40,7 @@ describe("Optimistic Customer Creation", () => {
 
     // Fill form fields first
     cy.get("#fullName").type("Failed Customer")
-    cy.get("#nin").type("CM97027102X4CU")
+    cy.get("#nin").type("C1234567890123")
     cy.get("#contact").type("0771234567")
     cy.get("#address").type("Kampala, Uganda")
 

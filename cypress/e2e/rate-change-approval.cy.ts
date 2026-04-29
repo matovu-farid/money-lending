@@ -18,7 +18,7 @@ describe("Rate Change Approval Flow", () => {
     cy.visit("/customers")
     cy.contains("Add Customer").click()
     cy.get("#fullName").type("Rate Test Customer")
-    cy.get("#nin").type("CM1234567890123")
+    cy.get("#nin").type("C1234567890123")
     cy.get("#contact").type("0700111222")
     cy.get("#address").type("Test Address")
     cy.get("button[type=submit]").click()

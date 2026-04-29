@@ -34,7 +34,7 @@ async function makeCustomer() {
   return Effect.runPromise(
     createCustomer({
       fullName: "Test Customer",
-      nin: "CM00000000TEST",
+      nin: "C0000000000000",
       contact: "+256700000000",
       address: "Kampala, Uganda",
     })
@@ -682,8 +682,8 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     })
 
     it("searches by customerName case-insensitively (PAY-05)", async () => {
-      const c1 = await Effect.runPromise(createCustomer({ fullName: "John Mukasa", nin: "CM00000000TEST", contact: "+256700000001", address: "Kampala" }))
-      const c2 = await Effect.runPromise(createCustomer({ fullName: "Jane Nakato", nin: "CM00000000TEST", contact: "+256700000002", address: "Entebbe" }))
+      const c1 = await Effect.runPromise(createCustomer({ fullName: "John Mukasa", nin: "C0000000000000", contact: "+256700000001", address: "Kampala" }))
+      const c2 = await Effect.runPromise(createCustomer({ fullName: "Jane Nakato", nin: "C0000000000000", contact: "+256700000002", address: "Entebbe" }))
       const l1 = await makeLoan(c1.id)
       const l2 = await makeLoan(c2.id)
       await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
@@ -741,8 +741,8 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     })
 
     it("combines multiple filters (date + amount + customer name)", async () => {
-      const c1 = await Effect.runPromise(createCustomer({ fullName: "Alice Mukasa", nin: "CM00000000TEST", contact: "+256700000003", address: "Kampala" }))
-      const c2 = await Effect.runPromise(createCustomer({ fullName: "Bob Kato", nin: "CM00000000TEST", contact: "+256700000004", address: "Entebbe" }))
+      const c1 = await Effect.runPromise(createCustomer({ fullName: "Alice Mukasa", nin: "C0000000000000", contact: "+256700000003", address: "Kampala" }))
+      const c2 = await Effect.runPromise(createCustomer({ fullName: "Bob Kato", nin: "C0000000000000", contact: "+256700000004", address: "Entebbe" }))
       const l1 = await makeLoan(c1.id, "5000000.00")
       const l2 = await makeLoan(c2.id, "5000000.00")
 
@@ -765,8 +765,8 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
     })
 
     it("returns payments across multiple loans and customers", async () => {
-      const c1 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan A", nin: "CM00000000TEST", contact: "+256700000005", address: "A" }))
-      const c2 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan B", nin: "CM00000000TEST", contact: "+256700000006", address: "B" }))
+      const c1 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan A", nin: "C0000000000000", contact: "+256700000005", address: "A" }))
+      const c2 = await Effect.runPromise(createCustomer({ fullName: "Multi Loan B", nin: "C0000000000000", contact: "+256700000006", address: "B" }))
       const l1 = await makeLoan(c1.id)
       const l2 = await makeLoan(c2.id)
       await Effect.runPromise(recordPayment({ loanId: l1.id, paymentDate: "2025-02-01", amount: "50000.00", depositLocation: "cash" }, "test-actor"))
@@ -842,7 +842,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
   describe("searchActiveLoans", () => {
     it("returns active loans matching customer name (case-insensitive partial match)", async () => {
       const customer = await Effect.runPromise(
-        createCustomer({ fullName: "Sarah Mutesi", nin: "CM00000000TEST", contact: "+256700000010", address: "Kampala" })
+        createCustomer({ fullName: "Sarah Mutesi", nin: "C0000000000000", contact: "+256700000010", address: "Kampala" })
       )
       const loan = await makeLoan(customer.id)
 
@@ -863,7 +863,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
     it("does not return fully_paid loans", async () => {
       const customer = await Effect.runPromise(
-        createCustomer({ fullName: "Fully Paid Customer", nin: "CM00000000TEST", contact: "+256700000011", address: "Kampala" })
+        createCustomer({ fullName: "Fully Paid Customer", nin: "C0000000000000", contact: "+256700000011", address: "Kampala" })
       )
       const loan = await makeLoan(customer.id, "100000.00", "0.10")
 
@@ -881,7 +881,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
     it("does not return soft-deleted loans", async () => {
       const customer = await Effect.runPromise(
-        createCustomer({ fullName: "Deleted Loan Customer", nin: "CM00000000TEST", contact: "+256700000012", address: "Kampala" })
+        createCustomer({ fullName: "Deleted Loan Customer", nin: "C0000000000000", contact: "+256700000012", address: "Kampala" })
       )
       const loan = await makeLoan(customer.id)
 
@@ -947,10 +947,10 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
     it("orders results by most recent payment first", async () => {
       const c1 = await Effect.runPromise(
-        createCustomer({ fullName: "Order Test Alpha", nin: "CM00000000TEST", contact: "+256700001001", address: "A" })
+        createCustomer({ fullName: "Order Test Alpha", nin: "C0000000000000", contact: "+256700001001", address: "A" })
       )
       const c2 = await Effect.runPromise(
-        createCustomer({ fullName: "Order Test Beta", nin: "CM00000000TEST", contact: "+256700001002", address: "B" })
+        createCustomer({ fullName: "Order Test Beta", nin: "C0000000000000", contact: "+256700001002", address: "B" })
       )
       const l1 = await makeLoan(c1.id, "5000000.00")
       const l2 = await makeLoan(c2.id, "5000000.00")
@@ -997,10 +997,10 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
     it("filters by recordedBy user — only sees own collected loans", async () => {
       const c1 = await Effect.runPromise(
-        createCustomer({ fullName: "User Filter Alpha", nin: "CM00000000TEST", contact: "+256700002001", address: "A" })
+        createCustomer({ fullName: "User Filter Alpha", nin: "C0000000000000", contact: "+256700002001", address: "A" })
       )
       const c2 = await Effect.runPromise(
-        createCustomer({ fullName: "User Filter Beta", nin: "CM00000000TEST", contact: "+256700002002", address: "B" })
+        createCustomer({ fullName: "User Filter Beta", nin: "C0000000000000", contact: "+256700002002", address: "B" })
       )
       const l1 = await makeLoan(c1.id, "5000000.00")
       const l2 = await makeLoan(c2.id, "5000000.00")
@@ -1037,7 +1037,7 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
         const customer = await Effect.runPromise(
           createCustomer({
             fullName: `Limit Test Customer ${i}`,
-            nin: "CM00000000TEST",
+            nin: "C0000000000000",
             contact: `+25670000300${i}`,
             address: "Kampala",
           })

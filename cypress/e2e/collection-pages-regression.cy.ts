@@ -32,7 +32,7 @@ describe("Collection Pages Regression", () => {
         cy.task("db:seedCustomerAndLoan", {
           customerName: "Loans Regression",
           contact: "0700100001",
-          nin: "CM12345678ABCD",
+          nin: "C0000000000001",
           principalAmount: "1000000",
           issuedBy: "seed-user", // issued_by is a text field
         }).then(() => {
@@ -54,7 +54,7 @@ describe("Collection Pages Regression", () => {
       cy.task("db:seedCustomerAndLoan", {
         customerName: "Customer Regression",
         contact: "0700200001",
-        nin: "CM98765432WXYZ",
+        nin: "C0000000000002",
         principalAmount: "500000",
         issuedBy: "seed-user",
       }).then(() => {
@@ -69,14 +69,14 @@ describe("Collection Pages Regression", () => {
       cy.task("db:seedCustomerAndLoan", {
         customerName: "Alpha Client",
         contact: "0700200002",
-        nin: "CM11111111AAAA",
+        nin: "C0000000000003",
         principalAmount: "500000",
         issuedBy: "seed-user",
       })
       cy.task("db:seedCustomerAndLoan", {
         customerName: "Beta Client",
         contact: "0700200003",
-        nin: "CM22222222BBBB",
+        nin: "C0000000000004",
         principalAmount: "500000",
         issuedBy: "seed-user",
       }).then(() => {
@@ -104,7 +104,7 @@ describe("Collection Pages Regression", () => {
       cy.task("db:seedCustomerAndLoan", {
         customerName: "Payment Regression",
         contact: "0700300001",
-        nin: "CM33333333CCCC",
+        nin: "C0000000000005",
         principalAmount: "1000000",
         issuedBy: "seed-user",
       }).then((result: any) => {
@@ -156,7 +156,7 @@ describe("Collection Pages Regression", () => {
       cy.task("db:seedCustomerAndLoan", {
         customerName: "Detail Regression",
         contact: "0700400001",
-        nin: "CM44444444DDDD",
+        nin: "C0000000000006",
         principalAmount: "2000000",
         issuedBy: "seed-user",
       }).then((result: any) => {
@@ -173,7 +173,7 @@ describe("Collection Pages Regression", () => {
       cy.task("db:seedCustomerAndLoan", {
         customerName: "Profile Regression",
         contact: "0700500001",
-        nin: "CM55555555EEEE",
+        nin: "C0000000000007",
         principalAmount: "750000",
         issuedBy: "seed-user",
       }).then((result: any) => {

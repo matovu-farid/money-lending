@@ -17,7 +17,7 @@ describe("loan_balances trigger", () => {
   it("upserts loan_balances when a transaction with a loanId is inserted", async () => {
     // Arrange: a customer, a loan, the Loans Receivable category.
     const [c] = await db.insert(customers).values({
-      fullName: "Test", nin: "CM00000000TEST", contact: "0700000000", address: "Kampala",
+      fullName: "Test", nin: "C0000000000000", contact: "0700000000", address: "Kampala",
     }).returning()
     const [l] = await db.insert(loans).values({
       customerId: c.id,
@@ -53,7 +53,7 @@ describe("loan_balances trigger", () => {
 
   it("subtracts a credit (payment) from outstanding_balance", async () => {
     const [c] = await db.insert(customers).values({
-      fullName: "Test", nin: "CM00000001TEST", contact: "0700000000", address: "Kampala",
+      fullName: "Test", nin: "C0000000000001", contact: "0700000000", address: "Kampala",
     }).returning()
     const [l] = await db.insert(loans).values({
       customerId: c.id,

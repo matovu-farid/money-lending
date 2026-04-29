@@ -3,14 +3,23 @@ import fc from "fast-check"
 import { validateNIN, validateUgandanPhone, validateFullName, validateRequired, validatePositiveDecimal } from "../validators"
 
 describe("validateNIN", () => {
-  it("accepts valid NIN", () => {
-    expect(validateNIN("CM97027102X4CU")).toBeNull()
+  it("accepts valid citizen NIN (starts with C, 13 digits)", () => {
+    expect(validateNIN("C1234567890123")).toBeNull()
+  })
+  it("accepts valid foreigner NIN (starts with A, 13 digits)", () => {
+    expect(validateNIN("A1234567890123")).toBeNull()
   })
   it("accepts lowercase (auto-uppercased)", () => {
-    expect(validateNIN("cm97027102x4cu")).toBeNull()
+    expect(validateNIN("c1234567890123")).toBeNull()
   })
   it("rejects short NIN", () => {
-    expect(validateNIN("CM9702")).not.toBeNull()
+    expect(validateNIN("C12345")).not.toBeNull()
+  })
+  it("rejects letters in trailing positions", () => {
+    expect(validateNIN("CM97027102X4CU")).not.toBeNull()
+  })
+  it("rejects wrong leading letter", () => {
+    expect(validateNIN("B1234567890123")).not.toBeNull()
   })
   it("rejects empty", () => {
     expect(validateNIN("")).not.toBeNull()
@@ -73,11 +82,11 @@ describe("validatePositiveDecimal", () => {
 describe("Property-Based: Validator Functions", () => {
   // ── Arbitraries ──────────────────────────────────────────
 
-  // Valid NIN: starts with C + 13 alphanumeric (14 chars total)
-  const arbValidNIN = fc.array(
-    fc.constantFrom("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","0","1","2","3","4","5","6","7","8","9"),
-    { minLength: 13, maxLength: 13 }
-  ).map((a) => `C${a.join("")}`)
+  // Valid NIN per Uganda spec: leading C (citizen) or A (foreigner) + 13 digits
+  const arbValidNIN = fc.tuple(
+    fc.constantFrom("C", "A"),
+    fc.array(fc.constantFrom("0","1","2","3","4","5","6","7","8","9"), { minLength: 13, maxLength: 13 }).map((a) => a.join("")),
+  ).map(([prefix, digits]) => `${prefix}${digits}`)
 
   // Valid phone: 07 + 8 digits
   const arbValidPhone07 = fc.array(
@@ -151,14 +160,11 @@ describe("Property-Based: Validator Functions", () => {
       expect(validateNIN(undefined)).not.toBeNull()
     })
 
-    it("rejects strings that don't start with C", () => {
+    it("rejects strings that don't start with C or A", () => {
       fc.assert(
         fc.property(
-          fc.constantFrom("A","B","D","E","X","Z","1","0"),
-          fc.array(
-            fc.constantFrom("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","0","1","2","3","4","5","6","7","8","9"),
-            { minLength: 13, maxLength: 13 }
-          ).map((a) => a.join("")),
+          fc.constantFrom("B","D","E","X","Z","1","0"),
+          fc.array(fc.constantFrom("0","1","2","3","4","5","6","7","8","9"), { minLength: 13, maxLength: 13 }).map((a) => a.join("")),
           (badStart, rest) => {
             return validateNIN(badStart + rest) !== null
           }
