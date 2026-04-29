@@ -157,9 +157,17 @@ export function computeSegmentedInterest(params: {
 
 /**
  * Formats a BigNumber amount to 2 decimal places for display and storage.
+ *
+ * Uses banker's rounding (ROUND_HALF_EVEN) to avoid directional drift when
+ * amounts are accumulated across many operations — e.g. cumulative principal
+ * paid across a stream of payments. The global BigNumber config uses
+ * ROUND_HALF_UP for general arithmetic; we override here for monetary output
+ * because half-up biases upward and breaks conservation-of-money invariants
+ * over long sequences of payments. Banker's rounding is the standard for
+ * financial display.
  */
 export function formatAmount(amount: BigNumber): string {
-  return amount.toFixed(2)
+  return amount.toFixed(2, BigNumber.ROUND_HALF_EVEN)
 }
 
 /** Compute outstanding balance = principal + one period of interest */

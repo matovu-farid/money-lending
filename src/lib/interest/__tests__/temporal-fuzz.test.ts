@@ -668,7 +668,7 @@ describe("FUZZ: Sequential Payment Simulation", () => {
         const paymentDate = new Date(prevDate.getTime() + daysToAdd * 86400000)
         const days = daysBetween(prevDate, paymentDate)
 
-        const interest = calculateInterest(balance.toFixed(0), rate, days, minDays)
+        const interest = calculateInterest(balance.toFixed(2), rate, days, minDays)
         const maxPayable = interest.plus(balance)
         if (maxPayable.isLessThanOrEqualTo(0)) break
 
@@ -676,7 +676,7 @@ describe("FUZZ: Sequential Payment Simulation", () => {
 
         const allocation = allocatePayment({
           paymentAmount,
-          principalBalanceBefore: balance.toFixed(0),
+          principalBalanceBefore: balance.toFixed(2),
           monthlyRateDecimal: rate,
           daysElapsed: days,
           minInterestDays: minDays,
