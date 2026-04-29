@@ -1,12 +1,11 @@
 "use server"
 
-import { validateInviteToken, acceptInvitation, markInvitationAccepted } from "@/services/invitation.service"
-import { auth } from "@/lib/auth"
-import { headers } from "next/headers"
+import { validateInviteToken, markInvitationAccepted } from "@/services/invitation.service"
 import { db } from "@/lib/db"
 import { eq } from "drizzle-orm"
 import { user } from "@/lib/db/schema/auth"
 import { invalidateUserPermissions } from "@/lib/action-utils"
+import type { UserRole } from "@/types"
 
 export async function getInviteDetails(token: string) {
   if (!token) return { error: "No invitation token provided" }
@@ -36,25 +35,46 @@ export async function prepareInviteAcceptance(token: string) {
   return { data: { success: true } }
 }
 
+/**
+ * Apply the invitation to the freshly-created user.
+ *
+ * Auth model: the invitation token IS the credential here. Possession of the
+ * token (sent only to the invitee's email) authorizes flipping emailVerified
+ * and assigning the role. We deliberately do NOT require a session — with
+ * `requireEmailVerification: true` in auth.ts, signUp.email creates the user
+ * but never establishes a session, so a session check would always 401.
+ */
 export async function finalizeInviteAcceptance(token: string) {
   if (!token) return { error: "No invitation token provided" }
 
   try {
-    const session = await auth.api.getSession({ headers: await headers() })
-    if (!session?.user) {
-      return { error: "Not authenticated" }
+    const result = await validateInviteToken(token)
+    if (!result.valid) return { error: result.error }
+    const { invitation } = result
+
+    // The user record was just created by signUp.email — find it by the
+    // invitation's email rather than by session (which doesn't exist yet).
+    const [u] = await db
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.email, invitation.email))
+      .limit(1)
+
+    if (!u) {
+      return { error: "User account not found — sign up first" }
     }
 
-    const { invitationId, role } = await acceptInvitation(token)
-
     await Promise.all([
-      db.update(user).set({ role, emailVerified: true }).where(eq(user.id, session.user.id)),
-      markInvitationAccepted(invitationId),
+      db
+        .update(user)
+        .set({ role: invitation.role as UserRole, emailVerified: true })
+        .where(eq(user.id, u.id)),
+      markInvitationAccepted(invitation.id),
     ])
 
-    // The user just got a real role assigned — flush any stale "unassigned"
-    // permission entries so the very next request reflects their new role.
-    invalidateUserPermissions(session.user.id)
+    // Flush stale "unassigned" permission entries so the next request reflects
+    // the new role immediately.
+    invalidateUserPermissions(u.id)
 
     return { data: { success: true } }
   } catch (e: any) {

@@ -4,7 +4,7 @@ import { useState, useEffect, useTransition, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
-import { signUp } from "@/lib/auth-client"
+import { signIn, signUp } from "@/lib/auth-client"
 import { getInviteDetails, prepareInviteAcceptance, finalizeInviteAcceptance } from "./actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -95,21 +95,45 @@ function AcceptInviteContent() {
         return
       }
 
-      // Create account client-side — session cookie set via HTTP response
+      // 1. Create the user record. With `requireEmailVerification: true` in
+      //    auth.ts this does NOT establish a session — the user is created
+      //    with emailVerified=false and no session cookie is set.
+      //
+      //    Self-healing: a half-failed prior attempt may have created the user
+      //    record without finalizing role/verify. In that case signUp errors
+      //    with "already exists" — we swallow that and let the steps below
+      //    repair the account using the password the user just typed.
       const signUpResult = await signUp.email({
         name: inviteData!.name,
         email: inviteData!.email,
         password: data.password,
       })
       if (signUpResult.error) {
-        setError("root", { message: signUpResult.error.message ?? "Failed to create account" })
-        return
+        const msg = (signUpResult.error.message ?? "").toLowerCase()
+        const alreadyExists = msg.includes("exist") || msg.includes("already")
+        if (!alreadyExists) {
+          setError("root", { message: signUpResult.error.message ?? "Failed to create account" })
+          return
+        }
       }
 
-      // User is now authenticated — set role and mark invitation accepted
+      // 2. Server-side: mark email verified (the invitee proved ownership by
+      //    clicking the email link) and assign their role. Auth here is the
+      //    invitation token itself, not a session.
       const finalResult = await finalizeInviteAcceptance(token)
       if ("error" in finalResult) {
         setError("root", { message: finalResult.error })
+        return
+      }
+
+      // 3. Now that emailVerified=true, signIn.email succeeds and sets the
+      //    session cookie.
+      const signInResult = await signIn.email({
+        email: inviteData!.email,
+        password: data.password,
+      })
+      if (signInResult.error) {
+        setError("root", { message: signInResult.error.message ?? "Failed to sign in" })
         return
       }
 
