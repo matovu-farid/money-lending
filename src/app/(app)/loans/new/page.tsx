@@ -277,7 +277,7 @@ function NewLoanPageInner() {
       disbursementSource: data.disbursementSource,
       subLocationId: data.disbursementSource === "bank" ? data.subLocationId || null : null,
       loanType: loanType ?? "perpetual",
-      termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : null,
+      termMonths: termMonths ? parseInt(termMonths, 10) : null,
       penaltyMultiplier: "0.1000",
       penaltyWaived: false,
       penaltyWaivedBy: null,
@@ -315,7 +315,7 @@ function NewLoanPageInner() {
       disbursementSource: data.disbursementSource,
       subLocationId: data.disbursementSource === "bank" ? data.subLocationId || undefined : undefined,
       loanType,
-      termMonths: loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined,
+      termMonths: termMonths ? parseInt(termMonths, 10) : undefined,
       rollover: rolloverData,
       backdateNote: data.backdateNote?.trim() || undefined,
     }

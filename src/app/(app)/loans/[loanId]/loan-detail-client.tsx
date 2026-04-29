@@ -216,7 +216,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const repaymentPercent = principalNum > 0 ? Math.min(100, Math.max(0, Math.round((totalPaid / principalNum) * 100))) : 0
 
   const schedule = useMemo(
-    () => loan.termMonths
+    () => loan.termMonths && loan.loanType && loan.loanType !== "perpetual"
       ? calculateSchedule(
           loan.principalAmount,
           loan.interestRateOverride ?? loan.interestRate,

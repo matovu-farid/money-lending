@@ -121,7 +121,7 @@ export const createLoan = (
             disbursementSource: input.disbursementSource,
             subLocationId: input.subLocationId ?? null,
             loanType: input.loanType ?? "perpetual",
-            termMonths: (input.loanType && input.loanType !== "perpetual") ? input.termMonths! : null,
+            termMonths: input.termMonths ?? null,
             rolledOverFrom: input.rollover?.fromLoanId ?? null,
             rolloverAmount: input.rollover
               ? new BigNumber(input.rollover.carriedPrincipal)

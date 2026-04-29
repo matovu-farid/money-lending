@@ -62,7 +62,7 @@ export interface CreateLoanInput {
   disbursementSource: DepositLocation
   subLocationId?: string
   loanType?: LoanType                    // defaults to "perpetual"
-  termMonths?: number                   // required for fixed_rate and reducing_balance
+  termMonths?: number                   // required for fixed_rate/reducing_balance; record-only for perpetual
   interestRateOverride?: string | null  // admin-only override
   minPeriodOverride?: number | null     // admin-only override
   rollover?: RolloverData

@@ -124,20 +124,25 @@ export function LoanDetailsStep({
           activeLoanData={activeLoanData}
         />
 
-        {loanType !== "perpetual" && (
-          <div className="space-y-2">
-            <Label htmlFor="termMonths" className="font-semibold">Term (months)</Label>
-            <Input
-              id="termMonths"
-              type="number"
-              min="1"
-              step="1"
-              value={termMonths}
-              onChange={(e) => setTermMonths(e.target.value)}
-              placeholder="e.g. 6"
-            />
-          </div>
-        )}
+        <div className="space-y-2">
+          <Label htmlFor="termMonths" className="font-semibold">
+            {loanType === "perpetual" ? "Loan Period (months)" : "Term (months)"}
+          </Label>
+          <Input
+            id="termMonths"
+            type="number"
+            min="1"
+            step="1"
+            value={termMonths}
+            onChange={(e) => setTermMonths(e.target.value)}
+            placeholder="e.g. 6"
+          />
+          {loanType === "perpetual" && (
+            <p className="text-xs text-muted-foreground">
+              Optional — record-only. Does not affect interest calculations on perpetual loans.
+            </p>
+          )}
+        </div>
 
         {!activeLoanData && (
           <MoneyInput

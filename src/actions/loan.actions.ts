@@ -316,7 +316,8 @@ export async function createLoanAction(input: CreateLoanInput) {
     interestRate: input.interestRate || "0.10",
     minInterestDays: input.minInterestDays || 30,
     loanType,
-    termMonths: loanType !== "perpetual" ? input.termMonths : undefined,
+    // For perpetual loans termMonths is record-only — pass it through if provided.
+    termMonths: input.termMonths,
   }
 
   if (!perms.has("settings:update")) {
