@@ -1,10 +1,10 @@
-const NIN_PATTERN = /^[CA][MF]\d{8}[A-Z0-9]{4}$/
+const NIN_PATTERN = /^C[A-Z0-9]{13}$/
 const PHONE_PATTERN = /^(07\d{8}|\+2567\d{8})$/
 
 export function validateNIN(value: string | undefined | null): string | null {
   const trimmed = value?.trim()?.toUpperCase()
   if (!trimmed || !NIN_PATTERN.test(trimmed)) {
-    return "Valid NIN is required (e.g. CM97027102X4CU)"
+    return "Valid NIN is required — must start with C and be 14 characters"
   }
   return null
 }
