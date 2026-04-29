@@ -104,37 +104,41 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  /* Slightly deeper bg so cards lift visibly above it (Apple/Linear pattern) */
+  --background: oklch(0.135 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  /* Card +9% lightness over bg → clearly separated surface */
+  --card: oklch(0.225 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
+  --popover: oklch(0.225 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
+  --primary: oklch(0.95 0 0);
+  --primary-foreground: oklch(0.18 0 0);
+  --secondary: oklch(0.30 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --muted: oklch(0.27 0 0);
+  /* Brighter muted text for AA on body — was 0.708 (≈4.6:1), now ≈5.4:1 */
+  --muted-foreground: oklch(0.76 0 0);
+  --accent: oklch(0.30 0 0);
   --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.55 0.22 264);
+  --destructive: oklch(0.72 0.19 22);
+  /* Border bumped from 10% → 18% so /30, /40 ring opacities remain visible */
+  --border: oklch(1 0 0 / 18%);
+  --input: oklch(1 0 0 / 22%);
+  --ring: oklch(0.62 0.22 264);
   --chart-1: oklch(0.62 0.18 264);
   --chart-2: oklch(0.65 0.14 150);
   --chart-3: oklch(0.70 0.12 80);
   --chart-4: oklch(0.55 0.15 30);
   --chart-5: oklch(0.60 0.10 300);
-  --sidebar: oklch(0.205 0 0);
+  --sidebar: oklch(0.18 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary: oklch(0.55 0.22 264);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent: oklch(0.30 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.55 0.22 264);
+  --sidebar-border: oklch(1 0 0 / 18%);
+  --sidebar-ring: oklch(0.62 0.22 264);
 }
 
 @keyframes fade-in-up {
@@ -190,6 +194,10 @@
   /* Sovereign Ledger: tight tracking on headings */
   h1, h2, h3 {
     letter-spacing: -0.02em;
+  }
+  /* Premium numeric alignment: tables and mono renders always use tabular figures */
+  td, th, .font-mono {
+    font-variant-numeric: tabular-nums;
   }
 }
 

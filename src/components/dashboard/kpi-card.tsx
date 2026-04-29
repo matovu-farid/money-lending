@@ -20,21 +20,21 @@ export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName, lo
   return (
     <Card interactive>
       <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">{label}{labelExtra}</p>
-            {loading ? (
-              <div className="h-8 w-32 rounded bg-muted-foreground/10 animate-pulse" />
-            ) : (
-              <p className={cn("text-2xl font-semibold font-mono tracking-tight tabular-nums", valueClassName)}>
-                {value}
-              </p>
-            )}
-            {subtitle && (
-              <p className="text-sm text-muted-foreground">{subtitle}</p>
-            )}
+        <div className="space-y-3">
+          <div className="inline-flex items-center gap-2 text-muted-foreground">
+            <Icon className="h-4 w-4 shrink-0" />
+            <p className="text-sm font-medium inline-flex items-center gap-1">{label}{labelExtra}</p>
           </div>
-          <Icon className="h-5 w-5 text-muted-foreground" />
+          {loading ? (
+            <div className="h-9 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+          ) : (
+            <p className={cn("text-3xl font-semibold tracking-tight tabular-nums", valueClassName)}>
+              {value}
+            </p>
+          )}
+          {subtitle && (
+            <p className="text-sm text-muted-foreground">{subtitle}</p>
+          )}
         </div>
       </CardContent>
     </Card>

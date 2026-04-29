@@ -18,7 +18,7 @@ export function PageHeader({ title, subtitle, breadcrumbs, children, className }
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
           {subtitle && (
             typeof subtitle === "string" ? (
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">
+              <p className="text-sm text-muted-foreground mt-1">
                 {subtitle}
               </p>
             ) : (

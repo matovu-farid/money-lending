@@ -10,7 +10,7 @@ import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { LoanListEntry } from "@/types"
-import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
+import { cn, formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { exportLoansExcelAction } from "@/actions/loan.actions"
 import { toast } from "sonner"
@@ -324,113 +324,122 @@ export default function LoansPage() {
         </div>
       ) : (
         <>
-          {/* Stat Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 print:hidden">
-            <button
-              type="button"
-              onClick={() => setActiveFilter(activeFilter === "critical" ? "all" : "critical")}
-              className={`rounded-lg border p-4 text-left transition-colors ${
-                activeFilter === "critical" ? "ring-2 ring-red-500" : ""
-              } bg-red-100 dark:bg-red-950 hover:bg-red-200 dark:hover:bg-red-900`}
-            >
-              <p className="text-xs font-semibold uppercase tracking-wider text-red-800 dark:text-red-300 inline-flex items-center gap-1">
-                Critical (30+ days)
-                <InfoPopover>
-                  <p className="font-semibold text-sm mb-1">Critical (30+ days)</p>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Loans where unpaid interest has accumulated for 30 or more days. These borrowers have missed at least one full interest cycle.
-                  </p>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Immediate follow-up is recommended to prevent further losses.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    The &ldquo;principal balance&rdquo; amount shown is the remaining principal for loans in this category.
-                  </p>
-                </InfoPopover>
-              </p>
-              <p className="text-2xl font-bold text-red-800 dark:text-red-300 mt-1">
-                {stats.critical.count}
-              </p>
-              <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
-                {formatCurrency(stats.critical.balance)} outstanding
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveFilter(activeFilter === "at-risk" ? "all" : "at-risk")}
-              className={`rounded-lg border p-4 text-left transition-colors ${
-                activeFilter === "at-risk" ? "ring-2 ring-yellow-500" : ""
-              } bg-yellow-100 dark:bg-yellow-950 hover:bg-yellow-200 dark:hover:bg-yellow-900`}
-            >
-              <p className="text-xs font-semibold uppercase tracking-wider text-yellow-800 dark:text-yellow-300 inline-flex items-center gap-1">
-                At Risk (25-29 days)
-                <InfoPopover>
-                  <p className="font-semibold text-sm mb-1">At Risk (25-29 days)</p>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Loans approaching the 30-day overdue threshold. These borrowers are close to becoming critical &mdash; a payment now would prevent escalation.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Proactive contact is recommended.
-                  </p>
-                </InfoPopover>
-              </p>
-              <p className="text-2xl font-bold text-yellow-800 dark:text-yellow-300 mt-1">
-                {stats.atRisk.count}
-              </p>
-              <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
-                {formatCurrency(stats.atRisk.balance)} outstanding
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveFilter(activeFilter === "early" ? "all" : "early")}
-              className={`rounded-lg border p-4 text-left transition-colors ${
-                activeFilter === "early" ? "ring-2 ring-green-500" : ""
-              } bg-green-100 dark:bg-green-950 hover:bg-green-200 dark:hover:bg-green-900`}
-            >
-              <p className="text-xs font-semibold uppercase tracking-wider text-green-800 dark:text-green-300 inline-flex items-center gap-1">
-                Early (0-24 days)
-                <InfoPopover>
-                  <p className="font-semibold text-sm mb-1">Early (0-24 days)</p>
-                  <p className="text-xs text-muted-foreground">
-                    Loans with some overdue interest but still within the first interest cycle. These are normal operational loans that need routine collection.
-                  </p>
-                </InfoPopover>
-              </p>
-              <p className="text-2xl font-bold text-green-800 dark:text-green-300 mt-1">
-                {stats.early.count}
-              </p>
-              <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
-                {formatCurrency(stats.early.balance)} outstanding
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveFilter("all")}
-              className={`rounded-lg border p-4 text-left transition-colors ${
-                activeFilter === "all" ? "ring-2 ring-primary" : ""
-              } bg-muted/50 hover:bg-muted`}
-            >
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
-                All Loans
-                <InfoPopover>
-                  <p className="font-semibold text-sm mb-1">All Loans</p>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Total count of all active loans regardless of overdue status.
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    The &ldquo;overdue&rdquo; count shown is loans with any days overdue (&gt; 0). Click to remove filters and see the full portfolio.
-                  </p>
-                </InfoPopover>
-              </p>
-              <p className="text-2xl font-bold mt-1">{sortedEntries.length}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {stats.total} overdue
-              </p>
-            </button>
+          {/* Stat Cards — quiet filter buttons; severity signaled via dot, not background */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
+            {([
+              {
+                key: "critical",
+                label: "Critical (30+ days)",
+                dotClass: "bg-red-500",
+                count: stats.critical.count,
+                balance: stats.critical.balance,
+                info: (
+                  <>
+                    <p className="font-semibold text-sm mb-1">Critical (30+ days)</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Loans where unpaid interest has accumulated for 30 or more days. These borrowers have missed at least one full interest cycle.
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Immediate follow-up is recommended to prevent further losses.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      The &ldquo;principal balance&rdquo; amount shown is the remaining principal for loans in this category.
+                    </p>
+                  </>
+                ),
+              },
+              {
+                key: "at-risk",
+                label: "At Risk (25-29 days)",
+                dotClass: "bg-yellow-500",
+                count: stats.atRisk.count,
+                balance: stats.atRisk.balance,
+                info: (
+                  <>
+                    <p className="font-semibold text-sm mb-1">At Risk (25-29 days)</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Loans approaching the 30-day overdue threshold. These borrowers are close to becoming critical &mdash; a payment now would prevent escalation.
+                    </p>
+                    <p className="text-xs text-muted-foreground">Proactive contact is recommended.</p>
+                  </>
+                ),
+              },
+              {
+                key: "early",
+                label: "Early (0-24 days)",
+                dotClass: "bg-green-500",
+                count: stats.early.count,
+                balance: stats.early.balance,
+                info: (
+                  <>
+                    <p className="font-semibold text-sm mb-1">Early (0-24 days)</p>
+                    <p className="text-xs text-muted-foreground">
+                      Loans with some overdue interest but still within the first interest cycle. These are normal operational loans that need routine collection.
+                    </p>
+                  </>
+                ),
+              },
+              {
+                key: "all",
+                label: "All Loans",
+                dotClass: "bg-foreground/40",
+                count: sortedEntries.length,
+                balance: null as string | null,
+                overdueText: `${stats.total} overdue`,
+                info: (
+                  <>
+                    <p className="font-semibold text-sm mb-1">All Loans</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Total count of all active loans regardless of overdue status.
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      The &ldquo;overdue&rdquo; count shown is loans with any days overdue (&gt; 0). Click to remove filters and see the full portfolio.
+                    </p>
+                  </>
+                ),
+              },
+            ] as const).map((card) => {
+              const isActive = activeFilter === card.key
+              return (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() =>
+                    setActiveFilter(card.key === "all" ? "all" : isActive ? "all" : card.key)
+                  }
+                  className={cn(
+                    "group relative rounded-xl border bg-card p-4 text-left transition-all duration-150 ease-out shadow-xs",
+                    "hover:shadow-md hover:-translate-y-0.5",
+                    isActive
+                      ? "border-foreground/40 ring-2 ring-foreground/15"
+                      : "border-border/60 hover:border-border"
+                  )}
+                  aria-pressed={isActive}
+                >
+                  <div className="space-y-3">
+                    {/* Label row: dot + label + info — proximity groups them, alignment via flex */}
+                    <div className="inline-flex items-center gap-2 text-muted-foreground">
+                      <span
+                        aria-hidden="true"
+                        className={cn("h-1.5 w-1.5 rounded-full shrink-0", card.dotClass)}
+                      />
+                      <p className="text-sm font-medium text-foreground/80">{card.label}</p>
+                      <InfoPopover>{card.info}</InfoPopover>
+                    </div>
+                    {/* Hero number — same scale across all 4 cards (repetition) */}
+                    <p className="text-3xl font-semibold tracking-tight tabular-nums">
+                      {card.count}
+                    </p>
+                    {/* Subtitle — uniform line height across cards (alignment) */}
+                    <p className="text-xs text-muted-foreground tabular-nums">
+                      {card.balance != null
+                        ? `${formatCurrency(card.balance)} outstanding`
+                        : ("overdueText" in card ? card.overdueText : "Total portfolio")}
+                    </p>
+                  </div>
+                </button>
+              )
+            })}
           </div>
 
           {/* Actions Row */}

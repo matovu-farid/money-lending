@@ -153,12 +153,12 @@ export function Sidebar({ onClose }: SidebarProps) {
         <nav
           aria-label="Main navigation"
           data-testid="sidebar-nav"
-          className="flex-1 overflow-y-auto py-3 space-y-4"
+          className="flex-1 overflow-y-auto py-3 space-y-5"
         >
           {filteredNavGroups.map((group, groupIndex) => (
             <div key={groupIndex}>
               {group.label && !collapsed && (
-                <p className="px-3 mb-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <p className="px-3 mb-2 text-xs font-medium tracking-wide text-muted-foreground/80">
                   {group.label}
                 </p>
               )}
