@@ -3,7 +3,7 @@
 import { useState, useMemo, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useLoansWithBalances } from "@/collections/loan-views"
-import { Plus, ChevronRight, Loader2 } from "lucide-react"
+import { Plus, ChevronRight, Loader2, Printer } from "lucide-react"
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
@@ -33,6 +33,103 @@ function criticalityRank(entry: LoanListEntry): number {
   if (entry.daysOverdue >= 25) return 1
   if (entry.daysOverdue >= 0) return 2
   return 3
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+}
+
+/**
+ * Builds an HTML document that mirrors the columns and totals of
+ * generateLoansExcel (src/services/export/excel.service.ts) for printing.
+ */
+function buildLoansPrintHtml(entries: LoanListEntry[]): string {
+  const generated = formatDate(new Date())
+  let totalPrincipal = 0
+  let totalOutstanding = 0
+  let totalOwed = 0
+  let totalInterest = 0
+
+  const rows = entries.map((e) => {
+    const principal = parseFloat(e.principalAmount)
+    const outstanding = parseFloat(e.outstandingBalance)
+    const interest = parseFloat(e.unpaidInterest)
+    const owed = outstanding + interest
+    totalPrincipal += principal
+    totalOutstanding += outstanding
+    totalOwed += owed
+    totalInterest += interest
+    const last = e.lastPaymentDate ? formatDate(e.lastPaymentDate) : "No payments"
+    return `<tr>
+      <td>${escapeHtml(e.customerName)}</td>
+      <td>${escapeHtml(e.customerContact ?? "")}</td>
+      <td class="num">${formatCurrency(e.principalAmount)}</td>
+      <td class="num">${formatCurrency(e.outstandingBalance)}</td>
+      <td class="num">${formatCurrency(owed.toFixed(2))}</td>
+      <td class="num">${formatCurrency(e.unpaidInterest)}</td>
+      <td class="num">${e.daysOverdue}</td>
+      <td>${escapeHtml(last)}</td>
+    </tr>`
+  }).join("")
+
+  const countLabel = `${entries.length} loan${entries.length === 1 ? "" : "s"}`
+
+  return `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Kaks Credit — Active Loans Report</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111; margin: 0; }
+  h1 { font-size: 18pt; margin: 0 0 4px; }
+  .meta { color: #555; font-size: 10pt; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 9pt; }
+  th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #1f2937; color: #fff; font-weight: 600; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tbody tr:nth-child(even) { background: #f7f7f9; }
+  tfoot td { background: #1f2937; color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+  <h1>Kaks Credit — Active Loans Report</h1>
+  <div class="meta">Generated: ${escapeHtml(generated)} · ${escapeHtml(countLabel)}</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Customer Name</th>
+        <th>Contact</th>
+        <th class="num">Principal Amount (UGX)</th>
+        <th class="num">Principal Balance (UGX)</th>
+        <th class="num">Total Due (UGX)</th>
+        <th class="num">Accrued Interest (UGX)</th>
+        <th class="num">Days Overdue</th>
+        <th>Last Payment</th>
+      </tr>
+    </thead>
+    <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#666;padding:24px;">No loans</td></tr>`}</tbody>
+    <tfoot>
+      <tr>
+        <td>TOTAL</td>
+        <td></td>
+        <td class="num">${formatCurrency(totalPrincipal.toFixed(2))}</td>
+        <td class="num">${formatCurrency(totalOutstanding.toFixed(2))}</td>
+        <td class="num">${formatCurrency(totalOwed.toFixed(2))}</td>
+        <td class="num">${formatCurrency(totalInterest.toFixed(2))}</td>
+        <td></td>
+        <td>${escapeHtml(countLabel)}</td>
+      </tr>
+    </tfoot>
+  </table>
+</body>
+</html>`
 }
 
 
@@ -121,7 +218,21 @@ export default function LoansPage() {
     }
   }, [activeFilter, critical, atRisk, early, sortedEntries])
 
-
+  const handlePrint = useCallback(() => {
+    const iframe = document.createElement("iframe")
+    iframe.style.position = "fixed"
+    iframe.style.left = "-9999px"
+    iframe.style.top = "-9999px"
+    iframe.srcdoc = buildLoansPrintHtml(filteredEntries)
+    iframe.onload = () => {
+      iframe.contentWindow?.focus()
+      iframe.contentWindow?.print()
+      setTimeout(() => {
+        if (iframe.parentNode) document.body.removeChild(iframe)
+      }, 1000)
+    }
+    document.body.appendChild(iframe)
+  }, [filteredEntries])
 
   const handleRowClick = useCallback((loanId: string) => {
     setNavigatingTo(loanId)
@@ -456,6 +567,14 @@ export default function LoansPage() {
             >
               <Download className="h-4 w-4" />
               {isExporting ? "Exporting..." : "Export Excel"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+            >
+              <Printer className="h-4 w-4" />
+              Print
             </Button>
           </div>
 
