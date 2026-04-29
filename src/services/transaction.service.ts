@@ -325,7 +325,7 @@ export const listTransactions = (
             eq(transactions.categoryId, transactionCategories.id)
           )
           .where(whereClause)
-          .orderBy(desc(transactions.transactionDate))
+          .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt))
           .limit(pageSize)
           .offset(offset),
         db
