@@ -153,7 +153,13 @@ export async function GET(
 
   let response: Response
   try {
-    response = await fetch(originUrl.toString())
+    // Ask upstream for an uncompressed body so undici doesn't auto-decompress
+    // and leave us with a stale `content-encoding` header. Next.js's own
+    // response compression (next.config compress: true) re-gzips on the
+    // way to the browser, where it actually matters for bandwidth.
+    response = await fetch(originUrl.toString(), {
+      headers: { "Accept-Encoding": "identity" },
+    })
   } catch (err) {
     console.error("[electric proxy] upstream fetch failed:", err)
     return new Response(
@@ -162,9 +168,9 @@ export async function GET(
     )
   }
 
-  // Copy response headers, removing encoding headers that break streaming
+  // Drop content-length — body length may have changed if any middleware
+  // touched the stream. content-encoding is already absent (identity).
   const responseHeaders = new Headers(response.headers)
-  responseHeaders.delete("content-encoding")
   responseHeaders.delete("content-length")
 
   return new Response(response.body, {
