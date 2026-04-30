@@ -119,6 +119,27 @@ export const auth = betterAuth({
         },
       },
     },
+    session: {
+      create: {
+        after: async (session) => {
+          // Record admin/superAdmin login IPs in the trusted allowlist.
+          // Wrapped so a failure here never breaks login.
+          try {
+            if (!session.ipAddress) return
+            const { sql } = await import("drizzle-orm")
+            const rows = await db.execute(
+              sql`SELECT "role" FROM "user" WHERE "id" = ${session.userId}`
+            )
+            const role = (rows as unknown as Array<{ role: string | null }>)[0]?.role
+            if (role !== "admin" && role !== "superAdmin") return
+            const { recordAdminLoginIp } = await import("@/lib/ip-allowlist")
+            await recordAdminLoginIp(session.userId, session.ipAddress)
+          } catch (err) {
+            console.warn("[auth] session.create.after IP capture failed", err)
+          }
+        },
+      },
+    },
   },
   plugins: [
     ...(isTest ? [testUtils()] : []),
