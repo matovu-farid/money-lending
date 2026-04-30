@@ -31,6 +31,7 @@ export type Permission =
   | "settings:read" | "settings:update"
   | "user:list" | "user:ban" | "user:impersonate" | "user:invite"
   | "session:list" | "session:revoke" | "session:delete"
+  | "ip-allowlist:manage"
   // delegation
   | "delegation:create" | "delegation:revoke" | "delegation:read"
   // activity monitoring

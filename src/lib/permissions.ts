@@ -65,6 +65,7 @@ export const PERMISSIONS: readonly Permission[] = [
   "settings:read", "settings:update",
   "user:list", "user:ban", "user:impersonate", "user:invite",
   "session:list", "session:revoke", "session:delete",
+  "ip-allowlist:manage",
   // delegation
   "delegation:create", "delegation:revoke", "delegation:read",
   // activity monitoring
@@ -105,6 +106,7 @@ const adminExtras: Permission[] = [
   "user:list", "user:ban", "user:impersonate", "user:invite",
   "session:list", "session:revoke", "session:delete",
   "delegation:create", "delegation:revoke", "delegation:read",
+  "ip-allowlist:manage",
 ]
 
 const superAdminExtras: Permission[] = [
@@ -127,7 +129,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, Set<Permission>> = {
 /** Admin operational permissions minus creditor:*, role:*, delegation:* */
 export const MANAGING_SUPERVISOR_ELEVATED = new Set<Permission>(
   [...adminSet].filter(
-    (p) => !p.startsWith("creditor:") && !p.startsWith("role:") && !p.startsWith("delegation:")
+    (p) =>
+      !p.startsWith("creditor:") &&
+      !p.startsWith("role:") &&
+      !p.startsWith("delegation:") &&
+      !p.startsWith("ip-allowlist:")
   )
 )
 
