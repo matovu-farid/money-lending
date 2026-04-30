@@ -148,6 +148,27 @@
       "when": 1775595373887,
       "tag": "0020_simple_bloodstrike",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1775800000000,
+      "tag": "0021_drop_chat_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1775900000000,
+      "tag": "0022_add_transactions_category",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1746057600000,
+      "tag": "0023_add_ip_allowlist",
+      "breakpoints": true
     }
   ]
 }
