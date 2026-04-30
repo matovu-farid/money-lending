@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
 import { PageHeader } from "@/components/ui/page-header"
+import { IpAllowlistToggle } from "@/components/admin/ip-allowlist-toggle"
 import { formatDate } from "@/lib/utils"
 
 function getRoleOptions(actorRole: UserRole): UserRole[] {
@@ -163,6 +164,8 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
   return (
     <div className="p-4 md:p-6 space-y-4">
       <PageHeader title="Admin" subtitle="System administration" />
+
+      {has("ip-allowlist:manage") && <IpAllowlistToggle />}
 
       {users.length === 0 ? (
         <p className="text-muted-foreground">No users found.</p>
