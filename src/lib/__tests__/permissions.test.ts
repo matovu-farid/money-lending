@@ -455,6 +455,8 @@ describe("PERMISSIONS array", () => {
       "delegation:create", "delegation:revoke", "delegation:read",
       // activity monitoring
       "activity:read",
+      // ip allowlist
+      "ip-allowlist:manage",
       // roles
       "role:assign-loan-officer", "role:assign-supervisor", "role:assign-admin", "role:assign-super-admin",
     ]
@@ -730,25 +732,37 @@ describe("Property-Based: Permission Hierarchy", () => {
     }
   })
 
-  it("MANAGING_SUPERVISOR_ELEVATED excludes creditor:*, role:*, delegation:*", () => {
+  it("MANAGING_SUPERVISOR_ELEVATED excludes creditor:*, role:*, delegation:*, ip-allowlist:*", () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...Array.from(MANAGING_SUPERVISOR_ELEVATED)),
         (perm) => {
-          return !perm.startsWith("creditor:") && !perm.startsWith("role:") && !perm.startsWith("delegation:")
+          return (
+            !perm.startsWith("creditor:") &&
+            !perm.startsWith("role:") &&
+            !perm.startsWith("delegation:") &&
+            !perm.startsWith("ip-allowlist:")
+          )
         }
       ),
       { numRuns: MANAGING_SUPERVISOR_ELEVATED.size }
     )
   })
 
-  it("supervisor + MANAGING_SUPERVISOR_ELEVATED covers all admin perms except creditor/role/delegation", () => {
+  it("supervisor + MANAGING_SUPERVISOR_ELEVATED covers all admin perms except creditor/role/delegation/ip-allowlist", () => {
     const supervisorPerms = getPermissionsForRole("supervisor")
     const combined = new Set([...supervisorPerms, ...MANAGING_SUPERVISOR_ELEVATED])
     const adminPerms = getPermissionsForRole("admin")
 
     for (const perm of adminPerms) {
-      if (perm.startsWith("creditor:") || perm.startsWith("role:") || perm.startsWith("delegation:")) continue
+      if (
+        perm.startsWith("creditor:") ||
+        perm.startsWith("role:") ||
+        perm.startsWith("delegation:") ||
+        perm.startsWith("ip-allowlist:")
+      ) {
+        continue
+      }
       expect(combined.has(perm)).toBe(true)
     }
   })
