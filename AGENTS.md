@@ -82,3 +82,17 @@ For any UI page or feature, the E2E test file must verify:
 ## Exceptions
 
 `checkpoint:decision` and `checkpoint:human-action` (auth gates) remain unchanged — those genuinely require human input and cannot be automated.
+
+# Security Policy: Creditor Privacy
+
+Creditor data — names, contact information, addresses, investment amounts, and repayment history — is **admin-only**. Loan officers, supervisors, and unassigned users must not see who the company's creditors are or how much they have invested. Creditors are private capital relationships, not part of normal operations.
+
+The `creditor:read` / `creditor:create` / `creditor:update` permissions are granted only to `admin` and `superAdmin` (see `src/lib/permissions.ts`, `adminExtras`). Even an elevated managing supervisor (delegated) is excluded — `MANAGING_SUPERVISOR_ELEVATED` filters out all `creditor:*` permissions.
+
+Enforcement happens at **three** layers, all required:
+
+1. **Server actions** — every action in `src/actions/creditor.actions.ts` declares `permission: "creditor:read" | "creditor:create" | "creditor:update"` via `withAction`, so direct action invocations from a non-admin client return `{ error: "Forbidden" }`.
+2. **UI route gate** — `src/app/(app)/creditors/page.tsx` checks `usePermissions().has("creditor:read")` before rendering and shows an "Access denied" panel for non-admins. The same check applies to `/creditors/[id]` and `/creditors/new`.
+3. **Electric proxy** — `src/app/api/electric/[...table]/route.ts` enforces an admin-only allowlist for the `creditors`, `creditor_investments`, and `creditor_repayments` tables. A non-admin authenticated user who hits the proxy directly (e.g. via curl) gets a 403, not creditor data. This closes the gap that page-level permission checks alone cannot — Electric shapes are a separate data path.
+
+When adding any new table that holds creditor data or any new surface that displays it (dashboard cards, transaction descriptions, audit logs, exports), all three layers must be considered. Default to "admin-only" unless there is a documented business reason to expose it more broadly.

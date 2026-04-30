@@ -1,6 +1,8 @@
 import { ELECTRIC_PROTOCOL_QUERY_PARAMS } from "@electric-sql/client"
 import { getSessionCookie } from "better-auth/cookies"
 import { headers } from "next/headers"
+import { auth } from "@/lib/auth"
+import { ROLE_LEVELS, type UserRole } from "@/types/common"
 
 const ELECTRIC_URL = process.env.ELECTRIC_URL ?? "http://localhost:3001"
 const ELECTRIC_SOURCE_SECRET = process.env.ELECTRIC_SECRET
@@ -47,6 +49,39 @@ function cookiePresenceCacheSet(cookieValue: string): void {
 }
 
 /**
+ * Short-TTL cache for the role check on admin-only tables. Keyed on the
+ * raw cookie header so each session is resolved only once per window.
+ *
+ * We never cache "admin" without verifying — only the resolved role string
+ * (which may be "loanOfficer", "admin", whatever). On miss or expiry we do
+ * a full session lookup. When an admin is demoted, assignRole revokes
+ * their sessions (see src/actions/user.actions.ts), so a stale cached
+ * "admin" entry becomes harmless: the next miss re-fetches and finds no
+ * session.
+ */
+const ROLE_CACHE_TTL_MS = 30_000
+const ROLE_CACHE_MAX_ENTRIES = 1000
+const roleCache = new Map<string, { role: UserRole; expiresAt: number }>()
+
+function getCachedRole(cookieValue: string): UserRole | null {
+  const entry = roleCache.get(cookieValue)
+  if (!entry) return null
+  if (entry.expiresAt <= Date.now()) {
+    roleCache.delete(cookieValue)
+    return null
+  }
+  return entry.role
+}
+
+function setCachedRole(cookieValue: string, role: UserRole): void {
+  if (roleCache.size >= ROLE_CACHE_MAX_ENTRIES) {
+    const oldestKey = roleCache.keys().next().value
+    if (oldestKey !== undefined) roleCache.delete(oldestKey)
+  }
+  roleCache.set(cookieValue, { role, expiresAt: Date.now() + ROLE_CACHE_TTL_MS })
+}
+
+/**
  * Tables that are allowed to be synced via Electric shapes.
  * Any table not in this set is rejected to prevent unauthorized data access.
  */
@@ -76,6 +111,21 @@ const ALLOWED_TABLES = new Set([
 const SAFE_COLUMNS: Record<string, string> = {
   invitation: "id,email,name,role,status,invited_by,expires_at,created_at,accepted_at",
 }
+
+/**
+ * Tables that hold creditor PII and capital data. Subscriptions to these
+ * shapes require an admin-or-higher session — see "Security Policy:
+ * Creditor Privacy" in AGENTS.md. Page-level permission checks are not
+ * enough because Electric shapes are a separate data path that any
+ * authenticated user could otherwise reach by hitting the proxy directly.
+ */
+const ADMIN_ONLY_TABLES = new Set([
+  "creditors",
+  "creditor_investments",
+  "creditor_repayments",
+])
+
+const ADMIN_LEVEL = ROLE_LEVELS.admin
 
 export async function GET(
   request: Request,
@@ -115,6 +165,31 @@ export async function GET(
       status: 403,
       headers: { "Content-Type": "application/json" },
     })
+  }
+
+  // Admin-only tables (creditor PII / capital data): resolve the session
+  // to the user role and require admin+. The cookie-presence shortcut
+  // above is not enough — any authenticated user can present a valid
+  // session cookie. See AGENTS.md "Security Policy: Creditor Privacy".
+  if (ADMIN_ONLY_TABLES.has(table)) {
+    let role = rawCookieHeader ? getCachedRole(rawCookieHeader) : null
+    if (!role) {
+      const session = await auth.api.getSession({ headers: requestHeaders })
+      if (!session) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
+      role = ((session.user as Record<string, unknown>).role ?? "unassigned") as UserRole
+      if (rawCookieHeader) setCachedRole(rawCookieHeader, role)
+    }
+    if ((ROLE_LEVELS[role] ?? 0) < ADMIN_LEVEL) {
+      return new Response(JSON.stringify({ error: "Forbidden" }), {
+        status: 403,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
   }
 
   const url = new URL(request.url)
