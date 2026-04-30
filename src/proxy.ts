@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { getSessionCookie } from "better-auth/cookies"
+import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
 
-const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite"]
+const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
 
 // Max time to wait for a DB-backed lookup before treating the request as
 // unauthenticated. Only used as a fallback when the cookie cache is missing —
@@ -92,6 +93,20 @@ export async function proxy(request: NextRequest) {
   if (role === "unassigned") {
     if (pathname === "/pending-approval") return NextResponse.next()
     return NextResponse.redirect(new URL("/pending-approval", request.url))
+  }
+
+  // IP allowlist gate for lower-role users
+  if (role !== "admin" && role !== "superAdmin") {
+    if (await isIpAllowlistEnabled()) {
+      const clientIp = getClientIp(request.headers)
+      const allowed = clientIp ? await isIpAllowed(clientIp) : false
+      if (!allowed) {
+        // Best-effort log; never await
+        void recordBlock(session.user.id, clientIp ?? "unknown", pathname)
+        if (pathname === "/access-blocked") return NextResponse.next()
+        return NextResponse.redirect(new URL("/access-blocked", request.url))
+      }
+    }
   }
 
   // Authenticated + assigned user visiting auth pages or /pending-approval -- redirect to dashboard
