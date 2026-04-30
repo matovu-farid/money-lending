@@ -77,6 +77,17 @@ vi.mock("drizzle-orm", () => ({
   isNull: vi.fn((col: any) => col),
 }))
 
+vi.mock("next/headers", () => ({
+  headers: vi.fn().mockResolvedValue(new Map()),
+}))
+
+vi.mock("@/lib/ip-allowlist", () => ({
+  isIpAllowlistEnabled: vi.fn().mockResolvedValue(false),
+  isIpAllowed: vi.fn().mockResolvedValue(true),
+  recordBlock: vi.fn().mockResolvedValue(undefined),
+  getClientIp: vi.fn().mockReturnValue(null),
+}))
+
 // ---------- Imports ----------
 
 import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"

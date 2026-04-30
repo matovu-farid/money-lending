@@ -84,6 +84,17 @@ vi.mock("@/lib/email", () => ({
   sendAdminNotification: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock("next/headers", () => ({
+  headers: vi.fn().mockResolvedValue(new Map()),
+}))
+
+vi.mock("@/lib/ip-allowlist", () => ({
+  isIpAllowlistEnabled: vi.fn().mockResolvedValue(false),
+  isIpAllowed: vi.fn().mockResolvedValue(true),
+  recordBlock: vi.fn().mockResolvedValue(undefined),
+  getClientIp: vi.fn().mockReturnValue(null),
+}))
+
 vi.mock("@/services/transaction.service", () => ({
   postJournalEntry: vi.fn(),
   reverseInterestAccrual: vi.fn(),

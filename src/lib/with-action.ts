@@ -2,6 +2,8 @@ import { getSession, checkPermission, getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { Effect } from "effect"
 import type { Permission } from "@/types"
+import { headers } from "next/headers"
+import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
 
 /** The session type returned by getSession() when non-null. */
 export type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>
@@ -78,6 +80,20 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
     if (opts.permission) {
       const forbidden = await checkPermission(session, opts.permission, opts.forbiddenMessage)
       if (forbidden) return { error: forbidden }
+    }
+
+    // IP allowlist gate (lower roles only)
+    const role = (session.user as Record<string, unknown>).role
+    if (role !== "admin" && role !== "superAdmin") {
+      if (await isIpAllowlistEnabled()) {
+        const h = await headers()
+        const clientIp = getClientIp(h)
+        const allowed = clientIp ? await isIpAllowed(clientIp) : false
+        if (!allowed) {
+          void recordBlock(session.user.id, clientIp ?? "unknown", "(server action)")
+          return { error: "Access blocked: this device or network isn't recognized." }
+        }
+      }
     }
 
     // Effect mode
