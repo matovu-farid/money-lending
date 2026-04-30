@@ -54,6 +54,8 @@ export default defineConfig({
               DELETE FROM creditor_repayments;
               DELETE FROM creditor_investments;
               DELETE FROM creditors;
+              DELETE FROM ip_block_log;
+              DELETE FROM admin_ip_allowlist;
               DELETE FROM session;
               DELETE FROM account;
               DELETE FROM verification;
@@ -396,6 +398,46 @@ export default defineConfig({
               await sql`DELETE FROM customers WHERE id = ${loanRows[0].customer_id}`
             }
             return null
+          })
+        },
+
+        async "db:setIpAllowlistEnabled"({ enabled }: { enabled: boolean }) {
+          return withSql(async (sql) => {
+            const value = enabled ? "true" : "false"
+            await sql`
+              INSERT INTO system_settings ("key", "value")
+              VALUES ('ip_allowlist_enabled', ${value})
+              ON CONFLICT ("key") DO UPDATE SET "value" = ${value}, "updated_at" = now()
+            `
+            return null
+          })
+        },
+
+        async "db:seedAllowlistEntry"({ userId, ip }: { userId: string; ip: string }) {
+          return withSql(async (sql) => {
+            await sql`
+              INSERT INTO admin_ip_allowlist ("user_id", "ip", "last_seen_at")
+              VALUES (${userId}, ${ip}, now())
+              ON CONFLICT ("user_id", "ip") DO UPDATE SET "last_seen_at" = now()
+            `
+            return null
+          })
+        },
+
+        async "db:clearAllowlist"() {
+          return withSql(async (sql) => {
+            await sql`DELETE FROM admin_ip_allowlist`
+            await sql`DELETE FROM ip_block_log`
+            return null
+          })
+        },
+
+        async "db:countAllowlistFor"({ userId }: { userId: string }) {
+          return withSql(async (sql) => {
+            const rows = await sql`
+              SELECT count(*)::int AS n FROM admin_ip_allowlist WHERE "user_id" = ${userId}
+            `
+            return rows[0]?.n ?? 0
           })
         },
       })

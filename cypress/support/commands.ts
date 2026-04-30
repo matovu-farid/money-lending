@@ -49,6 +49,18 @@ declare global {
        * stale-offset loop.
        */
       clearAppPersistence(): Chainable<void>
+
+      /** Insert/update the ip_allowlist_enabled toggle directly in DB */
+      setIpAllowlistEnabled(enabled: boolean): Chainable<null>
+
+      /** Seed an entry in the admin_ip_allowlist table */
+      seedAllowlistEntry(userId: string, ip: string): Chainable<null>
+
+      /** Wipe admin_ip_allowlist and ip_block_log */
+      clearAllowlist(): Chainable<null>
+
+      /** Count entries in admin_ip_allowlist for one admin */
+      countAllowlistFor(userId: string): Chainable<number>
     }
   }
 }
@@ -194,6 +206,22 @@ Cypress.Commands.add("clearAppPersistence", () => {
       }, () => resolve())
     })
   })
+})
+
+Cypress.Commands.add("setIpAllowlistEnabled", (enabled: boolean) => {
+  return cy.task("db:setIpAllowlistEnabled", { enabled })
+})
+
+Cypress.Commands.add("seedAllowlistEntry", (userId: string, ip: string) => {
+  return cy.task("db:seedAllowlistEntry", { userId, ip })
+})
+
+Cypress.Commands.add("clearAllowlist", () => {
+  return cy.task("db:clearAllowlist")
+})
+
+Cypress.Commands.add("countAllowlistFor", (userId: string) => {
+  return cy.task("db:countAllowlistFor", { userId })
 })
 
 export {}
