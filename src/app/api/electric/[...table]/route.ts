@@ -2,6 +2,7 @@ import { ELECTRIC_PROTOCOL_QUERY_PARAMS } from "@electric-sql/client"
 import { getSessionCookie } from "better-auth/cookies"
 import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
+import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
 import { ROLE_LEVELS, type UserRole } from "@/types/common"
 
 const ELECTRIC_URL = process.env.ELECTRIC_URL ?? "http://localhost:3001"
@@ -167,13 +168,16 @@ export async function GET(
     })
   }
 
-  // Admin-only tables (creditor PII / capital data): resolve the session
-  // to the user role and require admin+. The cookie-presence shortcut
-  // above is not enough — any authenticated user can present a valid
-  // session cookie. See AGENTS.md "Security Policy: Creditor Privacy".
-  if (ADMIN_ONLY_TABLES.has(table)) {
-    let role = rawCookieHeader ? getCachedRole(rawCookieHeader) : null
-    if (!role) {
+  // Resolve role if needed (for ADMIN_ONLY_TABLES or for IP-gate when toggle is on)
+  const allowlistOn = await isIpAllowlistEnabled()
+  const needsRole = ADMIN_ONLY_TABLES.has(table) || allowlistOn
+
+  let resolvedRole: UserRole | null = null
+  let resolvedUserId: string | null = null
+
+  if (needsRole) {
+    resolvedRole = rawCookieHeader ? getCachedRole(rawCookieHeader) : null
+    if (!resolvedRole) {
       const session = await auth.api.getSession({ headers: requestHeaders })
       if (!session) {
         return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -181,14 +185,32 @@ export async function GET(
           headers: { "Content-Type": "application/json" },
         })
       }
-      role = ((session.user as Record<string, unknown>).role ?? "unassigned") as UserRole
-      if (rawCookieHeader) setCachedRole(rawCookieHeader, role)
+      resolvedRole = ((session.user as Record<string, unknown>).role ?? "unassigned") as UserRole
+      resolvedUserId = session.user.id
+      if (rawCookieHeader) setCachedRole(rawCookieHeader, resolvedRole)
     }
-    if ((ROLE_LEVELS[role] ?? 0) < ADMIN_LEVEL) {
+
+    // Admin-only table check
+    if (ADMIN_ONLY_TABLES.has(table) && (ROLE_LEVELS[resolvedRole] ?? 0) < ADMIN_LEVEL) {
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
       })
+    }
+
+    // IP allowlist check (lower roles only)
+    if (allowlistOn && resolvedRole !== "admin" && resolvedRole !== "superAdmin") {
+      const clientIp = getClientIp(requestHeaders)
+      const allowed = clientIp ? await isIpAllowed(clientIp) : false
+      if (!allowed) {
+        if (resolvedUserId) {
+          void recordBlock(resolvedUserId, clientIp ?? "unknown", `(electric:${table})`)
+        }
+        return new Response(JSON.stringify({ error: "ip_not_allowed" }), {
+          status: 403,
+          headers: { "Content-Type": "application/json" },
+        })
+      }
     }
   }
 
