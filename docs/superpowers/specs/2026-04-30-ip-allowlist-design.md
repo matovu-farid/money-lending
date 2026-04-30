@@ -5,7 +5,7 @@ Status: approved
 
 ## Summary
 
-Lower-role users (supervisor, loanOfficer) can only reach the application from IP addresses recently used by an admin or superAdmin. Each admin maintains a per-user "queue" of up to 100 trusted IPs (login-deduped, FIFO trim). The combined union of admin queues forms the org allowlist. The feature is gated behind a global on/off toggle that any admin+ can flip from the admin page; toggle defaults to OFF.
+Lower-role users (supervisor, loanOfficer) can only reach the application from IP addresses recently used by an admin or superAdmin. Each admin maintains a per-user "queue" of up to 100 trusted IPs (deduped on login, LRU trim by `last_seen_at`). The combined union of admin queues forms the org allowlist. The feature is gated behind a global on/off toggle that any admin+ can flip from the admin page; toggle defaults to OFF.
 
 Enforcement happens at three layers (proxy, Electric proxy, server actions) mirroring the existing creditor-privacy pattern in `AGENTS.md`. Admins (admin, superAdmin) are exempt from the check — they are the source of trusted IPs and must always be able to reach the toggle.
 
@@ -212,7 +212,7 @@ The toggle and clear-all actions append to `audit_log` (entityType `"ip_allowlis
 - **Admin deleted**: cascade via FK.
 - **Cache invalidation**: write paths call `clearCaches()` in-process. Multi-instance deployments see ≤30s drift — acceptable, matches the cookie/role cache trade-off in the Electric proxy.
 - **Same office IP shared by multiple admins**: each admin gets a row; the `(userId, ip)` unique index allows duplicates across users, just not within one user.
-- **Cypress E2E**: when `process.env.CYPRESS === "true"`, bypass the IP check (same pattern as the existing `isTestEnv` gate in `proxy.ts`). Tests opt into the check by directly seeding allowlist rows and overriding the bypass via a test-only header — see test file design.
+- **Cypress E2E**: no test bypass — Cypress tests exercise the real enforcement path. Tests seed `system_settings.ip_allowlist_enabled` and `admin_ip_allowlist` directly via the test DB helpers (existing pattern in `cypress/support/`). Cypress runs from a known IP (loopback / `127.0.0.1` in CI), so seeding "the test IP is in the allowlist" or "the test IP is not in the allowlist" is straightforward.
 - **First-time enable with empty allowlist**: lower-role users blocked until any admin logs in. Admins can always reach `/admin` to disable. Documented in the toggle's helper text.
 
 ## Failure Modes (deliberately asymmetric)
@@ -266,7 +266,7 @@ Project policy (CLAUDE.md): no manual verification — Cypress E2E replaces all 
 
 **Add:**
 
-- `drizzle/000X_admin_ip_allowlist.sql` (drizzle generates from schema)
+- `drizzle/<next-seq>_admin_ip_allowlist.sql` (`drizzle-kit generate` picks the sequence number; current latest is 0009)
 - `src/lib/db/schema/ip-allowlist.ts`
 - `src/lib/ip-allowlist.ts`
 - `src/actions/ip-allowlist.actions.ts`
