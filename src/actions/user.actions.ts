@@ -77,6 +77,23 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
     // takes effect immediately rather than within the 30 s TTL window.
     invalidateUserPermissions(userId)
 
+    // If the user was demoted from admin/superAdmin, clear their allowlist
+    // entries so they no longer anchor IP trust.
+    const ADMIN_ROLES = new Set(["admin", "superAdmin"])
+    const targetIsNonAdminNow = !ADMIN_ROLES.has(targetRole)
+    if (targetIsNonAdminNow) {
+      try {
+        const { db } = await import("@/lib/db")
+        const { adminIpAllowlist } = await import("@/lib/db/schema/ip-allowlist")
+        const { eq } = await import("drizzle-orm")
+        await db.delete(adminIpAllowlist).where(eq(adminIpAllowlist.userId, userId))
+        const { clearCaches } = await import("@/lib/ip-allowlist")
+        clearCaches()
+      } catch (err) {
+        console.warn("[assignRole] Failed to clear IP allowlist on demotion", err)
+      }
+    }
+
     // Force-logout the target so they re-authenticate and pick up the new
     // role. Without this, their existing session keeps stale role data on
     // the client and they appear to retain old permissions until logout.
