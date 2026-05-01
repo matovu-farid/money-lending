@@ -440,6 +440,18 @@ export default defineConfig({
             return rows[0]?.n ?? 0
           })
         },
+
+        async "ip:clearCaches"() {
+          // Clear both the route-handler module cache and the middleware module cache.
+          // They run in separate module contexts so each needs its own flush.
+          const [routeRes, middlewareRes] = await Promise.all([
+            fetch("http://localhost:3000/api/test/clear-ip-cache", { method: "POST" }),
+            fetch("http://localhost:3000/_test/clear-ip-middleware-cache", { method: "POST" }),
+          ])
+          if (!routeRes.ok) throw new Error(`Failed to clear route IP caches: ${await routeRes.text()}`)
+          if (!middlewareRes.ok) throw new Error(`Failed to clear middleware IP caches: ${await middlewareRes.text()}`)
+          return null
+        },
       })
     },
   },

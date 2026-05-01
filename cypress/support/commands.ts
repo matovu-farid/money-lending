@@ -61,6 +61,9 @@ declare global {
 
       /** Count entries in admin_ip_allowlist for one admin */
       countAllowlistFor(userId: string): Chainable<number>
+
+      /** Clear the in-process IP allowlist toggle/IP caches in the dev server */
+      clearIpCaches(): Chainable<null>
     }
   }
 }
@@ -222,6 +225,10 @@ Cypress.Commands.add("clearAllowlist", () => {
 
 Cypress.Commands.add("countAllowlistFor", (userId: string) => {
   return cy.task("db:countAllowlistFor", { userId })
+})
+
+Cypress.Commands.add("clearIpCaches", () => {
+  return cy.task("ip:clearCaches")
 })
 
 export {}

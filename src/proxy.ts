@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { getSessionCookie } from "better-auth/cookies"
-import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
+import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp, clearCaches } from "@/lib/ip-allowlist"
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
@@ -15,6 +15,18 @@ const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", 
 const DB_LOOKUP_TIMEOUT_MS = 3_000
 
 export async function proxy(request: NextRequest) {
+  // Test-only: clear in-process IP caches from the middleware's own module
+  // instance. The route-handler-based /api/test/clear-ip-cache endpoint runs
+  // in a different module context and cannot reach the middleware cache.
+  if (
+    process.env.CYPRESS === "true" &&
+    request.method === "POST" &&
+    request.nextUrl.pathname === "/_test/clear-ip-middleware-cache"
+  ) {
+    clearCaches()
+    return NextResponse.json({ ok: true })
+  }
+
   // Server actions are POST requests with their own auth (withAction).
   // Skip the middleware DB round-trip to avoid double session checks.
   if (request.method === "POST") {
