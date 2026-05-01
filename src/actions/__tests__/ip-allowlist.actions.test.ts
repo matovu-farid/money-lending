@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest"
+import { describe, it, expect, beforeEach, vi, type Mock } from "vitest"
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
@@ -33,35 +33,35 @@ import {
   clearAllowlistAction,
 } from "@/actions/ip-allowlist.actions"
 
-const adminSession = { user: { id: "admin-1", role: "admin" } } as any
+const adminSession = { user: { id: "admin-1", role: "admin" } }
 
 describe("ip-allowlist actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    ;(getSession as any).mockResolvedValue(adminSession)
-    ;(checkPermission as any).mockResolvedValue(null)
+    ;(getSession as unknown as Mock).mockResolvedValue(adminSession)
+    ;(checkPermission as unknown as Mock).mockResolvedValue(null)
   })
 
   it("setIpAllowlistEnabledAction returns Forbidden for non-admin", async () => {
-    ;(checkPermission as any).mockResolvedValue("Forbidden")
+    ;(checkPermission as unknown as Mock).mockResolvedValue("Forbidden")
     const result = await setIpAllowlistEnabledAction({ enabled: true })
     expect(result).toEqual({ error: "Forbidden" })
   })
 
   it("setIpAllowlistEnabledAction clears caches on success", async () => {
     const result = await setIpAllowlistEnabledAction({ enabled: true })
-    expect("data" in result || "ok" in (result as any)).toBe(true)
+    expect("data" in result).toBe(true)
     expect(clearCaches).toHaveBeenCalled()
   })
 
   it("removeAllowlistEntryAction returns Forbidden for non-admin", async () => {
-    ;(checkPermission as any).mockResolvedValue("Forbidden")
+    ;(checkPermission as unknown as Mock).mockResolvedValue("Forbidden")
     const result = await removeAllowlistEntryAction({ entryId: "abc" })
     expect(result).toEqual({ error: "Forbidden" })
   })
 
   it("clearAllowlistAction returns Forbidden for non-admin", async () => {
-    ;(checkPermission as any).mockResolvedValue("Forbidden")
+    ;(checkPermission as unknown as Mock).mockResolvedValue("Forbidden")
     const result = await clearAllowlistAction()
     expect(result).toEqual({ error: "Forbidden" })
   })

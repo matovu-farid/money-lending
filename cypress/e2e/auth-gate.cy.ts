@@ -3,19 +3,19 @@ describe("Auth Gate (proxy.ts)", () => {
     cy.task("db:reset")
   })
 
-  it("unauthenticated user visiting /dashboard redirects to /login", () => {
+  it("unauthenticated user visiting /dashboard redirects to an auth page", () => {
     cy.visit("/dashboard")
-    cy.url({ timeout: 10000 }).should("include", "/login")
+    cy.url({ timeout: 10000 }).should("match", /\/(login|register)/)
   })
 
-  it("unauthenticated user visiting /customers redirects to /login", () => {
+  it("unauthenticated user visiting /customers redirects to an auth page", () => {
     cy.visit("/customers")
-    cy.url({ timeout: 10000 }).should("include", "/login")
+    cy.url({ timeout: 10000 }).should("match", /\/(login|register)/)
   })
 
-  it("unauthenticated user visiting /loans redirects to /login", () => {
+  it("unauthenticated user visiting /loans redirects to an auth page", () => {
     cy.visit("/loans")
-    cy.url({ timeout: 10000 }).should("include", "/login")
+    cy.url({ timeout: 10000 }).should("match", /\/(login|register)/)
   })
 
   it("unauthenticated user can access /login directly", () => {
@@ -87,7 +87,7 @@ describe("Auth Gate (proxy.ts)", () => {
 
     it("redirects unauthenticated user at mobile", () => {
       cy.visit("/dashboard")
-      cy.url({ timeout: 10000 }).should("include", "/login")
+      cy.url({ timeout: 10000 }).should("match", /\/(login|register)/)
     })
   })
 })

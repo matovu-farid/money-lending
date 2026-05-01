@@ -1,5 +1,12 @@
 const TEST_IP = "::ffff:127.0.0.1"
 
+interface TestUser {
+  email: string
+  userId: string
+  role: string
+  cookies: Array<{ name: string; value: string; domain?: string; path?: string }>
+}
+
 describe("IP allowlist — enforcement", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -12,7 +19,7 @@ describe("IP allowlist — enforcement", () => {
       cy.task("db:promoteUser", { email: adminEmail, role: "admin" })
     })
 
-    cy.task("auth:createUser", { name: "Sup", role: "supervisor" }).then((sup: any) => {
+    cy.task<TestUser>("auth:createUser", { name: "Sup", role: "supervisor" }).then((sup) => {
       cy.setIpAllowlistEnabled(true)
       cy.loginAsTestUser(sup.cookies)
       cy.visit("/dashboard")
@@ -22,7 +29,7 @@ describe("IP allowlist — enforcement", () => {
   })
 
   it("admin is exempt — can sign in even from an untrusted IP", () => {
-    cy.task("auth:createUser", { name: "Admin", role: "admin" }).then((u: any) => {
+    cy.task<TestUser>("auth:createUser", { name: "Admin", role: "admin" }).then((u) => {
       cy.setIpAllowlistEnabled(true)
       cy.clearAllowlist()
       cy.loginAsTestUser(u.cookies)
@@ -32,8 +39,8 @@ describe("IP allowlist — enforcement", () => {
   })
 
   it("supervisor passes when their IP is in the allowlist", () => {
-    cy.task("auth:createUser", { name: "Admin", role: "admin" }).then((admin: any) => {
-      cy.task("auth:createUser", { name: "Sup", role: "supervisor" }).then((sup: any) => {
+    cy.task<TestUser>("auth:createUser", { name: "Admin", role: "admin" }).then((admin) => {
+      cy.task<TestUser>("auth:createUser", { name: "Sup", role: "supervisor" }).then((sup) => {
         cy.setIpAllowlistEnabled(true)
         cy.seedAllowlistEntry(admin.userId, TEST_IP)
         cy.loginAsTestUser(sup.cookies)
@@ -44,7 +51,7 @@ describe("IP allowlist — enforcement", () => {
   })
 
   it("toggling off lets supervisor in immediately", () => {
-    cy.task("auth:createUser", { name: "Sup", role: "supervisor" }).then((sup: any) => {
+    cy.task<TestUser>("auth:createUser", { name: "Sup", role: "supervisor" }).then((sup) => {
       cy.setIpAllowlistEnabled(true)
       cy.clearAllowlist()
       cy.loginAsTestUser(sup.cookies)

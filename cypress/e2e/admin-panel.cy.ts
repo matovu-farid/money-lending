@@ -14,8 +14,10 @@ describe("Admin User Management", () => {
 
   it("admin page shows user management table", () => {
     cy.visit("/admin")
+    // Admin page renders a LoadingSkeleton until TanStack DB collections sync
+    // via Electric — wait for that to complete before asserting on content.
+    cy.contains("System administration", { timeout: 30000 })
     cy.contains("Admin")
-    cy.contains("System administration")
 
     // Table headers
     cy.contains("th", "Name")
@@ -27,14 +29,14 @@ describe("Admin User Management", () => {
 
   it("shows the current superAdmin user in the table", () => {
     cy.visit("/admin")
-    cy.contains("Super Admin")
+    cy.contains("Super Admin", { timeout: 30000 })
     cy.contains(adminEmail)
   })
 
   it("shows Last Active date column (AUTH-04)", () => {
     cy.visit("/admin")
     // en-UG locale formats dates as "21 Mar 2026" (day month year)
-    cy.get("[data-testid='data-row']")
+    cy.get("[data-testid='data-row']", { timeout: 30000 })
       .first()
       .find("td")
       .last()
@@ -68,9 +70,8 @@ describe("Admin User Management", () => {
 
     it("superAdmin can change a user role via dropdown", () => {
       cy.visit("/admin")
-
-      // Find the row for the regular user and open role dropdown
-      cy.contains("tr", "Regular User").within(() => {
+      // Wait for Electric sync before interacting with the table
+      cy.contains("tr", "Regular User", { timeout: 30000 }).within(() => {
         cy.get("[data-slot=select-trigger]").click()
       })
 
@@ -101,7 +102,7 @@ describe("Admin User Management", () => {
   })
 
   describe("Access Control", () => {
-    it("loanOfficer users see access denied on admin page", () => {
+    it("loanOfficer users are redirected away from admin page", () => {
       cy.clearCookies()
 
       // Register second user manually
@@ -120,9 +121,10 @@ describe("Admin User Management", () => {
       cy.login(loEmail, password)
       cy.url({ timeout: 15000 }).should("include", "/dashboard")
 
-      // Visit admin page — should show access denied
+      // The admin layout redirects users without user:list permission to /dashboard.
+      // (See src/app/(app)/admin/layout.tsx — redirect added in commit e050d4d)
       cy.visit("/admin")
-      cy.contains("Access denied")
+      cy.url({ timeout: 30000 }).should("include", "/dashboard")
     })
   })
 
@@ -133,7 +135,8 @@ describe("Admin User Management", () => {
 
     it("renders admin panel at mobile with tab bar", () => {
       cy.visit("/admin")
-      cy.get("h1", { timeout: 15000 }).should("be.visible")
+      // Wait for Electric sync to finish so the admin page renders past skeleton
+      cy.get("h1", { timeout: 30000 }).should("be.visible")
       cy.get("[data-testid='bottom-tab-bar']").should("exist")
         .should("have.css", "display", "flex")
       cy.get("[data-testid='sidebar-nav']").should("not.be.visible")

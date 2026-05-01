@@ -43,7 +43,7 @@ export default defineConfig({
     setupNodeEvents(on) {
       on("task", {
         async "db:reset"() {
-          return withSql(async (sql) => {
+          await withSql(async (sql) => {
             await sql.unsafe(`
               DELETE FROM financial_snapshots;
               DELETE FROM transactions;
@@ -69,8 +69,15 @@ export default defineConfig({
               DELETE FROM invitation;
               DELETE FROM "user";
             `)
-            return null
           })
+          // Flush in-memory IP allowlist caches in both module contexts so a
+          // stale toggle/IP value from a previous test can't leak across resets.
+          // Best-effort — never throw if the dev server isn't reachable.
+          await Promise.allSettled([
+            fetch("http://localhost:3000/api/test/clear-ip-cache", { method: "POST" }),
+            fetch("http://localhost:3000/_test/clear-ip-middleware-cache", { method: "POST" }),
+          ])
+          return null
         },
 
         async "db:getUserRole"({ email }: { email: string }) {

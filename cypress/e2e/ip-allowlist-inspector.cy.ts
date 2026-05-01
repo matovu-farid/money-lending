@@ -1,3 +1,10 @@
+interface TestUser {
+  email: string
+  userId: string
+  role: string
+  cookies: Array<{ name: string; value: string; domain?: string; path?: string }>
+}
+
 describe("IP allowlist — inspector actions", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -8,7 +15,7 @@ describe("IP allowlist — inspector actions", () => {
   it("admin can remove an allowlist entry", () => {
     cy.registerAndLogin({ name: "Admin User" }).then((adminEmail) => {
       cy.task("db:promoteUser", { email: adminEmail, role: "admin" })
-      cy.task("auth:createUser", { name: "Other Admin", role: "admin" }).then((other: any) => {
+      cy.task<TestUser>("auth:createUser", { name: "Other Admin", role: "admin" }).then((other) => {
         cy.seedAllowlistEntry(other.userId, "203.0.113.7")
         cy.clearCookies()
         cy.login(adminEmail, "TestPass123!")
@@ -28,7 +35,7 @@ describe("IP allowlist — inspector actions", () => {
   it("clear-all wipes the allowlist", () => {
     cy.registerAndLogin({ name: "Admin User" }).then((adminEmail) => {
       cy.task("db:promoteUser", { email: adminEmail, role: "admin" })
-      cy.task("auth:createUser", { name: "Other Admin", role: "admin" }).then((other: any) => {
+      cy.task<TestUser>("auth:createUser", { name: "Other Admin", role: "admin" }).then((other) => {
         cy.seedAllowlistEntry(other.userId, "203.0.113.7")
         cy.seedAllowlistEntry(other.userId, "203.0.113.8")
         cy.clearCookies()

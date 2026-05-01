@@ -1,3 +1,10 @@
+interface TestUser {
+  email: string
+  userId: string
+  role: string
+  cookies: Array<{ name: string; value: string; domain?: string; path?: string }>
+}
+
 describe("IP allowlist — toggle and inspector visibility", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -17,7 +24,7 @@ describe("IP allowlist — toggle and inspector visibility", () => {
 
     cy.clearAppPersistence()
 
-    cy.task("auth:createUser", { name: "Sup", role: "supervisor" }).then((u: any) => {
+    cy.task<TestUser>("auth:createUser", { name: "Sup", role: "supervisor" }).then((u) => {
       cy.loginAsTestUser(u.cookies)
       cy.visit("/admin")
       cy.get('[data-testid="ip-allowlist-toggle"]').should("not.exist")
