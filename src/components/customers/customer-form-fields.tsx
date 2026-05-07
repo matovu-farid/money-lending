@@ -88,8 +88,8 @@ export function CustomerFormFields({
           {...register("nin", {
             required: "NIN is required",
             validate: {
-              format: v => /^[CA][MF][A-Z0-9]{12}$/.test(v.trim().toUpperCase())
-                || "Must be 14 characters: C/A + M/F + 12 alphanumeric (e.g. CF83037108RLLK)",
+              format: v => /^[A-Z0-9]{14}$/.test(v.trim().toUpperCase())
+                || "Must be 14 alphanumeric characters (e.g. CF83037108RLLK)",
               unique: v => !existingNins.has(v.trim().toUpperCase())
                 || "A customer with this NIN already exists",
             },
@@ -97,7 +97,7 @@ export function CustomerFormFields({
           })}
         />
         <p className="text-xs text-muted-foreground">
-          Format: C/A (citizen/alien) + M/F (gender) + 8 digits + 4 alphanumeric
+          14 alphanumeric characters (as printed on the National ID)
         </p>
         {errors.nin && (
           <p className="text-sm text-destructive">{errors.nin.message}</p>

@@ -13,7 +13,7 @@ vi.mock("@/lib/validators", () => ({
   }),
   validateNIN: vi.fn((value: string | undefined | null) => {
     const trimmed = value?.trim()?.toUpperCase()
-    if (!trimmed || !/^[CA][MF][A-Z0-9]{12}$/.test(trimmed)) {
+    if (!trimmed || !/^[A-Z0-9]{14}$/.test(trimmed)) {
       return "Valid NIN is required (e.g. CF83037108RLLK)"
     }
     return null
