@@ -47,7 +47,7 @@ describe("Customer Service", () => {
     const result = await Effect.runPromise(
       createCustomer({
         fullName: "John Doe",
-        nin: "C1234567890123",
+        nin: "CF83037108RLLK",
         contact: "0771234567",
         address: "Kampala, Uganda",
       })

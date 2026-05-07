@@ -82,14 +82,14 @@ export function CustomerFormFields({
         <Input
           id={id("nin")}
           type="text"
-          placeholder="e.g. C1234567890123"
+          placeholder="e.g. CF83037108RLLK"
           maxLength={14}
           disabled={disabled}
           {...register("nin", {
             required: "NIN is required",
             validate: {
-              format: v => /^[CA]\d{13}$/.test(v.trim().toUpperCase())
-                || "Must be 14 characters: C or A followed by 13 digits (e.g. C1234567890123)",
+              format: v => /^[CA][MF][A-Z0-9]{12}$/.test(v.trim().toUpperCase())
+                || "Must be 14 characters: C/A + M/F + 12 alphanumeric (e.g. CF83037108RLLK)",
               unique: v => !existingNins.has(v.trim().toUpperCase())
                 || "A customer with this NIN already exists",
             },

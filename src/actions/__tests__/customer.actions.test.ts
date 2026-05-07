@@ -13,8 +13,8 @@ vi.mock("@/lib/validators", () => ({
   }),
   validateNIN: vi.fn((value: string | undefined | null) => {
     const trimmed = value?.trim()?.toUpperCase()
-    if (!trimmed || !/^[CA]\d{13}$/.test(trimmed)) {
-      return "Valid NIN is required (e.g. C1234567890123)"
+    if (!trimmed || !/^[CA][MF][A-Z0-9]{12}$/.test(trimmed)) {
+      return "Valid NIN is required (e.g. CF83037108RLLK)"
     }
     return null
   }),
@@ -153,7 +153,7 @@ describe("Customer Actions", () => {
   describe("createCustomerAction", () => {
     const validInput = {
       fullName: "John Doe",
-      nin: "C1234567890123",
+      nin: "CF83037108RLLK",
       contact: "0771234567",
       address: "Kampala, Uganda",
     }

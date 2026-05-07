@@ -3,23 +3,27 @@ import fc from "fast-check"
 import { validateNIN, validateUgandanPhone, validateFullName, validateRequired, validatePositiveDecimal } from "../validators"
 
 describe("validateNIN", () => {
-  it("accepts valid citizen NIN (starts with C, 13 digits)", () => {
-    expect(validateNIN("C1234567890123")).toBeNull()
+  it("accepts citizen male NIN (CM + 12 alphanumeric)", () => {
+    expect(validateNIN("CM97027102X4CU")).toBeNull()
   })
-  it("accepts valid foreigner NIN (starts with A, 13 digits)", () => {
-    expect(validateNIN("A1234567890123")).toBeNull()
+  it("accepts citizen female NIN with mixed alphanumerics (CF83037108RLLK)", () => {
+    expect(validateNIN("CF83037108RLLK")).toBeNull()
+  })
+  it("accepts alien NIN (AM/AF prefix)", () => {
+    expect(validateNIN("AM12345678ABCD")).toBeNull()
+    expect(validateNIN("AF12345678ABCD")).toBeNull()
   })
   it("accepts lowercase (auto-uppercased)", () => {
-    expect(validateNIN("c1234567890123")).toBeNull()
+    expect(validateNIN("cf83037108rllk")).toBeNull()
   })
   it("rejects short NIN", () => {
     expect(validateNIN("C12345")).not.toBeNull()
   })
-  it("rejects letters in trailing positions", () => {
-    expect(validateNIN("CM97027102X4CU")).not.toBeNull()
-  })
   it("rejects wrong leading letter", () => {
-    expect(validateNIN("B1234567890123")).not.toBeNull()
+    expect(validateNIN("BM12345678ABCD")).not.toBeNull()
+  })
+  it("rejects invalid gender slot", () => {
+    expect(validateNIN("CX12345678ABCD")).not.toBeNull()
   })
   it("rejects empty", () => {
     expect(validateNIN("")).not.toBeNull()
@@ -82,11 +86,13 @@ describe("validatePositiveDecimal", () => {
 describe("Property-Based: Validator Functions", () => {
   // ── Arbitraries ──────────────────────────────────────────
 
-  // Valid NIN per Uganda spec: leading C (citizen) or A (foreigner) + 13 digits
+  // Valid NIN per Uganda spec: C/A (citizen/alien) + M/F (gender) + 12 alphanumeric
+  const arbAlphanumChar = fc.constantFrom(..."ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789".split(""))
   const arbValidNIN = fc.tuple(
     fc.constantFrom("C", "A"),
-    fc.array(fc.constantFrom("0","1","2","3","4","5","6","7","8","9"), { minLength: 13, maxLength: 13 }).map((a) => a.join("")),
-  ).map(([prefix, digits]) => `${prefix}${digits}`)
+    fc.constantFrom("M", "F"),
+    fc.array(arbAlphanumChar, { minLength: 12, maxLength: 12 }).map((a) => a.join("")),
+  ).map(([citizen, gender, rest]) => `${citizen}${gender}${rest}`)
 
   // Valid phone: 07 + 8 digits
   const arbValidPhone07 = fc.array(
@@ -164,9 +170,10 @@ describe("Property-Based: Validator Functions", () => {
       fc.assert(
         fc.property(
           fc.constantFrom("B","D","E","X","Z","1","0"),
-          fc.array(fc.constantFrom("0","1","2","3","4","5","6","7","8","9"), { minLength: 13, maxLength: 13 }).map((a) => a.join("")),
-          (badStart, rest) => {
-            return validateNIN(badStart + rest) !== null
+          fc.constantFrom("M","F"),
+          fc.array(arbAlphanumChar, { minLength: 12, maxLength: 12 }).map((a) => a.join("")),
+          (badStart, gender, rest) => {
+            return validateNIN(badStart + gender + rest) !== null
           }
         ),
         { numRuns: 200 }
