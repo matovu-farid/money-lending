@@ -61,8 +61,8 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
 
   try {
     const targetUser = await auth.api.getUser({ query: { id: userId }, headers: await headers() })
+    const existingRole = (targetUser?.role ?? "unassigned") as UserRole
     if (targetUser) {
-      const existingRole = (targetUser.role ?? "unassigned") as UserRole
       const existingLevel = ROLE_LEVELS[existingRole] ?? 0
       if (existingLevel >= actorLevel) {
         return { error: "Cannot modify a user at or above your own role level" }
@@ -80,8 +80,9 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
     // If the user was demoted from admin/superAdmin, clear their allowlist
     // entries so they no longer anchor IP trust.
     const ADMIN_ROLES = new Set(["admin", "superAdmin"])
-    const targetIsNonAdminNow = !ADMIN_ROLES.has(targetRole)
-    if (targetIsNonAdminNow) {
+    const wasAdmin = ADMIN_ROLES.has(existingRole)
+    const isNowAdmin = ADMIN_ROLES.has(targetRole)
+    if (wasAdmin && !isNowAdmin) {
       try {
         const { db } = await import("@/lib/db")
         const { adminIpAllowlist } = await import("@/lib/db/schema/ip-allowlist")
