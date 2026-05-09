@@ -133,7 +133,7 @@ describe("Responsive Layouts", () => {
 
       // Add an expense to have data to display
       cy.contains("button", "Add Expense").click({ force: true })
-      cy.get("#expense-date").type("2026-03-21")
+      cy.pickDate("#expense-date", "2026-03-21")
       cy.contains("+ Add Category").click()
       cy.get("#new-category-name").type("Office Supplies")
       cy.contains("button", /^Add$/).click()
@@ -159,7 +159,7 @@ describe("Responsive Layouts", () => {
 
       // Add an income entry to have data to display
       cy.contains("button", "Add Income").click({ force: true })
-      cy.get("#income-date").type("2026-03-21")
+      cy.pickDate("#income-date", "2026-03-21")
       cy.contains("+ Add Category").click()
       cy.get("#new-income-category-name").type("Loan Interest")
       cy.contains("button", /^Add$/).click()
@@ -290,7 +290,7 @@ describe("Responsive Layouts", () => {
       cy.get("h1").contains("Expenses", { timeout: 10000 }).should("be.visible")
 
       cy.contains("button", "Add Expense").click({ force: true })
-      cy.get("#expense-date").type("2026-03-21")
+      cy.pickDate("#expense-date", "2026-03-21")
       cy.contains("+ Add Category").click()
       cy.get("#new-category-name").type("Office Rent")
       cy.contains("button", /^Add$/).click()
@@ -314,7 +314,7 @@ describe("Responsive Layouts", () => {
       cy.get("h1").contains("Income", { timeout: 10000 }).should("be.visible")
 
       cy.contains("button", "Add Income").click({ force: true })
-      cy.get("#income-date").type("2026-03-21")
+      cy.pickDate("#income-date", "2026-03-21")
       cy.contains("+ Add Category").click()
       cy.get("#new-income-category-name").type("Consultation Fees")
       cy.contains("button", /^Add$/).click()

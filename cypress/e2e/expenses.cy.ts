@@ -41,7 +41,7 @@ describe("Expense CRUD", () => {
       .scrollIntoView()
       .click();
 
-    cy.get("#expense-date").type("2026-03-21");
+    cy.pickDate("#expense-date", "2026-03-21");
     // Type a brand-new category and submit — it should be auto-created
     cy.get("#expense-category").type("Office Supplies");
     cy.get("#expense-amount").type("50000");
@@ -59,7 +59,7 @@ describe("Expense CRUD", () => {
       .scrollIntoView()
       .click();
 
-    cy.get("#expense-date").type("2026-03-21");
+    cy.pickDate("#expense-date", "2026-03-21");
     cy.get("#expense-category").type("Transport{enter}");
     cy.contains('Created category "Transport"', { timeout: 10000 }).should("be.visible");
     // After Enter, the input shows the new selection (no spinner stuck)
@@ -77,7 +77,7 @@ describe("Expense CRUD", () => {
     cy.contains("button", "Add Expense", { timeout: 15000 })
       .scrollIntoView()
       .click();
-    cy.get("#expense-date").type("2026-03-21");
+    cy.pickDate("#expense-date", "2026-03-21");
     cy.get("#expense-category").type("Utilities{enter}");
     cy.get("#expense-amount").type("10000");
     cy.contains("button", "Record Expense").click();
@@ -85,7 +85,7 @@ describe("Expense CRUD", () => {
 
     // Open again and pick the existing one via dropdown — no second create
     cy.contains("button", "Add Expense").click();
-    cy.get("#expense-date").type("2026-03-21");
+    cy.pickDate("#expense-date", "2026-03-21");
     cy.get("#expense-category").type("Util");
     cy.contains("button", "Utilities").click();
     cy.get("#expense-amount").type("20000");
@@ -107,7 +107,7 @@ describe("Expense CRUD", () => {
     cy.contains("button", "Add Expense", { timeout: 15000 })
       .scrollIntoView()
       .click()
-    cy.get("#expense-date").type("2026-03-21")
+    cy.pickDate("#expense-date", "2026-03-21")
     cy.get("#expense-category").type("Test Category{enter}")
     cy.get("#expense-amount").type("10000")
 
@@ -127,7 +127,7 @@ describe("Expense CRUD", () => {
     cy.contains("button", "Add Expense", { timeout: 15000 })
       .scrollIntoView()
       .click();
-    cy.get("#expense-date").type("2026-03-21");
+    cy.pickDate("#expense-date", "2026-03-21");
     cy.get("#expense-category").type("Transport{enter}");
     cy.get("#expense-amount").type("30000");
     cy.get("#expense-notes").type("Fuel for site visits");

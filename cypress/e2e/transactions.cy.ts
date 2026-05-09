@@ -37,7 +37,7 @@ describe("Transaction Log", () => {
     // Record an expense — this always creates a debit transaction
     cy.visit("/expenses")
     cy.contains("button", "Add Expense", { timeout: 15000 }).scrollIntoView().click({ force: true })
-    cy.get("#expense-date").type("2026-03-21")
+    cy.pickDate("#expense-date", "2026-03-21")
     cy.contains("+ Add Category").click()
     cy.get("#new-category-name").type("Office Rent")
     cy.contains("button", /^Add$/).click()

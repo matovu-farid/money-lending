@@ -39,7 +39,7 @@ describe("Income CRUD", () => {
       .scrollIntoView()
       .click()
 
-    cy.get("#income-date").type("2026-03-21")
+    cy.pickDate("#income-date", "2026-03-21")
     // Create a category
     cy.contains("+ Add Category").click()
     cy.get("#new-income-category-name").type("Loan Interest")
@@ -66,7 +66,7 @@ describe("Income CRUD", () => {
     cy.contains("button", "Add Income", { timeout: 15000 })
       .scrollIntoView()
       .click()
-    cy.get("#income-date").type("2026-03-21")
+    cy.pickDate("#income-date", "2026-03-21")
     cy.contains("+ Add Category").click()
     cy.get("#new-income-category-name").type("Test Category")
     cy.contains("button", "Add").click()
@@ -88,7 +88,7 @@ describe("Income CRUD", () => {
     cy.contains("button", "Add Income", { timeout: 15000 })
       .scrollIntoView()
       .click()
-    cy.get("#income-date").type("2026-03-21")
+    cy.pickDate("#income-date", "2026-03-21")
     cy.contains("+ Add Category").click()
     cy.get("#new-income-category-name").type("Penalty Fees")
     cy.contains("button", "Add").click()

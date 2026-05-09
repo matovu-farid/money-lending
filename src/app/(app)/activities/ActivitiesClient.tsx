@@ -4,7 +4,7 @@ import { Suspense } from "react"
 import { ExternalLink } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -204,19 +204,21 @@ function ActivitiesContent({
 
           <div className="space-y-1.5">
             <Label className="text-sm">Date From</Label>
-            <Input
-              type="date"
+            <DatePicker
               value={filters.dateFrom}
-              onChange={(e) => setFilter("dateFrom", e.target.value)}
+              onChange={(value) => setFilter("dateFrom", value)}
+              max={filters.dateTo || undefined}
+              placeholder="From"
             />
           </div>
 
           <div className="space-y-1.5">
             <Label className="text-sm">Date To</Label>
-            <Input
-              type="date"
+            <DatePicker
               value={filters.dateTo}
-              onChange={(e) => setFilter("dateTo", e.target.value)}
+              onChange={(value) => setFilter("dateTo", value)}
+              min={filters.dateFrom || undefined}
+              placeholder="To"
             />
           </div>
         </div>

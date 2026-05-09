@@ -31,8 +31,8 @@ describe("Loan Issuance Wizard", () => {
     cy.get("#principalAmount").type("1000000")
     cy.get("#issuanceFee").type("50000")
     cy.get("#description").type("Working capital for retail business")
-    // Start date should default to today
-    cy.get("#startDate").should("not.have.value", "")
+    // Start date should default to today (picker trigger shows the date instead of "Pick a date")
+    cy.get("#startDate").should("be.visible").should("not.contain", "Pick a date")
     // Interest rate defaults to 10
     cy.get("#interestRate").should("have.value", "10")
     cy.contains("button", "Next").click()

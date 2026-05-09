@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
 import { creditorCollection } from "@/collections/creditors"
 import { generateClientId } from "@/lib/client-id"
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -200,11 +201,18 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
 
               <div className="space-y-1">
                 <Label htmlFor="cred-date">Date</Label>
-                <Input
-                  id="cred-date"
-                  type="date"
-                  disabled={isPending}
-                  {...register("investmentDate", { required: "Date is required" })}
+                <Controller
+                  name="investmentDate"
+                  control={control}
+                  rules={{ required: "Date is required" }}
+                  render={({ field }) => (
+                    <DatePicker
+                      id="cred-date"
+                      value={field.value}
+                      onChange={field.onChange}
+                      disabled={isPending}
+                    />
+                  )}
                 />
                 {errors.investmentDate && <p className="text-sm text-destructive">{errors.investmentDate.message}</p>}
               </div>

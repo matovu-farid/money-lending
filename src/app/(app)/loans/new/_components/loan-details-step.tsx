@@ -1,10 +1,12 @@
 import React, { useEffect, useRef } from "react"
+import { Controller } from "react-hook-form"
 import type { UseFormRegister, UseFormWatch, Control, FieldErrors } from "react-hook-form"
 import type { LoanType } from "@/types"
 import BigNumber from "bignumber.js"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -156,6 +158,7 @@ export function LoanDetailsStep({
         )}
 
         <StartDateField
+          control={control}
           register={register}
           errors={errors}
           startDate={startDate}
@@ -295,10 +298,12 @@ function LoanTypeSelector({
 }
 
 function StartDateField({
+  control,
   register,
   errors,
   startDate,
 }: {
+  control: Control<LoanFormValues>
   register: UseFormRegister<LoanFormValues>
   errors: FieldErrors<LoanFormValues>
   startDate: string
@@ -317,11 +322,10 @@ function StartDateField({
           </div>
         </InfoPopover>
       </div>
-      <Input
-        id="startDate"
-        type="date"
-        max={todayDateString()}
-        {...register("startDate", {
+      <Controller
+        name="startDate"
+        control={control}
+        rules={{
           required: "Start date is required",
           validate: (v) => {
             const selected = new Date(v)
@@ -331,7 +335,15 @@ function StartDateField({
             if (selected.getTime() > today.getTime()) return "Start date cannot be in the future"
             return true
           },
-        })}
+        }}
+        render={({ field }) => (
+          <DatePicker
+            id="startDate"
+            value={field.value}
+            onChange={field.onChange}
+            max={todayDateString()}
+          />
+        )}
       />
       {errors.startDate && (
         <p className="text-sm text-destructive">{errors.startDate.message}</p>

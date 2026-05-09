@@ -9,6 +9,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -72,11 +73,10 @@ export function EditLoanDialog({
           </div>
           <div className="space-y-1">
             <Label htmlFor="loanStartDate">Start Date</Label>
-            <Input
+            <DatePicker
               id="loanStartDate"
-              type="date"
               value={startDate}
-              onChange={(e) => onStartDateChange(e.target.value)}
+              onChange={onStartDateChange}
               disabled={isPending}
             />
           </div>

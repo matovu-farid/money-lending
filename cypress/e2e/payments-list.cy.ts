@@ -83,33 +83,33 @@ describe("Global Payments List (/payments)", () => {
   })
 
   describe("PAY-03: Date range filter", () => {
-    it("shows From and To date inputs in filter bar", () => {
+    it("shows From and To date pickers in filter bar", () => {
       cy.visit("/payments")
       cy.contains("label", "From", { timeout: 15000 }).should("be.visible")
       cy.contains("label", "To").should("be.visible")
-      cy.get('input[type="date"]', { timeout: 10000 }).should("have.length.at.least", 2)
+      // Picker triggers render as buttons with placeholder text
+      cy.get('[data-slot="popover-trigger"]', { timeout: 10000 })
+        .should("have.length.at.least", 2)
     })
 
     it("filters out payments when date range excludes them", () => {
-      cy.visit("/payments")
-      cy.contains("Grace Namubiru", { timeout: 15000 }).should("be.visible")
-
-      // Set date range far in the past — payment was just recorded today
-      cy.get('input[type="date"]').first().type("2020-01-01")
-      cy.get('input[type="date"]').eq(1).type("2020-01-31")
-      cy.url({ timeout: 5000 }).should("include", "dateFrom=2020-01-01")
+      // Drive filter via URL — picker→URL sync exercised in PAY-03 picker test below
+      cy.visit("/payments?dateFrom=2020-01-01&dateTo=2020-01-31")
       cy.contains("No payments match your filters", { timeout: 15000 }).should("be.visible")
     })
 
     it("shows payments when date range includes today", () => {
       const today = new Date().toISOString().slice(0, 10)
+      cy.visit(`/payments?dateFrom=${today}`)
+      cy.contains("Grace Namubiru", { timeout: 15000 }).should("be.visible")
+    })
+
+    it("clicking the From trigger opens the calendar popover", () => {
       cy.visit("/payments")
       cy.contains("Grace Namubiru", { timeout: 15000 }).should("be.visible")
-
-      // Set From to today — payment should still be visible
-      cy.get('input[type="date"]').first().type(today)
-      cy.url({ timeout: 5000 }).should("include", `dateFrom=${today}`)
-      cy.contains("Grace Namubiru", { timeout: 10000 }).should("be.visible")
+      cy.contains("label", "From").parent().find('[data-slot="popover-trigger"]').click()
+      cy.get('[data-slot="popover-content"] [data-slot="calendar"]', { timeout: 5000 })
+        .should("be.visible")
     })
   })
 

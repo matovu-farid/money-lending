@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { ArrowLeft } from "lucide-react"
 import { toast } from "sonner"
 import { generateClientId } from "@/lib/client-id"
@@ -10,7 +10,7 @@ import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
 import { useSession } from "@/lib/auth-client"
 import { generateReceiptNumber } from "@/lib/receipt-number"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { Separator } from "@/components/ui/separator"
@@ -232,12 +232,19 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
           <form onSubmit={handleSubmit(onFormSubmit)} className="space-y-4">
             <div className="space-y-1">
               <Label htmlFor="paymentDate">Payment Date</Label>
-              <Input
-                id="paymentDate"
-                type="date"
-                min={loanStartDate}
-                max={todayDateString()}
-                {...register("paymentDate", { required: "Payment date is required" })}
+              <Controller
+                name="paymentDate"
+                control={control}
+                rules={{ required: "Payment date is required" }}
+                render={({ field }) => (
+                  <DatePicker
+                    id="paymentDate"
+                    value={field.value}
+                    onChange={field.onChange}
+                    min={loanStartDate}
+                    max={todayDateString()}
+                  />
+                )}
               />
               {errors.paymentDate && (
                 <p className="text-sm text-destructive">{errors.paymentDate.message}</p>

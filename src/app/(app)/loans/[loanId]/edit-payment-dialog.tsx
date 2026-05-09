@@ -9,6 +9,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -56,11 +57,10 @@ export function EditPaymentDialog({
           </div>
           <div className="space-y-1">
             <Label htmlFor="editDate">Payment Date</Label>
-            <Input
+            <DatePicker
               id="editDate"
-              type="date"
               value={date}
-              onChange={(e) => onDateChange(e.target.value)}
+              onChange={onDateChange}
               disabled={isPending}
             />
           </div>

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useTransition } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { addInvestment } from "@/collections/creditor-actions"
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -143,11 +144,18 @@ export function AddInvestmentDialog({ creditorId }: Props) {
 
           <div className="space-y-1">
             <Label htmlFor="inv-date">Date</Label>
-            <Input
-              id="inv-date"
-              type="date"
-              disabled={isPending}
-              {...register("date", { required: "Date is required" })}
+            <Controller
+              name="date"
+              control={control}
+              rules={{ required: "Date is required" }}
+              render={({ field }) => (
+                <DatePicker
+                  id="inv-date"
+                  value={field.value}
+                  onChange={field.onChange}
+                  disabled={isPending}
+                />
+              )}
             />
             {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
           </div>

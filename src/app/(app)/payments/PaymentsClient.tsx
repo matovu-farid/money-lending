@@ -16,6 +16,7 @@ import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -555,20 +556,24 @@ function PaymentsContent({
           </div>
           <div>
             <Label className="text-sm">From</Label>
-            <input
-              type="date"
-              className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+            <DatePicker
+              size="sm"
+              className="w-[160px]"
               value={dateFrom}
-              onChange={(e) => setFilter("dateFrom", e.target.value)}
+              onChange={(value) => setFilter("dateFrom", value)}
+              max={dateTo || undefined}
+              placeholder="From"
             />
           </div>
           <div>
             <Label className="text-sm">To</Label>
-            <input
-              type="date"
-              className="h-8 w-[160px] rounded-md border border-input bg-background px-3 text-sm"
+            <DatePicker
+              size="sm"
+              className="w-[160px]"
               value={dateTo}
-              onChange={(e) => setFilter("dateTo", e.target.value)}
+              onChange={(value) => setFilter("dateTo", value)}
+              min={dateFrom || undefined}
+              placeholder="To"
             />
           </div>
           <div>
@@ -681,12 +686,10 @@ function PaymentsContent({
           <div className="flex flex-col gap-4 p-4">
             <div className="space-y-1.5">
               <Label htmlFor="edit-payment-date">Date</Label>
-              <input
+              <DatePicker
                 id="edit-payment-date"
-                type="date"
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={editDate}
-                onChange={(e) => setEditDate(e.target.value)}
+                onChange={setEditDate}
               />
             </div>
             <div className="space-y-1.5">

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { useLiveQuery } from "@tanstack/react-db"
 import BigNumber from "bignumber.js"
 import { toast } from "sonner"
@@ -12,6 +12,7 @@ import { generateClientId } from "@/lib/client-id"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
@@ -321,11 +322,18 @@ export function TransactionListClient({
             <form onSubmit={handleSubmit(onFormSubmit)} className="flex flex-col gap-4 p-4">
               <div className="space-y-1.5">
                 <Label htmlFor={`${idPrefix}-date`}>Date</Label>
-                <Input
-                  id={`${idPrefix}-date`}
-                  type="date"
-                  max={todayDateString()}
-                  {...register("date", { required: "Date is required" })}
+                <Controller
+                  name="date"
+                  control={control}
+                  rules={{ required: "Date is required" }}
+                  render={({ field }) => (
+                    <DatePicker
+                      id={`${idPrefix}-date`}
+                      value={field.value}
+                      onChange={field.onChange}
+                      max={todayDateString()}
+                    />
+                  )}
                 />
                 {errors.date && <p className="text-sm text-destructive">{errors.date.message}</p>}
               </div>

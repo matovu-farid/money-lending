@@ -36,7 +36,7 @@ describe("Rate Change Approval Flow", () => {
     cy.contains("Rate Test Customer").click()
     cy.get("#principalAmount").clear().type("1000000")
     cy.get("#interestRate").clear().type("10")
-    cy.get("#startDate").type("2026-01-01")
+    // Start date defaults to today; the picker is a button rather than a typeable input
     cy.get("#collateralNature").type("Land Title")
     cy.get("button[type=submit]").click()
     cy.contains("Loan created", { timeout: 10000 })

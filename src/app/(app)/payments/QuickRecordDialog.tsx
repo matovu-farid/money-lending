@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useMemo } from "react"
 import { format } from "date-fns"
-import { useForm } from "react-hook-form"
+import { useForm, Controller } from "react-hook-form"
 import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useLoansWithBalances } from "@/collections/loan-views"
 import { loanBalanceCollection } from "@/collections/loan-balances"
@@ -17,7 +17,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
@@ -56,7 +56,6 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
   const [pendingData, setPendingData] = useState<QuickRecordFormValues | null>(null)
 
   const {
-    register,
     handleSubmit,
     reset,
     control,
@@ -335,10 +334,17 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                 {/* Payment date */}
                 <div className="space-y-1.5">
                   <Label htmlFor="quick-record-date">Payment Date</Label>
-                  <Input
-                    id="quick-record-date"
-                    type="date"
-                    {...register("paymentDate", { required: "Payment date is required" })}
+                  <Controller
+                    name="paymentDate"
+                    control={control}
+                    rules={{ required: "Payment date is required" }}
+                    render={({ field }) => (
+                      <DatePicker
+                        id="quick-record-date"
+                        value={field.value}
+                        onChange={field.onChange}
+                      />
+                    )}
                   />
                   {errors.paymentDate && (
                     <p className="text-sm text-destructive">{errors.paymentDate.message}</p>

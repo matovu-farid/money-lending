@@ -23,7 +23,7 @@ describe("Optimistic Rollback", () => {
       }
     }).as("failedSave")
 
-    cy.get("#expense-date").type("2026-03-21")
+    cy.pickDate("#expense-date", "2026-03-21")
     cy.get("#expense-amount").type("99999")
     cy.contains("button", "Record Expense").click()
 
@@ -53,7 +53,7 @@ describe("Optimistic Rollback", () => {
       }
     }).as("failedSave")
 
-    cy.get("#income-date").type("2026-03-21")
+    cy.pickDate("#income-date", "2026-03-21")
     cy.get("#income-amount").type("99999")
     cy.contains("button", "Record Income").click()
 
@@ -70,7 +70,7 @@ describe("Optimistic Rollback", () => {
     cy.contains("button", "Add Expense", { timeout: 15000 })
       .scrollIntoView()
       .click()
-    cy.get("#expense-date").type("2026-03-21")
+    cy.pickDate("#expense-date", "2026-03-21")
     cy.contains("+ Add Category").click()
     cy.get("#new-category-name").type("Keep This")
     cy.contains("button", "Add").click()
@@ -103,7 +103,7 @@ describe("Optimistic Rollback", () => {
     cy.contains("button", "Add Income", { timeout: 15000 })
       .scrollIntoView()
       .click()
-    cy.get("#income-date").type("2026-03-21")
+    cy.pickDate("#income-date", "2026-03-21")
     cy.contains("+ Add Category").click()
     cy.get("#new-income-category-name").type("Keep This")
     cy.contains("button", "Add").click()

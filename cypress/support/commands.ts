@@ -64,6 +64,13 @@ declare global {
 
       /** Clear the in-process IP allowlist toggle/IP caches in the dev server */
       clearIpCaches(): Chainable<null>
+
+      /**
+       * Pick a date in a shadcn DatePicker by id. Opens the popover, navigates
+       * months via chevrons from the current displayed month, and clicks the
+       * day cell. Date must be in yyyy-MM-dd format.
+       */
+      pickDate(triggerSelector: string, dateString: string): Chainable<void>
     }
   }
 }
@@ -229,6 +236,48 @@ Cypress.Commands.add("countAllowlistFor", (userId: string) => {
 
 Cypress.Commands.add("clearIpCaches", () => {
   return cy.task("ip:clearCaches")
+})
+
+Cypress.Commands.add("pickDate", (triggerSelector: string, dateString: string) => {
+  // react-day-picker v9 sets data-day={isoDate} on each day's <td>. Targeting
+  // by ISO date is locale-independent. We still need to navigate to the
+  // correct month if the target isn't currently rendered.
+  const [yearStr, monthStr] = dateString.split("-")
+  const targetMonthMs = new Date(Number(yearStr), Number(monthStr) - 1, 1).getTime()
+
+  cy.get(triggerSelector).click()
+  cy.get('[data-slot="popover-content"] [data-slot="calendar"]', { timeout: 5000 })
+    .should("be.visible")
+
+  function ensureMonthVisible(): void {
+    cy.get('[data-slot="popover-content"]').then(($content) => {
+      // If the target day is already rendered (and not from an outside month
+      // unless the current month doesn't show it), we're done.
+      const found = $content.find(`td[data-day="${dateString}"]:not([data-outside])`)
+      if (found.length > 0) return
+
+      // Pick the first visible day cell to determine displayed month.
+      const firstNonOutside = $content.find('td[data-day]:not([data-outside])').first()
+      const isoDate = firstNonOutside.attr("data-day")
+      if (!isoDate) {
+        throw new Error("pickDate: could not determine current displayed month")
+      }
+      const [y, m] = isoDate.split("-")
+      const currentMs = new Date(Number(y), Number(m) - 1, 1).getTime()
+      const button =
+        targetMonthMs < currentMs
+          ? '[data-slot="popover-content"] .rdp-button_previous'
+          : '[data-slot="popover-content"] .rdp-button_next'
+      cy.get(button).click()
+      ensureMonthVisible()
+    })
+  }
+  ensureMonthVisible()
+
+  cy.get(`[data-slot="popover-content"] td[data-day="${dateString}"]:not([data-outside]) button`)
+    .click()
+
+  cy.get('[data-slot="popover-content"]').should("not.exist")
 })
 
 export {}

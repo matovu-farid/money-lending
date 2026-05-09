@@ -6,7 +6,7 @@ import { useUrlFilters } from "@/hooks/use-url-filters"
 import { useTransactionReportData } from "@/hooks/use-reports"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Badge } from "@/components/ui/badge"
 import { Loader2 } from "lucide-react"
 import {
@@ -151,21 +151,25 @@ export function TransactionLogClient({
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">From</label>
-          <Input
-            type="date"
+          <DatePicker
+            size="sm"
+            className="w-[160px]"
             value={dateFrom}
-            onChange={(e) => setFilter("dateFrom", e.target.value)}
-            className="w-[160px] h-8"
+            onChange={(value) => setFilter("dateFrom", value)}
+            max={dateTo || undefined}
+            placeholder="From"
           />
         </div>
 
         <div className="flex flex-col gap-1">
           <label className="text-xs text-muted-foreground">To</label>
-          <Input
-            type="date"
+          <DatePicker
+            size="sm"
+            className="w-[160px]"
             value={dateTo}
-            onChange={(e) => setFilter("dateTo", e.target.value)}
-            className="w-[160px] h-8"
+            onChange={(value) => setFilter("dateTo", value)}
+            min={dateFrom || undefined}
+            placeholder="To"
           />
         </div>
 
