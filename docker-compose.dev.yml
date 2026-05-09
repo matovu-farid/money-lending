@@ -1,0 +1,65 @@
+# Dev-only override that layers a local Postgres onto the prod swarm
+# stack at deploy/electric/docker-stack.yml so dev and prod use fully
+# separate databases.
+#
+# Usage:
+#   npm run dev:stack          # start postgres + electric + nginx
+#   npm run dev:stack:down     # stop and remove containers
+#   npm run dev:stack:logs     # tail logs
+#
+# Notes:
+#   - Postgres is exposed on host port 5433 to avoid colliding with any
+#     existing local Postgres on 5432.
+#   - Postgres runs with logical replication enabled — Electric requires
+#     it to tail the WAL.
+#   - The base file's `deploy:` keys (replicas, placement, resources)
+#     are silently ignored by `docker compose` (swarm-only).
+#   - We override the top-level `electric_nginx_conf` to a stable name
+#     (no hash rotation in dev) and let the nginx service inherit its
+#     `configs:` reference from the base file.
+#   - `--project-directory .` is set in the npm scripts so that this
+#     file's relative paths resolve from repo root, not deploy/electric/.
+#   - NGINX_CONF_HASH must be set when invoking compose because the base
+#     file uses ${NGINX_CONF_HASH:?...}; the npm script sets it to "dev".
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=10
+      - -c
+      - max_replication_slots=10
+    environment:
+      POSTGRES_USER: faridmatovu
+      POSTGRES_PASSWORD: alphanew90
+      POSTGRES_DB: money_lending
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U faridmatovu -d money_lending"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  electric:
+    environment:
+      DATABASE_URL: postgres://faridmatovu:alphanew90@postgres:5432/money_lending
+      ELECTRIC_SECRET: 7f4dc1d9e38f8d0209102627e7f4b72e28f649c52b97cd5cec809aaa39ae0eed
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+configs:
+  electric_nginx_conf:
+    name: electric_nginx_dev
+    file: ./deploy/electric/nginx.conf
+
+volumes:
+  postgres_data:
+    driver: local

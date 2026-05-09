@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:stack": "NGINX_CONF_HASH=dev docker compose --project-directory . -f deploy/electric/docker-stack.yml -f docker-compose.dev.yml up -d",
+    "dev:stack:down": "NGINX_CONF_HASH=dev docker compose --project-directory . -f deploy/electric/docker-stack.yml -f docker-compose.dev.yml down",
+    "dev:stack:logs": "NGINX_CONF_HASH=dev docker compose --project-directory . -f deploy/electric/docker-stack.yml -f docker-compose.dev.yml logs -f",
     "build": "next build",
     "postbuild": "drizzle-kit push",
     "start": "next start",
