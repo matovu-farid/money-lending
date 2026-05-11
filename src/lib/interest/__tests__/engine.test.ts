@@ -101,6 +101,43 @@ describe("Interest Engine", () => {
     // Approximately 30 days
     expect(result.toNumber()).toBeCloseTo(30, 0)
   })
+
+  // Regression: 1/30 precision bug. Computing `balance × (monthlyRate/30) × 30`
+  // at any finite DECIMAL_PLACES produces a result one ULP short of the
+  // intuitive `balance × monthlyRate`. Deferring the divide-by-30 to the end
+  // (`balance × monthlyRate × 30 / 30`) makes the 30-day case exact.
+  describe("regression: 30-day interest is exact (no 1/30 ULP loss)", () => {
+    it("7,000,000 at 10%/month for 30 days = 700,000.00 (not 699,999.99)", () => {
+      const result = calculateInterest("7000000", "0.10", 30, 30)
+      expect(result.toFixed(2)).toBe("700000.00")
+    })
+
+    it("1,000,000 at 10%/month for 30 days = 100,000.00", () => {
+      const result = calculateInterest("1000000", "0.10", 30, 30)
+      expect(result.toFixed(2)).toBe("100000.00")
+    })
+
+    it("3,000,000 at 10%/month for 30 days = 300,000.00", () => {
+      const result = calculateInterest("3000000", "0.10", 30, 30)
+      expect(result.toFixed(2)).toBe("300000.00")
+    })
+
+    it("7,000,000 at 10%/month for 60 days = 1,400,000.00 (multiples of 30 stay exact)", () => {
+      const result = calculateInterest("7000000", "0.10", 60, 30)
+      expect(result.toFixed(2)).toBe("1400000.00")
+    })
+
+    it("7,000,000 at 10%/month for 90 days = 2,100,000.00", () => {
+      const result = calculateInterest("7000000", "0.10", 90, 30)
+      expect(result.toFixed(2)).toBe("2100000.00")
+    })
+
+    it("calculateLoanSummary: 7,000,000 at 10%/month, 30-day min period, totalInterest = 700,000.00", () => {
+      const result = calculateLoanSummary("7000000", "0.10", 30)
+      expect(result.totalInterestAtMinPeriod).toBe("700000.00")
+      expect(result.totalOwedAtMinPeriod).toBe("7700000.00")
+    })
+  })
 })
 
 describe("allocatePayment", () => {

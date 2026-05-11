@@ -6,6 +6,17 @@ BigNumber.config({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
 /**
  * Calculates the daily rate from a monthly rate decimal.
  * daily_rate = monthly_rate / 30
+ *
+ * NOTE: 1/30 has no finite decimal representation, so the quotient is
+ * truncated at the global DECIMAL_PLACES setting. Do not multiply this by
+ * exactly 30 and expect to recover `monthlyRateDecimal` — you will be short
+ * by ~1e-DECIMAL_PLACES. For computing interest over N days, prefer
+ * `calculateInterest`, which defers the divide-by-30 to the end and is
+ * therefore exact when `effectiveDays` is a multiple of 30.
+ *
+ * Returned values are still useful as standalone "daily interest" display
+ * figures and as the denominator of `calculateDaysOverdue` (where the 1/30
+ * factor cancels out of the ratio).
  */
 export function calculateDailyRate(monthlyRateDecimal: string): BigNumber {
   return new BigNumber(monthlyRateDecimal).dividedBy(30)
@@ -14,8 +25,17 @@ export function calculateDailyRate(monthlyRateDecimal: string): BigNumber {
 /**
  * Calculates interest using the reducing-balance formula with optional minimum
  * period enforcement.
- * Formula: interest = outstanding_balance × daily_rate × effective_days
+ * Formula: interest = outstanding_balance × monthly_rate × effective_days / 30
  * Effective days = max(daysElapsed, minInterestDays)
+ *
+ * The divide-by-30 is deferred to the end of the expression — multiplying
+ * before dividing makes the result exact whenever `effectiveDays` is a
+ * multiple of 30 (e.g. monthly accrual). Computing
+ * `balance × (monthly_rate / 30) × effective_days` instead would lose ~1
+ * unit-in-the-last-place per call because 1/30 is irrational in decimal,
+ * which surfaces as `699,999.99` instead of `700,000.00` on a 7M loan at
+ * 10%/month for 30 days. For non-multiples of 30 (pro-rata accrual)
+ * accuracy is no worse than the previous formulation.
  *
  * Default `minInterestDays = 0` gives pure pro-rata interest. Pass an explicit
  * non-zero value at the rollover and collateral-settlement call sites where
@@ -28,9 +48,9 @@ export function calculateInterest(
   minInterestDays: number = 0
 ): BigNumber {
   const balance = new BigNumber(outstandingBalance)
-  const dailyRate = calculateDailyRate(monthlyRateDecimal)
+  const monthlyRate = new BigNumber(monthlyRateDecimal)
   const effectiveDays = new BigNumber(Math.max(daysElapsed, minInterestDays))
-  return balance.multipliedBy(dailyRate).multipliedBy(effectiveDays)
+  return balance.multipliedBy(monthlyRate).multipliedBy(effectiveDays).dividedBy(30)
 }
 
 /**
@@ -58,9 +78,15 @@ export function calculateLoanSummary(
 } {
   const effectiveMinDays = minInterestDays ?? 30
   const principal = new BigNumber(principalAmount)
-  const dailyRate = calculateDailyRate(monthlyRateDecimal)
-  const dailyInterest = principal.multipliedBy(dailyRate)
-  const totalInterestAtMinPeriod = dailyInterest.multipliedBy(effectiveMinDays)
+  const monthlyRate = new BigNumber(monthlyRateDecimal)
+  // Daily interest is kept as a display figure (principal × monthlyRate / 30).
+  // Total interest for the min period defers the divide-by-30 so a 30-day
+  // total is exact: balance × monthlyRate × N / 30.
+  const dailyInterest = principal.multipliedBy(monthlyRate).dividedBy(30)
+  const totalInterestAtMinPeriod = principal
+    .multipliedBy(monthlyRate)
+    .multipliedBy(effectiveMinDays)
+    .dividedBy(30)
   const totalOwedAtMinPeriod = principal.plus(totalInterestAtMinPeriod)
 
   const base = {
@@ -130,17 +156,22 @@ export function computeSegmentedInterest(params: {
   principalPayments: { date: Date; principalPortion: string }[]
 }): BigNumber {
   const { principalAmount, monthlyRateDecimal, startDate, asOfDate, principalPayments } = params
-  const dailyRate = calculateDailyRate(monthlyRateDecimal)
+  const monthlyRate = new BigNumber(monthlyRateDecimal)
   let balance = new BigNumber(principalAmount)
   let totalInterest = new BigNumber(0)
   let segmentStart = startDate
 
-  // Walk each payment that reduced principal
+  // Walk each payment that reduced principal. Each segment uses
+  // balance × monthlyRate × days / 30 with the divide deferred to the end
+  // — exact for 30-day segments, no worse than dailyRate-precomputation
+  // for other lengths.
   for (const payment of principalPayments) {
     if (payment.date > asOfDate) break
     const days = Math.floor((payment.date.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24))
     if (days > 0) {
-      totalInterest = totalInterest.plus(balance.multipliedBy(dailyRate).multipliedBy(days))
+      totalInterest = totalInterest.plus(
+        balance.multipliedBy(monthlyRate).multipliedBy(days).dividedBy(30)
+      )
     }
     balance = BigNumber.max(balance.minus(new BigNumber(payment.principalPortion)), 0)
     segmentStart = payment.date
@@ -149,7 +180,9 @@ export function computeSegmentedInterest(params: {
   // Final segment: from last payment (or start) to asOfDate
   const remainingDays = Math.floor((asOfDate.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24))
   if (remainingDays > 0) {
-    totalInterest = totalInterest.plus(balance.multipliedBy(dailyRate).multipliedBy(remainingDays))
+    totalInterest = totalInterest.plus(
+      balance.multipliedBy(monthlyRate).multipliedBy(remainingDays).dividedBy(30)
+    )
   }
 
   return totalInterest

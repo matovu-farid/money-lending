@@ -23,26 +23,26 @@ describe("Creditor Service — exports", () => {
 })
 
 describe("Creditor Service — interest accrual math (minInterestDays=0)", () => {
-  it("10M UGX at 10%/month for 30 days accrues ~1,000,000 interest (CRED-03)", () => {
-    // 10,000,000 * (0.10/30) * 30 ≈ 1,000,000
-    // Note: BigNumber at DECIMAL_PLACES=10 gives 999999.99 due to 0.10/30 precision
+  it("10M UGX at 10%/month for 30 days accrues 1,000,000 interest (CRED-03)", () => {
+    // 10,000,000 * 0.10 * 30 / 30 = 1,000,000 (exact: divide-by-30 is deferred
+    // in calculateInterest so 30-day periods don't suffer from 1/30 ULP loss).
     const interest = calculateInterest("10000000", "0.10", 30, 0)
-    expect(interest.toFixed(2)).toBe("999999.99")
+    expect(interest.toFixed(2)).toBe("1000000.00")
   })
 
   it("15-day investment accrues 15 days of interest with minInterestDays=0 (CRED-03)", () => {
-    // 10,000,000 * (0.10/30) * 15 = 500,000
+    // 10,000,000 * 0.10 * 15 / 30 = 500,000
     const interest = calculateInterest("10000000", "0.10", 15, 0)
     expect(interest.toFixed(2)).toBe("500000.00")
   })
 
   it("15-day investment does NOT use minInterestDays=30 (no minimum enforcement for creditors)", () => {
-    // With minInterestDays=0: 10M * (0.10/30) * 15 = 500,000
-    // With minInterestDays=30: 10M * (0.10/30) * 30 ≈ 999,999.99
+    // With minInterestDays=0: 10M * 0.10 * 15 / 30 = 500,000
+    // With minInterestDays=30: 10M * 0.10 * 30 / 30 = 1,000,000
     const creditorInterest = calculateInterest("10000000", "0.10", 15, 0)
     const borrowerInterest = calculateInterest("10000000", "0.10", 15, 30)
     expect(creditorInterest.toFixed(2)).toBe("500000.00")
-    expect(borrowerInterest.toFixed(2)).toBe("999999.99")
+    expect(borrowerInterest.toFixed(2)).toBe("1000000.00")
     // Creditor accrues less than borrower minimum — this is correct
     expect(creditorInterest.isLessThan(borrowerInterest)).toBe(true)
   })
@@ -65,10 +65,10 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
     expect(result.principalBalanceAfter).toBe("10000000")
   })
 
-  it("1,500,000 payment against ~1,000,000 interest: ~1M to interest, remainder to principal (CRED-04)", () => {
-    // 10M at 10%/month, 30 days elapsed: interest ≈ 999,999.99 (BigNumber DECIMAL_PLACES=10 precision)
-    // With formatAmount using toFixed(2): 999999.99 stays as 999999.99
-    // Payment of 1,500,000: 999999.99 to interest, 500000.01 to principal
+  it("1,500,000 payment against 1,000,000 interest: 1M to interest, remainder to principal (CRED-04)", () => {
+    // 10M at 10%/month, 30 days elapsed: interest = 1,000,000 (exact —
+    // calculateInterest defers the divide-by-30, so 10M × 0.10 × 30 / 30 = 1M).
+    // Payment of 1,500,000: 1,000,000 to interest, 500,000 to principal.
     const result = allocatePayment({
       paymentAmount: "1500000",
       principalBalanceBefore: "10000000",
@@ -76,9 +76,9 @@ describe("Creditor Service — repayment allocation (interest-first)", () => {
       daysElapsed: 30,
       minInterestDays: 0,
     })
-    expect(result.interestPortion).toBe("999999.99")
-    expect(result.principalPortion).toBe("500000.01")
-    expect(result.principalBalanceAfter).toBe("9499999.99")
+    expect(result.interestPortion).toBe("1000000.00")
+    expect(result.principalPortion).toBe("500000.00")
+    expect(result.principalBalanceAfter).toBe("9500000.00")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -689,9 +689,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     const now = new Date()
     const thirtyDaysAgo = new Date(now)
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-
-    const creditor1 = { ...mockCreditor, id: "c-1" }
-    const creditor2 = { ...mockCreditor, id: "c-2", name: "Beta Fund" }
 
     const inv1 = {
       ...mockInvestment,
