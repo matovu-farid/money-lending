@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { useLiveQuery, eq } from "@tanstack/react-db";
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db";
 import { customerCollection } from "@/collections/customers";
 import { useLoansForCustomer } from "@/collections/loan-views";
 import { paymentCollection } from "@/collections/payments";
@@ -63,8 +63,14 @@ interface LoanWithOverdue {
 
 function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
   const [expanded, setExpanded] = useState(false);
+  // Filter out soft-deleted payments at the data layer: the Electric shape
+  // syncs them too, but their ledger journals are reversed, so showing them
+  // here would be misleading.
   const { data: rawPayments } = useLiveQuery(
-    (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, item.loan.id)),
+    (q) =>
+      q
+        .from({ p: paymentCollection })
+        .where(({ p }) => and(eq(p.loanId, item.loan.id), isNull(p.deletedAt))),
     [item.loan.id]
   );
   const payments = Array.isArray(rawPayments) ? rawPayments : [];

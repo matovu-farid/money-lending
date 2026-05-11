@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useMemo } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -17,7 +16,7 @@ import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import { loanCollection } from "@/collections/loans"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { generateClientId } from "@/lib/client-id"
-import { useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
 import type { UserRole, RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
@@ -51,7 +50,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const daysOverdue = loanEntry.daysOverdue
   const ledgerBalance: string | null = loanEntry.outstandingBalance
 
-  const router = useRouter()
   const { has } = usePermissions()
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
@@ -80,8 +78,11 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // (PaymentTable, SimulatorPanel) already type against. customerName is
   // already known on this page (passed in via props), and portions / balances
   // are derived below from `currentPortions` + `runningBalanceMap`.
+  // Filter out soft-deleted payments at the data layer — the Electric shape
+  // syncs every row (including deleted ones), but ledger reversals make them
+  // misleading to display, so they must be invisible everywhere in the UI.
   const { data: rawPayments } = useLiveQuery(
-    (q) => q.from({ p: paymentCollection }).where(({ p }) => eq(p.loanId, loan.id)),
+    (q) => q.from({ p: paymentCollection }).where(({ p }) => and(eq(p.loanId, loan.id), isNull(p.deletedAt))),
     [loan.id]
   )
   const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : []

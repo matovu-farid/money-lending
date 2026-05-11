@@ -1,7 +1,7 @@
 "use client"
 
 import { useParams } from "next/navigation"
-import { useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
 import { loanCollection } from "@/collections/loans"
 import { customerCollection } from "@/collections/customers"
 import { loanBalanceCollection } from "@/collections/loan-balances"
@@ -13,8 +13,11 @@ export default function RecordPaymentPage() {
 
   // Loan + customer come from globally-synced Electric collections. They render
   // immediately when in cache; otherwise we show a brief loading skeleton.
+  // Soft-deleted loans must fail closed: filter `deletedAt IS NULL` so the
+  // "Loan not found." state renders instead of letting a user record a
+  // payment against a wiped ledger.
   const { data: loans, isLoading: loansLoading } = useLiveQuery(
-    (q) => q.from({ l: loanCollection }).where(({ l }) => eq(l.id, loanId)),
+    (q) => q.from({ l: loanCollection }).where(({ l }) => and(eq(l.id, loanId), isNull(l.deletedAt))),
     [loanId]
   )
   const loan = loans?.[0] ?? null

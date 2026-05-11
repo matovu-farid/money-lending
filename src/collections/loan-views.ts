@@ -1,6 +1,6 @@
 "use client"
 
-import { useLiveQuery, eq } from "@tanstack/react-db"
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
 import { useMemo } from "react"
 import { loanCollection } from "./loans"
 import { loanBalanceCollection } from "./loan-balances"
@@ -9,6 +9,15 @@ import { computeDaysOverdue, computeUnpaidInterest } from "@/lib/interest/overdu
 import { computeDailyRate } from "@/lib/interest/effective-rate-client"
 import type { LoanListEntry } from "@/types/loan"
 import type { LoanBaseRow, LoanBalanceRow, CustomerRow } from "@/lib/schemas/collections"
+
+/**
+ * Soft-delete filter, applied uniformly to all loan views.
+ *
+ * The Electric shape syncs every row from the `loans` table — including
+ * those with `deleted_at` set. Server actions filter `isNull(deletedAt)`
+ * everywhere; the UI must mirror that filter so a soft-deleted loan is
+ * invisible to users at every surface (list, detail, customer page).
+ */
 
 /**
  * Project a (loan, balance, customer) join into the legacy `LoanListEntry`
@@ -62,7 +71,8 @@ export function useLoansWithBalances(): { data: LoanListEntry[] | undefined; isL
     q
       .from({ loan: loanCollection })
       .join({ bal: loanBalanceCollection }, ({ loan, bal }) => eq(loan.id, bal.loanId), "left")
-      .join({ cust: customerCollection }, ({ loan, cust }) => eq(loan.customerId, cust.id), "left"),
+      .join({ cust: customerCollection }, ({ loan, cust }) => eq(loan.customerId, cust.id), "left")
+      .where(({ loan }) => isNull(loan.deletedAt)),
   )
 
   const data = useMemo(
@@ -88,7 +98,7 @@ export function useLoanWithBalance(loanId: string): { data: LoanListEntry[] | un
         .from({ loan: loanCollection })
         .join({ bal: loanBalanceCollection }, ({ loan, bal }) => eq(loan.id, bal.loanId), "left")
         .join({ cust: customerCollection }, ({ loan, cust }) => eq(loan.customerId, cust.id), "left")
-        .where(({ loan }) => eq(loan.id, loanId)),
+        .where(({ loan }) => and(eq(loan.id, loanId), isNull(loan.deletedAt))),
     [loanId],
   )
 
@@ -116,7 +126,7 @@ export function useLoansForCustomer(customerId: string): { data: LoanListEntry[]
         .from({ loan: loanCollection })
         .join({ bal: loanBalanceCollection }, ({ loan, bal }) => eq(loan.id, bal.loanId), "left")
         .join({ cust: customerCollection }, ({ loan, cust }) => eq(loan.customerId, cust.id), "left")
-        .where(({ loan }) => eq(loan.customerId, customerId)),
+        .where(({ loan }) => and(eq(loan.customerId, customerId), isNull(loan.deletedAt))),
     [customerId],
   )
 
