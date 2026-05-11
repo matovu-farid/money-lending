@@ -7,6 +7,7 @@ import { generatePnlPdf } from "@/services/export/pdf.service"
 import { generatePnlExcel } from "@/services/export/excel.service"
 import { getCurrentMonth } from "@/lib/utils"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import { captureServerError } from "@/lib/sentry"
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error("P&L report generation failed:", error)
+    captureServerError(error, { source: "reports:pnl", format, period })
     return NextResponse.json({ error: "Report generation failed" }, { status: 500 })
   }
 }

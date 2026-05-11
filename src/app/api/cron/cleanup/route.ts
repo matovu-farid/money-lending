@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { sql } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { session, verification, invitations } from "@/lib/db/schema"
+import { captureServerError } from "@/lib/sentry"
 
 export async function GET(request: Request) {
   // Fail-closed: reject if CRON_SECRET is not configured
@@ -24,6 +25,7 @@ export async function GET(request: Request) {
     deleted.sessions = rows.length
   } catch (err) {
     console.error("[cleanup-cron] Failed to delete expired sessions:", err)
+    captureServerError(err, { source: "cron:cleanup", step: "sessions" })
   }
 
   try {
@@ -34,6 +36,7 @@ export async function GET(request: Request) {
     deleted.verifications = rows.length
   } catch (err) {
     console.error("[cleanup-cron] Failed to delete expired verifications:", err)
+    captureServerError(err, { source: "cron:cleanup", step: "verifications" })
   }
 
   try {
@@ -46,6 +49,7 @@ export async function GET(request: Request) {
     deleted.invitations = rows.length
   } catch (err) {
     console.error("[cleanup-cron] Failed to delete old invitations:", err)
+    captureServerError(err, { source: "cron:cleanup", step: "invitations" })
   }
 
   console.log(

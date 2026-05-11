@@ -9,6 +9,7 @@ import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/servic
 import { formatAmount } from "@/lib/interest/engine"
 import BigNumber from "bignumber.js"
 import { toLoanType } from "@/types"
+import { captureServerError } from "@/lib/sentry"
 
 export async function GET(request: NextRequest) {
   // Fail-closed: reject if CRON_SECRET is not configured
@@ -98,6 +99,7 @@ export async function GET(request: NextRequest) {
 
       } catch (err) {
         console.error(`[Cron] Failed to process loan ${loan.id}:`, err)
+        captureServerError(err, { source: "cron:overdue", loanId: loan.id })
       }
     }
 
@@ -109,6 +111,7 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error("[Cron] Overdue detection failed:", error)
+    captureServerError(error, { source: "cron:overdue", phase: "outer" })
     return Response.json({ error: "Internal server error" }, { status: 500 })
   }
 }

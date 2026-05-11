@@ -6,6 +6,7 @@ import { getPortfolioData } from "@/services/report.service"
 import { generatePortfolioPdf } from "@/services/export/pdf.service"
 import { generatePortfolioExcel } from "@/services/export/excel.service"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import { captureServerError } from "@/lib/sentry"
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -46,6 +47,7 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error("Portfolio report generation failed:", error)
+    captureServerError(error, { source: "reports:portfolio", format })
     return NextResponse.json({ error: "Report generation failed" }, { status: 500 })
   }
 }

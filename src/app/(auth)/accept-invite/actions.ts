@@ -5,6 +5,7 @@ import { db } from "@/lib/db"
 import { eq } from "drizzle-orm"
 import { user } from "@/lib/db/schema/auth"
 import { invalidateUserPermissions } from "@/lib/action-utils"
+import { captureServerError } from "@/lib/sentry"
 import type { UserRole } from "@/types"
 
 export async function getInviteDetails(token: string) {
@@ -78,6 +79,7 @@ export async function finalizeInviteAcceptance(token: string) {
 
     return { data: { success: true } }
   } catch (e: any) {
+    captureServerError(e, { source: "accept-invite:finalize" })
     return { error: e.message ?? "Failed to finalize invitation" }
   }
 }

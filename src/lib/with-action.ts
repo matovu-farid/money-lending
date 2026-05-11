@@ -4,6 +4,7 @@ import { Effect } from "effect"
 import type { Permission } from "@/types"
 import { headers } from "next/headers"
 import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
+import { captureServerError } from "@/lib/sentry"
 
 /** The session type returned by getSession() when non-null. */
 export type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>
@@ -116,15 +117,62 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
         return { data }
       } catch (error) {
         const tag = getErrorTag(error)
+        // Expected, declared failure modes mapped via opts.errors are NOT
+        // reported to Sentry — they are user-facing business errors
+        // (e.g. CustomerNotFound, ValidationError). Anything else is an
+        // unexpected exception and gets forwarded.
         if (tag && opts.errors && tag in opts.errors) {
           return { error: opts.errors[tag] }
         }
+        captureServerError(error, {
+          source: "withAction:effect",
+          permission: opts.permission,
+          userId: session.user.id,
+          role: (session.user as Record<string, unknown>).role,
+          errorTag: tag,
+        })
         console.error("[withAction]", error)
         return { error: "Internal server error" }
       }
     }
 
-    // Classic mode
-    return opts.action(session, input)
+    // Classic mode — wrap so unhandled exceptions reach Sentry instead of
+    // being swallowed by Next.js's server-action error boundary as a
+    // generic "Server Action error".
+    try {
+      const result = await opts.action(session, input)
+      // Many classic actions catch their own errors and return a generic
+      // `{ error: "Internal server error" }`. That's the swallow pattern —
+      // by the time we get here, the original error is gone. Forward a
+      // low-fidelity warning to Sentry so the rate of these is visible
+      // (we won't have a stack trace, but we'll see "this action is
+      // failing more than expected" trends).
+      if (
+        result &&
+        typeof result === "object" &&
+        "error" in (result as Record<string, unknown>) &&
+        (result as Record<string, unknown>).error === "Internal server error"
+      ) {
+        captureServerError(
+          new Error("Action returned 'Internal server error' (original swallowed in inner try/catch)"),
+          {
+            source: "withAction:classic:swallowed",
+            permission: opts.permission,
+            userId: session.user.id,
+            role: (session.user as Record<string, unknown>).role,
+          },
+        )
+      }
+      return result
+    } catch (error) {
+      captureServerError(error, {
+        source: "withAction:classic",
+        permission: opts.permission,
+        userId: session.user.id,
+        role: (session.user as Record<string, unknown>).role,
+      })
+      // Re-throw so Next.js's normal server-action error flow still applies.
+      throw error
+    }
   }
 }

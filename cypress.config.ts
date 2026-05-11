@@ -271,6 +271,26 @@ export default defineConfig({
           })
         },
 
+        // Mark a loan (and all its payments) as soft-deleted by stamping
+        // `deleted_at`. Mirrors what loanService.deleteLoan does in production
+        // — no ledger reversal here; the test only needs the UI-side effect.
+        async "db:softDeleteLoan"({ loanId }: { loanId: string }) {
+          return withSql(async (sql) => {
+            await sql`UPDATE loans SET deleted_at = NOW() WHERE id = ${loanId}`
+            await sql`UPDATE payments SET deleted_at = NOW() WHERE loan_id = ${loanId}`
+            return null
+          })
+        },
+
+        // Mark only a payment as soft-deleted — used to verify the
+        // payment-history table filter independently from the loan filter.
+        async "db:softDeletePayment"({ paymentId }: { paymentId: string }) {
+          return withSql(async (sql) => {
+            await sql`UPDATE payments SET deleted_at = NOW() WHERE id = ${paymentId}`
+            return null
+          })
+        },
+
         async "db:getInvitations"() {
           return withSql(async (sql) => {
             const rows = await sql`

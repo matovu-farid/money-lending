@@ -1,5 +1,8 @@
 "use client"
 
+import * as Sentry from "@sentry/nextjs"
+import { useEffect } from "react"
+
 export default function ErrorBoundary({
   error,
   reset,
@@ -7,6 +10,12 @@ export default function ErrorBoundary({
   error: Error & { digest?: string }
   reset: () => void
 }) {
+  useEffect(() => {
+    // Forward to Sentry. The SDK is a no-op when DSN is unset or NODE_ENV
+    // is not "production", so this is safe in dev/test too.
+    Sentry.captureException(error)
+  }, [error])
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">

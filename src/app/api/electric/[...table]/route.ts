@@ -4,6 +4,7 @@ import { headers } from "next/headers"
 import { auth } from "@/lib/auth"
 import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
 import { ROLE_LEVELS, type UserRole } from "@/types/common"
+import { captureServerError, captureServerWarning } from "@/lib/sentry"
 
 const ELECTRIC_URL = process.env.ELECTRIC_URL ?? "http://localhost:3001"
 const ELECTRIC_SOURCE_SECRET = process.env.ELECTRIC_SECRET
@@ -192,6 +193,15 @@ export async function GET(
 
     // Admin-only table check
     if (ADMIN_ONLY_TABLES.has(table) && (ROLE_LEVELS[resolvedRole] ?? 0) < ADMIN_LEVEL) {
+      // Surface as a warning (not an error) — this is "expected forbidden",
+      // but it indicates either a UI bug or a probe attempt and we want to
+      // see the volume in Sentry.
+      captureServerWarning("electric_proxy.forbidden_admin_table", {
+        source: "electric-proxy",
+        table,
+        role: resolvedRole,
+        userId: resolvedUserId,
+      })
       return new Response(JSON.stringify({ error: "Forbidden" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
@@ -259,6 +269,7 @@ export async function GET(
     })
   } catch (err) {
     console.error("[electric proxy] upstream fetch failed:", err)
+    captureServerError(err, { source: "electric-proxy", table, phase: "upstream-fetch" })
     return new Response(
       JSON.stringify({ error: "Electric upstream unavailable" }),
       { status: 502, headers: { "Content-Type": "application/json" } }

@@ -6,6 +6,7 @@ import { listTransactions } from "@/services/transaction.service"
 import { generateTransactionsPdf } from "@/services/export/pdf.service"
 import { generateTransactionsExcel } from "@/services/export/excel.service"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import { captureServerError } from "@/lib/sentry"
 
 export async function GET(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() })
@@ -52,6 +53,7 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error("Transaction report generation failed:", error)
+    captureServerError(error, { source: "reports:transactions", format })
     return NextResponse.json({ error: "Report generation failed" }, { status: 500 })
   }
 }

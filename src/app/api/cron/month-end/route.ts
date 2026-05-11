@@ -3,6 +3,7 @@ import { generateMonthlySnapshot } from "@/services/report.service"
 import { accrueInterestForLoans, accrueInterestForCreditors } from "@/services/transaction.service"
 import { NextResponse } from "next/server"
 import { periodBoundsUTC } from "@/lib/date-utils"
+import { captureServerError } from "@/lib/sentry"
 
 export async function GET(request: Request) {
   // Fail-closed: reject if CRON_SECRET is not configured
@@ -38,6 +39,7 @@ export async function GET(request: Request) {
     })
   } catch (error) {
     console.error("Month-end snapshot failed:", error)
+    captureServerError(error, { source: "cron:month-end", period })
     return NextResponse.json({ error: "Snapshot generation failed" }, { status: 500 })
   }
 }
