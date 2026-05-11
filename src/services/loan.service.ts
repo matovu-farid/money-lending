@@ -684,15 +684,25 @@ export const deleteLoan = (
           })
         }
 
-        // Reverse principal disbursement
+        // Reverse principal disbursement.
+        // Filter by category — issuance fee and disbursement share reference_type='loan'
+        // and the same createdAt, so without the category filter the query can return
+        // the fee row and reverse the wrong amount.
         const [disbursementTx] = await tx
-          .select()
+          .select({
+            amount: transactions.amount,
+            transactionDate: transactions.transactionDate,
+            depositLocation: transactions.depositLocation,
+            subLocationId: transactions.subLocationId,
+          })
           .from(transactions)
+          .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
           .where(
             and(
               sql`${transactions.referenceType} IN ('loan', 'loan_repost')`,
               eq(transactions.referenceId, input.loanId),
-              eq(transactions.type, "debit")
+              eq(transactions.type, "debit"),
+              eq(transactionCategories.name, "Loans Receivable")
             )
           )
           .orderBy(desc(transactions.createdAt))

@@ -384,12 +384,14 @@ describe("Loan Service", () => {
             }),
           }
         } else {
-          // Disbursement transaction lookup (has orderBy + limit)
+          // Disbursement transaction lookup (has innerJoin + orderBy + limit)
           return {
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue([mockDisbursementTx]),
+              innerJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([mockDisbursementTx]),
+                  }),
                 }),
               }),
             }),
@@ -457,12 +459,14 @@ describe("Loan Service", () => {
             }),
           }
         }
-        // Disbursement tx lookup (has orderBy + limit)
+        // Disbursement tx lookup (has innerJoin + orderBy + limit)
         return {
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockReturnValue({
-              orderBy: vi.fn().mockReturnValue({
-                limit: vi.fn().mockResolvedValue([]),
+            innerJoin: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                orderBy: vi.fn().mockReturnValue({
+                  limit: vi.fn().mockResolvedValue([]),
+                }),
               }),
             }),
           }),
@@ -536,12 +540,14 @@ describe("Loan Service", () => {
             }),
           }
         } else {
-          // Disbursement transaction lookup (has orderBy + limit) — no disbursement
+          // Disbursement transaction lookup (has innerJoin + orderBy + limit) — no disbursement
           return {
             from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                orderBy: vi.fn().mockReturnValue({
-                  limit: vi.fn().mockResolvedValue([]),
+              innerJoin: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  orderBy: vi.fn().mockReturnValue({
+                    limit: vi.fn().mockResolvedValue([]),
+                  }),
                 }),
               }),
             }),
@@ -575,6 +581,81 @@ describe("Loan Service", () => {
         referenceId: "loan-1",
         loanId: "loan-1",
       })
+    )
+  })
+
+  // Regression: BUG — disbursement-reversal query selected the most recent debit
+  // with reference_type='loan' without filtering by category, so when the issuance
+  // fee debit (DR Cash) and the principal debit (DR Loans Receivable) shared the
+  // same createdAt the query returned the fee row and reversed the wrong amount.
+  // The fix joins transactionCategories and filters on "Loans Receivable".
+  it("deleteLoan: disbursement reversal filters by Loans Receivable category, not fee debit", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const { postJournalEntry } = await import("@/services/transaction.service")
+
+    const mockFeeTx = {
+      id: "tx-fee-1",
+      type: "credit",
+      amount: "50000.00",
+      categoryId: "cat-fee",
+      referenceType: "loan",
+      referenceId: "loan-1",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: null,
+    }
+    const mockDisbursementTx = {
+      amount: "2000000.00",
+      transactionDate: new Date("2026-03-19"),
+      depositLocation: "cash",
+      subLocationId: null,
+    }
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([mockLoan]),
+      }),
+    } as any)
+
+    let selectCallCount = 0
+    const innerJoinSpy = vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockReturnValue({
+          limit: vi.fn().mockResolvedValue([mockDisbursementTx]),
+        }),
+      }),
+    })
+    const mockTx = {
+      select: vi.fn().mockImplementation(() => {
+        selectCallCount++
+        if (selectCallCount === 1) {
+          return { from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }
+        } else if (selectCallCount === 2) {
+          return { from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([mockFeeTx]) }) }
+        }
+        return { from: vi.fn().mockReturnValue({ innerJoin: innerJoinSpy }) }
+      }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+      }),
+    }
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => callback(mockTx),
+    )
+
+    const { deleteLoan } = await import("@/services/loan.service")
+    await Effect.runPromise(deleteLoan({ loanId: "loan-1", reason: "test" }, "actor-1"))
+
+    // The disbursement lookup must go through innerJoin on transactionCategories.
+    expect(innerJoinSpy).toHaveBeenCalled()
+
+    // The disbursement reversal must use the principal amount (2,000,000), not the fee (50,000).
+    expect(postJournalEntry).toHaveBeenCalledWith(
+      mockTx,
+      expect.objectContaining({
+        amount: "2000000.00",
+        referenceType: "loan_reversal",
+        description: expect.stringContaining("principal disbursement"),
+      }),
     )
   })
 
