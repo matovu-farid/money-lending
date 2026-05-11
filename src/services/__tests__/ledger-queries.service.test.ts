@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import BigNumber from "bignumber.js"
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn() }
@@ -387,8 +386,8 @@ describe("ledger-queries.service", () => {
         qdb as any
       )
       const portions = result.get("pay-1")!
-      expect(portions.interestPortion).toBe("25000")
-      expect(portions.principalPortion).toBe("0")
+      expect(portions.interestPortion).toBe("25000.00")
+      expect(portions.principalPortion).toBe("0.00")
     })
 
     it("maps Loans Receivable CR to principal portion", async () => {
@@ -408,8 +407,8 @@ describe("ledger-queries.service", () => {
         qdb as any
       )
       const portions = result.get("pay-1")!
-      expect(portions.interestPortion).toBe("0")
-      expect(portions.principalPortion).toBe("75000")
+      expect(portions.interestPortion).toBe("0.00")
+      expect(portions.principalPortion).toBe("75000.00")
     })
 
     it("combines both interest and principal portions for a payment", async () => {
@@ -435,8 +434,8 @@ describe("ledger-queries.service", () => {
         qdb as any
       )
       const portions = result.get("pay-1")!
-      expect(portions.interestPortion).toBe("20000")
-      expect(portions.principalPortion).toBe("80000")
+      expect(portions.interestPortion).toBe("20000.00")
+      expect(portions.principalPortion).toBe("80000.00")
     })
 
     it("Interest Earned DR subtracts from interest portion (reversal)", async () => {
@@ -461,7 +460,7 @@ describe("ledger-queries.service", () => {
         ["pay-1"],
         qdb as any
       )
-      expect(result.get("pay-1")!.interestPortion).toBe("20000")
+      expect(result.get("pay-1")!.interestPortion).toBe("20000.00")
     })
 
     it("Loans Receivable DR subtracts from principal portion (reversal)", async () => {
@@ -486,7 +485,7 @@ describe("ledger-queries.service", () => {
         ["pay-1"],
         qdb as any
       )
-      expect(result.get("pay-1")!.principalPortion).toBe("40000")
+      expect(result.get("pay-1")!.principalPortion).toBe("40000.00")
     })
 
     it("skips rows with null referenceId", async () => {
@@ -542,10 +541,10 @@ describe("ledger-queries.service", () => {
         ["pay-1", "pay-2"],
         qdb as any
       )
-      expect(result.get("pay-1")!.interestPortion).toBe("10000")
-      expect(result.get("pay-1")!.principalPortion).toBe("40000")
-      expect(result.get("pay-2")!.interestPortion).toBe("15000")
-      expect(result.get("pay-2")!.principalPortion).toBe("85000")
+      expect(result.get("pay-1")!.interestPortion).toBe("10000.00")
+      expect(result.get("pay-1")!.principalPortion).toBe("40000.00")
+      expect(result.get("pay-2")!.interestPortion).toBe("15000.00")
+      expect(result.get("pay-2")!.principalPortion).toBe("85000.00")
     })
   })
 
@@ -573,8 +572,8 @@ describe("ledger-queries.service", () => {
         },
       ])
       const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
-      expect(result.get("rep-1")!.interestPortion).toBe("15000")
-      expect(result.get("rep-1")!.principalPortion).toBe("0")
+      expect(result.get("rep-1")!.interestPortion).toBe("15000.00")
+      expect(result.get("rep-1")!.principalPortion).toBe("0.00")
     })
 
     it("Creditor Investment DR maps to principal portion", async () => {
@@ -590,8 +589,8 @@ describe("ledger-queries.service", () => {
         },
       ])
       const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
-      expect(result.get("rep-1")!.interestPortion).toBe("0")
-      expect(result.get("rep-1")!.principalPortion).toBe("100000")
+      expect(result.get("rep-1")!.interestPortion).toBe("0.00")
+      expect(result.get("rep-1")!.principalPortion).toBe("100000.00")
     })
 
     it("Interest Payments CR subtracts from interest portion", async () => {
@@ -613,7 +612,7 @@ describe("ledger-queries.service", () => {
         },
       ])
       const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
-      expect(result.get("rep-1")!.interestPortion).toBe("15000")
+      expect(result.get("rep-1")!.interestPortion).toBe("15000.00")
     })
 
     it("Creditor Investment CR subtracts from principal portion", async () => {
@@ -635,7 +634,7 @@ describe("ledger-queries.service", () => {
         },
       ])
       const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
-      expect(result.get("rep-1")!.principalPortion).toBe("60000")
+      expect(result.get("rep-1")!.principalPortion).toBe("60000.00")
     })
 
     it("combines both interest and principal for a repayment", async () => {
@@ -657,8 +656,8 @@ describe("ledger-queries.service", () => {
         },
       ])
       const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
-      expect(result.get("rep-1")!.interestPortion).toBe("10000")
-      expect(result.get("rep-1")!.principalPortion).toBe("90000")
+      expect(result.get("rep-1")!.interestPortion).toBe("10000.00")
+      expect(result.get("rep-1")!.principalPortion).toBe("90000.00")
     })
 
     it("skips rows with null referenceId", async () => {

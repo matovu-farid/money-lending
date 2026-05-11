@@ -729,8 +729,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     expect(result.size).toBe(1)
     const portions = result.get("pay-1")
     expect(portions).toBeDefined()
-    expect(portions!.interestPortion).toBe("5000")
-    expect(portions!.principalPortion).toBe("45000")
+    expect(portions!.interestPortion).toBe("5000.00")
+    expect(portions!.principalPortion).toBe("45000.00")
   })
 
   it("getPaymentPortionsFromLedger: handles multiple payments in a single query", async () => {
@@ -744,10 +744,10 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1", "pay-2"])
 
     expect(result.size).toBe(2)
-    expect(result.get("pay-1")!.interestPortion).toBe("3000")
-    expect(result.get("pay-1")!.principalPortion).toBe("27000")
-    expect(result.get("pay-2")!.interestPortion).toBe("2500")
-    expect(result.get("pay-2")!.principalPortion).toBe("22500")
+    expect(result.get("pay-1")!.interestPortion).toBe("3000.00")
+    expect(result.get("pay-1")!.principalPortion).toBe("27000.00")
+    expect(result.get("pay-2")!.interestPortion).toBe("2500.00")
+    expect(result.get("pay-2")!.principalPortion).toBe("22500.00")
   })
 
   it("getPaymentPortionsFromLedger: subtracts DR entries for Interest Earned (reversal)", async () => {
@@ -760,8 +760,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1"])
 
     const portions = result.get("pay-1")
-    expect(portions!.interestPortion).toBe("0")
-    expect(portions!.principalPortion).toBe("45000")
+    expect(portions!.interestPortion).toBe("0.00")
+    expect(portions!.principalPortion).toBe("45000.00")
   })
 
   it("getPaymentPortionsFromLedger: subtracts DR entries for Loans Receivable (disbursement row)", async () => {
@@ -774,8 +774,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1"])
 
     const portions = result.get("pay-1")
-    expect(portions!.principalPortion).toBe("40000")
-    expect(portions!.interestPortion).toBe("0")
+    expect(portions!.principalPortion).toBe("40000.00")
+    expect(portions!.interestPortion).toBe("0.00")
   })
 
   it("getPaymentPortionsFromLedger: returns string values with 2 decimal places", async () => {
@@ -787,8 +787,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getPaymentPortionsFromLedger(["pay-1"])
 
     const portions = result.get("pay-1")
-    expect(portions!.interestPortion).toBe("1000")
-    expect(portions!.principalPortion).toBe("9000")
+    expect(portions!.interestPortion).toBe("1000.00")
+    expect(portions!.principalPortion).toBe("9000.00")
   })
 
   it("getPaymentPortionsFromLedger: skips rows with null referenceId", async () => {
@@ -821,8 +821,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     expect(result.size).toBe(1)
     const portions = result.get("rep-1")
     expect(portions).toBeDefined()
-    expect(portions!.interestPortion).toBe("5000")
-    expect(portions!.principalPortion).toBe("45000")
+    expect(portions!.interestPortion).toBe("5000.00")
+    expect(portions!.principalPortion).toBe("45000.00")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: handles multiple repayments in a single query", async () => {
@@ -836,10 +836,10 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1", "rep-2"])
 
     expect(result.size).toBe(2)
-    expect(result.get("rep-1")!.interestPortion).toBe("3000")
-    expect(result.get("rep-1")!.principalPortion).toBe("27000")
-    expect(result.get("rep-2")!.interestPortion).toBe("2500")
-    expect(result.get("rep-2")!.principalPortion).toBe("22500")
+    expect(result.get("rep-1")!.interestPortion).toBe("3000.00")
+    expect(result.get("rep-1")!.principalPortion).toBe("27000.00")
+    expect(result.get("rep-2")!.interestPortion).toBe("2500.00")
+    expect(result.get("rep-2")!.principalPortion).toBe("22500.00")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: subtracts CR entries for Interest Payments (reversal)", async () => {
@@ -852,8 +852,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     const portions = result.get("rep-1")
-    expect(portions!.interestPortion).toBe("0")
-    expect(portions!.principalPortion).toBe("45000")
+    expect(portions!.interestPortion).toBe("0.00")
+    expect(portions!.principalPortion).toBe("45000.00")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: subtracts CR entries for Creditor Investment", async () => {
@@ -865,8 +865,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     const portions = result.get("rep-1")
-    expect(portions!.principalPortion).toBe("40000")
-    expect(portions!.interestPortion).toBe("0")
+    expect(portions!.principalPortion).toBe("40000.00")
+    expect(portions!.interestPortion).toBe("0.00")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: returns string values with 2 decimal places", async () => {
@@ -878,8 +878,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     const result = await getCreditorRepaymentPortionsFromLedger(["rep-1"])
 
     const portions = result.get("rep-1")
-    expect(portions!.interestPortion).toBe("1000")
-    expect(portions!.principalPortion).toBe("9000")
+    expect(portions!.interestPortion).toBe("1000.00")
+    expect(portions!.principalPortion).toBe("9000.00")
   })
 
   it("getCreditorRepaymentPortionsFromLedger: skips rows with null referenceId", async () => {
