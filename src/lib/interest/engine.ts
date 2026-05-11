@@ -420,29 +420,15 @@ export function allocatePayment(params: {
 
   // Default: perpetual logic.
   //
-  // Rule: interest accrues pro-rata day-by-day. The min-interest period only
-  // applies when the borrower is fully paying off the loan — partial payments
-  // do not trigger the min. Rollover and collateral settlement apply the min
-  // separately at their own call sites (loan.service.ts, collateral-settlement.service.ts).
+  // Rule: interest owed = balance × dailyRate × max(daysElapsed, minInterestDays).
+  // The min-interest period applies to all payments, not just payoff — the first
+  // month's interest must be fully paid before any payment reduces principal.
+  // After day `minInterestDays` (typically 30), interest accrues pro-rata.
   const payment = new BigNumber(paymentAmount)
   const balance = new BigNumber(principalBalanceBefore)
-  const dailyRate = calculateDailyRate(monthlyRateDecimal)
   const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
-
-  const proRataAccrued = balance.multipliedBy(dailyRate).multipliedBy(daysElapsed)
-  const proRataInterestOwed = BigNumber.max(proRataAccrued.minus(alreadyPaid), 0)
-
-  // Min-period interest = balance × dailyRate × minInterestDays. Equals one
-  // monthly interest charge when minInterestDays = 30. Used only on payoff.
-  const minPeriodAccrued = balance.multipliedBy(dailyRate).multipliedBy(minInterestDays)
-  const minInterestOwed = BigNumber.max(minPeriodAccrued.minus(alreadyPaid), 0)
-
-  // Detect payoff: payment is enough to clear the principal balance with
-  // pro-rata interest. When that happens, charge at least the min-period interest.
-  const isPayoff = payment.isGreaterThanOrEqualTo(proRataInterestOwed.plus(balance))
-  const interestOwed = isPayoff
-    ? BigNumber.max(proRataInterestOwed, minInterestOwed)
-    : proRataInterestOwed
+  const grossInterest = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
+  const interestOwed = BigNumber.max(grossInterest.minus(alreadyPaid), 0)
 
   if (payment.isLessThanOrEqualTo(interestOwed)) {
     return {

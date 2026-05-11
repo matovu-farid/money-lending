@@ -155,9 +155,9 @@ describe("allocatePayment", () => {
     expect(result.loanFullyPaid).toBe(true)
   })
 
-  // Test 4: Partial payment uses pro-rata interest — min-period only applies on full payoff.
-  it("partial payment after 15 days charges pro-rata 15-day interest (no min)", () => {
-    // pro-rata interest = 1000000 * (0.10/30) * 15 = 50000
+  // Test 4: Partial payment inside month 1 charges full monthly interest first.
+  it("partial payment after 15 days charges full month-1 interest before principal", () => {
+    // interest = 1000000 * (0.10/30) * max(15, 30) = 100000
     const result = allocatePayment({
       paymentAmount: "150000",
       principalBalanceBefore: "1000000",
@@ -165,9 +165,9 @@ describe("allocatePayment", () => {
       daysElapsed: 15,
       minInterestDays: 30,
     })
-    expect(result.interestPortion).toBe("50000.00")
-    expect(result.principalPortion).toBe("100000.00")
-    expect(result.principalBalanceAfter).toBe("900000.00")
+    expect(result.interestPortion).toBe("100000.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceAfter).toBe("950000.00")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -203,9 +203,10 @@ describe("allocatePayment", () => {
     expect(result.loanFullyPaid).toBe(false)
   })
 
-  // Test 6: Custom minInterestDays override — partial payment is still pro-rata.
-  it("custom minInterestDays of 45 — partial payment after 20 days uses pro-rata", () => {
-    // partial: pro-rata = 1000000 * (0.10/30) * 20 = 66666.66...
+  // Test 6: Custom minInterestDays override — partial payment inside the min period
+  // owes the full min-period interest before any principal reduces.
+  it("custom minInterestDays of 45 — partial payment after 20 days charges full 45-day interest", () => {
+    // interest = 1000000 * (0.10/30) * max(20, 45) = 150000
     const result = allocatePayment({
       paymentAmount: "200000",
       principalBalanceBefore: "1000000",
@@ -213,9 +214,9 @@ describe("allocatePayment", () => {
       daysElapsed: 20,
       minInterestDays: 45,
     })
-    expect(result.interestPortion).toBe("66666.67")
-    expect(result.principalPortion).toBe("133333.33")
-    expect(result.principalBalanceAfter).toBe("866666.67")
+    expect(result.interestPortion).toBe("150000.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceAfter).toBe("950000.00")
     expect(result.loanFullyPaid).toBe(false)
   })
 
@@ -299,10 +300,10 @@ describe("allocatePayment", () => {
     expect(result.principalPortion).toBe("220000.00")
   })
 
-  // Test: same-period second payment uses pro-rata for the partial path.
-  // Pro-rata at day 0 is zero, so the entire payment goes to principal regardless
-  // of interest already paid. The min-30 only kicks in on full payoff.
-  it("second partial payment in same period: pro-rata interest is zero on day 0", () => {
+  // Test: second partial payment in the same period nets the min-period interest
+  // against what's already been collected.
+  it("second partial payment in same period: min-30 interest is reduced by interest already paid", () => {
+    // owed = 1,000,000 * (0.10/30) * max(0, 30) - 30,000 already paid = 70,000
     const result = allocatePayment({
       paymentAmount: "100000",
       principalBalanceBefore: "1000000",
@@ -311,9 +312,9 @@ describe("allocatePayment", () => {
       minInterestDays: 30,
       interestAlreadyPaidInPeriod: "30000",
     })
-    expect(result.interestPortion).toBe("0.00")
-    expect(result.principalPortion).toBe("100000.00")
-    expect(result.principalBalanceAfter).toBe("900000.00")
+    expect(result.interestPortion).toBe("70000.00")
+    expect(result.principalPortion).toBe("30000.00")
+    expect(result.principalBalanceAfter).toBe("970000.00")
     expect(result.loanFullyPaid).toBe(false)
   })
 
