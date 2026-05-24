@@ -44,16 +44,11 @@ jobs:
       - name: Verify AWS identity
         run: |
           aws sts get-caller-identity
-          echo "Bucket reachable check (expects 403 — proves auth + lockdown):"
-          # HeadObject on a nonexistent key. Without s3:GetObject we get
-          # 403; with s3:GetObject we'd get 404. Either proves auth works
-          # and the policy is locked down to write-only.
-          aws s3api head-object \
-            --bucket fidexa-db-backups \
-            --key money-lending/__noexist__ 2>&1 \
-            | head -3 || true
+          # No bucket-level probe — the role only has s3:PutObject, so any
+          # read or list call would correctly fail. The real auth proof is
+          # the actual upload in the next step succeeding.
 
-      - name: Dump postgres and stream to S3
+      - name: Dump postgres, validate, upload to S3
         env:
           SSH_KEY: ${{ secrets.ELECTRIC_SSH_KEY }}
           SSH_HOST: ${{ secrets.ELECTRIC_SSH_HOST }}
@@ -69,49 +64,44 @@ jobs:
 
           DATE=$(date -u +%F)
           KEY="money-lending/dump_${DATE}.pgcustom"
-          echo "Dumping postgres on node1 and streaming to s3://fidexa-db-backups/${KEY}"
+          DUMP=/tmp/dump.pgcustom
 
-          # Pipe pg_dump → SSH stdout → aws s3 cp - (streaming, no temp file).
-          # set -o pipefail above ensures a pg_dump failure aborts the upload
-          # instead of storing a truncated dump.
+          echo "Dumping postgres on node1 to runner ($DUMP)..."
+          # Dump to a local file first so we can size/magic-check BEFORE
+          # uploading. Verifying after upload would need s3:GetObject which
+          # we deliberately don't grant — defence-in-depth: a leaked role
+          # can write garbage but can't read existing backups.
           #
-          # Custom format (-Fc) is internally compressed with zlib, so we
-          # don't gzip on top — that's why no .gz suffix on the key.
-          #
-          # --no-owner --no-acl strips the `money` role ownership so the
-          # dump restores cleanly into a fresh DB regardless of which role
-          # the restoring user has.
+          # Custom format (-Fc) is internally zlib-compressed; no extra gzip.
+          # --no-owner --no-acl makes the dump restore-portable across roles.
           ssh -i ~/.ssh/id_node -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
             "docker run --rm --network host -e PGPASSWORD='$PG_PASSWORD' postgres:17 \
               pg_dump -Fc --no-owner --no-acl \
               'host=127.0.0.1 port=5432 user=money dbname=money_lending sslmode=require'" \
-          | aws s3 cp - "s3://fidexa-db-backups/${KEY}" \
-              --storage-class STANDARD_IA \
-              --expected-size 100000000
+            > "$DUMP"
 
-          echo ""
-          echo "Backup uploaded: s3://fidexa-db-backups/${KEY}"
+          SIZE=$(wc -c < "$DUMP")
+          echo "Dump size: ${SIZE} bytes"
 
-      - name: Confirm object exists with reasonable size
-        run: |
-          set -euo pipefail
-          DATE=$(date -u +%F)
-          KEY="money-lending/dump_${DATE}.pgcustom"
-
-          # head-object also returns ContentLength, which we sanity check.
-          # A truncated dump (set -o pipefail caught nothing) would be small.
-          # Current dataset is ~88KB; a sane lower bound is 10KB.
-          SIZE=$(aws s3api head-object \
-            --bucket fidexa-db-backups \
-            --key "$KEY" \
-            --query ContentLength \
-            --output text)
-          echo "Uploaded object size: ${SIZE} bytes"
+          # Sanity floor — current dataset is ~82KB. A truncated dump from
+          # some upstream pg_dump warning we missed would be tiny. Floor
+          # catches that without false-positiving as the DB grows.
           if [ "$SIZE" -lt 10000 ]; then
-            echo "ERROR: backup is suspiciously small (<10KB) — likely truncated."
+            echo "ERROR: dump is suspiciously small (<10KB) — aborting upload."
             exit 1
           fi
-          echo "Backup verified."
+
+          # pg_dump custom-format files start with magic bytes "PGDMP".
+          if ! head -c 5 "$DUMP" | grep -q "PGDMP"; then
+            echo "ERROR: dump does not start with PGDMP magic — corrupt."
+            exit 1
+          fi
+
+          echo "Uploading to s3://fidexa-db-backups/${KEY}..."
+          aws s3 cp "$DUMP" "s3://fidexa-db-backups/${KEY}" \
+            --storage-class STANDARD_IA
+
+          echo "Backup uploaded: s3://fidexa-db-backups/${KEY} (${SIZE} bytes)"
 
       - name: Cleanup SSH key
         if: always()
