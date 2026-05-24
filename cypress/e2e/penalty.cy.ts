@@ -1,3 +1,5 @@
+import type { DbLoanRow } from "../support/types"
+
 function createCustomerAndLoan(customerName: string, contact: string, amount: string) {
   cy.visit("/customers/new")
   cy.get("#fullName").type(customerName)
@@ -38,7 +40,7 @@ describe("Overdue Penalty", () => {
 
   it("shows penalty badge on loans list when loan is 60+ days overdue", () => {
     createCustomerAndLoan("Penalty Customer", "0700100100", "1000000").then(() => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loan = loans[0]
         expect(loan.penalty_waived).to.eq(false)
 
@@ -54,7 +56,7 @@ describe("Overdue Penalty", () => {
 
   it("shows penalty details on loan detail page with effective rate", () => {
     createCustomerAndLoan("Detail Penalty", "0700200200", "500000").then(() => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loan = loans[0]
         backdateLoan(loan.id)
 
@@ -68,7 +70,7 @@ describe("Overdue Penalty", () => {
 
   it("admin can waive penalty", () => {
     createCustomerAndLoan("Waive Customer", "0700300300", "500000").then(() => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loan = loans[0]
         backdateLoan(loan.id)
 
@@ -85,7 +87,7 @@ describe("Overdue Penalty", () => {
 
   it("admin can adjust penalty multiplier", () => {
     createCustomerAndLoan("Adjust Customer", "0700400400", "500000").then(() => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loan = loans[0]
         backdateLoan(loan.id)
 
@@ -101,7 +103,7 @@ describe("Overdue Penalty", () => {
 
   it("penalty with custom multiplier shows correct effective rate", () => {
     createCustomerAndLoan("Custom Multiplier", "0700500500", "500000").then(() => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loan = loans[0]
         backdateLoan(loan.id)
         // Set 20% penalty multiplier
@@ -117,7 +119,7 @@ describe("Overdue Penalty", () => {
 
   it("penalty does NOT show when loan is under 60 days overdue", () => {
     createCustomerAndLoan("Under Threshold", "0700600600", "500000").then(() => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loan = loans[0]
         // Set start date to 45 days ago — overdue but under 60-day penalty threshold
         const fortyFiveDaysAgo = new Date()

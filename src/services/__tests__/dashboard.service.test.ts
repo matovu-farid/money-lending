@@ -19,7 +19,7 @@ vi.mock("@/lib/interest/overdue", () => ({
  * Helper: build a chained mock for a drizzle select().from().innerJoin().where().groupBy() chain.
  * Returns the resolved rows at the end of the chain.
  */
-function ledgerQuery(rows: any[]) {
+function ledgerQuery<T>(rows: T[]) {
   return {
     from: vi.fn().mockReturnValue({
       innerJoin: vi.fn().mockReturnValue({
@@ -31,7 +31,7 @@ function ledgerQuery(rows: any[]) {
   }
 }
 
-function simpleWhere(rows: any[]) {
+function simpleWhere<T>(rows: T[]) {
   return {
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockResolvedValue(rows),
@@ -39,7 +39,7 @@ function simpleWhere(rows: any[]) {
   }
 }
 
-function whereOrderBy(rows: any[]) {
+function whereOrderBy<T>(rows: T[]) {
   return {
     from: vi.fn().mockReturnValue({
       where: vi.fn().mockReturnValue({

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef, useCallback, useEffect, useMemo } from "react"
+import { useState, useRef, useCallback, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 
 interface UseUrlFiltersConfig<T extends Record<string, string>> {
@@ -18,17 +18,17 @@ export function useUrlFilters<T extends Record<string, string>>({
   const searchParams = useSearchParams()
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Initialize from URL
-  const initial = useMemo(() => {
+  // Initialize from URL — `useState`'s lazy initializer runs exactly once,
+  // capturing the first-render `searchParams` snapshot without re-reading it
+  // on subsequent renders.
+  const [filters, setFiltersState] = useState<T>(() => {
     const result = { ...defaults }
     for (const key of Object.keys(defaults) as (keyof T & string)[]) {
       const val = searchParams.get(key)
       if (val) (result as Record<string, string>)[key] = val
     }
     return result
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [filters, setFiltersState] = useState<T>(initial)
+  })
 
   const page = Math.max(1, Number(searchParams.get("page")) || 1)
 

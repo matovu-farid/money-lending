@@ -28,26 +28,34 @@ vi.mock("@/lib/action-utils", () => ({
   ])),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && "_tag" in inner) {
-        return inner._tag as string
+        const innerTag = (inner as { _tag: unknown })._tag
+        if (typeof innerTag === "string") return innerTag
       }
     }
     return undefined
   },
   getErrorField: (error: unknown, field: string): unknown => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && field in error) return (error as any)[field]
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    if ("_tag" in error && field in error) {
+      return (error as Record<string, unknown>)[field]
+    }
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && field in inner) {
-        return (inner as any)[field]
+        return (inner as Record<string, unknown>)[field]
       }
     }
     return undefined
@@ -101,12 +109,12 @@ vi.mock("@/lib/interest/effective-rate", () => ({
 }))
 
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((...args: any[]) => args),
-  and: vi.fn((...args: any[]) => args),
-  isNull: vi.fn((col: any) => col),
-  asc: vi.fn((col: any) => col),
-  desc: vi.fn((col: any) => col),
-  inArray: vi.fn((...args: any[]) => args),
+  eq: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...args: unknown[]) => args),
+  isNull: vi.fn((col: unknown) => col),
+  asc: vi.fn((col: unknown) => col),
+  desc: vi.fn((col: unknown) => col),
+  inArray: vi.fn((...args: unknown[]) => args),
 }))
 
 vi.mock("@/lib/email", () => ({
@@ -133,7 +141,7 @@ vi.mock("@/services/report.service", () => ({
 }))
 
 vi.mock("@/lib/interest/engine", () => ({
-  formatAmount: vi.fn((v: any) => String(v)),
+  formatAmount: vi.fn((v: unknown) => String(v)),
 }))
 
 // ---------- Imports ----------
@@ -163,9 +171,13 @@ const mockCreateLoan = vi.mocked(createLoan)
 const mockListLoans = vi.mocked(listLoans)
 const mockGetLocationBalances = vi.mocked(getLocationBalances)
 
-const fakeSession = {
-  user: { id: "u1", name: "Test User", email: "t@t.com", role: "admin" },
-} as any
+import { fakeSession, effectReturn } from "./test-utils"
+import type { CreateLoanInput } from "@/types"
+void validatePositiveDecimal
+
+const locationBalancesReturn = effectReturn<typeof getLocationBalances>
+const listLoansReturn = effectReturn<typeof listLoans>
+const createLoanReturn = effectReturn<typeof createLoan>
 
 // ---------- Tests ----------
 
@@ -185,14 +197,14 @@ describe("Loan Actions", () => {
     it("returns balances on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const balances = { cash: "1000000", bank: "5000000", strong_room: "2000000" }
-      mockGetLocationBalances.mockReturnValue(Effect.succeed(balances) as any)
+      mockGetLocationBalances.mockReturnValue(locationBalancesReturn(Effect.succeed(balances)))
       const result = await getLocationBalancesAction()
       expect(result).toEqual({ data: balances })
     })
 
     it("returns error on failure", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockGetLocationBalances.mockReturnValue(Effect.fail(new Error("boom")) as any)
+      mockGetLocationBalances.mockReturnValue(locationBalancesReturn(Effect.fail(new Error("boom"))))
       const result = await getLocationBalancesAction()
       expect(result).toEqual({ error: "Internal server error" })
     })
@@ -209,14 +221,14 @@ describe("Loan Actions", () => {
     it("returns loans on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const loans = [{ id: "l1" }]
-      mockListLoans.mockReturnValue(Effect.succeed(loans) as any)
+      mockListLoans.mockReturnValue(listLoansReturn(Effect.succeed(loans)))
       const result = await listLoansAction()
       expect(result).toEqual({ data: loans })
     })
 
     it("returns error on service failure", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockListLoans.mockReturnValue(Effect.fail(new Error("fail")) as any)
+      mockListLoans.mockReturnValue(listLoansReturn(Effect.fail(new Error("fail"))))
       const result = await listLoansAction()
       expect(result).toEqual({ error: "Internal server error" })
     })
@@ -284,7 +296,7 @@ describe("Loan Actions", () => {
     today.setHours(0, 0, 0, 0)
     const todayISO = today.toISOString()
 
-    const validInput = {
+    const validInput: CreateLoanInput = {
       customerId: "c1",
       principalAmount: "1000000",
       issuanceFee: "100000",
@@ -292,13 +304,13 @@ describe("Loan Actions", () => {
       minInterestDays: 30,
       startDate: todayISO,
       collateral: { nature: "Land title", description: "Plot in Kampala" },
-      disbursementSource: "cash" as const,
+      disbursementSource: "cash",
     }
 
     beforeEach(() => {
       // Restore default mocks cleared by parent beforeEach
       mockGetLocationBalances.mockReturnValue(
-        Effect.succeed({ cash: "99999999", bank: "99999999", strong_room: "99999999" }) as any
+        locationBalancesReturn(Effect.succeed({ cash: "99999999", bank: "99999999", strong_room: "99999999" })),
       )
       mockGetEffectivePermissions.mockResolvedValue(new Set([
         "loan:create", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
@@ -333,7 +345,7 @@ describe("Loan Actions", () => {
       mockGetUserRole.mockReturnValue("admin")
       const result = await createLoanAction({ ...validInput, principalAmount: "abc" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Principal")
+      expect((result as { error: string }).error).toContain("Principal")
     })
 
     it("returns error for missing start date", async () => {
@@ -390,17 +402,18 @@ describe("Loan Actions", () => {
       mockGetUserRole.mockReturnValue("admin")
       const result = await createLoanAction({
         ...validInput,
-        disbursementSource: "pillow" as any,
+        // Intentionally invalid for runtime guard test.
+        disbursementSource: "pillow" as unknown as CreateLoanInput["disbursementSource"],
       })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Disbursement source")
+      expect((result as { error: string }).error).toContain("Disbursement source")
     })
 
     it("creates loan and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       const created = { id: "new-loan-id" }
-      mockCreateLoan.mockReturnValue(Effect.succeed(created) as any)
+      mockCreateLoan.mockReturnValue(createLoanReturn(Effect.succeed(created)))
 
       const result = await createLoanAction(validInput)
 
@@ -414,7 +427,7 @@ describe("Loan Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       mockCreateLoan.mockReturnValue(
-        Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
+        createLoanReturn(Effect.fail(new CustomerNotFound({ id: "c1" }))),
       )
       const result = await createLoanAction(validInput)
       expect(result).toEqual({ error: "Customer not found" })
@@ -424,7 +437,7 @@ describe("Loan Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       mockCreateLoan.mockReturnValue(
-        Effect.fail(new IncompleteLoanRequirements({ missing: ["NIN"] })) as any,
+        createLoanReturn(Effect.fail(new IncompleteLoanRequirements({ missing: ["NIN"] }))),
       )
       const result = await createLoanAction(validInput)
       expect(result).toEqual({ error: "Missing fields: NIN" })

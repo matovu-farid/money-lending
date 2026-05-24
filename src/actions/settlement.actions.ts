@@ -1,16 +1,16 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { settleWithCollateral, getCustomerActiveLoan } from "@/services/collateral-settlement.service"
 import { type SettleWithCollateralInput } from "@/types"
 
-export const settleWithCollateralAction = withAction<SettleWithCollateralInput, any>({
+export const settleWithCollateralAction = withAction({
   permission: "loan:settle",
   forbiddenMessage: "Only supervisors and above can settle loans with collateral",
-  action: async (session, input) => {
+  action: async (session: Session, input: SettleWithCollateralInput) => {
     if (!input.loanId?.trim()) {
       return { error: "Loan ID is required" }
     }
@@ -19,10 +19,10 @@ export const settleWithCollateralAction = withAction<SettleWithCollateralInput, 
     }
 
     try {
-      const data = await Effect.runPromise(settleWithCollateral(input, session.user.id))
+      const { loan, txid } = await Effect.runPromise(settleWithCollateral(input, session.user.id))
       revalidatePath("/loans")
       revalidatePath(`/loans/${input.loanId}`)
-      return { data }
+      return { data: loan, txid }
     } catch (error) {
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
@@ -32,9 +32,9 @@ export const settleWithCollateralAction = withAction<SettleWithCollateralInput, 
   },
 })
 
-export const checkCustomerActiveLoanAction = withAction<string, any>({
+export const checkCustomerActiveLoanAction = withAction({
   permission: "loan:read",
-  action: async (_session, customerId) => {
+  action: async (_session: Session, customerId: string) => {
     if (!customerId?.trim()) {
       return { data: null }
     }

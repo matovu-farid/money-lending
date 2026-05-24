@@ -4,6 +4,8 @@
  * (date range, amount range, customer name), admin edit/delete actions,
  * CSV export, pagination, empty states, and sidebar navigation.
  */
+import type { DbLoanRow } from "../support/types"
+
 describe("Global Payments List (/payments)", () => {
   let loanId: string
 
@@ -31,7 +33,7 @@ describe("Global Payments List (/payments)", () => {
       cy.contains("button", "Issue Loan").click()
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         loanId = loans[0].id
 
         // Record a payment

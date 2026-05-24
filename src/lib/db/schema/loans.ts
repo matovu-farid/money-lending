@@ -1,4 +1,4 @@
-import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index, boolean, check } from "drizzle-orm/pg-core"
+import { pgTable, uuid, numeric, integer, timestamp, text, pgEnum, index, boolean, check, type AnyPgColumn } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 import { customers } from "./customers"
 import { depositLocationEnum } from "./fund-transfers"
@@ -38,7 +38,10 @@ export const loans = pgTable("loans", {
   penaltyWaived: boolean("penalty_waived").notNull().default(false),
   penaltyWaivedBy: text("penalty_waived_by"),
   penaltyWaivedAt: timestamp("penalty_waived_at", { withTimezone: true }),
-  rolledOverFrom: uuid("rolled_over_from").references((): any => loans.id),
+  // Self-referential FK: the column type can't be inferred from inside its own
+  // table declaration, so drizzle ships `AnyPgColumn` as the canonical escape
+  // hatch — preferable to `any` because the column-ness is preserved.
+  rolledOverFrom: uuid("rolled_over_from").references((): AnyPgColumn => loans.id),
   rolloverAmount: numeric("rollover_amount", { precision: 15, scale: 2 }),
   backdatedFrom: timestamp("backdated_from", { withTimezone: true }),
   backdatedBy: text("backdated_by"),

@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction, listTransactions } from "@/services/transaction.service"
@@ -67,8 +67,8 @@ export const recordIncomeAction = withAction<
   },
 })
 
-export const deleteIncomeAction = withAction<string, any>({
+export const deleteIncomeAction = withAction({
   permission: "income:create",
-  effect: (session, id) => deleteTransaction(id, session.user.id, getUserRole(session) as string),
+  effect: (session: Session, id: string) => deleteTransaction(id, session.user.id, getUserRole(session)),
   revalidate: ["/income", "/transactions"],
 })

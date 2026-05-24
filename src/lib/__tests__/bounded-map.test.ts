@@ -80,7 +80,7 @@ describe("boundedSet", () => {
       window.addEventListener("unhandledrejection", handler)
     }
     try {
-      const onEvict = (_v: number) => Promise.reject(new Error("teardown failed"))
+      const onEvict = () => Promise.reject(new Error("teardown failed"))
       boundedSet(map, "a", 1, 1, onEvict)
       boundedSet(map, "b", 2, 1, onEvict) // forces eviction → rejected promise
       // Yield to the microtask queue so rejection has a chance to surface.

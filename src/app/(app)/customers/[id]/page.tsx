@@ -76,16 +76,20 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
   const payments = Array.isArray(rawPayments) ? rawPayments : [];
 
   const activePaymentIds = payments.map((p) => p.id);
-  const portionsColl = expanded ? getPaymentPortionsCollection(item.loan.id, activePaymentIds) : null;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // Always fetch a collection — `getPaymentPortionsCollection` returns an
+  // empty placeholder collection when paymentIds is empty, so we can hook
+  // useLiveQuery unconditionally and let the query just resolve to `{}`
+  // when not expanded.
+  const portionsColl = getPaymentPortionsCollection(
+    item.loan.id,
+    expanded ? activePaymentIds : [],
+  );
   const loadingPayments = false
-  const { data: portionsRows } = useLiveQuery(((q: any) =>
-    portionsColl
-      ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
-      : undefined
-  ) as any, [activePaymentIds.join(","), expanded]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const portionsData: PaymentPortionsMap = (portionsRows as any)?.[0]?.portions ?? {};
+  const { data: portionsRows } = useLiveQuery(
+    (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
+    [activePaymentIds.join(","), expanded],
+  );
+  const portionsData: PaymentPortionsMap = portionsRows?.[0]?.portions ?? {};
 
   return (
     <>
@@ -252,8 +256,9 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
 
   // Read loans via join hook (returns LoanListEntry shape with daysOverdue, customerName, etc.)
   const { data: customerLoans } = useLoansForCustomer(customerId);
+  // LoanListEntry extends LoanWithCustomer which extends Loan, so the assignment is structural.
   const loanItems: LoanWithOverdue[] = (customerLoans ?? []).map((entry) => ({
-    loan: entry as unknown as Loan,
+    loan: entry,
     daysOverdue: entry.daysOverdue,
   }));
 
@@ -304,8 +309,9 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
         });
         setEditing(false);
         toast.success("Customer updated successfully");
-      } catch (err: any) {
-        toast.error(err?.message ?? "Failed to update customer");
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to update customer";
+        toast.error(message);
       }
     });
   }
@@ -400,8 +406,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
         </Link>
       </PageHeader>
 
-      {/* @ts-expect-error -- Accordion value type mismatch with radix/shadcn generics */}
-      <Accordion type="single" collapsible defaultValue={editing ? "basic-info" : undefined} value={editing ? "basic-info" : undefined}>
+      <Accordion collapsible value={editing ? ["basic-info"] : undefined}>
         <AccordionItem value="basic-info" className="border rounded-lg px-4">
           <div className="flex items-center justify-between">
             <AccordionTrigger className="flex-1 text-base font-semibold">

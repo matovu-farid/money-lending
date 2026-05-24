@@ -2,13 +2,12 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   createDelegationAction,
   revokeDelegationAction,
 } from "@/actions/delegation.actions"
 import { delegationSchema, type DelegationRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 
 export type { DelegationRow }
 
@@ -17,11 +16,7 @@ export const delegationCollection = createCollection(
     id: "delegations",
     schema: delegationSchema,
     getKey: (delegation) => delegation.id,
-    shapeOptions: {
-      url: shapeUrl("delegation"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("delegation"),
-    },
+    shapeOptions: electricShapeOptionsFor("delegation"),
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await createDelegationAction({ id: modified.id, userId: modified.userId })

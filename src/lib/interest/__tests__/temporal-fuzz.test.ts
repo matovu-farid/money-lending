@@ -13,15 +13,12 @@ import BigNumber from "bignumber.js"
 import {
   calculateInterest,
   calculateDailyRate,
-  calculateDaysOverdue,
   allocatePayment,
-  allocateFixedRatePayment,
-  allocateReducingBalancePayment,
   calculateSchedule,
   formatAmount,
 } from "../engine"
 import { computeLoanOverdueInfo } from "../overdue"
-import { isPenaltyActive, getEffectiveRate, getBaseRate } from "../effective-rate"
+import { isPenaltyActive, getEffectiveRate } from "../effective-rate"
 import { daysBetween } from "@/lib/db/utils"
 
 // ─── Random Generators ────────────────────────────────────────────
@@ -38,20 +35,6 @@ function randomDate(startYear: number, endYear: number): Date {
   const start = new Date(startYear, 0, 1).getTime()
   const end = new Date(endYear, 11, 31).getTime()
   return new Date(start + Math.random() * (end - start))
-}
-
-/** Generate a date that's exactly on a month boundary edge */
-function randomEdgeDate(): Date {
-  const year = randomInt(2023, 2026)
-  const month = randomInt(0, 11)
-  const edgeType = randomInt(0, 3)
-  switch (edgeType) {
-    case 0: return new Date(year, month, 1)           // First of month
-    case 1: return new Date(year, month + 1, 0)       // Last of month
-    case 2: return new Date(year, month, 28)          // Feb boundary
-    case 3: return new Date(year, month, 31)          // May overflow to next month
-    default: return new Date(year, month, 15)
-  }
 }
 
 function randomPrincipal(): string {
@@ -606,12 +589,12 @@ describe("FUZZ: Edge Date Stress Tests", () => {
   it("term loans starting on 31st handle short months correctly", () => {
     const start31st = new Date(2025, 0, 31) // Jan 31
     const shortMonthDates = [
-      { asOf: new Date(2025, 1, 28), expectedMonths: 0 },  // Feb 28 — BUG-3 trigger
-      { asOf: new Date(2025, 2, 31), expectedMonths: 2 },  // Mar 31
-      { asOf: new Date(2025, 3, 30), expectedMonths: 2 },  // Apr 30 — BUG-3 trigger
+      { asOf: new Date(2025, 1, 28) },  // Feb 28 — BUG-3 trigger
+      { asOf: new Date(2025, 2, 31) },  // Mar 31
+      { asOf: new Date(2025, 3, 30) },  // Apr 30 — BUG-3 trigger
     ]
 
-    for (const { asOf, expectedMonths } of shortMonthDates) {
+    for (const { asOf } of shortMonthDates) {
       const info = computeLoanOverdueInfo({
         principalAmount: "1000000",
         baseRate: "0.1000",

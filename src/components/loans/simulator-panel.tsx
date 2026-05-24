@@ -38,6 +38,7 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
   const { control, watch } = useForm<{ amount: string }>({
     defaultValues: { amount: "" },
   })
+  // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form's watch() is intentionally non-memoizable; the library manages its own subscription stability.
   const amount = watch("amount")
   const [result, setResult] = useState<SimulatorResult | null>(null)
 

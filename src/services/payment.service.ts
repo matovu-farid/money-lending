@@ -8,6 +8,7 @@ import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
 import { eq, asc, and, isNull, gte, lte, ilike, desc, count, sql, inArray } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
+import { getCurrentTxid } from "@/lib/db-txid"
 import { writeAuditLog } from "./audit.service"
 import { allocatePayment, formatAmount } from "@/lib/interest/engine"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
@@ -106,16 +107,16 @@ export const recordPaymentWithTxid = (
     try: async () => {
       return await db.transaction(async (tx) => {
         const [loan] = await tx.select().from(loans).where(eq(loans.id, input.loanId)).for('update')
-        if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
+        if (!loan) throw new LoanNotFound({ id: input.loanId })
 
         // L2: Reject zero or negative payment amounts
         if (new BigNumber(input.amount).isLessThanOrEqualTo(0)) {
-          throw { _tag: "ValidationError", message: "Payment amount must be greater than zero", field: "amount" }
+          throw new ValidationError({ message: "Payment amount must be greater than zero", field: "amount" })
         }
 
         // L1: Reject payments dated before the loan start date
         if (new Date(input.paymentDate) < new Date(loan.startDate)) {
-          throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
+          throw new ValidationError({ message: "Payment date cannot be before loan start date", field: "paymentDate" })
         }
 
         // Reject future-dated payments — payments can only be recorded for today or earlier
@@ -124,7 +125,7 @@ export const recordPaymentWithTxid = (
         const paymentDateOnly = localDateString(new Date(input.paymentDate))
         const todayOnly = localDateString(new Date())
         if (paymentDateOnly > todayOnly) {
-          throw { _tag: "ValidationError", message: "Payment date cannot be in the future", field: "paymentDate" }
+          throw new ValidationError({ message: "Payment date cannot be in the future", field: "paymentDate" })
         }
 
         const baseRate = getBaseRate(loan)
@@ -232,11 +233,10 @@ export const recordPaymentWithTxid = (
           totalOwed = new BigNumber(allocation.interestPortion).plus(new BigNumber(principalBalanceBefore))
         }
         if (new BigNumber(input.amount).isGreaterThan(totalOwed)) {
-          throw {
-            _tag: "ValidationError",
+          throw new ValidationError({
             message: `Payment amount ${input.amount} exceeds total owed ${formatAmount(totalOwed)}`,
             field: "amount",
-          }
+          })
         }
 
         const [newPayment] = await tx
@@ -300,16 +300,13 @@ export const recordPaymentWithTxid = (
             .where(eq(loans.id, input.loanId))
         }
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { payment: { ...newPayment, allocation }, txid }
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
-      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
+      if (e instanceof ValidationError) return e
       return new DatabaseError({ cause: e })
     },
   }).pipe(
@@ -343,29 +340,29 @@ export const editPaymentWithTxid = (
           .from(payments)
           .where(eq(payments.id, input.paymentId))
         if (!payment || payment.deletedAt !== null)
-          throw { _tag: "PaymentNotFound", id: input.paymentId }
+          throw new PaymentNotFound({ id: input.paymentId })
 
         const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId)).for('update')
-        if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
+        if (!loan) throw new LoanNotFound({ id: payment.loanId })
 
         const newAmount = input.amount ?? payment.amount
         const newPaymentDate = input.paymentDate ? new Date(input.paymentDate) : new Date(payment.paymentDate)
 
         // L2: Reject zero or negative payment amounts
         if (new BigNumber(newAmount).isLessThanOrEqualTo(0)) {
-          throw { _tag: "ValidationError", message: "Payment amount must be greater than zero", field: "amount" }
+          throw new ValidationError({ message: "Payment amount must be greater than zero", field: "amount" })
         }
 
         // L1: Reject payments dated before the loan start date
         if (newPaymentDate < new Date(loan.startDate)) {
-          throw { _tag: "ValidationError", message: "Payment date cannot be before loan start date", field: "paymentDate" }
+          throw new ValidationError({ message: "Payment date cannot be before loan start date", field: "paymentDate" })
         }
 
         // Reject future-dated payments — use local date to avoid UTC-shift (BUG-7)
         const editDateOnly = localDateString(newPaymentDate)
         const editTodayOnly = localDateString(new Date())
         if (editDateOnly > editTodayOnly) {
-          throw { _tag: "ValidationError", message: "Payment date cannot be in the future", field: "paymentDate" }
+          throw new ValidationError({ message: "Payment date cannot be in the future", field: "paymentDate" })
         }
 
         // 1. Reverse old journals using ledger-derived portions
@@ -527,11 +524,10 @@ export const editPaymentWithTxid = (
           totalOwed = new BigNumber(allocation.interestPortion).plus(new BigNumber(principalBalanceBefore))
         }
         if (new BigNumber(newAmount).isGreaterThan(totalOwed)) {
-          throw {
-            _tag: "ValidationError",
+          throw new ValidationError({
             message: `Payment amount ${newAmount} exceeds total owed ${formatAmount(totalOwed)}`,
             field: "amount",
-          }
+          })
         }
 
         // 4. Post new journals
@@ -590,17 +586,14 @@ export const editPaymentWithTxid = (
           afterValue: { ...updatedPayment, reason: input.reason },
         })
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { payment: updatedPayment, txid }
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "PaymentNotFound") return new PaymentNotFound({ id: e.id })
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
-      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
+    catch: (e: unknown) => {
+      if (e instanceof PaymentNotFound) return e
+      if (e instanceof LoanNotFound) return e
+      if (e instanceof ValidationError) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -629,10 +622,10 @@ export const deletePaymentWithTxid = (
           .from(payments)
           .where(eq(payments.id, input.paymentId))
         if (!payment || payment.deletedAt !== null)
-          throw { _tag: "PaymentNotFound", id: input.paymentId }
+          throw new PaymentNotFound({ id: input.paymentId })
 
         const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId)).for('update')
-        if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId }
+        if (!loan) throw new LoanNotFound({ id: payment.loanId })
 
         // 1. Get portions from ledger before soft-deleting
         const portions = await getPaymentPortionsFromLedger([input.paymentId], tx)
@@ -718,16 +711,13 @@ export const deletePaymentWithTxid = (
           .from(payments)
           .where(eq(payments.id, input.paymentId))
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { payment: deletedRow, txid }
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "PaymentNotFound") return new PaymentNotFound({ id: e.id })
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof PaymentNotFound) return e
+      if (e instanceof LoanNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -852,7 +842,7 @@ export const getPaymentsForLoan = (
   Effect.tryPromise({
     try: async () => {
       const [loan] = await db.select().from(loans).where(eq(loans.id, loanId))
-      if (!loan) throw { _tag: "LoanNotFound", id: loanId }
+      if (!loan) throw new LoanNotFound({ id: loanId })
 
       return await db
         .select()
@@ -860,8 +850,8 @@ export const getPaymentsForLoan = (
         .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt)))
         .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -900,7 +890,11 @@ export const getRecentlyCollectedLoans = (
 ): Effect.Effect<RecentlyCollectedLoan[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      const rows = await db.execute(sql`
+      const rows = await db.execute<{
+        loan_id: string
+        customer_name: string
+        payment_date: string
+      }>(sql`
         SELECT * FROM (
           SELECT DISTINCT ON (p.loan_id)
             p.loan_id,
@@ -916,10 +910,10 @@ export const getRecentlyCollectedLoans = (
         ORDER BY sub.payment_date DESC
         LIMIT ${limit}
       `)
-      return Array.from(rows).map((row: any) => ({
-        loanId: row.loan_id as string,
-        customerName: row.customer_name as string,
-        paymentDate: new Date(row.payment_date as string),
+      return Array.from(rows).map((row) => ({
+        loanId: row.loan_id,
+        customerName: row.customer_name,
+        paymentDate: new Date(row.payment_date),
       }))
     },
     catch: (e) => new DatabaseError({ cause: e }),

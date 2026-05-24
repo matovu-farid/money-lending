@@ -1,3 +1,5 @@
+import type { DbLoanRow } from "../support/types"
+
 describe("POS Receipts", () => {
   let customerId: string
 
@@ -112,7 +114,7 @@ describe("POS Receipts", () => {
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 
       // Get the loan ID
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         loanId = loans[0].id
       })
     })

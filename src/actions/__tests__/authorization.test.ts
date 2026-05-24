@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect } from "effect"
-import { ROLE_PERMISSIONS, getPermissionsForRole } from "@/lib/permissions"
+import { getPermissionsForRole } from "@/lib/permissions"
 import type { Permission, UserRole } from "@/types"
 
 /**
@@ -30,24 +30,32 @@ vi.mock("@/lib/validators", () => ({
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
-  getUserRole: vi.fn((session: any) => session?.user?.role ?? "unassigned"),
+  getUserRole: vi.fn((session: { user?: { role?: string | null } } | null | undefined) =>
+    session?.user?.role ?? "unassigned",
+  ),
   requireRole: vi.fn(),
-  checkPermission: vi.fn(async (_session: any, permission: string) => {
+  checkPermission: vi.fn(async (_session: unknown, _permission: string) => {
     // Real implementation delegates to getEffectivePermissions.
     // In these tests we control it directly per-test.
     return null
   }),
+  hasProperty: <K extends string>(obj: unknown, key: K): obj is Record<K, unknown> =>
+    typeof obj === "object" && obj !== null && key in obj,
   getEffectivePermissions: vi.fn().mockResolvedValue(new Set<Permission>()),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && "_tag" in inner) {
-        return inner._tag as string
+        const innerTag = (inner as { _tag: unknown })._tag
+        if (typeof innerTag === "string") return innerTag
       }
     }
     return undefined
@@ -123,12 +131,12 @@ vi.mock("@/lib/interest/effective-rate", () => ({
 }))
 
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((...args: any[]) => args),
-  and: vi.fn((...args: any[]) => args),
-  asc: vi.fn((col: any) => col),
-  desc: vi.fn((col: any) => col),
-  isNull: vi.fn((col: any) => col),
-  inArray: vi.fn((...args: any[]) => args),
+  eq: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...args: unknown[]) => args),
+  asc: vi.fn((col: unknown) => col),
+  desc: vi.fn((col: unknown) => col),
+  isNull: vi.fn((col: unknown) => col),
+  inArray: vi.fn((...args: unknown[]) => args),
 }))
 
 vi.mock("@/lib/email", () => ({
@@ -154,7 +162,7 @@ vi.mock("@/services/ledger-queries.service", () => ({
 
 vi.mock("@/lib/interest/engine", () => ({
   allocatePayment: vi.fn(),
-  formatAmount: vi.fn((v: any) => String(v)),
+  formatAmount: vi.fn((v: unknown) => String(v)),
 }))
 
 vi.mock("@/lib/db/utils", () => ({
@@ -201,13 +209,16 @@ import {
   getSettingsAction,
 } from "../settings.actions"
 
-import { fakeSession, lowRoleSession, loanOfficerSession, supervisorSession } from "./test-utils"
+import { fakeSession, lowRoleSession, loanOfficerSession, supervisorSession, effectReturn } from "./test-utils"
 
 const mockGetSession = vi.mocked(getSession)
 const mockCheckPermission = vi.mocked(checkPermission)
 const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
 const mockEditPayment = vi.mocked(editPayment)
 const mockDeletePayment = vi.mocked(deletePayment)
+
+const editPaymentReturn = effectReturn<typeof editPayment>
+const deletePaymentReturn = effectReturn<typeof deletePayment>
 
 // ---------- Helpers ----------
 
@@ -217,7 +228,7 @@ const mockDeletePayment = vi.mocked(deletePayment)
  */
 function useRealPermissionCheck() {
   mockCheckPermission.mockImplementation(async (session, permission, message) => {
-    const role = (session as any).user?.role ?? "unassigned"
+    const role = (session as { user?: { role?: string | null } }).user?.role ?? "unassigned"
     const perms = getPermissionsForRole(role as UserRole)
     return perms.has(permission) ? null : (message ?? "Forbidden")
   })
@@ -249,7 +260,7 @@ describe("Authorization regression tests", () => {
     it("requires payment:create permission (checkPermission is called with 'payment:create')", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
-      mockEditPayment.mockReturnValue(Effect.succeed({ id: "p1", loanId: "l1", amount: "60000" }) as any)
+      mockEditPayment.mockReturnValue(editPaymentReturn(Effect.succeed({ id: "p1", loanId: "l1", amount: "60000" })))
 
       await editPaymentAction(validInput)
 
@@ -274,7 +285,7 @@ describe("Authorization regression tests", () => {
 
     it("allows loan officers (who have payment:create)", async () => {
       mockGetSession.mockResolvedValue(loanOfficerSession)
-      mockEditPayment.mockReturnValue(Effect.succeed({ id: "p1", loanId: "l1", amount: "60000" }) as any)
+      mockEditPayment.mockReturnValue(editPaymentReturn(Effect.succeed({ id: "p1", loanId: "l1", amount: "60000" })))
 
       const result = await editPaymentAction(validInput)
       expect(result).not.toEqual({ error: "Forbidden" })
@@ -294,7 +305,7 @@ describe("Authorization regression tests", () => {
     it("requires payment:create permission (checkPermission is called with 'payment:create')", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
-      mockDeletePayment.mockReturnValue(Effect.succeed({ id: "p1", loanId: "l1", amount: "50000" }) as any)
+      mockDeletePayment.mockReturnValue(deletePaymentReturn(Effect.succeed({ id: "p1", loanId: "l1", amount: "50000" })))
 
       await deletePaymentAction(validInput)
 
@@ -319,7 +330,7 @@ describe("Authorization regression tests", () => {
 
     it("allows loan officers (who have payment:create)", async () => {
       mockGetSession.mockResolvedValue(loanOfficerSession)
-      mockDeletePayment.mockReturnValue(Effect.succeed({ id: "p1", loanId: "l1", amount: "50000" }) as any)
+      mockDeletePayment.mockReturnValue(deletePaymentReturn(Effect.succeed({ id: "p1", loanId: "l1", amount: "50000" })))
 
       const result = await deletePaymentAction(validInput)
       expect(result).not.toEqual({ error: "Forbidden" })

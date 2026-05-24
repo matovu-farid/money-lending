@@ -2,9 +2,8 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import { creditorInvestmentSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 
 /**
  * Electric-synced rows from `creditor_investments`. Reads only — investments
@@ -18,10 +17,6 @@ export const creditorInvestmentCollection = createCollection(
     id: "creditor-investments",
     schema: creditorInvestmentSchema,
     getKey: (investment) => investment.id,
-    shapeOptions: {
-      url: shapeUrl("creditor_investments"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("creditor_investments"),
-    },
+    shapeOptions: electricShapeOptionsFor("creditor_investments"),
   })
 )

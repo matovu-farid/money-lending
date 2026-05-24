@@ -10,14 +10,14 @@ import {
   PlusCircle,
 } from "lucide-react"
 import { paymentCollection } from "@/collections/payments"
-import { currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
+import { getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
 import { loanBalanceCollection } from "@/collections/loan-balances"
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
 import { loanCollection } from "@/collections/loans"
 import { isPenaltyActive } from "@/lib/interest/effective-rate"
 import { generateClientId } from "@/lib/client-id"
 import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
-import type { UserRole, RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
+import type { RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import type { Loan, PaymentPortionsMap } from "@/types"
 import { CopyButton } from "@/components/ui/copy-button"
@@ -53,12 +53,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const { has } = usePermissions()
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
 
-  // Fetch userRole via collection
-  const { data: userRoleRows } = useLiveQuery((q) =>
-    q.from({ r: currentUserRoleCollection }).select(({ r }) => r)
-  )
-  const userRole: UserRole = userRoleRows?.[0]?.role ?? ("unassigned" as UserRole)
-
   // Fetch collateral via collection. Use the non-suspending variant so the
   // page renders immediately on navigation — collateral data is only needed
   // by the Settle Collateral dialog, which is closed by default. Suspending
@@ -85,7 +79,10 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     (q) => q.from({ p: paymentCollection }).where(({ p }) => and(eq(p.loanId, loan.id), isNull(p.deletedAt))),
     [loan.id]
   )
-  const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : []
+  const rawPaymentsArr = useMemo(
+    () => (Array.isArray(rawPayments) ? rawPayments : []),
+    [rawPayments]
+  )
 
   // Resolve recordedBy user IDs to names.
   // Memoize on the joined-id signature so the array identity only changes
@@ -106,7 +103,10 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
     [userNameMapColl]
   )
-  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
+  const userNameMap: Record<string, string> = useMemo(
+    () => userNameMapRows?.[0]?.map ?? {},
+    [userNameMapRows]
+  )
 
   // Client-side query for payment portions — refreshes when payments change.
   // Memoize the id list and collection on the joined-id signature so the
@@ -127,7 +127,10 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
     (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
     [portionsColl]
   )
-  const currentPortions: PaymentPortionsMap = portionsRows?.[0]?.portions ?? {}
+  const currentPortions: PaymentPortionsMap = useMemo(
+    () => portionsRows?.[0]?.portions ?? {},
+    [portionsRows]
+  )
 
   // Project the raw Electric rows into the PaymentWithCustomer shape that the
   // downstream components (PaymentTable, SimulatorPanel, store dialogs) type
@@ -199,11 +202,15 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
   const pendingRateRequest = rateChangeList.find((r: RateChangeRequest) => r.status === "pending")
 
-  // Initialize penalty multiplier on mount and reset on unmount
+  // Sync the displayed penalty-multiplier input from the loan record whenever
+  // the underlying value changes (loan switch OR Electric resyncs a new
+  // multiplier), and clear the entire detail-page store on unmount.
+  // `setPenaltyMultiplierInput` and `reset` come from a Zustand store and
+  // are identity-stable across renders.
   useEffect(() => {
     setPenaltyMultiplierInput((Number(loan.penaltyMultiplier) * 100).toFixed(0))
     return () => reset()
-  }, [loan.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [loan.penaltyMultiplier, setPenaltyMultiplierInput, reset])
 
 
   const activePayments = [...payments]
@@ -424,7 +431,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       <LoanInfoCards
         loan={loan}
         penaltyActive={penaltyActive}
-        userRole={userRole}
         userNameMap={userNameMap}
         pendingRateRequest={pendingRateRequest}
         isWaivingPenalty={isWaivingPenalty}
@@ -590,7 +596,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       <RateChangeDialog
         open={requestingRateChange}
         loan={loan}
-        userRole={userRole}
         newRate={newRate}
         isPending={isRateChangePending}
         onNewRateChange={setNewRate}

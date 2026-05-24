@@ -38,8 +38,9 @@ export default function NewCustomerPage() {
       await tx.isPersisted.promise
       toast.success("Customer registered successfully")
       router.push(`/customers/${id}`)
-    } catch (err: any) {
-      toast.error(err?.message ?? "Failed to create customer")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to create customer"
+      toast.error(message)
       setIsPending(false)
     }
   }

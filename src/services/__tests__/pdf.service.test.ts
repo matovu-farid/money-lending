@@ -1,11 +1,48 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
 
-// Track calls to jsPDF and autoTable for assertions
-let docMethods: Record<string, ReturnType<typeof vi.fn>>
-let autoTableCalls: any[] = []
+// jspdf-autotable accepts a wide options object; the service under test
+// always passes `head` (column labels) and `body` (row cells) as 2D arrays,
+// so the test-side shape treats them as required to avoid spurious
+// possibly-undefined narrowing on every assertion.
+interface AutoTableOptions {
+  head: ReadonlyArray<ReadonlyArray<string>>
+  body: ReadonlyArray<ReadonlyArray<string | number>>
+  startY?: number
+  [key: string]: unknown
+}
 
-function createMockDoc() {
+// Explicit interface for the methods we model on the mock jsPDF doc — using a
+// named interface (not `Record<string, ReturnType<typeof vi.fn>>`) preserves
+// per-method names so `mockDocInstance.getNumberOfPages` is typed.
+interface MockDocMethods {
+  setFont: ReturnType<typeof vi.fn>
+  setFontSize: ReturnType<typeof vi.fn>
+  text: ReturnType<typeof vi.fn>
+  setTextColor: ReturnType<typeof vi.fn>
+  setDrawColor: ReturnType<typeof vi.fn>
+  setLineWidth: ReturnType<typeof vi.fn>
+  line: ReturnType<typeof vi.fn>
+  getNumberOfPages: ReturnType<typeof vi.fn>
+  setPage: ReturnType<typeof vi.fn>
+  output: ReturnType<typeof vi.fn>
+}
+
+interface MockDoc extends MockDocMethods {
+  internal: {
+    pageSize: {
+      getWidth: () => number
+      getHeight: () => number
+    }
+  }
+  lastAutoTable: { finalY: number }
+}
+
+// Track calls to jsPDF and autoTable for assertions
+let docMethods: MockDocMethods
+let autoTableCalls: AutoTableOptions[] = []
+
+function createMockDoc(): MockDoc {
   docMethods = {
     setFont: vi.fn(),
     setFontSize: vi.fn(),
@@ -19,7 +56,7 @@ function createMockDoc() {
     output: vi.fn().mockReturnValue(new ArrayBuffer(64)),
   }
 
-  const doc = {
+  return {
     ...docMethods,
     internal: {
       pageSize: {
@@ -29,16 +66,18 @@ function createMockDoc() {
     },
     lastAutoTable: { finalY: 100 },
   }
-  return doc
 }
 
-let mockDocInstance: ReturnType<typeof createMockDoc> & Record<string, any>
+let mockDocInstance: MockDoc
 
-const MockJsPDF = vi.fn(function (this: any) {
+// The `jsPDF` constructor is typed as a class but our mock just decorates the
+// `this` context with the mock doc shape — we deliberately don't model the
+// full jspdf surface area, just the methods our service touches.
+const MockJsPDF = vi.fn(function (this: MockDoc) {
   mockDocInstance = createMockDoc()
   Object.assign(this, mockDocInstance)
   return mockDocInstance
-}) as any
+})
 MockJsPDF.prototype = {}
 
 vi.mock("jspdf", () => ({
@@ -46,7 +85,7 @@ vi.mock("jspdf", () => ({
 }))
 
 vi.mock("jspdf-autotable", () => ({
-  default: vi.fn((_doc: any, options: any) => {
+  default: vi.fn((_doc: unknown, options: AutoTableOptions) => {
     autoTableCalls.push(options)
   }),
 }))
@@ -374,7 +413,7 @@ describe("PDF Export Service", () => {
       // The total text should be "UGX 2,000,000" (1M liabilities + 1M equity)
       const textCalls = mockDocInstance.text.mock.calls
       const totalCall = textCalls.find(
-        (c: any[]) => typeof c[0] === "string" && c[0].includes("2,000,000")
+        (c: unknown[]) => typeof c[0] === "string" && c[0].includes("2,000,000")
       )
       expect(totalCall).toBeDefined()
     })

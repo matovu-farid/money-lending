@@ -209,7 +209,7 @@ export function TransactionListClient({
         subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
         backdateNote: data.backdateNote?.trim() || undefined,
       }
-      collection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
+      collection.insert(optimistic, { metadata: { ...metadata } as Record<string, unknown> })
       toast.success(labels.successRecord)
       setIsSheetOpen(false)
       reset()
@@ -295,7 +295,7 @@ export function TransactionListClient({
           ]}
           rows={displayedTransactions}
           getRowKey={(tx) => tx.id}
-          getRowProps={(tx) => ({
+          getRowProps={() => ({
             "data-testid": "data-row",
             className: "",
           })}

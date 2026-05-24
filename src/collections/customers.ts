@@ -2,7 +2,6 @@
 
 import { createCollection, BasicIndex } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   changeCustomerStatusAction,
   createCustomerAction,
@@ -14,7 +13,7 @@ import type {
   UpdateCustomerInput,
 } from "@/types/customer"
 import { customerSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 
 /**
  * Metadata routed through `customerCollection.update(id, { metadata }, draft)`.
@@ -34,11 +33,7 @@ export const customerCollection = createCollection(
     getKey: (customer) => customer.id,
     autoIndex: "eager",
     defaultIndexType: BasicIndex,
-    shapeOptions: {
-      url: shapeUrl("customers"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("customers"),
-    },
+    shapeOptions: electricShapeOptionsFor("customers"),
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input: CreateCustomerInput = {

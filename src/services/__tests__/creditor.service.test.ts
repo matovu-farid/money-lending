@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { calculateInterest, allocatePayment } from "@/lib/interest/engine"
 import { Effect, Exit } from "effect"
+import BigNumber from "bignumber.js"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
 
 describe("Creditor Service — exports", () => {
   it("exports all expected functions", async () => {
@@ -170,13 +172,15 @@ vi.mock("@/services/auto-post.service", () => ({
   autoPostCreditorPrincipalRepaid: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock("@/services/ledger-queries.service", () => {
-  const BigNumber = require("bignumber.js").default
+vi.mock("@/services/ledger-queries.service", async () => {
+  const { default: BigNumberCtor } = await vi.importActual<typeof import("bignumber.js")>(
+    "bignumber.js"
+  )
   return {
     getCreditorBalancesFromLedger: vi.fn().mockResolvedValue(new Map()),
     getInterestPayableFromLedger: vi.fn().mockResolvedValue(new Map()),
-    getCreditorTotalInvestedFromLedger: vi.fn().mockResolvedValue(new BigNumber(0)),
-    getCreditorTotalRepaidFromLedger: vi.fn().mockResolvedValue(new BigNumber(0)),
+    getCreditorTotalInvestedFromLedger: vi.fn().mockResolvedValue(new BigNumberCtor(0)),
+    getCreditorTotalRepaidFromLedger: vi.fn().mockResolvedValue(new BigNumberCtor(0)),
   }
 })
 
@@ -184,34 +188,39 @@ vi.mock("@/services/transaction.service", () => ({
   reverseCreditorInterestAccrual: vi.fn().mockResolvedValue(undefined),
 }))
 
-describe("Creditor Service — DB operations (requires test DB)", () => {
-  let mockedDb: any
-  let mockedWriteAuditLog: any
-  let mockedGetCreditorBalancesFromLedger: any
-  let mockedGetInterestPayableFromLedger: any
-  let mockedGetCreditorTotalInvestedFromLedger: any
-  let mockedGetCreditorTotalRepaidFromLedger: any
+type DbMocks = {
+  [K in keyof typeof import("@/lib/db").db]: ReturnType<typeof vi.fn>
+}
+type Mocked = ReturnType<typeof vi.fn>
 
-  let createCreditor: any
-  let updateCreditor: any
-  let getCreditor: any
-  let listCreditors: any
-  let addInvestment: any
-  let recordCreditorRepayment: any
-  let getCreditorDashboard: any
-  let getSystemCapital: any
+describe("Creditor Service — DB operations (requires test DB)", () => {
+  let mockedDb: DbMocks
+  let mockedWriteAuditLog: Mocked
+  let mockedGetCreditorBalancesFromLedger: Mocked
+  let mockedGetInterestPayableFromLedger: Mocked
+  let mockedGetCreditorTotalInvestedFromLedger: Mocked
+  let mockedGetCreditorTotalRepaidFromLedger: Mocked
+
+  let createCreditor: typeof import("@/services/creditor.service").createCreditor
+  let updateCreditor: typeof import("@/services/creditor.service").updateCreditor
+  let getCreditor: typeof import("@/services/creditor.service").getCreditor
+  let listCreditors: typeof import("@/services/creditor.service").listCreditors
+  let addInvestment: typeof import("@/services/creditor.service").addInvestment
+  let recordCreditorRepayment: typeof import("@/services/creditor.service").recordCreditorRepayment
+  let getCreditorDashboard: typeof import("@/services/creditor.service").getCreditorDashboard
+  let getSystemCapital: typeof import("@/services/creditor.service").getSystemCapital
 
   beforeEach(async () => {
     vi.clearAllMocks()
     const dbMod = await import("@/lib/db")
-    mockedDb = dbMod.db as any
+    mockedDb = dbMod.db as unknown as DbMocks
     const auditMod = await import("@/services/audit.service")
-    mockedWriteAuditLog = auditMod.writeAuditLog as any
+    mockedWriteAuditLog = auditMod.writeAuditLog as unknown as Mocked
     const ledgerMod = await import("@/services/ledger-queries.service")
-    mockedGetCreditorBalancesFromLedger = ledgerMod.getCreditorBalancesFromLedger as any
-    mockedGetInterestPayableFromLedger = ledgerMod.getInterestPayableFromLedger as any
-    mockedGetCreditorTotalInvestedFromLedger = ledgerMod.getCreditorTotalInvestedFromLedger as any
-    mockedGetCreditorTotalRepaidFromLedger = ledgerMod.getCreditorTotalRepaidFromLedger as any
+    mockedGetCreditorBalancesFromLedger = ledgerMod.getCreditorBalancesFromLedger as unknown as Mocked
+    mockedGetInterestPayableFromLedger = ledgerMod.getInterestPayableFromLedger as unknown as Mocked
+    mockedGetCreditorTotalInvestedFromLedger = ledgerMod.getCreditorTotalInvestedFromLedger as unknown as Mocked
+    mockedGetCreditorTotalRepaidFromLedger = ledgerMod.getCreditorTotalRepaidFromLedger as unknown as Mocked
     const svc = await import("@/services/creditor.service")
     createCreditor = svc.createCreditor
     updateCreditor = svc.updateCreditor
@@ -253,14 +262,20 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     updatedAt: new Date("2026-01-31"),
   }
 
+  type TxMock = {
+    insert: ReturnType<typeof vi.fn>
+    update: ReturnType<typeof vi.fn>
+    select: ReturnType<typeof vi.fn>
+  }
+
   function makeTxMock(overrides?: {
-    insertResult?: any
-    updateResult?: any
-    selectResults?: any[][]
-  }) {
+    insertResult?: Record<string, unknown>
+    updateResult?: Record<string, unknown>
+    selectResults?: ReadonlyArray<ReadonlyArray<Record<string, unknown>>>
+  }): TxMock {
     let selectCallIndex = 0
     const selectResults = overrides?.selectResults ?? [[]]
-    const mockTx: any = {
+    const mockTx: TxMock = {
       insert: vi.fn().mockReturnValue({
         values: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([overrides?.insertResult ?? mockCreditor]),
@@ -279,9 +294,8 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
             const idx = selectCallIndex++
             const result = selectResults[idx] ?? []
             // Support both `.where()` (returns thenable) and `.where().orderBy()` chains
-            const thenable = Promise.resolve(result) as any
-            thenable.orderBy = vi.fn().mockImplementation(() => {
-              return Promise.resolve(result)
+            const thenable = Object.assign(Promise.resolve(result), {
+              orderBy: vi.fn().mockImplementation(() => Promise.resolve(result)),
             })
             return thenable
           }),
@@ -291,11 +305,13 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     return mockTx
   }
 
-  function setupTransaction(txMock: any) {
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+  function setupTransaction(txMock: object) {
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
   }
 
-  function setupDbSelect(rows: any[]) {
+  function setupDbSelect<T>(rows: T[]) {
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(rows),
@@ -303,27 +319,37 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     })
   }
 
-  function setupDbSelectChain(callResults: any[][]) {
+  type ResolveFn<T> = (value: T) => void
+  type RejectFn = (reason?: unknown) => void
+
+  // Each call to `db.select(...).from(...)` returns a different row shape
+  // (creditor, investment, repayment, etc.), so the per-call element type is
+  // heterogeneous and `unknown` is the honest common bound. The mocks just
+  // resolve with whatever the test supplied — no narrowing happens inside.
+  function setupDbSelectChain(callResults: ReadonlyArray<ReadonlyArray<unknown>>) {
     let callIndex = 0
     mockedDb.select.mockImplementation(() => ({
       from: vi.fn().mockImplementation(() => {
         const idx = callIndex++
         const result = callResults[idx] ?? []
-        const whereObj: any = {
+        const whereObj = {
           orderBy: vi.fn().mockResolvedValue(result),
           groupBy: vi.fn().mockResolvedValue(result),
-          then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
+          then: (resolve: ResolveFn<ReadonlyArray<unknown>>, reject?: RejectFn) =>
+            Promise.resolve(result).then(resolve, reject),
         }
-        const chainObj: any = {
+        const chainObj = {
           where: vi.fn().mockReturnValue(whereObj),
           innerJoin: vi.fn().mockReturnValue({
             where: vi.fn().mockReturnValue({
               groupBy: vi.fn().mockResolvedValue(result),
-              then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
+              then: (resolve: ResolveFn<ReadonlyArray<unknown>>, reject?: RejectFn) =>
+                Promise.resolve(result).then(resolve, reject),
             }),
           }),
           orderBy: vi.fn().mockResolvedValue(result),
-          then: (resolve: any, reject?: any) => Promise.resolve(result).then(resolve, reject),
+          then: (resolve: ResolveFn<ReadonlyArray<unknown>>, reject?: RejectFn) =>
+            Promise.resolve(result).then(resolve, reject),
         }
         return chainObj
       }),
@@ -422,7 +448,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
       }),
     })
 
-    const result = await Effect.runPromise(listCreditors()) as any
+    const result = await Effect.runPromise(listCreditors())
 
     expect(result).toEqual([creditorA, creditorB])
     expect(result[0].name).toBe("Alpha")
@@ -441,7 +467,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
         { creditorId: "cred-1", amount: "10000000", interestRateMonthly: "0.10", investmentDate: "2026-01-01T00:00:00.000Z" },
         "actor-1",
       ),
-    ) as any
+    )
 
     expect(result.amount).toBe("10000000")
     expect(result.creditorId).toBe("cred-1")
@@ -487,7 +513,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
         { investmentId: "inv-1", amount: "1500000", repaymentDate: "2026-01-31T00:00:00.000Z" },
         "actor-1",
       ),
-    ) as any
+    )
 
     // Cached columns removed — repayment row only has amount, investmentId, etc.
     expect(result.amount).toBe("1500000")
@@ -538,7 +564,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
 
   it("getCreditorDashboard: computes interestAccrued using minInterestDays=0 (CRED-03)", async () => {
     // Creditor exists, 1 investment (10M at 10%/month, 30 days ago), no repayments
-    const BigNumber = require("bignumber.js").default
     const investmentDate = new Date()
     investmentDate.setDate(investmentDate.getDate() - 30)
     const investment30d = {
@@ -565,7 +590,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     // Mock total repaid from ledger
     mockedGetCreditorTotalRepaidFromLedger.mockResolvedValueOnce(new BigNumber("0"))
 
-    const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
+    const result = await Effect.runPromise(getCreditorDashboard("cred-1"))
 
     expect(result.totalInvested).toBe("10000000.00")
     // Interest now comes from ledger
@@ -574,7 +599,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   })
 
   it("getCreditorDashboard: after 500K repayment on 1M interest, shows remaining interest (CRED-05)", async () => {
-    const BigNumber = require("bignumber.js").default
     // Investment: 10M at 10%/month, 60 days ago
     // A repayment of 500K was made 30 days ago (covering partial interest from first 30 days)
     // Another 30 days have elapsed since that repayment → new interest accrues on principal
@@ -616,7 +640,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedGetCreditorTotalInvestedFromLedger.mockResolvedValueOnce(new BigNumber("10000000"))
     mockedGetCreditorTotalRepaidFromLedger.mockResolvedValueOnce(new BigNumber("500000"))
 
-    const result = await Effect.runPromise(getCreditorDashboard("cred-1")) as any
+    const result = await Effect.runPromise(getCreditorDashboard("cred-1"))
 
     expect(result.repaymentsMade).toBe("500000.00")
     // Interest now from ledger
@@ -685,7 +709,6 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
   })
 
   it("getSystemCapital: aggregates totalInvested, totalInterestAccrued, totalRepaymentsMade across all creditors (CRED-06)", async () => {
-    const BigNumber = require("bignumber.js").default
     const now = new Date()
     const thirtyDaysAgo = new Date(now)
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -731,7 +754,7 @@ describe("Creditor Service — DB operations (requires test DB)", () => {
     mockedGetCreditorTotalInvestedFromLedger.mockResolvedValueOnce(new BigNumber("15000000"))
     mockedGetCreditorTotalRepaidFromLedger.mockResolvedValueOnce(new BigNumber("0"))
 
-    const result = await Effect.runPromise(getSystemCapital()) as any
+    const result = await Effect.runPromise(getSystemCapital())
 
     // Total invested = 10M + 5M = 15M
     expect(result.totalInvested).toBe("15000000.00")

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import type { UserRole, Loan } from "@/types"
+import type { Loan } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { formatRate } from "@/lib/utils"
 import { getBaseRate } from "@/lib/interest/effective-rate"
@@ -18,7 +18,6 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 export interface RateChangeDialogProps {
   open: boolean
   loan: Loan
-  userRole: UserRole
   newRate: string
   isPending: boolean
   onNewRateChange: (value: string) => void
@@ -29,7 +28,6 @@ export interface RateChangeDialogProps {
 export function RateChangeDialog({
   open,
   loan,
-  userRole,
   newRate,
   isPending,
   onNewRateChange,

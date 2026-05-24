@@ -136,7 +136,7 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
 export default function LoansPage() {
   const router = useRouter()
   const { data, isLoading } = useLoansWithBalances()
-  const entries = data ?? []
+  const entries = useMemo(() => data ?? [], [data])
   const error: string | null = null
   const calculatedAt = new Date()
 
@@ -149,11 +149,10 @@ export default function LoansPage() {
     setIsExporting(true)
     try {
       const result = await exportLoansExcelAction(activeFilter)
-      if (result.error) {
+      if ("error" in result) {
         toast.error(result.error)
         return
       }
-      if (!result.data) return
 
       const dateStr = new Date().toISOString().slice(0, 10)
       downloadBase64(

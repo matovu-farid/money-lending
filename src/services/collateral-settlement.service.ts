@@ -15,6 +15,7 @@ import { daysBetween } from "@/lib/db/utils"
 import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
 import { autoPostPrincipalRecovery } from "@/services/auto-post.service"
 import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service"
+import { getCurrentTxid } from "@/lib/db-txid"
 import type { SettleWithCollateralInput, Loan } from "@/types"
 
 /**
@@ -101,7 +102,7 @@ export function computeAccruedInterest(
 export const settleWithCollateral = (
   input: SettleWithCollateralInput,
   actorId: string
-): Effect.Effect<Loan, LoanNotFound | ValidationError | DatabaseError> =>
+): Effect.Effect<{ loan: Loan; txid: number }, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [loan] = await db
@@ -109,14 +110,13 @@ export const settleWithCollateral = (
         .from(loans)
         .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
-      if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!loan) throw new LoanNotFound({ id: input.loanId })
 
       if (loan.status !== "active") {
-        throw {
-          _tag: "ValidationError",
+        throw new ValidationError({
           message: `Loan must be active to settle with collateral. Current status: ${loan.status}`,
           field: "loanId",
-        }
+        })
       }
 
       return await db.transaction(async (tx) => {
@@ -204,14 +204,13 @@ export const settleWithCollateral = (
           },
         })
 
-        return updatedLoan as Loan
+        const txid = await getCurrentTxid(tx)
+        return { loan: updatedLoan as Loan, txid }
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
       if (e instanceof ValidationError) return e
-      if (e?._tag === "ValidationError")
-        return new ValidationError({ message: e.message, field: e.field })
       return new DatabaseError({ cause: e })
     },
   })

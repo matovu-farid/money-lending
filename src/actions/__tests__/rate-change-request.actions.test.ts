@@ -13,14 +13,18 @@ vi.mock("@/lib/action-utils", () => ({
   ])),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && "_tag" in inner) {
-        return inner._tag as string
+        const innerTag = (inner as { _tag: unknown })._tag
+        if (typeof innerTag === "string") return innerTag
       }
     }
     return undefined
@@ -72,9 +76,9 @@ vi.mock("@/lib/db/schema/rate-change-requests", () => ({
 }))
 
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((...args: any[]) => args),
-  and: vi.fn((...args: any[]) => args),
-  isNull: vi.fn((col: any) => col),
+  eq: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...args: unknown[]) => args),
+  isNull: vi.fn((col: unknown) => col),
 }))
 
 vi.mock("next/headers", () => ({
@@ -100,9 +104,6 @@ import {
 } from "@/services/rate-change-request.service"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 
-// Import the internal mock reference
-import { db } from "@/lib/db"
-
 import {
   requestRateChangeAction,
   listAllRequestsAction,
@@ -110,7 +111,8 @@ import {
   countPendingRequestsAction,
 } from "../rate-change-request.actions"
 
-import { fakeSession } from "./test-utils"
+import { fakeSession, effectReturn } from "./test-utils"
+import type { CreateRateChangeRequestInput } from "@/types"
 const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)
 const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
@@ -120,13 +122,13 @@ const mockListAllRequests = vi.mocked(listAllRequests)
 const mockListRequestsForLoan = vi.mocked(listRequestsForLoan)
 const mockCountPendingRequests = vi.mocked(countPendingRequests)
 const mockGetBaseRate = vi.mocked(getBaseRate)
+void mockRevalidatePath
+void mockApplyRateChange
+void mockGetBaseRate
 
-// Helper to get the chained where mock
-function getMockWhere() {
-  // db.select().from().where is the chain
-  const fromResult = (db.select() as any).from()
-  return vi.mocked(fromResult.where)
-}
+const listAllRequestsReturn = effectReturn<typeof listAllRequests>
+const listRequestsForLoanReturn = effectReturn<typeof listRequestsForLoan>
+const countPendingRequestsReturn = effectReturn<typeof countPendingRequests>
 
 // ---------- Tests ----------
 
@@ -141,11 +143,11 @@ describe("Rate Change Request Actions", () => {
 
   // ===== requestRateChangeAction =====
   describe("requestRateChangeAction", () => {
-    const validInput = { loanId: "l1", requestedRate: "0.12" }
+    const validInput: CreateRateChangeRequestInput = { loanId: "l1", requestedRate: "0.12" }
 
     it("returns error when not authenticated", async () => {
       mockGetSession.mockResolvedValue(null)
-      const result = await requestRateChangeAction(validInput as any)
+      const result = await requestRateChangeAction(validInput)
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
@@ -153,28 +155,28 @@ describe("Rate Change Request Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("unassigned")
       mockGetEffectivePermissions.mockResolvedValueOnce(new Set())
-      const result = await requestRateChangeAction(validInput as any)
+      const result = await requestRateChangeAction(validInput)
       expect(result).toEqual({ error: "Forbidden" })
     })
 
     it("returns error for missing loan ID", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
-      const result = await requestRateChangeAction({ ...validInput, loanId: "" } as any)
+      const result = await requestRateChangeAction({ ...validInput, loanId: "" })
       expect(result).toEqual({ error: "Loan ID is required" })
     })
 
     it("returns error for missing requested rate", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
-      const result = await requestRateChangeAction({ ...validInput, requestedRate: "" } as any)
+      const result = await requestRateChangeAction({ ...validInput, requestedRate: "" })
       expect(result).toEqual({ error: "Requested rate is required" })
     })
 
     it("returns error for invalid rate value", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
-      const result = await requestRateChangeAction({ ...validInput, requestedRate: "1.5" } as any)
+      const result = await requestRateChangeAction({ ...validInput, requestedRate: "1.5" })
       expect(result).toEqual({ error: "Rate must be a decimal between 0 and 1 (e.g., 0.10 for 10%)" })
     })
   })
@@ -199,7 +201,7 @@ describe("Rate Change Request Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("supervisor")
       const requests = [{ id: "r1" }]
-      mockListAllRequests.mockReturnValue(Effect.succeed(requests) as any)
+      mockListAllRequests.mockReturnValue(listAllRequestsReturn(Effect.succeed(requests)))
       const result = await listAllRequestsAction()
       expect(result).toEqual({ data: requests })
     })
@@ -222,7 +224,7 @@ describe("Rate Change Request Actions", () => {
     it("returns requests on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const requests = [{ id: "r1" }]
-      mockListRequestsForLoan.mockReturnValue(Effect.succeed(requests) as any)
+      mockListRequestsForLoan.mockReturnValue(listRequestsForLoanReturn(Effect.succeed(requests)))
       const result = await listRequestsForLoanAction("l1")
       expect(result).toEqual({ data: requests })
     })
@@ -247,7 +249,7 @@ describe("Rate Change Request Actions", () => {
     it("returns count for supervisor", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("supervisor")
-      mockCountPendingRequests.mockReturnValue(Effect.succeed(3) as any)
+      mockCountPendingRequests.mockReturnValue(countPendingRequestsReturn(Effect.succeed(3)))
       const result = await countPendingRequestsAction()
       expect(result).toEqual({ data: 3 })
     })

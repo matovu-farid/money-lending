@@ -1,3 +1,9 @@
+import type {
+  CreatedTestUser,
+  DbPaymentRow,
+  DbSeedCustomerAndLoanResult,
+} from "../support/types"
+
 describe("Optimistic Payment Recording", () => {
   let loanId: string
 
@@ -6,15 +12,15 @@ describe("Optimistic Payment Recording", () => {
 
     // Create test user via API (avoids flaky UI registration + re-login)
     cy.createTestUser({ name: "Loan Officer", role: "superAdmin" }).then(
-      (user: any) => {
+      (user: CreatedTestUser) => {
         // Seed customer and loan directly in the DB — reliable and fast
-        cy.task("db:seedCustomerAndLoan", {
+        cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
           customerName: "Payment Borrower",
           contact: "0771000002",
           nin: "C1234567890123",
           principalAmount: "500000",
           issuedBy: user.userId,
-        }).then((result: any) => {
+        }).then((result) => {
           loanId = result.loanId
         })
       }
@@ -81,9 +87,9 @@ describe("Optimistic Payment Recording", () => {
     cy.url({ timeout: 10000 }).should("include", "/loans/")
 
     // Verify the payment does not persist in the database
-    cy.task("db:getPayments").then((payments: any) => {
+    cy.task<DbPaymentRow[]>("db:getPayments").then((payments) => {
       const loanPayments = payments.filter(
-        (p: any) => p.loan_id === loanId && p.amount === "200000" && p.deleted_at === null
+        (p) => p.loan_id === loanId && p.amount === "200000" && p.deleted_at === null
       )
       expect(loanPayments.length).to.equal(0)
     })

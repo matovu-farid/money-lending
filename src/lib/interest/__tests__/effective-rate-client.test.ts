@@ -207,8 +207,11 @@ describe("computeDailyRate — edge cases", () => {
   })
 
   it("null loanType treated as perpetual", () => {
-    // LoanBaseRow.loanType may be null if the enum defaults are not applied
-    const nullTypeLoan = { ...baseLoan, loanType: null as any }
+    // LoanBaseRow.loanType is typed non-null but defaults can lag at runtime —
+    // we cast through `unknown` because `null` doesn't overlap the union, but
+    // the assertion intentionally probes the implementation's runtime
+    // tolerance of a null value.
+    const nullTypeLoan = { ...baseLoan, loanType: null } as unknown as typeof baseLoan
     // Perpetual path: uses outstandingBalance or principalAmount
     expect(computeDailyRate(nullTypeLoan, "1000000")).toBe("3333")
   })

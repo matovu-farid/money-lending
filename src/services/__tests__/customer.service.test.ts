@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit } from "effect"
+import type { db as realDb } from "@/lib/db"
+
+type RealDb = typeof realDb
 
 vi.mock("@/lib/db", () => {
   const mockDb = {
@@ -42,7 +45,7 @@ describe("Customer Service", () => {
       values: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([mockCustomer]),
       }),
-    } as any)
+    } as unknown as ReturnType<RealDb["insert"]>)
 
     const result = await Effect.runPromise(
       createCustomer({
@@ -66,7 +69,7 @@ describe("Customer Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    } as unknown as ReturnType<RealDb["select"]>)
 
     const exit = await Effect.runPromiseExit(getCustomer("nonexistent"))
 

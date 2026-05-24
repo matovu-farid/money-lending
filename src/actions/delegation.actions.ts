@@ -1,6 +1,6 @@
 "use server"
 
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { revalidatePath } from "next/cache"
 import {
   createDelegation,
@@ -8,10 +8,10 @@ import {
   listDelegations,
 } from "@/services/delegation.service"
 
-export const createDelegationAction = withAction<{ id: string; userId: string }, any>({
+export const createDelegationAction = withAction({
   permission: "delegation:create",
   forbiddenMessage: "Only admins can create delegations",
-  action: async (session, input) => {
+  action: async (session: Session, input: { id: string; userId: string }) => {
     if (!input.id?.trim()) {
       return { error: "ID is required" }
     }
@@ -23,16 +23,16 @@ export const createDelegationAction = withAction<{ id: string; userId: string },
       const data = await createDelegation(input.id, input.userId, session.user.id)
       revalidatePath("/admin")
       return { data }
-    } catch (e: any) {
-      return { error: e.message ?? "Failed to create delegation" }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Failed to create delegation" }
     }
   },
 })
 
-export const revokeDelegationAction = withAction<{ delegationId: string }, any>({
+export const revokeDelegationAction = withAction({
   permission: "delegation:revoke",
   forbiddenMessage: "Only admins can revoke delegations",
-  action: async (session, input) => {
+  action: async (session: Session, input: { delegationId: string }) => {
     if (!input.delegationId?.trim()) {
       return { error: "Delegation ID is required" }
     }
@@ -41,8 +41,8 @@ export const revokeDelegationAction = withAction<{ delegationId: string }, any>(
       const data = await revokeDelegation(input.delegationId, session.user.id)
       revalidatePath("/admin")
       return { data }
-    } catch (e: any) {
-      return { error: e.message ?? "Failed to revoke delegation" }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Failed to revoke delegation" }
     }
   },
 })

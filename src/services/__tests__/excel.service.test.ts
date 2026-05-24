@@ -1,14 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
 
-const mockCells: Map<number, Record<string, any>> = new Map()
-let addedRows: any[][] = []
-let sheetViews: any[] = []
-let sheetAutoFilter: any = null
-let columnWidths: Map<number, number> = new Map()
-let worksheetName = ""
+type CellStyle = {
+  numFmt?: string
+  font?: unknown
+  fill?: unknown
+  border?: unknown
+}
+type CellValue = string | number | Date | null
+type RowValues = CellValue[]
+type EachCellOptions = { includeEmpty?: boolean }
+type EachCellCallback = (cell: CellStyle, colNumber: number) => void
+type ViewConfig = { state?: string; ySplit?: number } & Record<string, unknown>
+type AutoFilterConfig = { from: { row: number; column: number }; to: { row: number; column: number } } | string
 
-const mockGetCell = (colIndex: number) => {
+const mockCells: Map<number, Record<string, CellStyle>> = new Map()
+let addedRows: RowValues[] = []
+let sheetViews: ViewConfig[] = []
+let sheetAutoFilter: AutoFilterConfig | null = null
+let columnWidths: Map<number, number> = new Map()
+
+const mockGetCell = (colIndex: number): CellStyle => {
   if (!mockCells.has(addedRows.length)) {
     mockCells.set(addedRows.length, {})
   }
@@ -19,24 +31,24 @@ const mockGetCell = (colIndex: number) => {
   return rowCells[colIndex]
 }
 
-const mockEachCell = vi.fn((optionsOrCb: any, maybeCb?: any) => {
-  const cb = maybeCb ?? optionsOrCb
+const mockEachCell = vi.fn((optionsOrCb: EachCellOptions | EachCellCallback, maybeCb?: EachCellCallback) => {
+  const cb: EachCellCallback = (maybeCb ?? optionsOrCb) as EachCellCallback
   const rowIndex = addedRows.length
   const row = addedRows[rowIndex - 1]
   if (row) {
-    row.forEach((_: any, i: number) => {
+    row.forEach((_, i) => {
       cb(mockGetCell(i + 1), i + 1)
     })
   }
 })
 
-const createMockRow = (values: any[]) => ({
+const createMockRow = (values: RowValues) => ({
   values,
   getCell: (idx: number) => mockGetCell(idx),
   eachCell: mockEachCell,
 })
 
-const mockAddRow = vi.fn((values: any[]) => {
+const mockAddRow = vi.fn((values: RowValues) => {
   addedRows.push(values)
   return createMockRow(values)
 })
@@ -51,16 +63,15 @@ const mockWriteBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(64))
 const mockWorksheet = {
   addRow: mockAddRow,
   getColumn: mockGetColumn,
-  set views(v: any[]) { sheetViews = v },
+  set views(v: ViewConfig[]) { sheetViews = v },
   get views() { return sheetViews },
-  set autoFilter(v: any) { sheetAutoFilter = v },
+  set autoFilter(v: AutoFilterConfig | null) { sheetAutoFilter = v },
   get autoFilter() { return sheetAutoFilter },
 }
 
 vi.mock("exceljs", () => {
   class MockWorkbook {
-    addWorksheet(name: string) {
-      worksheetName = name
+    addWorksheet() {
       return mockWorksheet
     }
     xlsx = { writeBuffer: mockWriteBuffer }
@@ -131,7 +142,6 @@ describe("Excel Export Service", () => {
     sheetViews = []
     sheetAutoFilter = null
     columnWidths = new Map()
-    worksheetName = ""
   })
 
   describe("generatePortfolioExcel", () => {

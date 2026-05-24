@@ -41,7 +41,10 @@ export type Permission =
 
 export type ApiResponse<T> = { data: T } | { error: string; details?: unknown }
 
-export type DepositLocation = "cash" | "bank" | "strong_room"
+// `DepositLocation` is derived from `VALID_DEPOSIT_LOCATIONS` in `@/lib/constants`
+// (single source of truth). Re-exported here so existing
+// `import type { DepositLocation } from "@/types"` paths keep working.
+export type { DepositLocation } from "@/lib/constants"
 
 export type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense"
 export type TransactionType = "credit" | "debit"

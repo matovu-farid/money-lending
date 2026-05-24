@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getSession, getUserRole, getErrorTag, getErrorField, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { db } from "@/lib/db"
@@ -16,6 +16,7 @@ import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { payments } from "@/lib/db/schema/payments"
 import { eq, and, isNull, asc, desc, inArray, sql } from "drizzle-orm"
+import { getCurrentTxid } from "@/lib/db-txid"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { generateLoansExcel } from "@/services/export/excel.service"
@@ -42,9 +43,9 @@ export async function getCollateralNaturesAction(): Promise<string[]> {
   return rows.map((r) => r.nature)
 }
 
-export const getLoanPaymentContextAction = withAction<string, any>({
+export const getLoanPaymentContextAction = withAction({
   permission: "loan:read",
-  action: async (_session, loanId) => {
+  action: async (_session: Session, loanId: string) => {
     const [row] = await db
       .select({
         id: loans.id,
@@ -70,9 +71,9 @@ export const getLoanPaymentContextAction = withAction<string, any>({
   },
 })
 
-export const getLoanCollateralAction = withAction<string, { data: { nature: string; description: string | null } | null }>({
+export const getLoanCollateralAction = withAction({
   permission: "loan:read",
-  action: async (_session, loanId) => {
+  action: async (_session: Session, loanId: string) => {
     const [record] = await db.select({
       nature: collateral.nature,
       description: collateral.description,
@@ -82,9 +83,9 @@ export const getLoanCollateralAction = withAction<string, { data: { nature: stri
   },
 })
 
-export const getLoanReceiptDataAction = withAction<string, any>({
+export const getLoanReceiptDataAction = withAction({
   permission: "loan:read",
-  action: async (_session, loanId) => {
+  action: async (_session: Session, loanId: string) => {
     const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
     if (!loan) return { error: "Loan not found" }
 
@@ -147,17 +148,17 @@ export async function resolveUserNamesAction(userIds: string[]): Promise<Record<
 
 // Loan editing is permanently disabled to preserve system integrity.
 // To change loan terms, issue a new loan (which can roll over the old one).
-export const updateLoanAction = withAction<UpdateLoanInput, any>({
+export const updateLoanAction = withAction({
   permission: "loan:update",
-  action: async () => {
+  action: async (_session: Session, _input: UpdateLoanInput) => {
     return { error: "Loan editing is disabled. Issue a new loan instead." }
   },
 })
 
 // Loan deletion is permanently disabled to preserve system integrity.
-export const deleteLoanAction = withAction<DeleteLoanInput, any>({
+export const deleteLoanAction = withAction({
   permission: "loan:update",
-  action: async () => {
+  action: async (_session: Session, _input: DeleteLoanInput) => {
     return { error: "Loan deletion is disabled. Loans are permanent records." }
   },
 })
@@ -293,7 +294,7 @@ export async function createLoanAction(input: CreateLoanInput) {
 
   // Validate loanType
   const loanType = input.loanType || "perpetual"
-  if (!VALID_LOAN_TYPES.includes(loanType as any)) {
+  if (!(VALID_LOAN_TYPES as readonly string[]).includes(loanType)) {
     return { error: "Loan type must be perpetual, fixed_rate, or reducing_balance" }
   }
 
@@ -421,9 +422,9 @@ async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEnt
   })
 }
 
-export const getCustomerLoansWithOverdueAction = withAction<string, any>({
+export const getCustomerLoansWithOverdueAction = withAction({
   permission: "loan:read",
-  action: async (_session, customerId) => {
+  action: async (_session: Session, customerId: string) => {
     try {
       const customerLoans = await db
         .select({
@@ -496,9 +497,11 @@ export const getLoanStatusCountsAction = withAction({
   },
 })
 
-export const exportLoansExcelAction = withAction<"all" | "critical" | "at-risk" | "early" | undefined, any>({
+type LoanExportFilter = "all" | "critical" | "at-risk" | "early" | undefined
+
+export const exportLoansExcelAction = withAction({
   permission: "reports:read",
-  action: async (_session, filter) => {
+  action: async (_session: Session, filter: LoanExportFilter) => {
     try {
       const allLoans = await Effect.runPromise(listLoans())
       let entries = await computeOverdue(allLoans)
@@ -545,10 +548,10 @@ export const listActiveLoansWithOverdueAction = withAction({
   },
 })
 
-export const waivePenaltyAction = withAction<string, any>({
+export const waivePenaltyAction = withAction({
   permission: "settings:update",
   forbiddenMessage: "Only admins can waive penalties",
-  action: async (session, loanId) => {
+  action: async (session: Session, loanId: string) => {
     try {
       const result = await db.transaction(async (tx) => {
         const [loan] = await tx
@@ -568,10 +571,7 @@ export const waivePenaltyAction = withAction<string, any>({
           .where(eq(loans.id, loanId))
           .returning()
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { data: updated, txid }
       })
 
@@ -590,10 +590,10 @@ export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: 
   return adjustPenaltyMultiplierWrapped({ loanId, multiplier })
 }
 
-const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: string }, any>({
+const adjustPenaltyMultiplierWrapped = withAction({
   permission: "settings:update",
   forbiddenMessage: "Only admins can adjust penalty rates",
-  action: async (_session, { loanId, multiplier }) => {
+  action: async (_session: Session, { loanId, multiplier }: { loanId: string; multiplier: string }) => {
     const value = parseFloat(multiplier)
     if (isNaN(value) || value < 0 || value >= 1) {
       return { error: "Multiplier must be between 0 and 1 (e.g., 0.10 for 10%)" }
@@ -616,10 +616,7 @@ const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: 
           .where(eq(loans.id, loanId))
           .returning()
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { data: updated, txid }
       })
 

@@ -19,7 +19,13 @@ describe("Delegation Service — Unit", () => {
 
   it("createDelegation — succeeds for a supervisor with no existing delegation", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     // First select: check existing delegation → none found
     const mockLimit1 = vi.fn().mockResolvedValue([])
@@ -59,7 +65,13 @@ describe("Delegation Service — Unit", () => {
 
   it("createDelegation — throws when user already has an active delegation", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     // First select: existing active delegation found
     const mockLimit = vi.fn().mockResolvedValue([{ id: "existing-del" }])
@@ -75,7 +87,13 @@ describe("Delegation Service — Unit", () => {
 
   it("createDelegation — throws for non-supervisor user", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     // First select: no existing delegation
     const mockLimit1 = vi.fn().mockResolvedValue([])
@@ -99,7 +117,13 @@ describe("Delegation Service — Unit", () => {
 
   it("createDelegation — throws when user not found", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     // First select: no existing delegation
     const mockLimit1 = vi.fn().mockResolvedValue([])
@@ -125,7 +149,13 @@ describe("Delegation Service — Unit", () => {
 
   it("revokeDelegation — succeeds and returns the revoked row", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     const revokedRow = {
       id: "del-1",
@@ -151,7 +181,13 @@ describe("Delegation Service — Unit", () => {
 
   it("revokeDelegation — throws when no active delegation found", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     const mockReturning = vi.fn().mockResolvedValue([])
     const mockWhere = vi.fn().mockReturnValue({ returning: mockReturning })
@@ -168,7 +204,13 @@ describe("Delegation Service — Unit", () => {
 
   it("getActiveDelegation — returns delegation when active one exists", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     const activeDelegation = {
       id: "del-1",
@@ -192,7 +234,13 @@ describe("Delegation Service — Unit", () => {
 
   it("getActiveDelegation — returns null when none exists", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     const mockLimit = vi.fn().mockResolvedValue([])
     const mockWhere = vi.fn().mockReturnValue({ limit: mockLimit })
@@ -209,7 +257,13 @@ describe("Delegation Service — Unit", () => {
 
   it("listDelegations — returns rows with user names", async () => {
     const { db } = await import("@/lib/db")
-    const mockDb = db as any
+    const mockDb = db as unknown as {
+      select: ReturnType<typeof vi.fn>
+      insert: ReturnType<typeof vi.fn>
+      update: ReturnType<typeof vi.fn>
+      delete: ReturnType<typeof vi.fn>
+      transaction: ReturnType<typeof vi.fn>
+    }
 
     const rows = [
       {

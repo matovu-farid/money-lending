@@ -58,10 +58,10 @@ export const auth = betterAuth({
 
       // Skip for invited users — their email gets verified directly during acceptance
       const { sql } = await import("drizzle-orm")
-      const inviteRows = await db.execute(
+      const inviteRows = await db.execute<{ '?column?': number }>(
         sql`SELECT 1 FROM "invitation" WHERE "email" = ${user.email} AND "status" = 'pending' LIMIT 1`
       )
-      if ((inviteRows as unknown as any[]).length > 0) {
+      if (inviteRows.length > 0) {
         console.log("[Email Debug] SKIPPED — user has pending invitation")
         return
       }

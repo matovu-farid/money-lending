@@ -15,12 +15,10 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import BigNumber from "bignumber.js"
 import {
   calculateInterest,
-  calculateDailyRate,
   allocatePayment,
   computeSegmentedInterest,
 } from "../engine"
 import { computeLoanOverdueInfo } from "../overdue"
-import { getEffectiveRate } from "../effective-rate"
 import { daysBetween } from "@/lib/db/utils"
 import { localDateString } from "@/lib/utils"
 import { periodBoundsUTC, asOfDateUTC } from "@/lib/date-utils"

@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
@@ -10,7 +10,8 @@ import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
 import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
-import { eq, and, asc, isNull, sql } from "drizzle-orm"
+import { eq, and, asc, isNull } from "drizzle-orm"
+import { getCurrentTxid } from "@/lib/db-txid"
 import { toLoanType, type RecordPaymentInput, type EditPaymentInput, type DeletePaymentInput, type ListPaymentsInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 import { shortId } from "@/lib/utils"
@@ -23,9 +24,9 @@ import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { daysBetween } from "@/lib/db/utils"
 
-export const recordPaymentAction = withAction<RecordPaymentInput, any>({
+export const recordPaymentAction = withAction({
   permission: "payment:create",
-  action: async (session, input) => {
+  action: async (session: Session, input: RecordPaymentInput) => {
     if (!input.loanId?.trim()) {
       return { error: "Loan ID is required" }
     }
@@ -63,9 +64,9 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
   },
 })
 
-export const editPaymentAction = withAction<EditPaymentInput, any>({
+export const editPaymentAction = withAction({
   permission: "payment:create",
-  action: async (session, input) => {
+  action: async (session: Session, input: EditPaymentInput) => {
     if (!input.paymentId?.trim()) {
       return { error: "Payment ID is required" }
     }
@@ -113,9 +114,9 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
   },
 })
 
-export const deletePaymentAction = withAction<DeletePaymentInput, any>({
+export const deletePaymentAction = withAction({
   permission: "payment:create",
-  action: async (session, input) => {
+  action: async (session: Session, input: DeletePaymentInput) => {
     if (!input.paymentId?.trim()) {
       return { error: "Payment ID is required" }
     }
@@ -163,14 +164,14 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
   },
 })
 
-export const listPaymentsAction = withAction<ListPaymentsInput, any>({
+export const listPaymentsAction = withAction({
   permission: "payment:read",
-  effect: (_session, input) => listPayments(input),
+  effect: (_session: Session, input: ListPaymentsInput) => listPayments(input),
 })
 
-export const getPaymentsByLoanAction = withAction<string, any>({
+export const getPaymentsByLoanAction = withAction({
   permission: "payment:read",
-  action: async (_session, loanId) => {
+  action: async (_session: Session, loanId: string) => {
     if (!loanId?.trim()) {
       return { error: "Loan ID is required" }
     }
@@ -182,15 +183,15 @@ export const getPaymentsByLoanAction = withAction<string, any>({
         .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
         .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
       return { data: rows }
-    } catch (error) {
+    } catch {
       return { error: "Internal server error" }
     }
   },
 })
 
-export const searchActiveLoansAction = withAction<string, any>({
+export const searchActiveLoansAction = withAction({
   permission: "loan:read",
-  action: async (_session, query) => {
+  action: async (_session: Session, query: string) => {
     const trimmed = query?.trim() ?? ""
     if (!trimmed) {
       return { data: [] }
@@ -210,9 +211,9 @@ export const getRecentlyCollectedLoansAction = withAction({
   effect: (session) => getRecentlyCollectedLoans(session.user.id, 5),
 })
 
-export const getLoanBalanceAction = withAction<string, any>({
+export const getLoanBalanceAction = withAction({
   permission: "loan:read",
-  action: async (_session, loanId) => {
+  action: async (_session: Session, loanId: string) => {
     if (!loanId?.trim()) {
       return { error: "Loan ID is required" }
     }
@@ -233,13 +234,10 @@ export async function markPaymentWrongAction(paymentId: string, reason: string) 
   return markPaymentWrongWrapped({ paymentId, reason })
 }
 
-const markPaymentWrongWrapped = withAction<
-  { paymentId: string; reason: string },
-  any
->({
+const markPaymentWrongWrapped = withAction({
   permission: "payment:edit-any",
   forbiddenMessage: "Only supervisors and above can mark payments as wrong",
-  action: async (session, { paymentId, reason }) => {
+  action: async (session: Session, { paymentId, reason }: { paymentId: string; reason: string }) => {
     if (!paymentId?.trim()) {
       return { error: "Payment ID is required" }
     }
@@ -313,10 +311,7 @@ const markPaymentWrongWrapped = withAction<
             .where(eq(loans.id, payment.loanId))
         }
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { updated: updatedPayment, txid }
       })
 
@@ -324,18 +319,19 @@ const markPaymentWrongWrapped = withAction<
       revalidatePath(`/loans/${updated.loanId}`)
 
       return { data: updated, txid }
-    } catch (e: any) {
-      if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
-      if (e?._tag === "AlreadyMarkedWrong") return { error: "Payment is already marked as wrong" }
+    } catch (e) {
+      const tag = (e as { _tag?: string } | null | undefined)?._tag
+      if (tag === "PaymentNotFound") return { error: "Payment not found" }
+      if (tag === "AlreadyMarkedWrong") return { error: "Payment is already marked as wrong" }
       return { error: "Internal server error" }
     }
   },
 })
 
-export const unmarkPaymentWrongAction = withAction<string, any>({
+export const unmarkPaymentWrongAction = withAction({
   permission: "payment:edit-any",
   forbiddenMessage: "Only supervisors and above can unmark payments",
-  action: async (session, paymentId) => {
+  action: async (session: Session, paymentId: string) => {
     if (!paymentId?.trim()) {
       return { error: "Payment ID is required" }
     }
@@ -461,10 +457,7 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
             .where(eq(loans.id, payment.loanId))
         }
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { updated: updatedPayment, txid }
       })
 
@@ -472,20 +465,25 @@ export const unmarkPaymentWrongAction = withAction<string, any>({
       revalidatePath(`/loans/${updated.loanId}`)
 
       return { data: updated, txid }
-    } catch (e: any) {
-      if (e?._tag === "PaymentNotFound") return { error: "Payment not found" }
-      if (e?._tag === "LoanNotFound") return { error: "Loan not found" }
-      if (e?._tag === "NotMarkedWrong") return { error: "Payment is not marked as wrong" }
+    } catch (e) {
+      const tag = (e as { _tag?: string } | null | undefined)?._tag
+      if (tag === "PaymentNotFound") return { error: "Payment not found" }
+      if (tag === "LoanNotFound") return { error: "Loan not found" }
+      if (tag === "NotMarkedWrong") return { error: "Payment is not marked as wrong" }
       return { error: "Internal server error" }
     }
   },
 })
 
-export const getPaymentPortionsAction = withAction<string[], any>({
+type PaymentPortionsResult =
+  | { data: Record<string, { interestPortion: string; principalPortion: string }> }
+  | { error: string }
+
+export const getPaymentPortionsAction = withAction({
   permission: "payment:read",
-  action: async (_session, paymentIds) => {
+  action: async (_session: Session, paymentIds: string[]): Promise<PaymentPortionsResult> => {
     if (!paymentIds || paymentIds.length === 0) {
-      return { data: {} as Record<string, { interestPortion: string; principalPortion: string }> }
+      return { data: {} }
     }
 
     try {

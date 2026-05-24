@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
 import BigNumber from "bignumber.js"
+import type { Loan } from "@/types"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
@@ -20,12 +22,13 @@ vi.mock("@/services/auto-post.service", () => ({
   autoPostPrincipalRecovery: vi.fn().mockResolvedValue(undefined),
 }))
 
-vi.mock("@/services/ledger-queries.service", () => {
-  const BigNumber = require("bignumber.js").default
+vi.mock("@/services/ledger-queries.service", async () => {
+  const BigNumberMod = await import("bignumber.js")
+  const BigNumberCtor = BigNumberMod.default
   return {
     getLoanBalancesFromLedger: vi.fn().mockImplementation(async () => {
       const map = new Map()
-      map.set("loan-1", new BigNumber("400000"))
+      map.set("loan-1", new BigNumberCtor("400000"))
       return map
     }),
   }
@@ -64,12 +67,6 @@ const mockLoan = {
   deletedAt: null,
 }
 
-const updatedLoan = {
-  ...mockLoan,
-  status: "settled_with_collateral",
-  updatedAt: expect.any(Date),
-}
-
 describe("Collateral Settlement Service", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -89,7 +86,7 @@ describe("Collateral Settlement Service", () => {
     // Capture the where clause argument from the payments query inside the transaction
     let capturedWhereArg: unknown = null
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -109,7 +106,7 @@ describe("Collateral Settlement Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -144,7 +141,7 @@ describe("Collateral Settlement Service", () => {
 
     // Mock transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -161,7 +158,7 @@ describe("Collateral Settlement Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -170,7 +167,8 @@ describe("Collateral Settlement Service", () => {
       settleWithCollateral({ loanId: "loan-1", reason: "Defaulted" }, "actor-1")
     )
 
-    expect(result.status).toBe("settled_with_collateral")
+    expect(result.loan.status).toBe("settled_with_collateral")
+    expect(typeof result.txid).toBe("number")
 
     // Should reverse interest accrual (accruedInterest > 0)
     expect(reverseInterestAccrual).toHaveBeenCalledOnce()
@@ -304,7 +302,7 @@ describe("Collateral Settlement Service", () => {
     const { calculateInterest } = await import("@/lib/interest/engine")
 
     const result = computeAccruedInterest(
-      mockLoan as any,
+      mockLoan as unknown as Loan,
       [],
       new BigNumber("400000")
     )
@@ -322,7 +320,7 @@ describe("Collateral Settlement Service", () => {
     ]
 
     const result = computeAccruedInterest(
-      mockLoan as any,
+      mockLoan as unknown as Loan,
       activePayments,
       new BigNumber("300000")
     )
@@ -336,7 +334,7 @@ describe("Collateral Settlement Service", () => {
     const fixedRateLoan = { ...mockLoan, loanType: "fixed_rate" }
 
     const result = computeAccruedInterest(
-      fixedRateLoan as any,
+      fixedRateLoan as unknown as Loan,
       [],
       new BigNumber("500000")
     )
@@ -350,7 +348,7 @@ describe("Collateral Settlement Service", () => {
     const reducingLoan = { ...mockLoan, loanType: "reducing_balance" }
 
     const result = computeAccruedInterest(
-      reducingLoan as any,
+      reducingLoan as unknown as Loan,
       [],
       new BigNumber("300000")
     )

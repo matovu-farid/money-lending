@@ -2,7 +2,7 @@
 
 import { db } from "@/lib/db"
 import { systemSettings } from "@/lib/db/schema/settings"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 
 const VALID_SETTING_KEYS = ["default_interest_rate", "default_min_interest_days"] as const
 type SettingKey = (typeof VALID_SETTING_KEYS)[number]
@@ -24,10 +24,10 @@ export const getSettingsAction = withAction({
   },
 })
 
-export const updateSettingAction = withAction<UpdateSettingInput, any>({
+export const updateSettingAction = withAction({
   permission: "settings:update",
   forbiddenMessage: "Only Super Admin can edit system settings",
-  action: async (session, input) => {
+  action: async (session: Session, input: UpdateSettingInput) => {
     if (!VALID_SETTING_KEYS.includes(input.key as SettingKey)) {
       return { error: "Invalid setting key. Must be one of: " + VALID_SETTING_KEYS.join(", ") }
     }

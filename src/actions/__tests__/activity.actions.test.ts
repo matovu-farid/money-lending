@@ -5,17 +5,24 @@ import { Effect } from "effect"
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
+  getUserRole: vi.fn((session: { user?: { role?: string | null } } | null | undefined) =>
+    session?.user?.role ?? "unassigned",
+  ),
   checkPermission: vi.fn().mockResolvedValue(null),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && "_tag" in inner) {
-        return inner._tag as string
+        const innerTag = (inner as { _tag: unknown })._tag
+        if (typeof innerTag === "string") return innerTag
       }
     }
     return undefined
@@ -26,16 +33,28 @@ vi.mock("@/services/activity.service", () => ({
   getActivities: vi.fn(),
 }))
 
+vi.mock("next/headers", () => ({
+  headers: vi.fn().mockResolvedValue(new Headers()),
+}))
+
+vi.mock("@/lib/ip-allowlist", () => ({
+  isIpAllowlistEnabled: vi.fn().mockResolvedValue(false),
+  isIpAllowed: vi.fn().mockResolvedValue(true),
+  recordBlock: vi.fn().mockResolvedValue(undefined),
+  getClientIp: vi.fn().mockReturnValue(null),
+}))
+
 // ---------- Imports ----------
 
 import { getSession } from "@/lib/action-utils"
 import { getActivities } from "@/services/activity.service"
 import { DatabaseError } from "@/lib/errors"
 import { getActivitiesAction } from "../activity.actions"
-import { fakeSession, supervisorSession } from "./test-utils"
+import { fakeSession, supervisorSession, effectReturn } from "./test-utils"
 
 const mockGetSession = vi.mocked(getSession)
 const mockGetActivities = vi.mocked(getActivities)
+const activitiesReturn = effectReturn<typeof getActivities>
 
 // ---------- Tests ----------
 
@@ -56,7 +75,7 @@ describe("Activity Actions", () => {
     it("returns activities on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const activities = { items: [{ id: "a1", description: "Test" }], total: 1 }
-      mockGetActivities.mockReturnValue(Effect.succeed(activities) as any)
+      mockGetActivities.mockReturnValue(activitiesReturn(Effect.succeed(activities)))
 
       const result = await getActivitiesAction(validInput)
 
@@ -77,7 +96,7 @@ describe("Activity Actions", () => {
         dateFrom: "2026-04-01",
         dateTo: "2026-04-13",
       }
-      mockGetActivities.mockReturnValue(Effect.succeed({ items: [], total: 0 }) as any)
+      mockGetActivities.mockReturnValue(activitiesReturn(Effect.succeed({ items: [], total: 0 })))
 
       await getActivitiesAction(inputWithFilters)
 
@@ -90,7 +109,7 @@ describe("Activity Actions", () => {
     it("returns database error when service fails", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetActivities.mockReturnValue(
-        Effect.fail(new DatabaseError({ cause: "db down" })) as any,
+        activitiesReturn(Effect.fail(new DatabaseError({ cause: "db down" }))),
       )
       const result = await getActivitiesAction(validInput)
       expect(result).toEqual({ error: "Database error" })
@@ -98,7 +117,7 @@ describe("Activity Actions", () => {
 
     it("returns generic error for unknown failures", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockGetActivities.mockReturnValue(Effect.fail(new Error("unknown")) as any)
+      mockGetActivities.mockReturnValue(activitiesReturn(Effect.fail(new Error("unknown"))))
       const result = await getActivitiesAction(validInput)
       expect(result).toEqual({ error: "Internal server error" })
     })

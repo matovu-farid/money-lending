@@ -8,6 +8,7 @@
  * "100% repaid", reversed payments still in the history. This spec locks
  * that behavior down at every surface the bug report covered.
  */
+import type { DbLoanRow, DbPaymentRow } from "../support/types"
 
 // Make this a module under isolatedModules so top-level `let ninCounter` does
 // not collide with the identically-named local in perpetual-threshold-rollover.cy.ts.
@@ -58,7 +59,7 @@ describe("Soft-deleted loans are invisible", () => {
     })
 
     // Record a payment so we have a deleted-payment row to assert against
-    cy.task("db:getLoans").then((loans: any) => {
+    cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
       loanId = loans[0].id
       cy.visit(`/loans/${loanId}/payments/new`)
       cy.get("#amount", { timeout: 10000 }).type("300000")
@@ -96,7 +97,7 @@ describe("Soft-deleted loans are invisible", () => {
     // assert the table filter independently — the only thing that should
     // change is the Payment History row disappearing and the empty state
     // taking over.
-    cy.task("db:getPayments").then((payments: any) => {
+    cy.task<DbPaymentRow[]>("db:getPayments").then((payments) => {
       const paymentId = payments[0].id
       cy.task("db:softDeletePayment", { paymentId })
     })

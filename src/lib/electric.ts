@@ -1,6 +1,10 @@
 "use client"
 
-import { ShapeStream, isChangeMessage } from "@electric-sql/client"
+import {
+  ShapeStream,
+  isChangeMessage,
+  snakeCamelMapper,
+} from "@electric-sql/client"
 import type { QueryClient } from "@tanstack/react-query"
 
 /**
@@ -16,7 +20,10 @@ import type { QueryClient } from "@tanstack/react-query"
  */
 export function shapeOnError(label: string) {
   return (err: unknown): Record<string, never> => {
-    const status = (err as { status?: number } | null)?.status
+    const status =
+      typeof err === "object" && err !== null && "status" in err
+        ? (err as { status: unknown }).status
+        : undefined
     if (typeof status === "number") {
       console.warn(`[electric] shape "${label}" error ${status}; retrying`)
     } else {
@@ -37,6 +44,84 @@ export function shapeUrl(table: string): string {
   }
   // SSR fallback — shouldn't happen since Electric collections are client-only
   return `/api/electric/${table}`
+}
+
+/**
+ * Parser plugged into every Electric `ShapeStream` so Drizzle `timestamp` /
+ * `timestamptz` / `date` columns arrive as `Date` objects instead of raw ISO
+ * strings.
+ *
+ * Why this is necessary even though collections declare a Zod `schema`:
+ * `@tanstack/electric-db-collection` only runs the schema's validate/parse
+ * pipeline on *client-side* mutations (insert / update). Rows pushed by the
+ * Electric stream are written straight through, so `z.coerce.date()` on the
+ * collection schema never fires for them. Coercion must therefore happen at
+ * the wire layer — here.
+ *
+ * The Postgres type names below mirror the keys that `@electric-sql/client`'s
+ * `MessageParser` looks up (taken from the `electric-schema` response header
+ * emitted by the Electric server). The client's `defaultParser` covers ints,
+ * bools, floats, and json; timestamp / date are unset and fall through to the
+ * identity parser, which is exactly what broke `paymentDate.getTime()` on
+ * /loans/:loanId.
+ *
+ * The signature matches `@electric-sql/client`'s internal `ParseFunction`:
+ * `(value: string, additionalInfo?) => Date`. The second arg is unused here
+ * (timestamp parsing doesn't need column metadata) but is part of the contract
+ * we accept from upstream. Typing it ensures the function remains assignable
+ * to `ShapeStreamOptions<Date>.parser` after a future Electric upgrade.
+ */
+type ElectricFieldParser = (value: string, additionalInfo?: unknown) => Date
+
+const parseTimestamp: ElectricFieldParser = (value) => new Date(value)
+
+/**
+ * Extensions parameter for Electric stream rows synced with these parsers.
+ * Tells the upstream `ShapeStreamOptions` typing that, in addition to the
+ * default scalar types, our row Values may contain `Date` (returned by the
+ * timestamp/date parsers below).
+ */
+export type ElectricRowExtensions = Date
+
+export const electricDateParsers: Readonly<{
+  timestamp: ElectricFieldParser
+  timestamptz: ElectricFieldParser
+  date: ElectricFieldParser
+}> = {
+  timestamp: parseTimestamp,
+  timestamptz: parseTimestamp,
+  date: parseTimestamp,
+}
+
+/**
+ * Build the `shapeOptions` block that every Electric collection should use.
+ * Centralizing this guarantees that the date parser is wired everywhere — if
+ * any collection drifts back to inline `{ url, columnMapper, onError }`
+ * options, the next dev who calls `.getTime()` on a Date column gets the same
+ * production crash this helper exists to prevent.
+ *
+ * Collections that need extra knobs (Electric `params`, `replica`, etc.) can
+ * spread the result and add their own fields.
+ *
+ * Note: the return type is intentionally the inferred shape — Electric's
+ * `ShapeStreamOptions<T>` is opaque about extensions, and consuming code spreads
+ * the result before handing it to `electricCollectionOptions`, so the structural
+ * shape is what matters at the call sites.
+ */
+export interface ElectricShapeBaseOptions {
+  url: string
+  columnMapper: ReturnType<typeof snakeCamelMapper>
+  onError: ReturnType<typeof shapeOnError>
+  parser: typeof electricDateParsers
+}
+
+export function electricShapeOptionsFor(table: string): ElectricShapeBaseOptions {
+  return {
+    url: shapeUrl(table),
+    columnMapper: snakeCamelMapper(),
+    onError: shapeOnError(table),
+    parser: electricDateParsers,
+  }
 }
 
 /**

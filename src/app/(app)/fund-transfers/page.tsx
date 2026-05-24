@@ -103,7 +103,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     q.from({ lb: locationBalancesCollection }).select(({ lb }) => lb)
   )
   const locationBalances = locationBalanceRows?.[0] ?? null
-  const bankAccountBalances = (locationBalances as any)?.bankAccounts ?? {}
+  const bankAccountBalances: Record<string, string> = locationBalances?.bankAccounts ?? {}
 
   const isInitialLoading =
     (transfersLoading && !allTransfers) ||
@@ -127,6 +127,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     },
   })
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form's watch() is intentionally non-memoizable; the library manages its own subscription stability.
   const fromLocation = watch("fromLocation")
 
   const injectionForm = useForm<InjectionFormValues>({

@@ -1,9 +1,10 @@
 import { Effect } from "effect"
 import { db } from "@/lib/db"
 import { bankAccounts } from "@/lib/db/schema/bank-accounts"
-import { eq, asc, sql } from "drizzle-orm"
+import { eq, asc } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
+import { getCurrentTxid } from "@/lib/db-txid"
 import { writeAuditLog } from "./audit.service"
 import type { CreateBankAccountInput, UpdateBankAccountInput, BankAccount } from "@/types"
 
@@ -74,10 +75,7 @@ export const createBankAccountWithTxid = (
           afterValue: account,
         })
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { account, txid }
       })
     },
@@ -173,10 +171,7 @@ export const updateBankAccountWithTxid = (
           afterValue: updated,
         })
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { account: updated, txid }
       })
     },

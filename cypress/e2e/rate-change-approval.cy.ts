@@ -26,9 +26,6 @@ describe("Rate Change Approval Flow", () => {
 
     // Navigate to customer and create a loan
     cy.contains("Rate Test Customer").click()
-    cy.url().then((url) => {
-      url.split("/customers/")[1]
-    })
 
     // Create a loan via the loans page
     cy.visit("/loans/new")

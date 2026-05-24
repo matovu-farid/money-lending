@@ -14,8 +14,6 @@ import {
 import { createCustomer } from "@/services/customer.service"
 import { createLoan } from "@/services/loan.service"
 import { recordPayment } from "@/services/payment.service"
-import { getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
-import BigNumber from "bignumber.js"
 import { TransactionNotFound } from "@/lib/errors"
 import { auditLog } from "@/lib/db/schema/audit"
 import { transactions } from "@/lib/db/schema/transactions"
@@ -566,7 +564,7 @@ describe("accrueInterestForLoans — Integration", () => {
 
   it("accrues interest for a loan with no payments", async () => {
     const customer = await makeTestCustomer()
-    const loan = await makeTestLoan(customer.id)
+    await makeTestLoan(customer.id)
 
     // Accrue as of 30 days after loan start
     const asOfDate = new Date("2025-01-31T23:59:59.000Z")

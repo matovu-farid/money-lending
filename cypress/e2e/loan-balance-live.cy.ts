@@ -9,24 +9,30 @@
 // projected balance + customer name appear in the row. This validates the
 // read path end-to-end without depending on the UI payment flow.
 //
+import type {
+  CreatedTestUser,
+  DbLoanBalanceRow,
+  DbSeedCustomerAndLoanResult,
+} from "../support/types"
+
 describe("Loan balance projection pipeline", () => {
   let loanId: string
-  let cookies: Array<{ name: string; value: string; domain?: string; path?: string }>
+  let cookies: Cypress.Cookie[]
 
   before(() => {
     cy.clearAllCookies()
     cy.clearAllLocalStorage()
     cy.clearAllSessionStorage()
 
-    cy.createTestUser({ name: "Projection Tester", role: "superAdmin" }).then((user: any) => {
+    cy.createTestUser({ name: "Projection Tester", role: "superAdmin" }).then((user: CreatedTestUser) => {
       const nin = `CM${Date.now().toString().slice(-8)}LBP`
-      cy.task("db:neon:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:neon:seedCustomerAndLoan", {
         customerName: "Projection Test Borrower",
         contact: "0772111002",
         nin,
         principalAmount: "500000",
         issuedBy: user.userId,
-      }).then((seed: any) => {
+      }).then((seed) => {
         loanId = seed.loanId
       })
 
@@ -59,10 +65,10 @@ describe("Loan balance projection pipeline", () => {
   })
 
   it("populates loan_balances with the principal on Loans Receivable debit", () => {
-    cy.task("db:neon:getLoanBalance", { loanId }).then((balance: any) => {
-      expect(balance, "loan_balances row should exist after seed").to.not.be.null
-      expect(balance.outstanding_balance).to.equal("500000.00")
-      expect(balance.unpaid_interest).to.equal("0.00")
+    cy.task<DbLoanBalanceRow | null>("db:neon:getLoanBalance", { loanId }).then((balance) => {
+      expect(balance, "loan_balances row should exist after seed").to.not.equal(null)
+      expect(balance?.outstanding_balance).to.equal("500000.00")
+      expect(balance?.unpaid_interest).to.equal("0.00")
     })
   })
 
@@ -79,8 +85,8 @@ describe("Loan balance projection pipeline", () => {
 
     cy.task("db:neon:postLoansReceivableCredit", { loanId, amount: "100000" })
 
-    cy.task("db:neon:getLoanBalance", { loanId }).then((balance: any) => {
-      expect(balance.outstanding_balance).to.equal("400000.00")
+    cy.task<DbLoanBalanceRow | null>("db:neon:getLoanBalance", { loanId }).then((balance) => {
+      expect(balance?.outstanding_balance).to.equal("400000.00")
     })
 
     cy.contains("UGX 400,000", { timeout: 30000 }).should("exist")

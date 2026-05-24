@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getSession, getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { type Permission, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
@@ -148,9 +148,9 @@ export async function listAllRequestsAction() {
   }
 }
 
-export const listRequestsForLoanAction = withAction<string, any>({
+export const listRequestsForLoanAction = withAction({
   permission: "loan:read",
-  action: async (_session, loanId) => {
+  action: async (_session: Session, loanId: string) => {
     if (!loanId?.trim()) {
       return { error: "Loan ID is required" }
     }

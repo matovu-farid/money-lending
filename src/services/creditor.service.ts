@@ -3,13 +3,14 @@ import { db } from "@/lib/db";
 import { creditors } from "@/lib/db/schema/creditors";
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
-import { eq, asc, inArray, sql } from "drizzle-orm";
+import { eq, asc, inArray } from "drizzle-orm";
 import {
   DatabaseError,
   CreditorNotFound,
   InvestmentNotFound,
 } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
+import { getCurrentTxid } from "@/lib/db-txid";
 import { writeAuditLog } from "./audit.service";
 import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/auto-post.service";
 import { getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger, getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service";
@@ -105,10 +106,7 @@ export const createCreditorWithTxid = (
           afterValue: creditor,
         });
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        );
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid);
+        const txid = await getCurrentTxid(tx);
         return { creditor, txid };
       });
     },
@@ -131,7 +129,7 @@ export const updateCreditor = (
         .select()
         .from(creditors)
         .where(eq(creditors.id, id));
-      if (!existing) throw { _tag: "CreditorNotFound", id };
+      if (!existing) throw new CreditorNotFound({ id });
 
       const beforeValue = { ...existing };
 
@@ -161,9 +159,8 @@ export const updateCreditor = (
         return updated;
       });
     },
-    catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof CreditorNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   });
@@ -179,7 +176,7 @@ export const updateCreditorWithTxid = (
         .select()
         .from(creditors)
         .where(eq(creditors.id, id));
-      if (!existing) throw { _tag: "CreditorNotFound", id };
+      if (!existing) throw new CreditorNotFound({ id });
 
       const beforeValue = { ...existing };
 
@@ -206,16 +203,12 @@ export const updateCreditorWithTxid = (
           afterValue: updated,
         });
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        );
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid);
+        const txid = await getCurrentTxid(tx);
         return { creditor: updated, txid };
       });
     },
-    catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof CreditorNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   });
@@ -229,12 +222,11 @@ export const getCreditor = (
         .select()
         .from(creditors)
         .where(eq(creditors.id, id));
-      if (!creditor) throw { _tag: "CreditorNotFound", id };
+      if (!creditor) throw new CreditorNotFound({ id });
       return creditor;
     },
-    catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof CreditorNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   });
@@ -257,7 +249,7 @@ export const addInvestment = (
         .select()
         .from(creditors)
         .where(eq(creditors.id, input.creditorId));
-      if (!creditor) throw { _tag: "CreditorNotFound", id: input.creditorId };
+      if (!creditor) throw new CreditorNotFound({ id: input.creditorId });
 
       return await db.transaction(async (tx) => {
         const [investment] = await tx
@@ -294,9 +286,8 @@ export const addInvestment = (
         return investment;
       });
     },
-    catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof CreditorNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   }).pipe(
@@ -318,7 +309,7 @@ export const recordCreditorRepayment = (
           .from(creditorInvestments)
           .where(eq(creditorInvestments.id, input.investmentId));
         if (!investment)
-          throw { _tag: "InvestmentNotFound", id: input.investmentId };
+          throw new InvestmentNotFound({ id: input.investmentId });
         const existingRepayments = await tx
           .select()
           .from(creditorRepayments)
@@ -413,9 +404,8 @@ export const recordCreditorRepayment = (
         return repayment;
       });
     },
-    catch: (e: any) => {
-      if (e?._tag === "InvestmentNotFound")
-        return new InvestmentNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof InvestmentNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   }).pipe(
@@ -434,7 +424,7 @@ export const getCreditorDashboard = (
         .select()
         .from(creditors)
         .where(eq(creditors.id, creditorId));
-      if (!creditor) throw { _tag: "CreditorNotFound", id: creditorId };
+      if (!creditor) throw new CreditorNotFound({ id: creditorId });
 
       const investments = await db
         .select()
@@ -505,9 +495,8 @@ export const getCreditorDashboard = (
         investments: investmentSummaries,
       };
     },
-    catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof CreditorNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   });
@@ -708,7 +697,7 @@ export const getCreditorMonthlySummary = (
         .select()
         .from(creditors)
         .where(eq(creditors.id, creditorId));
-      if (!creditor) throw { _tag: "CreditorNotFound", id: creditorId };
+      if (!creditor) throw new CreditorNotFound({ id: creditorId });
 
       const investments = await db
         .select()
@@ -822,7 +811,7 @@ export const getCreditorMonthlySummary = (
         };
 
         // Reduce principal balances proportionally
-        let totalPrincipalPaid = monthRepayments.principalPaid;
+        const totalPrincipalPaid = monthRepayments.principalPaid;
         if (totalPrincipalPaid.isGreaterThan(0)) {
           const totalBalance = Array.from(balances.values()).reduce(
             (acc, b) => acc.plus(b),
@@ -866,9 +855,8 @@ export const getCreditorMonthlySummary = (
       // Return newest first
       return rows.reverse();
     },
-    catch: (e: any) => {
-      if (e?._tag === "CreditorNotFound")
-        return new CreditorNotFound({ id: e.id });
+    catch: (e: unknown) => {
+      if (e instanceof CreditorNotFound) return e;
       return new DatabaseError({ cause: e });
     },
   });

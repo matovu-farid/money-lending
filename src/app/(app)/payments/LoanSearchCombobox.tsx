@@ -45,7 +45,6 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
         principalAmount: loan.principalAmount,
       }))
   }, [allLoans, query, isSearchMode])
-  const isSearching = false
 
   function handleInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const value = e.target.value

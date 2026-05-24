@@ -175,6 +175,7 @@ function VirtualizedTable<T>({
 }) {
   const parentRef = React.useRef<HTMLDivElement>(null)
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual's useVirtualizer returns non-memoizable functions; the library manages its own internal stability.
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => parentRef.current,

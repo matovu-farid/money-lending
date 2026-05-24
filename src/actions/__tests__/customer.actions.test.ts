@@ -32,16 +32,22 @@ vi.mock("@/lib/action-utils", () => ({
   getUserRole: vi.fn(),
   requireRole: vi.fn(),
   checkPermission: vi.fn().mockResolvedValue(null),
+  hasProperty: <K extends string>(obj: unknown, key: K): obj is Record<K, unknown> =>
+    typeof obj === "object" && obj !== null && key in obj,
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && "_tag" in inner) {
-        return inner._tag as string
+        const innerTag = (inner as { _tag: unknown })._tag
+        if (typeof innerTag === "string") return innerTag
       }
     }
     return undefined
@@ -105,9 +111,14 @@ void mockUpdateCustomer
 void mockChangeCustomerStatus
 void mockRequireRole
 
-const fakeSession = {
-  user: { id: "u1", name: "Test User", email: "t@t.com", role: "admin" },
-} as any
+import { fakeSession, effectReturn } from "./test-utils"
+
+const listCustomersReturn = effectReturn<typeof listCustomers>
+const createCustomerReturn = effectReturn<typeof createCustomerWithTxid>
+const getCustomerReturn = effectReturn<typeof getCustomer>
+const updateCustomerWithTxidReturn = effectReturn<typeof updateCustomerWithTxid>
+const searchCustomersReturn = effectReturn<typeof searchCustomers>
+const changeCustomerStatusWithTxidReturn = effectReturn<typeof changeCustomerStatusWithTxid>
 
 // ---------- Tests ----------
 
@@ -127,7 +138,7 @@ describe("Customer Actions", () => {
     it("returns data on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const customers = [{ id: "c1", fullName: "Jane Doe" }]
-      mockListCustomers.mockReturnValue(Effect.succeed(customers) as any)
+      mockListCustomers.mockReturnValue(listCustomersReturn(Effect.succeed(customers)))
       const result = await listCustomersAction()
       expect(result).toEqual({ data: customers })
     })
@@ -135,7 +146,7 @@ describe("Customer Actions", () => {
     it("returns database error when service fails with DatabaseError", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockListCustomers.mockReturnValue(
-        Effect.fail(new DatabaseError({ cause: "boom" })) as any,
+        listCustomersReturn(Effect.fail(new DatabaseError({ cause: "boom" }))),
       )
       const result = await listCustomersAction()
       expect(result).toEqual({ error: "Database error" })
@@ -143,7 +154,7 @@ describe("Customer Actions", () => {
 
     it("returns generic error for unknown failures", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockListCustomers.mockReturnValue(Effect.fail(new Error("unknown")) as any)
+      mockListCustomers.mockReturnValue(listCustomersReturn(Effect.fail(new Error("unknown"))))
       const result = await listCustomersAction()
       expect(result).toEqual({ error: "Internal server error" })
     })
@@ -168,7 +179,7 @@ describe("Customer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const result = await createCustomerAction({ ...validInput, fullName: "" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("name")
+      expect((result as { error: string }).error).toContain("name")
     })
 
     it("returns error for single-word name", async () => {
@@ -181,28 +192,28 @@ describe("Customer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const result = await createCustomerAction({ ...validInput, nin: "INVALID" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("NIN")
+      expect((result as { error: string }).error).toContain("NIN")
     })
 
     it("returns error for invalid contact number", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const result = await createCustomerAction({ ...validInput, contact: "123" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("mobile")
+      expect((result as { error: string }).error).toContain("mobile")
     })
 
     it("returns error for short address", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const result = await createCustomerAction({ ...validInput, address: "abc" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Address")
+      expect((result as { error: string }).error).toContain("Address")
     })
 
     it("creates customer and revalidates path on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const created = { id: "c1", ...validInput }
       mockCreateCustomer.mockReturnValue(
-        Effect.succeed({ customer: created, txid: 12345 }) as any,
+        createCustomerReturn(Effect.succeed({ customer: created, txid: 12345 })),
       )
 
       const result = await createCustomerAction(validInput)
@@ -215,7 +226,7 @@ describe("Customer Actions", () => {
     it("returns database error when service fails with DatabaseError", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCreateCustomer.mockReturnValue(
-        Effect.fail(new DatabaseError({ cause: "db down" })) as any,
+        createCustomerReturn(Effect.fail(new DatabaseError({ cause: "db down" }))),
       )
       const result = await createCustomerAction(validInput)
       expect(result).toEqual({ error: "Database error — check server logs for details" })
@@ -223,7 +234,7 @@ describe("Customer Actions", () => {
 
     it("returns generic error for unknown service failure", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockCreateCustomer.mockReturnValue(Effect.fail(new Error("wat")) as any)
+      mockCreateCustomer.mockReturnValue(createCustomerReturn(Effect.fail(new Error("wat"))))
       const result = await createCustomerAction(validInput)
       expect(result).toEqual({ error: "Internal server error" })
     })
@@ -240,7 +251,7 @@ describe("Customer Actions", () => {
     it("returns customer data on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const customer = { id: "c1", fullName: "Jane" }
-      mockGetCustomer.mockReturnValue(Effect.succeed(customer) as any)
+      mockGetCustomer.mockReturnValue(getCustomerReturn(Effect.succeed(customer)))
       const result = await getCustomerAction("c1")
       expect(result).toEqual({ data: customer })
     })
@@ -248,7 +259,7 @@ describe("Customer Actions", () => {
     it("returns error when customer not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetCustomer.mockReturnValue(
-        Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
+        getCustomerReturn(Effect.fail(new CustomerNotFound({ id: "c1" }))),
       )
       const result = await getCustomerAction("c1")
       expect(result).toEqual({ error: "Customer not found" })
@@ -267,7 +278,7 @@ describe("Customer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const updated = { id: "c1", fullName: "New Name" }
       mockUpdateCustomerWithTxid.mockReturnValue(
-        Effect.succeed({ customer: updated, txid: 12345 }) as any,
+        updateCustomerWithTxidReturn(Effect.succeed({ customer: updated, txid: 12345 })),
       )
 
       const result = await updateCustomerAction("c1", { fullName: "New Name" })
@@ -280,7 +291,7 @@ describe("Customer Actions", () => {
     it("returns error when customer not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockUpdateCustomerWithTxid.mockReturnValue(
-        Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
+        updateCustomerWithTxidReturn(Effect.fail(new CustomerNotFound({ id: "c1" }))),
       )
       const result = await updateCustomerAction("c1", { fullName: "New" })
       expect(result).toEqual({ error: "Customer not found" })
@@ -298,7 +309,7 @@ describe("Customer Actions", () => {
     it("returns search results on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const results = [{ id: "c1" }]
-      mockSearchCustomers.mockReturnValue(Effect.succeed(results) as any)
+      mockSearchCustomers.mockReturnValue(searchCustomersReturn(Effect.succeed(results)))
       const result = await searchCustomersAction({ name: "Jane" })
       expect(result).toEqual({ data: results })
     })
@@ -340,7 +351,7 @@ describe("Customer Actions", () => {
       mockCheckPermission.mockResolvedValue(null)
       const result = await changeCustomerStatusAction({
         ...validInput,
-        newStatus: "bogus" as any,
+        newStatus: "bogus" as unknown as typeof validInput.newStatus,
       })
       expect(result).toEqual({ error: "Invalid status" })
     })
@@ -360,7 +371,7 @@ describe("Customer Actions", () => {
       mockCheckPermission.mockResolvedValue(null)
       const updated = { id: "c1", status: "blacklisted" }
       mockChangeCustomerStatusWithTxid.mockReturnValue(
-        Effect.succeed({ customer: updated, txid: 67890 }) as any,
+        changeCustomerStatusWithTxidReturn(Effect.succeed({ customer: updated, txid: 67890 })),
       )
 
       const result = await changeCustomerStatusAction(validInput)
@@ -380,7 +391,7 @@ describe("Customer Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCheckPermission.mockResolvedValue(null)
       mockChangeCustomerStatusWithTxid.mockReturnValue(
-        Effect.fail(new CustomerNotFound({ id: "c1" })) as any,
+        changeCustomerStatusWithTxidReturn(Effect.fail(new CustomerNotFound({ id: "c1" }))),
       )
       const result = await changeCustomerStatusAction(validInput)
       expect(result).toEqual({ error: "Customer not found" })

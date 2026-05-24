@@ -1,3 +1,5 @@
+import type { DbCustomerRow } from "../support/types"
+
 describe("Optimistic Customer Creation", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -20,19 +22,24 @@ describe("Optimistic Customer Creation", () => {
     // Should navigate to /customers/{uuid} pattern immediately (optimistic)
     cy.url({ timeout: 10000 }).should("match", /\/customers\/[a-f0-9-]+$/)
 
-    // Give the async server action time to persist
-    // eslint-disable-next-line cypress/no-unnecessary-waiting
-    cy.wait(5000)
-
-    // Verify the customer was persisted to the database
-    cy.task("db:getCustomers").then((customers: any) => {
-      const match = customers.find(
-        (c: any) => c.full_name === "John Mukasa"
-      )
-      expect(match).to.exist
-      expect(match.contact).to.equal("0771234567")
-      expect(match.address).to.equal("Kampala, Uganda")
-    })
+    // Wait for the async server action to persist by polling the DB rather
+    // than sleeping a fixed interval.
+    function waitForCustomer(retries = 20): void {
+      cy.task<DbCustomerRow[]>("db:getCustomers").then((customers) => {
+        const match = customers.find((c) => c.full_name === "John Mukasa")
+        if (match) {
+          expect(match.contact).to.equal("0771234567")
+          expect(match.address).to.equal("Kampala, Uganda")
+          return
+        }
+        if (retries === 0) {
+          throw new Error("Customer was not persisted within the polling window")
+        }
+        cy.wait(500)
+        waitForCustomer(retries - 1)
+      })
+    }
+    waitForCustomer()
   })
 
   it("rolls back optimistic data when server action fails", () => {
@@ -64,11 +71,9 @@ describe("Optimistic Customer Creation", () => {
     )
 
     // Verify the customer was NOT persisted in the database
-    cy.task("db:getCustomers").then((customers: any) => {
-      const match = customers.find(
-        (c: any) => c.full_name === "Failed Customer"
-      )
-      expect(match).to.not.exist
+    cy.task<DbCustomerRow[]>("db:getCustomers").then((customers) => {
+      const match = customers.find((c) => c.full_name === "Failed Customer")
+      expect(match).to.equal(undefined)
     })
   })
 })

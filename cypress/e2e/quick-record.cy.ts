@@ -1,6 +1,5 @@
 describe("Quick-Record Payment Workflow", () => {
   let customerId: string
-  let loanId: string
 
   beforeEach(() => {
     cy.task("db:reset")
@@ -25,10 +24,6 @@ describe("Quick-Record Payment Workflow", () => {
       cy.contains("button", "Next").click()
       cy.contains("button", "Issue Loan").click()
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
-
-      cy.task("db:getLoans").then((loans: any) => {
-        loanId = loans[0].id
-      })
     })
   })
 

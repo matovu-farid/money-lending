@@ -24,13 +24,21 @@ export function CreditScoreBadge({ customerId, className }: CreditScoreBadgeProp
     [],
   )
 
-  const customerPayments = useMemo(() => {
+  const customerPayments = useMemo<PaymentWithCustomer[]>(() => {
     const loanIds = new Set((customerLoans ?? []).map((l) => l.id))
+    // calculateCreditScore only reads loanId + paymentDate; fill the
+    // remaining required fields with safe placeholders so the value
+    // satisfies PaymentWithCustomer without `as unknown as`.
     return (allPayments ?? [])
       .filter((p) => loanIds.has(p.loanId))
-      .map((p) => ({
-        ...p,
-        // calculateCreditScore only reads loanId + paymentDate
+      .map<PaymentWithCustomer>((p) => ({
+        id: p.id,
+        loanId: p.loanId,
+        paymentDate: p.paymentDate,
+        amount: p.amount,
+        recordedBy: p.recordedBy,
+        depositLocation: p.depositLocation,
+        createdAt: p.createdAt,
         customerId,
         customerName: "",
         interestPortion: "0",
@@ -38,7 +46,7 @@ export function CreditScoreBadge({ customerId, className }: CreditScoreBadgeProp
         principalBalanceAfter: "0",
         outstandingBalance: "0",
         recorderName: "",
-      })) as unknown as PaymentWithCustomer[]
+      }))
   }, [allPayments, customerLoans, customerId])
 
   const result = useMemo(

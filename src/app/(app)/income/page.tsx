@@ -6,7 +6,7 @@ import { incomeCollection } from "@/collections/income"
 import { incomeCategoryCollection } from "@/collections/income-categories"
 import { IncomeListClient } from "./IncomeListClient"
 import { usePermissions } from "@/hooks/use-permissions"
-import type { TransactionRow, TransactionShapeRow } from "@/types"
+import type { TransactionRow } from "@/types"
 
 function LoadingSkeleton() {
   return (
@@ -55,7 +55,7 @@ function IncomeContent() {
   )
 
   const transactions: TransactionRow[] = useMemo(() => {
-    return ((allIncome ?? []) as unknown as TransactionShapeRow[]).map((i) => ({
+    return (allIncome ?? []).map((i) => ({
       id: i.id,
       type: i.type,
       amount: i.amount,

@@ -2,7 +2,6 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   recordIncomeAction,
   deleteIncomeAction,
@@ -12,7 +11,7 @@ import type {
   DepositLocation,
 } from "@/types"
 import { transactionSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor, shapeOnError } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -28,12 +27,13 @@ export const incomeCollection = createCollection(
     id: "income",
     schema: transactionSchema,
     getKey: (income) => income.id,
+    // Electric 1.5.x rejects WHERE clauses on user-defined enum columns
+    // (`transaction_type`). Sync the full table here and filter by
+    // `type === "credit" && referenceType == null` in the live-query consumer.
     shapeOptions: {
-      url: shapeUrl("transactions"),
-      // Electric 1.5.x rejects WHERE clauses on user-defined enum columns
-      // (`transaction_type`). Sync the full table here and filter by
-      // `type === "credit" && referenceType == null` in the live-query consumer.
-      columnMapper: snakeCamelMapper(),
+      ...electricShapeOptionsFor("transactions"),
+      // Custom diagnostic label to disambiguate income from expenses in
+      // shape-error warn logs, since both subscribe to `transactions`.
       onError: shapeOnError("transactions[income]"),
     },
     onInsert: async ({ transaction }) => {

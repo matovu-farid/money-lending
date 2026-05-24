@@ -2,6 +2,13 @@ import { jsPDF } from "jspdf"
 import autoTable from "jspdf-autotable"
 import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
 
+// `jspdf-autotable` attaches `lastAutoTable` to the jsPDF instance at runtime
+// to expose layout info (e.g. final Y coordinate) of the most recently drawn
+// table. The plugin's typings don't surface this, so model the shape we use.
+type JsPDFWithAutoTable = jsPDF & {
+  lastAutoTable: { finalY: number }
+}
+
 // Transaction type for PDF export
 type TransactionRow = {
   id: string
@@ -161,8 +168,7 @@ export function generatePnlPdf(data: PnlData): Buffer {
     },
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  currentY = (doc as any).lastAutoTable.finalY + 10
+  currentY = (doc as JsPDFWithAutoTable).lastAutoTable.finalY + 10
 
   autoTable(doc, {
     startY: currentY,
@@ -190,8 +196,7 @@ export function generatePnlPdf(data: PnlData): Buffer {
     },
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  currentY = (doc as any).lastAutoTable.finalY + 10
+  currentY = (doc as JsPDFWithAutoTable).lastAutoTable.finalY + 10
 
   doc.setFont("helvetica", "bold")
   doc.setFontSize(12)
@@ -232,8 +237,7 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
     headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: "bold" },
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  currentY = (doc as any).lastAutoTable.finalY + 8
+  currentY = (doc as JsPDFWithAutoTable).lastAutoTable.finalY + 8
 
   autoTable(doc, {
     startY: currentY,
@@ -248,8 +252,7 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
     headStyles: { fillColor: [243, 244, 246], textColor: [0, 0, 0], fontStyle: "bold" },
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  currentY = (doc as any).lastAutoTable.finalY + 8
+  currentY = (doc as JsPDFWithAutoTable).lastAutoTable.finalY + 8
 
   const liabPlusEquity =
     parseFloat(data.liabilities.totalCreditorBalances) +
@@ -274,8 +277,7 @@ export function generateBalanceSheetPdf(data: BalanceSheetData): Buffer {
     },
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  currentY = (doc as any).lastAutoTable.finalY + 8
+  currentY = (doc as JsPDFWithAutoTable).lastAutoTable.finalY + 8
 
   doc.setFont("helvetica", "bold")
   doc.setFontSize(11)

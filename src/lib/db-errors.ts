@@ -1,3 +1,5 @@
+import { hasProperty } from "@/lib/action-utils"
+
 /**
  * Postgres unique constraint violation detector.
  * Used to handle UUID collisions when a client-supplied ID
@@ -7,8 +9,8 @@ export function isUniqueConstraintError(error: unknown): boolean {
   // Postgres error code 23505 = unique_violation
   return (
     error instanceof Error &&
-    "code" in error &&
-    (error as any).code === "23505"
+    hasProperty(error, "code") &&
+    error.code === "23505"
   )
 }
 
@@ -18,6 +20,8 @@ export function isUniqueConstraintError(error: unknown): boolean {
  */
 export function getUniqueConstraintName(error: unknown): string | null {
   if (!isUniqueConstraintError(error)) return null
-  const constraint = (error as any).constraint_name ?? (error as any).constraint
+  const constraint =
+    (hasProperty(error, "constraint_name") ? error.constraint_name : undefined) ??
+    (hasProperty(error, "constraint") ? error.constraint : undefined)
   return typeof constraint === "string" ? constraint : null
 }

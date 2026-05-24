@@ -1,4 +1,5 @@
 import fc from "fast-check"
+import type { DbLoanRow } from "../support/types"
 
 // ─── Generated Test Data ────────────────────────────────────────
 
@@ -50,7 +51,7 @@ describe("Property-Based: Payment Recording", () => {
       cy.contains("button", "Close").click()
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         loanId = loans[0].id
       })
     })

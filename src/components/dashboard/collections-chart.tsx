@@ -76,7 +76,7 @@ export function CollectionsChart() {
   )
 
   const chartData = useMemo(
-    () => aggregateDailyCollections((payments ?? []) as unknown as Array<{ paymentDate: Date; amount: string }>),
+    () => aggregateDailyCollections(payments ?? []),
     [payments]
   )
 

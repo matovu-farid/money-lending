@@ -1,3 +1,5 @@
+import type { DbUserRoleRow } from "../support/types"
+
 describe("User Registration", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -36,8 +38,8 @@ describe("User Registration", () => {
     })
 
     // Verify user is superAdmin
-    cy.task("db:getUserRole", { email }).then((result: any) => {
-      expect(result.role).to.eq("superAdmin")
+    cy.task<DbUserRoleRow | null>("db:getUserRole", { email }).then((result) => {
+      expect(result?.role).to.eq("superAdmin")
     })
 
     cy.contains("Dashboard")
@@ -73,8 +75,8 @@ describe("User Registration", () => {
     cy.url({ timeout: 15000 }).should("include", "/pending-approval")
 
     // Verify user role
-    cy.task("db:getUserRole", { email: userEmail }).then((result: any) => {
-      expect(result.role).to.eq("unassigned")
+    cy.task<DbUserRoleRow | null>("db:getUserRole", { email: userEmail }).then((result) => {
+      expect(result?.role).to.eq("unassigned")
     })
   })
 

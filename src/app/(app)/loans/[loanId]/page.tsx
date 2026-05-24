@@ -26,9 +26,13 @@ export default function LoanDetailPage({
   // ready before IndexedDB restores cached rows. If we redirect the moment
   // isLoading=false with 0 rows we'd bounce valid deep-links to /loans.
   // Once we've seen the loan entry at least once we know the ID is real and
-  // we must never redirect, even during a transient empty window.
+  // we must never redirect, even during a transient empty window. The latch
+  // is mutated inside an effect (not during render) so it's safe under the
+  // react-hooks/refs rule.
   const hasSeenEntry = useRef(false)
-  if (loanEntry) hasSeenEntry.current = true
+  useEffect(() => {
+    if (loanEntry) hasSeenEntry.current = true
+  }, [loanEntry])
 
   // Rollback handling: loan disappeared from collection after optimistic insert rolled back.
   // Only redirect once the initial sync has completed — otherwise we'd bounce away

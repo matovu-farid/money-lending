@@ -31,7 +31,7 @@ export const createRateChangeRequest = (
         .from(loans)
         .where(eq(loans.id, input.loanId))
 
-      if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!loan) throw new LoanNotFound({ id: input.loanId })
 
       const [request] = await db
         .insert(rateChangeRequests)
@@ -48,9 +48,8 @@ export const createRateChangeRequest = (
 
       return request
     },
-    catch: (e) => {
-      const err = e as Record<string, unknown>
-      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
       return new DatabaseError({ cause: e })
     },
   }).pipe(
@@ -74,7 +73,7 @@ export const applyRateChangeImmediately = (
           .where(eq(loans.id, loanId))
           .for("update")
 
-        if (!loan) throw { _tag: "LoanNotFound", id: loanId }
+        if (!loan) throw new LoanNotFound({ id: loanId })
 
         await tx
           .update(loans)
@@ -99,9 +98,8 @@ export const applyRateChangeImmediately = (
         })
       })
     },
-    catch: (e) => {
-      const err = e as Record<string, unknown>
-      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -166,10 +164,10 @@ export const reviewRequest = (
           .where(eq(rateChangeRequests.id, input.requestId))
           .for("update")
 
-        if (!request) throw { _tag: "RateChangeRequestNotFound", id: input.requestId }
+        if (!request) throw new RateChangeRequestNotFound({ id: input.requestId })
 
         if (request.status !== "pending") {
-          throw { _tag: "ValidationError", message: "Request has already been reviewed" }
+          throw new ValidationError({ message: "Request has already been reviewed" })
         }
 
         const now = new Date()
@@ -222,10 +220,9 @@ export const reviewRequest = (
         return updated
       })
     },
-    catch: (e) => {
-      const err = e as Record<string, unknown>
-      if (err?._tag === "RateChangeRequestNotFound") return new RateChangeRequestNotFound({ id: err.id as string })
-      if (err?._tag === "ValidationError") return new ValidationError({ message: err.message as string })
+    catch: (e: unknown) => {
+      if (e instanceof RateChangeRequestNotFound) return e
+      if (e instanceof ValidationError) return e
       return new DatabaseError({ cause: e })
     },
   })

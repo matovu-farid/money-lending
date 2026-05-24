@@ -55,7 +55,6 @@ function createCustomerAndActiveLoan(
 // Suite 1 — Collateral Settlement
 // ---------------------------------------------------------------------------
 describe("Collateral Settlement", () => {
-  let customerId: string
   let loanId: string
 
   beforeEach(() => {
@@ -67,7 +66,6 @@ describe("Collateral Settlement", () => {
     // the supervisor role check (ROLE_LEVELS[superAdmin] >= ROLE_LEVELS[supervisor]).
     createCustomerAndActiveLoan("Settlement Borrower", "0771100001", "1000000").then(
       (ids) => {
-        customerId = ids.customerId
         loanId = ids.loanId
       }
     )

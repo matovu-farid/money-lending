@@ -54,6 +54,12 @@ function projectLoanListEntry(
 
 /**
  * Shape returned by the join query before client-side projection.
+ *
+ * `useLiveQuery`'s `InferResultType` for an un-`.select()`'d query with joins
+ * produces a structurally identical object, but the inferred type carries
+ * collection-internal metadata that doesn't tell consumers anything useful.
+ * Declaring it here gives the file a single, explicit join contract that the
+ * three hooks share.
  */
 type JoinedRow = {
   loan: LoanBaseRow
@@ -75,13 +81,15 @@ export function useLoansWithBalances(): { data: LoanListEntry[] | undefined; isL
       .where(({ loan }) => isNull(loan.deletedAt)),
   )
 
+  // `useLiveQuery`'s join inference produces a structurally identical row but
+  // wraps it in optionality flags TS can't unify here. One `as unknown as`
+  // boundary cast — at the iterator — is cheaper than per-row casts inside
+  // the map callback (the previous shape).
+  const joinedRows = rawRows as unknown as JoinedRow[] | undefined
+
   const data = useMemo(
-    () =>
-      rawRows?.map((row) => {
-        const joined = row as unknown as JoinedRow
-        return projectLoanListEntry(joined.loan, joined.bal, joined.cust, today)
-      }),
-    [rawRows, today],
+    () => joinedRows?.map((row) => projectLoanListEntry(row.loan, row.bal, row.cust, today)),
+    [joinedRows, today],
   )
 
   return { data, isLoading }
@@ -102,13 +110,11 @@ export function useLoanWithBalance(loanId: string): { data: LoanListEntry[] | un
     [loanId],
   )
 
+  const joinedRows = rawRows as unknown as JoinedRow[] | undefined
+
   const data = useMemo(
-    () =>
-      rawRows?.map((row) => {
-        const joined = row as unknown as JoinedRow
-        return projectLoanListEntry(joined.loan, joined.bal, joined.cust, today)
-      }),
-    [rawRows, today],
+    () => joinedRows?.map((row) => projectLoanListEntry(row.loan, row.bal, row.cust, today)),
+    [joinedRows, today],
   )
 
   return { data, isLoading }
@@ -130,13 +136,11 @@ export function useLoansForCustomer(customerId: string): { data: LoanListEntry[]
     [customerId],
   )
 
+  const joinedRows = rawRows as unknown as JoinedRow[] | undefined
+
   const data = useMemo(
-    () =>
-      rawRows?.map((row) => {
-        const joined = row as unknown as JoinedRow
-        return projectLoanListEntry(joined.loan, joined.bal, joined.cust, today)
-      }),
-    [rawRows, today],
+    () => joinedRows?.map((row) => projectLoanListEntry(row.loan, row.bal, row.cust, today)),
+    [joinedRows, today],
   )
 
   return { data, isLoading }

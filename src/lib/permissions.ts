@@ -16,8 +16,16 @@ const statement = {
 
 export const ac = createAccessControl(statement)
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const unassignedRole = ac.newRole({} as any)
+// Empty-permissions statements that mirror the full statement shape but grant
+// no actions on any resource. Keeping the full key set in the statements
+// object means the resulting Role's `authorize<K extends keyof TStatements>`
+// still accepts any resource key (and denies it at runtime via the empty
+// allowed-actions array) — that's the behaviour callers and tests rely on.
+const emptyStatements = Object.fromEntries(
+  Object.keys(statement).map((k) => [k, [] as const]),
+) as { readonly [K in keyof typeof statement]: readonly [] }
+
+export const unassignedRole = ac.newRole(emptyStatements)
 
 export const loanOfficerRole = ac.newRole({
   loan: ["create", "read", "update", "delete"],

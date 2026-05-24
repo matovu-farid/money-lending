@@ -12,7 +12,16 @@ import {
   getPermissionsForRole,
 } from "../permissions"
 import type { Permission, UserRole } from "@/types/common"
-import { ROLE_LEVELS } from "@/types/common"
+
+// `authorize` is generically typed against each role's own statements. To
+// exercise the runtime "unknown resource" path (e.g. loanOfficer asking for
+// `settings:read`) — which the static type forbids — we re-cast the role's
+// authorize method to accept the full access-control statement surface.
+type AuthorizeRequest = Record<string, readonly string[]>
+type AuthorizeResult = { success: boolean; error?: string }
+type AnyRoleAuthorize = (req: AuthorizeRequest, connector?: "AND" | "OR") => AuthorizeResult
+const asAuthorize = (role: { authorize: unknown }): AnyRoleAuthorize =>
+  role.authorize as AnyRoleAuthorize
 
 describe("ac (access control)", () => {
   it("exposes the full statement definitions", () => {
@@ -198,24 +207,24 @@ describe("loanOfficerRole", () => {
 
   describe("denied permissions", () => {
     it("denies role:assign-loan-officer", () => {
-      const result = loanOfficerRole.authorize({
+      const result = asAuthorize(loanOfficerRole)({
         role: ["assign-loan-officer"],
-      } as any)
+      })
       expect(result.success).toBe(false)
     })
 
     it("denies settings:read", () => {
-      const result = loanOfficerRole.authorize({ settings: ["read"] } as any)
+      const result = asAuthorize(loanOfficerRole)({ settings: ["read"] })
       expect(result.success).toBe(false)
     })
 
     it("denies settings:update", () => {
-      const result = loanOfficerRole.authorize({ settings: ["update"] } as any)
+      const result = asAuthorize(loanOfficerRole)({ settings: ["update"] })
       expect(result.success).toBe(false)
     })
 
     it("denies user:ban (no user management for officers)", () => {
-      const result = loanOfficerRole.authorize({ user: ["ban"] } as any)
+      const result = asAuthorize(loanOfficerRole)({ user: ["ban"] })
       expect(result.success).toBe(false)
     })
   })
@@ -401,14 +410,14 @@ describe("role hierarchy — privilege escalation boundaries", () => {
 
   it("loanOfficer < admin: loanOfficer cannot assign roles", () => {
     const allowed = adminRole.authorize({ role: ["assign-loan-officer"] })
-    const denied = loanOfficerRole.authorize({ role: ["assign-loan-officer"] } as any)
+    const denied = asAuthorize(loanOfficerRole)({ role: ["assign-loan-officer"] })
     expect(allowed.success).toBe(true)
     expect(denied.success).toBe(false)
   })
 
   it("loanOfficer < admin: loanOfficer cannot manage settings", () => {
     const allowed = adminRole.authorize({ settings: ["read"] })
-    const denied = loanOfficerRole.authorize({ settings: ["read"] } as any)
+    const denied = asAuthorize(loanOfficerRole)({ settings: ["read"] })
     expect(allowed.success).toBe(true)
     expect(denied.success).toBe(false)
   })
@@ -586,7 +595,7 @@ describe("getPermissionsForRole", () => {
   })
 
   it("returns empty set for unknown role", () => {
-    const result = getPermissionsForRole("bogusRole" as any)
+    const result = getPermissionsForRole("bogusRole" as UserRole)
     expect(result.size).toBe(0)
   })
 })
@@ -617,8 +626,8 @@ describe("authorize — connector modes", () => {
 
   it("OR connector: succeeds when one resource is allowed and one is denied", () => {
     // loanOfficer can access loan but NOT settings
-    const result = loanOfficerRole.authorize(
-      { loan: ["create"], settings: ["read"] } as any,
+    const result = asAuthorize(loanOfficerRole)(
+      { loan: ["create"], settings: ["read"] },
       "OR"
     )
     expect(result.success).toBe(true)
@@ -626,19 +635,19 @@ describe("authorize — connector modes", () => {
 
   it("AND connector: fails when one resource is allowed but another is denied", () => {
     // loanOfficer can access loan but NOT settings
-    const result = loanOfficerRole.authorize(
-      { loan: ["create"], settings: ["read"] } as any,
+    const result = asAuthorize(loanOfficerRole)(
+      { loan: ["create"], settings: ["read"] },
       "AND"
     )
     expect(result.success).toBe(false)
   })
 
   it("failed authorization returns an error string", () => {
-    const result = loanOfficerRole.authorize({ settings: ["read"] } as any)
+    const result = asAuthorize(loanOfficerRole)({ settings: ["read"] })
     expect(result.success).toBe(false)
     if (!result.success) {
       expect(typeof result.error).toBe("string")
-      expect(result.error.length).toBeGreaterThan(0)
+      expect(result.error?.length ?? 0).toBeGreaterThan(0)
     }
   })
 })

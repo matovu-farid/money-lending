@@ -78,8 +78,9 @@ export async function finalizeInviteAcceptance(token: string) {
     invalidateUserPermissions(u.id)
 
     return { data: { success: true } }
-  } catch (e: any) {
+  } catch (e) {
     captureServerError(e, { source: "accept-invite:finalize" })
-    return { error: e.message ?? "Failed to finalize invitation" }
+    const message = e instanceof Error ? e.message : "Failed to finalize invitation"
+    return { error: message }
   }
 }

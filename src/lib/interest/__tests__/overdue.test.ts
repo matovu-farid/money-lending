@@ -188,7 +188,8 @@ describe("computeLoanOverdueInfo — Perpetual Loans", () => {
       principalAmount: "500000",
       baseRate: "0.10",
       startDate: daysAgo(30),
-      loanType: null as any,
+      // The runtime branch `!loanType` defaults to perpetual; expose it.
+      loanType: null as unknown as "perpetual",
       termMonths: null,
       totalInterestPaid: "50000",
       paymentCount: 1,

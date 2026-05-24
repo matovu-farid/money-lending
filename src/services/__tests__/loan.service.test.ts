@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
+
+type TaggedError = { _tag?: string; message?: string; missing?: string[] }
+function failureError<E>(exit: Exit.Exit<unknown, E>): E | undefined {
+  if (Exit.isFailure(exit)) {
+    const failure = Cause.failureOption(exit.cause)
+    if (failure._tag === "Some") return failure.value
+  }
+  return undefined
+}
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
@@ -145,7 +155,7 @@ describe("Loan Service", () => {
 
     // Mock transaction — execute callback with mock tx
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         let insertCallCount = 0
         let txSelectCallCount = 0
         const mockTx = {
@@ -181,7 +191,7 @@ describe("Loan Service", () => {
             }
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -205,9 +215,9 @@ describe("Loan Service", () => {
       }),
     })
 
-    let capturedTx: any
+    let capturedTx: unknown
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         let insertCallCount = 0
         let txSelectCallCount = 0
         const mockTx = {
@@ -242,7 +252,7 @@ describe("Loan Service", () => {
           }),
         }
         capturedTx = mockTx
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -269,7 +279,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([incompleteCustomer]),
       }),
-    } as any)
+    })
 
     const { createLoan } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(createLoan(baseLoanInput, "actor-1"))
@@ -279,10 +289,8 @@ describe("Loan Service", () => {
 
     // Extract the error from the Cause
     if (exit._tag === "Failure") {
-      const cause = exit.cause
-      // Cause.failureOption or direct inspection
       // For a single fail, the cause structure is Fail({ error })
-      const error = (cause as any).error ?? (cause as any)._tag
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("IncompleteLoanRequirements")
       expect(error.missing).toEqual(["address"])
     }
@@ -299,7 +307,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     const { getLoan } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(getLoan("loan-1"))
@@ -309,7 +317,7 @@ describe("Loan Service", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("LoanNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("LoanNotFound")
       }
     }
   })
@@ -362,9 +370,9 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
-    let capturedTx: any
+    let capturedTx: unknown
     let selectCallCount = 0
     const mockTx = {
       select: vi.fn().mockImplementation(() => {
@@ -405,9 +413,9 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         capturedTx = mockTx
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -445,7 +453,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     let selectCallCount = 0
     const mockTx = {
@@ -479,7 +487,7 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { deleteLoan } = await import("@/services/loan.service")
@@ -519,7 +527,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     let selectCallCount = 0
     const mockTx = {
@@ -561,7 +569,7 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { deleteLoan } = await import("@/services/loan.service")
@@ -614,7 +622,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     let selectCallCount = 0
     const innerJoinSpy = vi.fn().mockReturnValue({
@@ -639,7 +647,7 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx),
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx),
     )
 
     const { deleteLoan } = await import("@/services/loan.service")
@@ -669,7 +677,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     const updatedLoan = { ...mockLoan, issuanceFee: "75000.00" }
     const oldFeeTx = {
@@ -700,7 +708,7 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { updateLoan } = await import("@/services/loan.service")
@@ -733,7 +741,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     const updatedLoan = { ...mockLoan, principalAmount: "600000.00" }
     const oldDisbursement = {
@@ -785,7 +793,7 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { updateLoan } = await import("@/services/loan.service")
@@ -810,7 +818,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     const updatedLoan = { ...mockLoan, principalAmount: "600000.00" }
     const oldDisbursement = {
@@ -856,7 +864,7 @@ describe("Loan Service", () => {
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { updateLoan } = await import("@/services/loan.service")
@@ -898,7 +906,7 @@ describe("Loan Service", () => {
     })
 
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         let insertCallCount = 0
         let txSelectCallCount = 0
         const mockTx = {
@@ -937,7 +945,7 @@ describe("Loan Service", () => {
             }
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -976,14 +984,14 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([blacklistedCustomer]),
       }),
-    } as any)
+    })
 
     const { createLoan } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(createLoan(baseLoanInput, "actor-1"))
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("ValidationError")
       expect(error.message).toContain("blacklisted")
     }
@@ -1009,7 +1017,7 @@ describe("Loan Service", () => {
 
     // Active loan check is now inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -1019,7 +1027,7 @@ describe("Loan Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -1028,7 +1036,7 @@ describe("Loan Service", () => {
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("ValidationError")
       expect(error.message).toContain("active loan")
     }
@@ -1048,7 +1056,7 @@ describe("Loan Service", () => {
 
     // Active loan check is now inside the transaction — returns no active loan
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -1058,7 +1066,7 @@ describe("Loan Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -1076,7 +1084,7 @@ describe("Loan Service", () => {
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("ValidationError")
       expect(error.message).toContain("no active loan")
     }
@@ -1102,7 +1110,7 @@ describe("Loan Service", () => {
 
     // Active loan check is now inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -1112,7 +1120,7 @@ describe("Loan Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -1130,7 +1138,7 @@ describe("Loan Service", () => {
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("ValidationError")
       expect(error.message).toContain("does not match")
     }
@@ -1145,14 +1153,14 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     const { createLoan } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(createLoan(baseLoanInput, "actor-1"))
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("CustomerNotFound")
     }
   })
@@ -1166,7 +1174,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     const { getLoan } = await import("@/services/loan.service")
     const result = await Effect.runPromise(getLoan("loan-1"))
@@ -1184,7 +1192,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     const { updateLoan } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(
@@ -1193,7 +1201,7 @@ describe("Loan Service", () => {
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("LoanNotFound")
     }
   })
@@ -1207,7 +1215,7 @@ describe("Loan Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     const { deleteLoan } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(
@@ -1216,7 +1224,7 @@ describe("Loan Service", () => {
 
     expect(exit._tag).toBe("Failure")
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error ?? (exit.cause as any)
+      const error = failureError(exit) as TaggedError
       expect(error._tag).toBe("LoanNotFound")
     }
   })
@@ -1242,7 +1250,7 @@ describe("Loan Service", () => {
           }),
         }),
       }),
-    } as any)
+    })
 
     const { listLoans } = await import("@/services/loan.service")
     const result = await Effect.runPromise(listLoans())
@@ -1264,7 +1272,7 @@ describe("Loan Service", () => {
           }),
         }),
       }),
-    } as any)
+    })
 
     const { listLoans } = await import("@/services/loan.service")
     const exit = await Effect.runPromiseExit(listLoans())

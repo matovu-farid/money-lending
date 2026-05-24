@@ -59,6 +59,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     },
   })
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form's watch() is intentionally non-memoizable; the library manages its own subscription stability.
   const watchedInvestmentId = watch("investmentId")
 
   function resetForm() {
@@ -82,8 +83,9 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
         toast.success("Repayment recorded successfully")
         setOpen(false)
         resetForm()
-      } catch (err: any) {
-        toast.error(err?.message ?? "Failed to record repayment")
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to record repayment"
+        toast.error(message)
       }
     })
   }

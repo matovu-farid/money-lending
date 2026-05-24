@@ -1,15 +1,15 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { createBankAccountWithTxid, updateBankAccountWithTxid, listBankAccounts } from "@/services/bank-account.service"
 import type { CreateBankAccountInput, UpdateBankAccountInput } from "@/types"
 
-export const createBankAccountAction = withAction<CreateBankAccountInput, any>({
+export const createBankAccountAction = withAction({
   permission: "fund-transfer:create",
   forbiddenMessage: "Forbidden: supervisor access required",
-  action: async (session, input) => {
+  action: async (session: Session, input: CreateBankAccountInput) => {
     if (!input.name || input.name.trim().length === 0) {
       return { error: "Bank account name is required" }
     }
@@ -26,10 +26,10 @@ export const createBankAccountAction = withAction<CreateBankAccountInput, any>({
   },
 })
 
-export const updateBankAccountAction = withAction<UpdateBankAccountInput, any>({
+export const updateBankAccountAction = withAction({
   permission: "fund-transfer:create",
   forbiddenMessage: "Forbidden: supervisor access required",
-  action: async (session, input) => {
+  action: async (session: Session, input: UpdateBankAccountInput) => {
     if (!input.id) {
       return { error: "Bank account ID is required" }
     }

@@ -5,6 +5,11 @@
  * users instantly (no UI registration, no password hashing, no rate limits).
  * Each user gets session cookies set directly in the browser.
  */
+import type {
+  DbLoanRow,
+  DbPaymentRow,
+  SessionCookie,
+} from "../support/types"
 
 /** Inject seed capital via DB task so loan disbursement succeeds. */
 function injectCapital(amount: string) {
@@ -37,7 +42,7 @@ function createCustomerAndLoan(
     cy.contains("button", "Issue Loan").click()
     cy.dismissReceiptModal()
     cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
-    return cy.task("db:getLoans").then((loans: any) => loans[0].id as string)
+    return cy.task<DbLoanRow[]>("db:getLoans").then((loans) => loans[0].id)
   })
 }
 
@@ -45,18 +50,16 @@ function createCustomerAndLoan(
 // 1. RATE CHANGE: LO → Supervisor approve/reject
 // ---------------------------------------------------------------------------
 describe("Cross-Role: Rate Change Approval (LO → Supervisor)", () => {
-  let superAdminCookies: any[]
-  let supervisorCookies: any[]
-  let loanOfficerCookies: any[]
+  let supervisorCookies: SessionCookie[]
+  let loanOfficerCookies: SessionCookie[]
   let loanId: string
 
   before(() => {
     cy.task("db:reset")
 
-    // Create all users instantly via testUtils
-    cy.createTestUser({ name: "Super Admin", role: "superAdmin" }).then((u) => {
-      superAdminCookies = (u as any)._cookies
-    })
+    // Create the super admin (active session is sufficient for capital
+    // injection + loan creation; we don't need to log in as them again).
+    cy.createTestUser({ name: "Super Admin", role: "superAdmin" })
 
     // Inject capital while superAdmin is active
     injectCapital("10000000")
@@ -65,11 +68,11 @@ describe("Cross-Role: Rate Change Approval (LO → Supervisor)", () => {
     })
 
     cy.createTestUser({ name: "Test Supervisor", role: "supervisor" }).then((u) => {
-      supervisorCookies = (u as any)._cookies
+      supervisorCookies = u._cookies
     })
 
     cy.createTestUser({ name: "Test LO", role: "loanOfficer" }).then((u) => {
-      loanOfficerCookies = (u as any)._cookies
+      loanOfficerCookies = u._cookies
     })
   })
 
@@ -125,26 +128,26 @@ describe("Cross-Role: Rate Change Approval (LO → Supervisor)", () => {
 // 2. LOW RATE REQUIRES ADMIN
 // ---------------------------------------------------------------------------
 describe("Cross-Role: Low Rate Change Requires Admin", () => {
-  let superAdminCookies: any[]
-  let supervisorCookies: any[]
-  let loanOfficerCookies: any[]
+  let superAdminCookies: SessionCookie[]
+  let supervisorCookies: SessionCookie[]
+  let loanOfficerCookies: SessionCookie[]
   let loanId: string
 
   before(() => {
     cy.task("db:reset")
 
     cy.createTestUser({ name: "Admin User", role: "superAdmin" }).then((u) => {
-      superAdminCookies = (u as any)._cookies
+      superAdminCookies = u._cookies
     })
     injectCapital("10000000")
     createCustomerAndLoan("Low Rate Customer", "0700200200", "1500000").then((id) => {
       loanId = id
     })
     cy.createTestUser({ name: "Supervisor", role: "supervisor" }).then((u) => {
-      supervisorCookies = (u as any)._cookies
+      supervisorCookies = u._cookies
     })
     cy.createTestUser({ name: "LO", role: "loanOfficer" }).then((u) => {
-      loanOfficerCookies = (u as any)._cookies
+      loanOfficerCookies = u._cookies
     })
   })
 
@@ -180,26 +183,26 @@ describe("Cross-Role: Low Rate Change Requires Admin", () => {
 // 3. DELEGATION
 // ---------------------------------------------------------------------------
 describe("Cross-Role: Delegation Elevates Supervisor Permissions", () => {
-  let adminCookies: any[]
-  let supervisorCookies: any[]
-  let loanOfficerCookies: any[]
+  let adminCookies: SessionCookie[]
+  let supervisorCookies: SessionCookie[]
+  let loanOfficerCookies: SessionCookie[]
   let loanId: string
 
   before(() => {
     cy.task("db:reset")
 
     cy.createTestUser({ name: "Admin", role: "superAdmin" }).then((u) => {
-      adminCookies = (u as any)._cookies
+      adminCookies = u._cookies
     })
     injectCapital("10000000")
     createCustomerAndLoan("Delegation Customer", "0700300300", "1000000").then((id) => {
       loanId = id
     })
     cy.createTestUser({ name: "Supervisor", role: "supervisor" }).then((u) => {
-      supervisorCookies = (u as any)._cookies
+      supervisorCookies = u._cookies
     })
     cy.createTestUser({ name: "LO", role: "loanOfficer" }).then((u) => {
-      loanOfficerCookies = (u as any)._cookies
+      loanOfficerCookies = u._cookies
     })
   })
 
@@ -296,7 +299,7 @@ describe("Cross-Role: Payment Edit/Delete Across Roles", () => {
       cy.dismissReceiptModal()
 
       // Get loan ID and record payment
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loanId = loans[0].id
         cy.visit(`/loans/${loanId}/payments/new`)
         cy.get("#amount", { timeout: 10000 }).type("100000")
@@ -308,12 +311,12 @@ describe("Cross-Role: Payment Edit/Delete Across Roles", () => {
     })
 
     // Verify payment was saved to DB
-    cy.task("db:getPayments").then((payments: any) => {
+    cy.task<DbPaymentRow[]>("db:getPayments").then((payments) => {
       expect(payments.length).to.be.gte(1)
     })
 
     // LO visits loan detail — payment should appear in payment history
-    cy.task("db:getLoans").then((loans: any) => {
+    cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
       cy.visit(`/loans/${loans[0].id}`)
       cy.contains("100,000", { timeout: 15000 }).should("exist")
     })
@@ -324,13 +327,13 @@ describe("Cross-Role: Payment Edit/Delete Across Roles", () => {
 // 5. PAGE ACCESS BY ROLE
 // ---------------------------------------------------------------------------
 describe("Cross-Role: LO Page Access", () => {
-  let loCookies: any[]
+  let loCookies: SessionCookie[]
 
   before(() => {
     cy.task("db:reset")
     cy.createTestUser({ name: "SA", role: "superAdmin" })
     cy.createTestUser({ name: "LO", role: "loanOfficer" }).then((u) => {
-      loCookies = (u as any)._cookies
+      loCookies = u._cookies
     })
   })
 
@@ -354,13 +357,13 @@ describe("Cross-Role: LO Page Access", () => {
 })
 
 describe("Cross-Role: Supervisor Page Access", () => {
-  let supCookies: any[]
+  let supCookies: SessionCookie[]
 
   before(() => {
     cy.task("db:reset")
     cy.createTestUser({ name: "SA", role: "superAdmin" })
     cy.createTestUser({ name: "Sup", role: "supervisor" }).then((u) => {
-      supCookies = (u as any)._cookies
+      supCookies = u._cookies
     })
   })
 

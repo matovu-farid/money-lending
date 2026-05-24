@@ -210,12 +210,15 @@ function LoanTypeSelector({
   const perpetualAllowed = effectiveAmount.gte(PERPETUAL_LOAN_MIN_AMOUNT)
   const reducingBalanceAllowed = userRole !== "loanOfficer"
 
+  // The React Compiler auto-memoises this derivation — manual `useMemo` was
+  // flagged for "preserve-manual-memoization" because the compiler can't
+  // guarantee the dep list won't be mutated. The compiler picks up the
+  // reactive deps (perpetualAllowed, reducingBalanceAllowed) itself.
   const allOptions: { value: LoanType; label: string }[] = [
     { value: "perpetual", label: "Perpetual" },
     { value: "fixed_rate", label: "Fixed Rate" },
     { value: "reducing_balance", label: "Reducing Balance" },
   ]
-
   const availableOptions = allOptions.filter((o) => {
     if (o.value === "perpetual" && !perpetualAllowed) return false
     if (o.value === "reducing_balance" && !reducingBalanceAllowed) return false
@@ -240,7 +243,7 @@ function LoanTypeSelector({
     if (!userPickedRef.current && perpetualAllowed && loanType !== "perpetual") {
       setLoanType("perpetual")
     }
-  }, [perpetualAllowed, reducingBalanceAllowed, loanType, disabled]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [availableOptions, perpetualAllowed, loanType, disabled, setLoanType])
 
   return (
     <div className="space-y-2">

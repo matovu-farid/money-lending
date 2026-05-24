@@ -56,7 +56,6 @@ const arbPrincipal = fc.integer({ min: 100000, max: 5000000 }).map(String)
 const arbRate = fc
   .integer({ min: 100, max: 2000 })
   .map((n) => (n / 10000).toFixed(4))
-const arbNumLoans = fc.integer({ min: 1, max: 5 })
 
 // ---------------------------------------------------------------------------
 // Test suite

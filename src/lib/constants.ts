@@ -1,4 +1,6 @@
-import type { DepositLocation } from "@/types"
+/** Valid deposit locations (single source of truth for the literal union). */
+export const VALID_DEPOSIT_LOCATIONS = ["cash", "bank", "strong_room"] as const
+export type DepositLocation = (typeof VALID_DEPOSIT_LOCATIONS)[number]
 
 /** Human-readable labels for deposit locations */
 export const DEPOSIT_LOCATION_LABELS: Record<DepositLocation, string> = {
@@ -21,20 +23,29 @@ export const DEPOSIT_LOCATION_OPTIONS: { value: DepositLocation; label: string }
   { value: "strong_room", label: "Strong Room" },
 ]
 
-/** Valid deposit locations for runtime validation */
-export const VALID_DEPOSIT_LOCATIONS: string[] = DEPOSIT_LOCATION_OPTIONS.map((o) => o.value)
-
 /** Short ID length for truncated UUID references */
 export const SHORT_ID_LENGTH = 8
 
-/** Valid loan types */
+/** Valid loan types (single source of truth for the literal union). */
 export const VALID_LOAN_TYPES = ["perpetual", "fixed_rate", "reducing_balance"] as const
+export type LoanType = (typeof VALID_LOAN_TYPES)[number]
+
+/** Valid loan statuses (single source of truth for the literal union). */
+export const VALID_LOAN_STATUSES = [
+  "pending",
+  "active",
+  "fully_paid",
+  "settled_with_collateral",
+  "rolled_over",
+] as const
+export type LoanStatus = (typeof VALID_LOAN_STATUSES)[number]
 
 /** Minimum principal amount (UGX) required for perpetual loans */
 export const PERPETUAL_LOAN_MIN_AMOUNT = 2_000_000
 
-/** Valid customer statuses */
+/** Valid customer statuses (single source of truth for the literal union). */
 export const VALID_CUSTOMER_STATUSES = ["active", "blacklisted", "inactive"] as const
+export type CustomerStatus = (typeof VALID_CUSTOMER_STATUSES)[number]
 
 /** Common amount presets for payment forms */
 export const AMOUNT_PRESETS = [

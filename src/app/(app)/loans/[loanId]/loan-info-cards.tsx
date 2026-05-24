@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
-import type { UserRole, RateChangeRequest, Loan } from "@/types"
+import type { RateChangeRequest, Loan } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
@@ -21,7 +21,6 @@ import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
 export interface LoanInfoCardsProps {
   loan: Loan
   penaltyActive: boolean
-  userRole: UserRole
   userNameMap: Record<string, string>
   pendingRateRequest: RateChangeRequest | undefined
   // Penalty controls
@@ -41,7 +40,6 @@ export interface LoanInfoCardsProps {
 export function LoanInfoCards({
   loan,
   penaltyActive,
-  userRole,
   userNameMap,
   pendingRateRequest,
   isWaivingPenalty,

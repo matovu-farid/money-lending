@@ -1,3 +1,5 @@
+import type { DbLoanRow } from "../support/types"
+
 describe("Repayment Simulator", () => {
   let customerId: string
   let loanId: string
@@ -29,7 +31,7 @@ describe("Repayment Simulator", () => {
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
 
       // Get the loan ID from the loans list
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         loanId = loans[0].id
       })
     })

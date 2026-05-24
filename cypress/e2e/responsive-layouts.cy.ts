@@ -1,3 +1,5 @@
+import type { DbLoanRow } from "../support/types"
+
 describe("Responsive Layouts", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -109,7 +111,7 @@ describe("Responsive Layouts", () => {
         cy.contains("button", "Issue Loan").click()
         cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
 
-        cy.task("db:getLoans").then((loans: any) => {
+        cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
           const loanId = loans[0].id
           cy.visit(`/loans/${loanId}/payments/new`)
           cy.get("#amount", { timeout: 10000 }).type("50000")
@@ -268,7 +270,7 @@ describe("Responsive Layouts", () => {
         cy.contains("button", "Issue Loan").click()
         cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
 
-        cy.task("db:getLoans").then((loans: any) => {
+        cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
           const loanId = loans[0].id
           cy.visit(`/loans/${loanId}/payments/new`)
           cy.get("#amount", { timeout: 10000 }).type("60000")

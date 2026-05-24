@@ -43,7 +43,7 @@ describe("Credit Score Badge", () => {
         const hasLabel = ["Excellent", "Very Good", "Good", "Fair", "Poor", "Very Poor"].some((l) =>
           text.includes(l),
         )
-        expect(hasScore || hasLabel).to.be.true
+        expect(hasScore || hasLabel).to.equal(true)
       })
     })
 

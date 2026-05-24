@@ -107,7 +107,7 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
                   <p className="text-xs font-medium text-muted-foreground px-3 pb-1">Recent customers</p>
                 )}
                 <ul className="space-y-1">
-                  {displayList.map((c: any) => (
+                  {displayList.map((c) => (
                     <li key={c.id}>
                       <button
                         type="button"

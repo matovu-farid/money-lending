@@ -1,3 +1,5 @@
+import type { DbLoanRow } from "../support/types"
+
 describe("Daily Collections Tab", () => {
   beforeEach(() => {
     cy.task("db:reset")
@@ -65,7 +67,7 @@ describe("Daily Collections Tab", () => {
     })
 
     it("shows total collected and payment count after recording a payment", () => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loanId = loans[0].id
         cy.visit(`/loans/${loanId}/payments/new`)
         cy.get("#amount", { timeout: 10000 }).type("300000")
@@ -84,7 +86,7 @@ describe("Daily Collections Tab", () => {
     })
 
     it("shows per-loan breakdown row with customer name and amount", () => {
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         const loanId = loans[0].id
         cy.visit(`/loans/${loanId}/payments/new`)
         cy.get("#amount", { timeout: 10000 }).type("250000")

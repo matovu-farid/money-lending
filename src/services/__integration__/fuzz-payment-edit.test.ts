@@ -28,13 +28,10 @@ import {
 } from "@/services/payment.service"
 import {
   getLoanBalancesFromLedger,
-  getInterestEarnedFromLedger,
   getPaymentPortionsFromLedger,
 } from "@/services/ledger-queries.service"
-import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
-import { transactions } from "@/lib/db/schema/transactions"
-import { eq, and, isNull, sql } from "drizzle-orm"
+import { eq, and, isNull } from "drizzle-orm"
 
 // ─── Constants ────────────────────────────────────────────────────
 

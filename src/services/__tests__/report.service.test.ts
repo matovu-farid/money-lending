@@ -254,7 +254,6 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
   it("snapshot idempotency: same period+type combination should not insert duplicate", () => {
     // This tests the conceptual idempotency logic:
     // If existingSnapshot for period+type is found, skip insert.
-    const period = "2026-02"
     const year = 2026
     const month = 2
     const periodStart = new Date(year, month - 1, 1)
@@ -276,15 +275,12 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
 
   // ---- DB-mocked tests ----
 
-  let mockedDb: any
-  let mockedGetSystemCapital: any
+  let mockedDb: { select: ReturnType<typeof vi.fn>; insert: ReturnType<typeof vi.fn> }
 
   beforeEach(async () => {
     vi.clearAllMocks()
     const dbMod = await import("@/lib/db")
-    mockedDb = dbMod.db
-    const creditorMod = await import("@/services/creditor.service")
-    mockedGetSystemCapital = creditorMod.getSystemCapital
+    mockedDb = dbMod.db as unknown as typeof mockedDb
   })
 
   it("generateMonthlySnapshot: inserts pnl and balance_sheet rows with onConflictDoNothing", async () => {
@@ -300,7 +296,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           ]),
         }),
       }),
-    } as any)
+    })
 
     // 2nd select: getBalanceSheetData → single ledger query with innerJoin + where + groupBy
     mockedDb.select.mockReturnValueOnce({
@@ -313,21 +309,21 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           }),
         }),
       }),
-    } as any)
+    })
 
     // 3rd select: Interest Receivable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     // 4th select: Interest Payable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     // Mock insert chain: .values(...).onConflictDoNothing()
     const onConflictDoNothingStub = vi.fn().mockResolvedValue(undefined)
@@ -360,7 +356,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           ]),
         }),
       }),
-    } as any)
+    })
 
     // getBalanceSheetData → single ledger query
     mockedDb.select.mockReturnValueOnce({
@@ -371,21 +367,21 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           }),
         }),
       }),
-    } as any)
+    })
 
     // Interest Receivable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     // Interest Payable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     // Mock insert chain — onConflictDoNothing silently skips duplicates
     const onConflictDoNothingStub = vi.fn().mockResolvedValue(undefined)
@@ -412,7 +408,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           ]),
         }),
       }),
-    } as any)
+    })
 
     const result = await Effect.runPromise(getPnlData("2026-02"))
 
@@ -460,21 +456,21 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           }),
         }),
       }),
-    } as any)
+    })
 
     // Interest Receivable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     // Interest Payable category lookup
     mockedDb.select.mockReturnValueOnce({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    })
 
     const result = await Effect.runPromise(getBalanceSheetData("2026-02"))
 
@@ -496,7 +492,6 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
     const { getPortfolioData } = await import("@/services/report.service")
     const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
     const { getLoanBalancesFromLedger, getInterestEarnedFromLedger } = await import("@/services/ledger-queries.service")
-    const BigNumber = require("bignumber.js").default
 
     const now = new Date()
     // Loan A: 60 days old, Loan B: 10 days old
@@ -571,7 +566,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           ]),
         }),
       }),
-    } as any)
+    })
 
     // 2nd select: batch payment counts (empty — no payments)
     mockedDb.select.mockReturnValueOnce({
@@ -580,7 +575,7 @@ describe("Report Service — Snapshot idempotency (RPTS-02 / RPTS-03)", () => {
           groupBy: vi.fn().mockResolvedValue([]),
         }),
       }),
-    } as any)
+    })
 
     const result = await Effect.runPromise(getPortfolioData())
 

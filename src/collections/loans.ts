@@ -2,7 +2,6 @@
 
 import { createCollection, BasicIndex } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   createLoanAction,
   waivePenaltyAction,
@@ -11,14 +10,18 @@ import {
 import { settleWithCollateralAction } from "@/actions/settlement.actions"
 import type { CreateLoanInput } from "@/types/loan"
 import { loanRowSchema, type LoanBaseRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
 /**
  * Row shape synced via Electric — mirrors the `loans` DB table after
- * snake_case → camelCase mapping AND `loanRowSchema` coercion (timestamp
- * columns arrive as ISO strings on the wire and are coerced to `Date` here).
+ * snake_case → camelCase column-name mapping AND `electricDateParsers`
+ * timestamp coercion at the wire layer (timestamp columns arrive as ISO
+ * strings from the Electric stream and are turned into `Date` objects before
+ * they reach consumers). `loanRowSchema` is set on the collection for typing
+ * + mutation validation, but @tanstack/electric-db-collection does NOT run
+ * the schema on synced rows — the parser is what makes Date work end-to-end.
  *
  * Server-only enrichments (customerName, customerContact, outstandingBalance,
  * unpaidInterest, lastPaymentDate, daysOverdue, dailyRate) are NOT on this row.
@@ -46,11 +49,7 @@ export const loanCollection = createCollection(
     getKey: (loan) => loan.id,
     autoIndex: "eager",
     defaultIndexType: BasicIndex,
-    shapeOptions: {
-      url: shapeUrl("loans"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("loans"),
-    },
+    shapeOptions: electricShapeOptionsFor("loans"),
     onInsert: async ({ transaction }) => {
       const { metadata } = transaction.mutations[0]
       const meta = metadata as LoanInsertMetadata | undefined

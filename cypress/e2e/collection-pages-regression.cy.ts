@@ -6,6 +6,7 @@
  * Uses DB seeding (cy.task) to insert data directly, ensuring reliable
  * test data regardless of optimistic collection behavior.
  */
+import type { DbSeedCustomerAndLoanResult } from "../support/types"
 
 describe("Collection Pages Regression", () => {
   beforeEach(() => {
@@ -29,7 +30,7 @@ describe("Collection Pages Regression", () => {
       // Seed data via DB task using the logged-in user's ID
       cy.window().then(() => {
         // Get user from DB (first user = the one we just registered)
-        cy.task("db:seedCustomerAndLoan", {
+        cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
           customerName: "Loans Regression",
           contact: "0700100001",
           nin: "C0000000000001",
@@ -51,7 +52,7 @@ describe("Collection Pages Regression", () => {
     })
 
     it("renders data rows when customers exist", () => {
-      cy.task("db:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
         customerName: "Customer Regression",
         contact: "0700200001",
         nin: "C0000000000002",
@@ -66,14 +67,14 @@ describe("Collection Pages Regression", () => {
     })
 
     it("name filter narrows results", () => {
-      cy.task("db:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
         customerName: "Alpha Client",
         contact: "0700200002",
         nin: "C0000000000003",
         principalAmount: "500000",
         issuedBy: "seed-user",
       })
-      cy.task("db:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
         customerName: "Beta Client",
         contact: "0700200003",
         nin: "C0000000000004",
@@ -101,13 +102,13 @@ describe("Collection Pages Regression", () => {
     })
 
     it("renders data rows when payments exist", () => {
-      cy.task("db:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
         customerName: "Payment Regression",
         contact: "0700300001",
         nin: "C0000000000005",
         principalAmount: "1000000",
         issuedBy: "seed-user",
-      }).then((result: any) => {
+      }).then((result) => {
         cy.task("db:seedPayment", {
           loanId: result.loanId,
           amount: "100000",
@@ -153,13 +154,13 @@ describe("Collection Pages Regression", () => {
 
   describe("Loan detail page", () => {
     it("navigates from loans list to loan detail and shows data", () => {
-      cy.task("db:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
         customerName: "Detail Regression",
         contact: "0700400001",
         nin: "C0000000000006",
         principalAmount: "2000000",
         issuedBy: "seed-user",
-      }).then((result: any) => {
+      }).then((result) => {
         cy.visit(`/loans/${result.loanId}`)
         cy.contains("Detail Regression", { timeout: 15000 }).should("be.visible")
         cy.contains("LOAN-").should("be.visible")
@@ -170,13 +171,13 @@ describe("Collection Pages Regression", () => {
 
   describe("Customer detail page", () => {
     it("navigates from customers list to customer detail and shows data", () => {
-      cy.task("db:seedCustomerAndLoan", {
+      cy.task<DbSeedCustomerAndLoanResult>("db:seedCustomerAndLoan", {
         customerName: "Profile Regression",
         contact: "0700500001",
         nin: "C0000000000007",
         principalAmount: "750000",
         issuedBy: "seed-user",
-      }).then((result: any) => {
+      }).then((result) => {
         cy.visit(`/customers/${result.customerId}`)
         cy.contains("Profile Regression", { timeout: 20000 }).should("be.visible")
         // Verify loan data is rendered on the customer profile

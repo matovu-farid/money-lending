@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import BigNumber from "bignumber.js"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
@@ -93,8 +93,8 @@ export const recordExpenseAction = withAction<
   },
 })
 
-export const deleteExpenseAction = withAction<string, any>({
+export const deleteExpenseAction = withAction({
   permission: "expense:create",
-  effect: (session, id) => deleteTransaction(id, session.user.id, getUserRole(session) as string),
+  effect: (session: Session, id: string) => deleteTransaction(id, session.user.id, getUserRole(session)),
   revalidate: ["/expenses", "/transactions"],
 })

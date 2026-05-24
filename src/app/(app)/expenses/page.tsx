@@ -6,7 +6,7 @@ import { expenseCollection } from "@/collections/expenses"
 import { expenseCategoryCollection } from "@/collections/expense-categories"
 import { ExpenseListClient } from "./ExpenseListClient"
 import { usePermissions } from "@/hooks/use-permissions"
-import type { TransactionRow, TransactionShapeRow } from "@/types"
+import type { TransactionRow } from "@/types"
 
 function LoadingSkeleton() {
   return (
@@ -55,7 +55,7 @@ function ExpensesContent() {
   )
 
   const transactions: TransactionRow[] = useMemo(() => {
-    return ((allExpenses ?? []) as unknown as TransactionShapeRow[]).map((e) => ({
+    return (allExpenses ?? []).map((e) => ({
       id: e.id,
       type: e.type,
       amount: e.amount,

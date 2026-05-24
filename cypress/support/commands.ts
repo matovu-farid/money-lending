@@ -1,7 +1,7 @@
 // Custom Cypress commands for auth and test helpers
+import type { CreatedTestUser, SessionCookie } from "./types"
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace Cypress {
     interface Chainable {
       /** Register a new user, promote to superAdmin if needed, and land on dashboard. Returns email. */
@@ -29,13 +29,13 @@ declare global {
         name: string
         role: string
         email?: string
-      }): Chainable<{ email: string; userId: string; role: string }>
+      }): Chainable<CreatedTestUser>
 
       /**
        * Switch the browser session to a previously created test user.
        * Clears existing cookies and sets the new user's session cookies.
        */
-      loginAsTestUser(cookies: Array<{ name: string; value: string; domain?: string; path?: string }>): Chainable<void>
+      loginAsTestUser(cookies: SessionCookie[]): Chainable<void>
 
       /**
        * Clear all client-side state for the app origin: cookies,
@@ -142,36 +142,49 @@ Cypress.Commands.add("dismissReceiptModal", () => {
   cy.contains("button", "Close").click()
 })
 
+type CreateTestUserTaskResult = {
+  email: string
+  userId: string
+  role: string
+  cookies: SessionCookie[]
+}
+
 Cypress.Commands.add(
   "createTestUser",
   (opts: { name: string; role: string; email?: string }) => {
-    return cy.task("auth:createUser", opts).then((result: any) => {
-      // Store cookies for later use with loginAsTestUser
-      const userData = {
-        email: result.email,
-        userId: result.userId,
-        role: result.role,
-        _cookies: result.cookies,
-      }
-      // Set session cookies immediately so the user is logged in
-      cy.clearCookies()
-      for (const cookie of result.cookies) {
-        cy.setCookie(cookie.name, cookie.value, {
-          domain: cookie.domain || undefined,
-          path: cookie.path || "/",
-          httpOnly: cookie.httpOnly ?? true,
-          secure: cookie.secure ?? false,
-          sameSite: cookie.sameSite?.toLowerCase() || undefined,
-        })
-      }
-      return cy.wrap(userData)
-    })
+    return cy
+      .task<CreateTestUserTaskResult>("auth:createUser", opts)
+      .then((result) => {
+        // Store cookies for later use with loginAsTestUser
+        const userData: CreatedTestUser = {
+          email: result.email,
+          userId: result.userId,
+          role: result.role,
+          _cookies: result.cookies,
+        }
+        // Set session cookies immediately so the user is logged in
+        cy.clearCookies()
+        for (const cookie of result.cookies) {
+          const sameSite = cookie.sameSite?.toLowerCase()
+          cy.setCookie(cookie.name, cookie.value, {
+            domain: cookie.domain || undefined,
+            path: cookie.path || "/",
+            httpOnly: cookie.httpOnly ?? true,
+            secure: cookie.secure ?? false,
+            sameSite:
+              sameSite === "strict" || sameSite === "lax" || sameSite === "no_restriction"
+                ? sameSite
+                : undefined,
+          })
+        }
+        return cy.wrap(userData)
+      })
   }
 )
 
 Cypress.Commands.add(
   "loginAsTestUser",
-  (cookies: Array<{ name: string; value: string; domain?: string; path?: string }>) => {
+  (cookies: SessionCookie[]) => {
     cy.clearCookies()
     for (const cookie of cookies) {
       cy.setCookie(cookie.name, cookie.value, {

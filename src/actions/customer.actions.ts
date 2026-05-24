@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { getErrorTag } from "@/lib/action-utils"
 import { validateFullName, validateNIN, validateUgandanPhone } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
@@ -16,9 +16,9 @@ export const listCustomersAction = withAction({
   errors: { DatabaseError: "Database error" },
 })
 
-export const createCustomerAction = withAction<CreateCustomerInput, any>({
+export const createCustomerAction = withAction({
   permission: "customer:create",
-  action: async (_session, input) => {
+  action: async (_session: Session, input: CreateCustomerInput) => {
     const nameErr = validateFullName(input.fullName)
     if (nameErr) return { error: nameErr }
     const ninErr = validateNIN(input.nin)
@@ -35,7 +35,8 @@ export const createCustomerAction = withAction<CreateCustomerInput, any>({
       return { data: customer, txid }
     } catch (error) {
       // Unwrap the underlying cause from DatabaseError
-      const cause = (error as any)?.cause?.cause ?? (error as any)?.cause ?? error
+      const errObj = error as { cause?: { cause?: unknown } } | null | undefined
+      const cause = errObj?.cause?.cause ?? errObj?.cause ?? error
       if (isUniqueConstraintError(cause)) {
         const constraint = getUniqueConstraintName(cause)
         if (constraint === "uq_customers_nin") {
@@ -52,9 +53,9 @@ export const createCustomerAction = withAction<CreateCustomerInput, any>({
   },
 })
 
-export const getCustomerAction = withAction<string, any>({
+export const getCustomerAction = withAction({
   permission: "customer:read",
-  effect: (_session, id) => getCustomer(id),
+  effect: (_session: Session, id: string) => getCustomer(id),
   errors: { CustomerNotFound: "Customer not found" },
 })
 
@@ -65,9 +66,9 @@ export async function updateCustomerAction(
   return updateCustomerWrapped({ id, input })
 }
 
-const updateCustomerWrapped = withAction<{ id: string; input: UpdateCustomerInput }, any>({
+const updateCustomerWrapped = withAction({
   permission: "customer:update",
-  action: async (_session, { id, input }) => {
+  action: async (_session: Session, { id, input }: { id: string; input: UpdateCustomerInput }) => {
     try {
       const { customer, txid } = await Effect.runPromise(updateCustomerWithTxid(id, input))
       revalidatePath("/customers")
@@ -83,19 +84,19 @@ const updateCustomerWrapped = withAction<{ id: string; input: UpdateCustomerInpu
   },
 })
 
-export const searchCustomersAction = withAction<CustomerSearchParams, any>({
+export const searchCustomersAction = withAction({
   permission: "customer:read",
-  effect: (_session, params) => searchCustomers(params),
+  effect: (_session: Session, params: CustomerSearchParams) => searchCustomers(params),
   errors: { DatabaseError: "Database error" },
 })
 
-export const changeCustomerStatusAction = withAction<ChangeStatusInput, any>({
+export const changeCustomerStatusAction = withAction({
   permission: "user:ban",
-  action: async (session, input) => {
+  action: async (session: Session, input: ChangeStatusInput) => {
     if (!input.customerId?.trim()) {
       return { error: "Customer ID is required" }
     }
-    if (!input.newStatus || !VALID_CUSTOMER_STATUSES.includes(input.newStatus as any)) {
+    if (!input.newStatus || !(VALID_CUSTOMER_STATUSES as readonly string[]).includes(input.newStatus)) {
       return { error: "Invalid status" }
     }
     if (!input.reason?.trim() || input.reason.trim().length < 10) {

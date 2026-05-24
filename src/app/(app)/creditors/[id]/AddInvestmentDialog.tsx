@@ -75,8 +75,9 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         toast.success("Investment added successfully")
         setOpen(false)
         resetForm()
-      } catch (err: any) {
-        toast.error(err?.message ?? "Failed to add investment")
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Failed to add investment"
+        toast.error(message)
       }
     })
   }

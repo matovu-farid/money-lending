@@ -355,13 +355,12 @@ export const getTransactionById = (
         .from(transactions)
         .where(eq(transactions.id, id))
 
-      if (!transaction) throw { _tag: "TransactionNotFound", id }
+      if (!transaction) throw new TransactionNotFound({ id })
 
       return transaction
     },
-    catch: (e: any) => {
-      if (e?._tag === "TransactionNotFound")
-        return new TransactionNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof TransactionNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -378,7 +377,7 @@ export const deleteTransaction = (
         .from(transactions)
         .where(eq(transactions.id, id))
 
-      if (!transaction) throw { _tag: "TransactionNotFound", id }
+      if (!transaction) throw new TransactionNotFound({ id })
 
       const systemReferenceTypes = [
         "payment", "payment_reversal",
@@ -388,12 +387,12 @@ export const deleteTransaction = (
         "interest_accrual",
       ]
       if (transaction.referenceType && systemReferenceTypes.includes(transaction.referenceType)) {
-        throw { _tag: "TransactionNotFound", id }
+        throw new TransactionNotFound({ id })
       }
 
       const isAdminOrAbove = actorRole === "admin" || actorRole === "superAdmin"
       if (transaction.recordedBy !== actorId && !isAdminOrAbove) {
-        throw { _tag: "TransactionNotFound", id }
+        throw new TransactionNotFound({ id })
       }
 
       await db.transaction(async (tx) => {
@@ -415,9 +414,8 @@ export const deleteTransaction = (
         })
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "TransactionNotFound")
-        return new TransactionNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof TransactionNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })

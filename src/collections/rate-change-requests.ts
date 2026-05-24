@@ -2,13 +2,12 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   requestRateChangeAction,
   reviewRateChangeRequestAction,
 } from "@/actions/rate-change-request.actions"
 import { rateChangeRequestSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -17,11 +16,7 @@ export const rateChangeRequestCollection = createCollection(
     id: "rate-change-requests",
     schema: rateChangeRequestSchema,
     getKey: (request) => request.id,
-    shapeOptions: {
-      url: shapeUrl("rate_change_requests"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("rate_change_requests"),
-    },
+    shapeOptions: electricShapeOptionsFor("rate_change_requests"),
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await requestRateChangeAction({

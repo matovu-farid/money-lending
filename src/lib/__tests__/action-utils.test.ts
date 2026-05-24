@@ -21,6 +21,10 @@ import { getSession, getUserRole, requireRole, getErrorTag, getErrorField } from
 
 const mockAuthGetSession = vi.mocked(auth.api.getSession)
 
+// The real session type comes from better-auth; we narrow to the bits
+// these tests exercise without resorting to `any` casts.
+type AuthSession = Awaited<ReturnType<typeof auth.api.getSession>>
+
 // ---------- Tests ----------
 
 describe("getSession", () => {
@@ -30,7 +34,7 @@ describe("getSession", () => {
 
   it("returns session when user is present", async () => {
     const session = { user: { id: "u1", name: "Test", role: "admin" } }
-    mockAuthGetSession.mockResolvedValue(session as any)
+    mockAuthGetSession.mockResolvedValue(session as unknown as AuthSession)
 
     const result = await getSession()
 
@@ -38,7 +42,7 @@ describe("getSession", () => {
   })
 
   it("returns null when session is null", async () => {
-    mockAuthGetSession.mockResolvedValue(null as any)
+    mockAuthGetSession.mockResolvedValue(null)
 
     const result = await getSession()
 
@@ -46,7 +50,7 @@ describe("getSession", () => {
   })
 
   it("returns null when session has no user", async () => {
-    mockAuthGetSession.mockResolvedValue({ user: null } as any)
+    mockAuthGetSession.mockResolvedValue({ user: null } as unknown as AuthSession)
 
     const result = await getSession()
 
@@ -54,7 +58,7 @@ describe("getSession", () => {
   })
 
   it("returns null when session.user is undefined", async () => {
-    mockAuthGetSession.mockResolvedValue({} as any)
+    mockAuthGetSession.mockResolvedValue({} as unknown as AuthSession)
 
     const result = await getSession()
 
@@ -74,8 +78,8 @@ describe("getUserRole", () => {
   })
 
   it("defaults to 'unassigned' when role is undefined", () => {
-    const session = { user: {} }
-    expect(getUserRole(session as any)).toBe("unassigned")
+    const session: { user: { role?: string | null } } = { user: {} }
+    expect(getUserRole(session)).toBe("unassigned")
   })
 })
 

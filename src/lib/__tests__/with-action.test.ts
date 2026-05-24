@@ -11,8 +11,8 @@ const mockGetUserRole = vi.fn()
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: () => mockGetSession(),
-  checkPermission: (...args: any[]) => mockCheckPermission(...args),
-  getUserRole: (...args: any[]) => mockGetUserRole(...args),
+  checkPermission: (...args: unknown[]) => mockCheckPermission(...args),
+  getUserRole: (...args: unknown[]) => mockGetUserRole(...args),
   getErrorTag: (error: unknown) => mockGetErrorTag(error),
 }))
 
@@ -34,10 +34,6 @@ class NotFoundError extends Data.TaggedError("NotFoundError")<{
   message: string
 }> {}
 
-class ValidationError extends Data.TaggedError("ValidationError")<{
-  message: string
-}> {}
-
 // ---------- Tests ----------
 
 describe("withAction", () => {
@@ -55,7 +51,7 @@ describe("withAction", () => {
   describe("classic mode", () => {
     it("calls the action with session and returns its result", async () => {
       const action = withAction({
-        action: async (session) => ({ data: [1, 2, 3] }),
+        action: async () => ({ data: [1, 2, 3] }),
       })
       const result = await action()
       expect(result).toEqual({ data: [1, 2, 3] })
@@ -63,7 +59,7 @@ describe("withAction", () => {
 
     it("passes input to the action", async () => {
       const action = withAction<{ id: string }, { data: string }>({
-        action: async (session, input) => ({ data: input.id }),
+        action: async (_session, input) => ({ data: input.id }),
       })
       const result = await action({ id: "abc" })
       expect(result).toEqual({ data: "abc" })
@@ -81,7 +77,7 @@ describe("withAction", () => {
     it("returns forbidden when permission check fails", async () => {
       mockCheckPermission.mockResolvedValue("Forbidden")
       const action = withAction({
-        permission: "loan:create" as any,
+        permission: "loan:create",
         action: async () => ({ data: "ok" }),
       })
       const result = await action()
@@ -91,7 +87,7 @@ describe("withAction", () => {
     it("passes forbiddenMessage through to checkPermission", async () => {
       mockCheckPermission.mockResolvedValue("Custom forbidden message")
       const action = withAction({
-        permission: "loan:create" as any,
+        permission: "loan:create",
         forbiddenMessage: "Custom forbidden message",
         action: async () => ({ data: "ok" }),
       })
@@ -120,7 +116,7 @@ describe("withAction", () => {
   describe("effect mode", () => {
     it("runs Effect and returns { data } on success", async () => {
       const action = withAction({
-        effect: (_session) => Effect.succeed({ items: [1, 2] }),
+        effect: () => Effect.succeed({ items: [1, 2] }),
       })
       const result = await action()
       expect(result).toEqual({ data: { items: [1, 2] } })
@@ -188,7 +184,7 @@ describe("withAction", () => {
 
     it("supports dynamic revalidation paths via function", async () => {
       const action = withAction<{ loanId: string }, string>({
-        effect: (_s, input) => Effect.succeed("done"),
+        effect: () => Effect.succeed("done"),
         revalidate: (input) => ["/loans", `/loans/${input.loanId}`],
       })
 
@@ -227,7 +223,7 @@ describe("withAction", () => {
 
       const effectFn = vi.fn(() => Effect.succeed("data"))
       const action = withAction({
-        permission: "loan:create" as any,
+        permission: "loan:create",
         effect: effectFn,
       })
 

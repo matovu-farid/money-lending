@@ -4,6 +4,7 @@
  * payment history table, record payment link, edit/delete loan dialogs,
  * back navigation, and mobile responsiveness.
  */
+import type { DbLoanRow } from "../support/types"
 
 function createCustomerAndLoan(
   customerName: string,
@@ -43,7 +44,7 @@ describe("Loan Detail Page (/loans/[loanId])", () => {
 
     createCustomerAndLoan("Detail Test Customer", "0771000077", "2000000")
 
-    cy.task("db:getLoans").then((loans: any) => {
+    cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
       loanId = loans[0].id
     })
   })

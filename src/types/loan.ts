@@ -2,6 +2,7 @@ import type { InferSelectModel, InferInsertModel } from "drizzle-orm"
 import type { loans } from "@/lib/db/schema/loans"
 import type { collateral } from "@/lib/db/schema/collateral"
 import type { DepositLocation } from "./common"
+import type { LoanStatus, LoanType } from "@/lib/constants"
 
 export type Loan = InferSelectModel<typeof loans>
 export type NewLoan = InferInsertModel<typeof loans>
@@ -26,8 +27,10 @@ export type LoanListEntry = LoanWithCustomer & {
 export type Collateral = InferSelectModel<typeof collateral>
 export type NewCollateral = InferInsertModel<typeof collateral>
 
-export type LoanStatus = "pending" | "active" | "fully_paid" | "settled_with_collateral" | "rolled_over"
-export type LoanType = "perpetual" | "fixed_rate" | "reducing_balance"
+// `LoanStatus` and `LoanType` are derived from `VALID_LOAN_STATUSES` and
+// `VALID_LOAN_TYPES` in `@/lib/constants` (single source of truth).
+// Re-exported so existing imports from `@/types` keep working.
+export type { LoanStatus, LoanType }
 
 /** Coalesce a possibly-null loanType to a typed LoanType (defaults to "perpetual"). */
 export function toLoanType(value: string | null | undefined): LoanType {

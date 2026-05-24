@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import BigNumber from "bignumber.js"
+import type { DrizzleTx } from "./_test-helpers"
+
+type InsertedTransaction = Record<string, unknown>
 
 // Mock ONLY the db module and drizzle-orm -- NOT transaction.service itself,
 // because we want to test the real reverseInterestAccrual function.
@@ -42,8 +44,8 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     const penaltyAccrual = { amount: "5000.00", type: "debit" }
 
     let selectCallCount = 0
-    const insertCalls: any[] = []
-    const mockTx: any = {
+    const insertCalls: InsertedTransaction[] = []
+    const mockTx = {
       select: vi.fn().mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
@@ -70,7 +72,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
         }
       }),
       insert: vi.fn().mockImplementation(() => ({
-        values: vi.fn().mockImplementation((vals: any) => {
+        values: vi.fn().mockImplementation((vals: InsertedTransaction) => {
           insertCalls.push(vals)
           return Promise.resolve()
         }),
@@ -78,7 +80,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     }
 
     const { reverseInterestAccrual } = await import("@/services/transaction.service")
-    await reverseInterestAccrual(mockTx, {
+    await reverseInterestAccrual(mockTx as unknown as DrizzleTx, {
       loanId: "loan-1",
       paymentDate: "2026-04-01",
       actorId: "actor-1",
@@ -117,8 +119,8 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     ]
 
     let selectCallCount = 0
-    const insertCalls: any[] = []
-    const mockTx: any = {
+    const insertCalls: InsertedTransaction[] = []
+    const mockTx = {
       select: vi.fn().mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
@@ -130,7 +132,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
         }
       }),
       insert: vi.fn().mockImplementation(() => ({
-        values: vi.fn().mockImplementation((vals: any) => {
+        values: vi.fn().mockImplementation((vals: InsertedTransaction) => {
           insertCalls.push(vals)
           return Promise.resolve()
         }),
@@ -138,7 +140,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     }
 
     const { reverseInterestAccrual } = await import("@/services/transaction.service")
-    await reverseInterestAccrual(mockTx, {
+    await reverseInterestAccrual(mockTx as unknown as DrizzleTx, {
       loanId: "loan-1",
       paymentDate: "2026-04-01",
       actorId: "actor-1",
@@ -163,7 +165,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     ]
 
     let selectCallCount = 0
-    const mockTx: any = {
+    const mockTx = {
       select: vi.fn().mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
@@ -178,7 +180,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     }
 
     const { reverseInterestAccrual } = await import("@/services/transaction.service")
-    await reverseInterestAccrual(mockTx, {
+    await reverseInterestAccrual(mockTx as unknown as DrizzleTx, {
       loanId: "loan-1",
       paymentDate: "2026-04-01",
       actorId: "actor-1",
@@ -201,8 +203,8 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     ]
 
     let selectCallCount = 0
-    const insertCalls: any[] = []
-    const mockTx: any = {
+    const insertCalls: InsertedTransaction[] = []
+    const mockTx = {
       select: vi.fn().mockImplementation(() => {
         selectCallCount++
         if (selectCallCount === 1) {
@@ -214,7 +216,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
         }
       }),
       insert: vi.fn().mockImplementation(() => ({
-        values: vi.fn().mockImplementation((vals: any) => {
+        values: vi.fn().mockImplementation((vals: InsertedTransaction) => {
           insertCalls.push(vals)
           return Promise.resolve()
         }),
@@ -222,7 +224,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     }
 
     const { reverseInterestAccrual } = await import("@/services/transaction.service")
-    await reverseInterestAccrual(mockTx, {
+    await reverseInterestAccrual(mockTx as unknown as DrizzleTx, {
       loanId: "loan-1",
       paymentDate: "2026-04-01",
       actorId: "actor-1",

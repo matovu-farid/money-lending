@@ -1,6 +1,7 @@
 import { shortId } from "@/lib/utils"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
@@ -118,7 +119,7 @@ describe("Rate Change Request Service", () => {
     const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
 
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -133,7 +134,7 @@ describe("Rate Change Request Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -148,7 +149,7 @@ describe("Rate Change Request Service", () => {
     const { db: mockedDb } = await import("@/lib/db")
 
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -158,7 +159,7 @@ describe("Rate Change Request Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -252,7 +253,7 @@ describe("Rate Change Request Service", () => {
 
     // After the TOCTOU fix, both select and update happen inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -269,7 +270,7 @@ describe("Rate Change Request Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -298,7 +299,7 @@ describe("Rate Change Request Service", () => {
 
     // After the TOCTOU fix, both select and update happen inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -315,7 +316,7 @@ describe("Rate Change Request Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -341,7 +342,7 @@ describe("Rate Change Request Service", () => {
 
     // After TOCTOU fix, the select happens inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -351,7 +352,7 @@ describe("Rate Change Request Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -377,7 +378,7 @@ describe("Rate Change Request Service", () => {
 
     // After the TOCTOU fix, the select happens inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -387,7 +388,7 @@ describe("Rate Change Request Service", () => {
             }),
           }),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -409,13 +410,14 @@ describe("Rate Change Request Service", () => {
 
   it("fetches and locks request inside transaction to prevent TOCTOU race", async () => {
     const { db: mockedDb } = await import("@/lib/db")
-    const { writeAuditLog } = await import("@/services/audit.service")
 
     const updatedRequest = { ...mockRequest, status: "approved", reviewedBy: "reviewer-1", reviewedAt: new Date() }
 
-    let capturedTx: any = null
+    // The captured tx is structurally just the mockTx shape — we only assert
+    // its `select` was called, so narrow to that one method.
+    let capturedTx: { select: ReturnType<typeof vi.fn> } | undefined
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           select: vi.fn().mockReturnValue({
             from: vi.fn().mockReturnValue({
@@ -433,7 +435,7 @@ describe("Rate Change Request Service", () => {
           }),
         }
         capturedTx = mockTx
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -443,7 +445,8 @@ describe("Rate Change Request Service", () => {
     )
 
     // The select must happen inside the transaction (via tx.select), not db.select
-    expect(capturedTx.select).toHaveBeenCalled()
+    expect(capturedTx).toBeDefined()
+    expect(capturedTx?.select).toHaveBeenCalled()
     // db.select should NOT have been called for the request lookup
     expect(mockedDb.select).not.toHaveBeenCalled()
   })

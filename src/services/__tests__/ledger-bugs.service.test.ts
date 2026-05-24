@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect } from "effect"
 import BigNumber from "bignumber.js"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
@@ -81,7 +82,7 @@ describe("Bug 1: updateLoan fee reversal query must identify only the issuance f
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     const updatedLoan = { ...mockLoan, issuanceFee: "75000.00" }
 
@@ -137,7 +138,7 @@ describe("Bug 1: updateLoan fee reversal query must identify only the issuance f
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { updateLoan } = await import("@/services/loan.service")
@@ -172,7 +173,7 @@ describe("Bug 1: updateLoan fee reversal query must identify only the issuance f
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockLoan]),
       }),
-    } as any)
+    })
 
     const updatedLoan = { ...mockLoan, issuanceFee: "75000.00" }
 
@@ -194,7 +195,7 @@ describe("Bug 1: updateLoan fee reversal query must identify only the issuance f
       }),
     }
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => callback(mockTx)
+      async (callback: TransactionCallback) => callback(mockTx as unknown as DrizzleTx)
     )
 
     const { updateLoan } = await import("@/services/loan.service")

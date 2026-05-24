@@ -24,14 +24,18 @@ vi.mock("@/lib/action-utils", () => ({
   getEffectivePermissions: vi.fn().mockResolvedValue(new Set(["payment:edit-any", "payment:delete-any"])),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
-    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const causeContainer = error as Record<string | symbol, unknown>
+    const cause = causeContainer[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? causeContainer.cause
     if (cause && typeof cause === "object") {
-      const inner = cause.failure ?? cause.error
+      const causeObj = cause as Record<string, unknown>
+      const inner = causeObj.failure ?? causeObj.error
       if (inner && typeof inner === "object" && "_tag" in inner) {
-        return inner._tag as string
+        const innerTag = (inner as { _tag: unknown })._tag
+        if (typeof innerTag === "string") return innerTag
       }
     }
     return undefined
@@ -74,10 +78,10 @@ vi.mock("@/lib/interest/effective-rate", () => ({
 }))
 
 vi.mock("drizzle-orm", () => ({
-  eq: vi.fn((...args: any[]) => args),
-  and: vi.fn((...args: any[]) => args),
-  asc: vi.fn((col: any) => col),
-  isNull: vi.fn((col: any) => col),
+  eq: vi.fn((...args: unknown[]) => args),
+  and: vi.fn((...args: unknown[]) => args),
+  asc: vi.fn((col: unknown) => col),
+  isNull: vi.fn((col: unknown) => col),
 }))
 
 vi.mock("@/lib/email", () => ({
@@ -150,10 +154,17 @@ const mockEditPayment = vi.mocked(editPaymentWithTxid)
 const mockDeletePayment = vi.mocked(deletePaymentWithTxid)
 const mockListPayments = vi.mocked(listPayments)
 const mockSearchActiveLoans = vi.mocked(searchActiveLoans)
+void mockRequireRole
+void validatePositiveDecimal
 
-const fakeSession = {
-  user: { id: "u1", name: "Test User", email: "t@t.com", role: "admin" },
-} as any
+import { fakeSession, effectReturn } from "./test-utils"
+import type { RecordPaymentInput } from "@/types"
+
+const recordPaymentReturn = effectReturn<typeof recordPaymentWithTxid>
+const editPaymentReturn = effectReturn<typeof editPaymentWithTxid>
+const deletePaymentReturn = effectReturn<typeof deletePaymentWithTxid>
+const listPaymentsReturn = effectReturn<typeof listPayments>
+const searchActiveLoansReturn = effectReturn<typeof searchActiveLoans>
 
 // ---------- Tests ----------
 
@@ -164,11 +175,11 @@ describe("Payment Actions", () => {
 
   // ===== recordPaymentAction =====
   describe("recordPaymentAction", () => {
-    const validInput = {
+    const validInput: RecordPaymentInput = {
       loanId: "loan-123",
       amount: "50000",
       paymentDate: "2026-04-01",
-      depositLocation: "cash" as const,
+      depositLocation: "cash",
     }
 
     it("returns error when not authenticated", async () => {
@@ -187,7 +198,7 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const result = await recordPaymentAction({ ...validInput, amount: "abc" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Amount")
+      expect((result as { error: string }).error).toContain("Amount")
     })
 
     it("returns error for invalid payment date", async () => {
@@ -200,16 +211,16 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const result = await recordPaymentAction({
         ...validInput,
-        depositLocation: "mattress" as any,
+        depositLocation: "mattress" as unknown as RecordPaymentInput["depositLocation"],
       })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Deposit location")
+      expect((result as { error: string }).error).toContain("Deposit location")
     })
 
     it("records payment and revalidates on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const recorded = { id: "p1", loanId: "loan-123", amount: "50000" }
-      mockRecordPayment.mockReturnValue(Effect.succeed({ payment: recorded, txid: "tx_001" }) as any)
+      mockRecordPayment.mockReturnValue(recordPaymentReturn(Effect.succeed({ payment: recorded, txid: "tx_001" })))
 
       const result = await recordPaymentAction(validInput)
 
@@ -222,7 +233,7 @@ describe("Payment Actions", () => {
     it("returns error when loan not found", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockRecordPayment.mockReturnValue(
-        Effect.fail(new LoanNotFound({ id: "loan-123" })) as any,
+        recordPaymentReturn(Effect.fail(new LoanNotFound({ id: "loan-123" }))),
       )
       const result = await recordPaymentAction(validInput)
       expect(result).toEqual({ error: "Loan not found" })
@@ -230,7 +241,7 @@ describe("Payment Actions", () => {
 
     it("returns generic error for unknown service failure", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRecordPayment.mockReturnValue(Effect.fail(new Error("boom")) as any)
+      mockRecordPayment.mockReturnValue(recordPaymentReturn(Effect.fail(new Error("boom"))))
       const result = await recordPaymentAction(validInput)
       expect(result).toEqual({ error: "Internal server error" })
     })
@@ -266,7 +277,7 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       const edited = { id: "p1", loanId: "loan-1", amount: "60000" }
-      mockEditPayment.mockReturnValue(Effect.succeed({ payment: edited, txid: "tx_002" }) as any)
+      mockEditPayment.mockReturnValue(editPaymentReturn(Effect.succeed({ payment: edited, txid: "tx_002" })))
 
       const result = await editPaymentAction(validInput)
 
@@ -279,7 +290,7 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       mockEditPayment.mockReturnValue(
-        Effect.fail(new PaymentNotFound({ id: "p1" })) as any,
+        editPaymentReturn(Effect.fail(new PaymentNotFound({ id: "p1" }))),
       )
       const result = await editPaymentAction(validInput)
       expect(result).toEqual({ error: "Payment not found" })
@@ -315,7 +326,7 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       const deleted = { id: "p1", loanId: "loan-1", amount: "50000" }
-      mockDeletePayment.mockReturnValue(Effect.succeed({ payment: deleted, txid: "tx_003" }) as any)
+      mockDeletePayment.mockReturnValue(deletePaymentReturn(Effect.succeed({ payment: deleted, txid: "tx_003" })))
 
       const result = await deletePaymentAction(validInput)
 
@@ -328,7 +339,7 @@ describe("Payment Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       mockDeletePayment.mockReturnValue(
-        Effect.fail(new PaymentNotFound({ id: "p1" })) as any,
+        deletePaymentReturn(Effect.fail(new PaymentNotFound({ id: "p1" }))),
       )
       const result = await deletePaymentAction(validInput)
       expect(result).toEqual({ error: "Payment not found" })
@@ -346,7 +357,7 @@ describe("Payment Actions", () => {
     it("returns paginated data on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const data = { rows: [], total: 0 }
-      mockListPayments.mockReturnValue(Effect.succeed(data) as any)
+      mockListPayments.mockReturnValue(listPaymentsReturn(Effect.succeed(data)))
       const result = await listPaymentsAction({ page: 1, pageSize: 25 })
       expect(result).toEqual({ data })
     })
@@ -357,7 +368,7 @@ describe("Payment Actions", () => {
     it("excludes markedWrong payments from the query", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const { db: mockedDb } = await import("@/lib/db")
-      const { eq, and, isNull } = await import("drizzle-orm")
+      const { eq } = await import("drizzle-orm")
 
       const mockRows = [
         { id: "p1", loanId: "loan-1", amount: "50000", markedWrong: false },
@@ -376,7 +387,7 @@ describe("Payment Actions", () => {
       // Verify that eq was called with the markedWrong column and false
       const eqCalls = (eq as ReturnType<typeof vi.fn>).mock.calls
       const markedWrongFilter = eqCalls.find(
-        (call: any[]) => call[0] === "markedWrong" && call[1] === false
+        (call: unknown[]) => call[0] === "markedWrong" && call[1] === false
       )
       expect(markedWrongFilter).toBeDefined()
     })
@@ -399,7 +410,7 @@ describe("Payment Actions", () => {
     it("returns results for valid query", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       const loans = [{ id: "l1", customerName: "John" }]
-      mockSearchActiveLoans.mockReturnValue(Effect.succeed(loans) as any)
+      mockSearchActiveLoans.mockReturnValue(searchActiveLoansReturn(Effect.succeed(loans)))
       const result = await searchActiveLoansAction("john")
       expect(result).toEqual({ data: loans })
     })

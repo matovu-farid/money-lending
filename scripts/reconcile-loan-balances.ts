@@ -14,7 +14,7 @@ import {
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
 } from "@/services/ledger-queries.service"
-import { eq, sql } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import BigNumber from "bignumber.js"
 
 async function main() {

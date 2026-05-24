@@ -16,18 +16,15 @@
  * When a failure is found, fast-check shrinks the command sequence to the
  * minimal reproduction — typically 2-4 commands instead of 20.
  */
-import { describe, it, expect } from "vitest"
+import { describe, it } from "vitest"
 import fc from "fast-check"
 import BigNumber from "bignumber.js"
 import {
   calculateInterest,
-  calculateDailyRate,
   allocatePayment,
   computeSegmentedInterest,
-  formatAmount,
 } from "../engine"
 import { computeLoanOverdueInfo } from "../overdue"
-import { isPenaltyActive, getEffectiveRate } from "../effective-rate"
 import { daysBetween } from "@/lib/db/utils"
 
 // ─── Model State ──────────────────────────────────────────────────
@@ -163,7 +160,8 @@ class MakePaymentCommand implements fc.Command<LoanModel, RealState> {
     return model.balance.isGreaterThan(0)
   }
 
-  run(model: LoanModel, _real: RealState): void {
+  run(model: LoanModel, real: RealState): void {
+    void real
     // Advance time
     const paymentDate = new Date(model.currentDate.getTime() + this.daysFromCurrent * 86400000)
     model.currentDate = paymentDate
@@ -227,7 +225,8 @@ class DeletePaymentCommand implements fc.Command<LoanModel, RealState> {
     return active.length > 0 && this.paymentIndex < active.length
   }
 
-  run(model: LoanModel, _real: RealState): void {
+  run(model: LoanModel, real: RealState): void {
+    void real
     const active = model.payments.filter((p) => !p.deleted)
     if (this.paymentIndex >= active.length) return
 
@@ -257,11 +256,13 @@ class DeletePaymentCommand implements fc.Command<LoanModel, RealState> {
 class AdvanceTimeCommand implements fc.Command<LoanModel, RealState> {
   constructor(readonly days: number) {}
 
-  check(_model: Readonly<LoanModel>): boolean {
+  check(model: Readonly<LoanModel>): boolean {
+    void model
     return true
   }
 
-  run(model: LoanModel, _real: RealState): void {
+  run(model: LoanModel, real: RealState): void {
+    void real
     model.currentDate = new Date(model.currentDate.getTime() + this.days * 86400000)
 
     const violations = checkInvariants(model)
@@ -276,11 +277,13 @@ class AdvanceTimeCommand implements fc.Command<LoanModel, RealState> {
 }
 
 class CheckOverdueCommand implements fc.Command<LoanModel, RealState> {
-  check(_model: Readonly<LoanModel>): boolean {
+  check(model: Readonly<LoanModel>): boolean {
+    void model
     return true
   }
 
-  run(model: LoanModel, _real: RealState): void {
+  run(model: LoanModel, real: RealState): void {
+    void real
     const activePayments = model.payments.filter((p) => !p.deleted)
     const info = computeLoanOverdueInfo({
       principalAmount: model.principal,
@@ -491,7 +494,6 @@ describe("Stateful Model: Term Loan Lifecycle (fixed_rate)", () => {
 
           for (let month = 1; month <= term; month++) {
             const installment = monthlyPrincipal.plus(monthlyInterest)
-            const thisPrincipal = month === term ? balance : monthlyPrincipal
 
             const alloc = allocatePayment({
               paymentAmount: installment.integerValue().toFixed(0),

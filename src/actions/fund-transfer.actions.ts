@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { createFundTransferWithTxid, createCapitalInjectionWithTxid, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
@@ -13,10 +13,10 @@ import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 // revalidatePath would block the action response while Next re-fetches RSC for
 // routes the user may not even be on, adding 1-2s of perceived latency.
 
-export const createFundTransferAction = withAction<CreateFundTransferInput, any>({
+export const createFundTransferAction = withAction({
   permission: "fund-transfer:create",
   forbiddenMessage: "Forbidden: supervisor access required",
-  action: async (session, input) => {
+  action: async (session: Session, input: CreateFundTransferInput) => {
     if (!input.fromLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.fromLocation)) {
       return { error: "Invalid source location" }
     }
@@ -44,10 +44,10 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
   },
 })
 
-export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInput, any>({
+export const createCapitalInjectionAction = withAction({
   permission: "fund-transfer:create",
   forbiddenMessage: "Forbidden: supervisor access required",
-  action: async (session, input) => {
+  action: async (session: Session, input: CreateCapitalInjectionInput) => {
     if (!input.toLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.toLocation)) {
       return { error: "Invalid deposit location" }
     }

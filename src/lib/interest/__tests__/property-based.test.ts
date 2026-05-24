@@ -89,8 +89,6 @@ const arbPeriod = fc.record({
   month: fc.integer({ min: 1, max: 12 }),
 }).map(({ year, month }) => `${year}-${String(month).padStart(2, "0")}`)
 
-const baseLoan = { interestRate: "0.10", interestRateOverride: null, penaltyMultiplier: null }
-
 // ═══════════════════════════════════════════════════════════════════
 // LEVEL 1: Algebraic Properties
 // ═══════════════════════════════════════════════════════════════════
@@ -357,9 +355,6 @@ describe("L1: Amortization Schedule Properties", () => {
 // ═══════════════════════════════════════════════════════════════════
 
 describe("L1: Fixed-Rate Allocation Properties", () => {
-  /** Payment number: 1..termMonths */
-  const arbPaymentNumber = fc.integer({ min: 1, max: 36 })
-
   it("conservation: interest + principal = payment (within rounding)", () => {
     fc.assert(
       fc.property(

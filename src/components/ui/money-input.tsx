@@ -87,6 +87,12 @@ function MoneyInput<T extends FieldValues>({
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground font-medium w-10 shrink-0">UGX</span>
           <Input
+            // Spread the controller field first so `ref` and `name` flow
+            // through without an explicit property read during render (the
+            // react-hooks/refs rule treats direct `field.ref` access as a
+            // ref-during-render). Subsequent props intentionally override
+            // `value`, `onChange`, `onBlur` from the spread.
+            {...field}
             id={inputId}
             type="text"
             inputMode="numeric"
@@ -103,8 +109,6 @@ function MoneyInput<T extends FieldValues>({
               setTimeout(() => setOpen(false), 150)
               field.onBlur()
             }}
-            ref={field.ref}
-            name={field.name}
           />
         </div>
 

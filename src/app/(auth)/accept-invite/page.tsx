@@ -48,12 +48,18 @@ function AcceptInviteContent() {
   const router = useRouter()
   const token = searchParams.get("token") ?? ""
 
+  // Synchronous missing-token case is derived during render — calling setState
+  // in an effect for state that's known up-front is exactly what
+  // react-hooks/set-state-in-effect flags. Only the async fetch needs an effect.
+  const tokenMissing = !token
   const [inviteData, setInviteData] = useState<{ name: string; email: string; role: string } | null>(null)
-  const [pageError, setPageError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(!tokenMissing)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isPending, startTransition] = useTransition()
+
+  const pageError = tokenMissing ? "No invitation token provided" : fetchError
 
   const {
     register,
@@ -65,15 +71,10 @@ function AcceptInviteContent() {
   })
 
   useEffect(() => {
-    if (!token) {
-      setPageError("No invitation token provided")
-      setLoading(false)
-      return
-    }
-
+    if (!token) return
     getInviteDetails(token).then((result) => {
       if ("error" in result) {
-        setPageError(result.error!)
+        setFetchError(result.error ?? "Unknown error")
       } else {
         setInviteData(result.data)
       }

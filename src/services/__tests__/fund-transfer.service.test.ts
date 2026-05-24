@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
+
+type FundTransferInsertValues = Record<string, unknown>
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
@@ -54,9 +57,9 @@ describe("Fund Transfer Service", () => {
     const { writeAuditLog } = await import("@/services/audit.service")
     const { autoPostFundTransfer } = await import("@/services/auto-post.service")
 
-    let capturedTx: any
+    let capturedTx: unknown
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           insert: vi.fn().mockReturnValue({
             values: vi.fn().mockReturnValue({
@@ -65,7 +68,7 @@ describe("Fund Transfer Service", () => {
           }),
         }
         capturedTx = mockTx
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -106,12 +109,12 @@ describe("Fund Transfer Service", () => {
   it("trims whitespace from note in fund transfer", async () => {
     const { db: mockedDb } = await import("@/lib/db")
 
-    let capturedValues: any
+    let capturedValues: FundTransferInsertValues | undefined
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           insert: vi.fn().mockImplementation(() => ({
-            values: vi.fn().mockImplementation((vals: any) => {
+            values: vi.fn().mockImplementation((vals: FundTransferInsertValues) => {
               capturedValues = vals
               return {
                 returning: vi.fn().mockResolvedValue([mockTransfer]),
@@ -119,7 +122,7 @@ describe("Fund Transfer Service", () => {
             }),
           })),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -131,18 +134,19 @@ describe("Fund Transfer Service", () => {
       )
     )
 
-    expect(capturedValues.note).toBe("spaced note")
+    expect(capturedValues).toBeDefined()
+    expect(capturedValues?.note).toBe("spaced note")
   })
 
   it("sets note to null when note is empty string", async () => {
     const { db: mockedDb } = await import("@/lib/db")
 
-    let capturedValues: any
+    let capturedValues: FundTransferInsertValues | undefined
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           insert: vi.fn().mockImplementation(() => ({
-            values: vi.fn().mockImplementation((vals: any) => {
+            values: vi.fn().mockImplementation((vals: FundTransferInsertValues) => {
               capturedValues = vals
               return {
                 returning: vi.fn().mockResolvedValue([mockTransfer]),
@@ -150,7 +154,7 @@ describe("Fund Transfer Service", () => {
             }),
           })),
         }
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -162,7 +166,8 @@ describe("Fund Transfer Service", () => {
       )
     )
 
-    expect(capturedValues.note).toBeNull()
+    expect(capturedValues).toBeDefined()
+    expect(capturedValues?.note).toBeNull()
   })
 
   it("returns DatabaseError when transaction fails", async () => {
@@ -197,13 +202,13 @@ describe("Fund Transfer Service", () => {
     const { writeAuditLog } = await import("@/services/audit.service")
     const { autoPostCapitalInjection } = await import("@/services/auto-post.service")
 
-    let capturedValues: any
-    let capturedTx: any
+    let capturedValues: FundTransferInsertValues | undefined
+    let capturedTx: unknown
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-      async (callback: any) => {
+      async (callback: TransactionCallback) => {
         const mockTx = {
           insert: vi.fn().mockImplementation(() => ({
-            values: vi.fn().mockImplementation((vals: any) => {
+            values: vi.fn().mockImplementation((vals: FundTransferInsertValues) => {
               capturedValues = vals
               return {
                 returning: vi.fn().mockResolvedValue([mockCapitalInjection]),
@@ -212,7 +217,7 @@ describe("Fund Transfer Service", () => {
           })),
         }
         capturedTx = mockTx
-        return callback(mockTx)
+        return callback(mockTx as unknown as DrizzleTx)
       }
     )
 
@@ -225,8 +230,9 @@ describe("Fund Transfer Service", () => {
     )
 
     expect(result).toEqual(mockCapitalInjection)
-    expect(capturedValues.transferType).toBe("capital_injection")
-    expect(capturedValues.fromLocation).toBeNull()
+    expect(capturedValues).toBeDefined()
+    expect(capturedValues?.transferType).toBe("capital_injection")
+    expect(capturedValues?.fromLocation).toBeNull()
 
     // Audit log
     expect(writeAuditLog).toHaveBeenCalledWith(capturedTx, {

@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { useLiveQuery, eq, ilike, gte, lte } from "@tanstack/react-db"
+import { useLiveQuery, eq, gte, lte } from "@tanstack/react-db"
 import { paymentCollection } from "@/collections/payments"
 import { loanCollection } from "@/collections/loans"
 import { useLoansWithBalances } from "@/collections/loan-views"
@@ -34,7 +34,6 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
-import { useSession } from "@/lib/auth-client"
 import { formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
 import type { PaymentWithCustomer } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -81,21 +80,18 @@ export function PaymentsClient() {
   const isAdmin = has("payment:edit-any")
   const isSupervisor = has("payment:edit-any")
 
-  return <PaymentsContent has={has} isAdmin={isAdmin} isSupervisor={isSupervisor} />
+  return <PaymentsContent isAdmin={isAdmin} isSupervisor={isSupervisor} />
 }
 
 function PaymentsContent({
-  has,
   isAdmin,
   isSupervisor,
 }: {
-  has: ReturnType<typeof usePermissions>["has"]
   isAdmin: boolean
   isSupervisor: boolean
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { data: session } = useSession()
   const [isEditPending, setIsEditPending] = useState(false)
   const [isMarkWrongPending, startMarkWrongTransition] = useTransition()
 
@@ -148,7 +144,7 @@ function PaymentsContent({
     q.from({ l: loanCollection }).select(({ l }) => l)
   )
   // Projected loans — provides customerName + other enriched fields
-  const { data: allLoans, isLoading: loansLoading } = useLoansWithBalances()
+  const { data: allLoans } = useLoansWithBalances()
 
   // Build a map of loanId → { customerName, customerId } from projected data
   const loanInfoMap = useMemo(() => {
@@ -230,7 +226,10 @@ function PaymentsContent({
     (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
     [userNameMapColl]
   )
-  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
+  const userNameMap: Record<string, string> = useMemo(
+    () => userNameMapRows?.[0]?.map ?? {},
+    [userNameMapRows]
+  )
 
   // Fetch interest/principal portions for the entire payment set in one go.
   // The server action is keyed only by paymentIds, so we pass a sentinel loanId.
@@ -250,7 +249,10 @@ function PaymentsContent({
     (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
     [portionsColl]
   )
-  const portionsMap = portionsRows?.[0]?.portions ?? {}
+  const portionsMap = useMemo(
+    () => portionsRows?.[0]?.portions ?? {},
+    [portionsRows]
+  )
 
   // Running principal balance per payment, computed across the FULL set of
   // payments per loan (filters can hide earlier payments — using filtered

@@ -14,7 +14,6 @@ import {
 } from "@/lib/errors"
 import { auditLog } from "@/lib/db/schema/audit"
 import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { eq } from "drizzle-orm"
 import crypto from "node:crypto"
 

@@ -51,14 +51,19 @@ describe("generateReceiptNumber", () => {
     const origDate = globalThis.Date
     const OrigDate = Date
 
-    // Mock Date so new Date() returns our fake date
+    // Mock Date so `new Date()` returns our fake date; pass any explicit
+    // args through to the real Date constructor. Branching on args.length
+    // narrows each call into a typed Date overload (no-arg / single-arg /
+    // year+month+...).
     class MockDate extends OrigDate {
       constructor(...args: unknown[]) {
         if (args.length === 0) {
           super(fakeDate.getTime())
+        } else if (args.length === 1) {
+          super(args[0] as number | string | Date)
         } else {
-          // @ts-expect-error - spreading args into Date constructor
-          super(...args)
+          const [y, m, d = 1, h = 0, mi = 0, s = 0, ms = 0] = args as number[]
+          super(y, m, d, h, mi, s, ms)
         }
       }
     }

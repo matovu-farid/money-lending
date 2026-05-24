@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Cause } from "effect"
 import BigNumber from "bignumber.js"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
 
 vi.mock("@/lib/db", () => {
   const mockDb = {
@@ -9,6 +10,7 @@ vi.mock("@/lib/db", () => {
     update: vi.fn(),
     delete: vi.fn(),
     transaction: vi.fn(),
+    execute: vi.fn(),
   }
   return { db: mockDb }
 })
@@ -18,24 +20,76 @@ vi.mock("@/services/audit.service", () => ({
 }))
 
 vi.mock("@/services/transaction.service", () => ({
-  postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
-  reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  postJournalEntry: vi.fn((_tx: DrizzleTx, _params: unknown) => Promise.resolve(undefined)),
+  reverseInterestAccrual: vi.fn((_tx: DrizzleTx, _params: unknown) => Promise.resolve(undefined)),
 }))
 
 vi.mock("@/services/auto-post.service", () => ({
-  autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
-  autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  autoPostInterestEarned: vi.fn((_tx: DrizzleTx, _params: unknown) => Promise.resolve(undefined)),
+  autoPostPrincipalRepayment: vi.fn((_tx: DrizzleTx, _params: unknown) => Promise.resolve(undefined)),
 }))
 
-vi.mock("@/services/ledger-queries.service", () => {
-  const BigNumber = require("bignumber.js").default
+vi.mock("@/services/ledger-queries.service", async () => {
+  const { default: BigNumberCtor } = await vi.importActual<typeof import("bignumber.js")>(
+    "bignumber.js"
+  )
   return {
-    getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
+    getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumberCtor(0))),
     getLoanBalancesFromLedger: vi.fn((_loanIds: string[]) => Promise.resolve(new Map())),
     getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
     getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
   }
 })
+
+/** Helper: pull the first failure out of an Exit. */
+function failureError<E>(exit: Exit.Exit<unknown, E>): E | undefined {
+  if (Exit.isFailure(exit)) {
+    const failure = Cause.failureOption(exit.cause)
+    if (failure._tag === "Some") return failure.value
+  }
+  return undefined
+}
+
+/**
+ * Extract the first `.set(...)` argument from each result returned by `update()`.
+ * Mirrors the original test pattern: one set-call per update chain.
+ */
+type UpdateChain = { set: { mock: { calls: unknown[][] } } }
+function extractUpdateSetArgs(
+  updateMock: { mock: { results: Array<{ value: unknown }> } }
+): Array<Record<string, unknown>> {
+  const args: Array<Record<string, unknown>> = []
+  for (const r of updateMock.mock.results) {
+    const chain = r.value as UpdateChain
+    const first = chain.set.mock.calls[0]?.[0]
+    if (first && typeof first === "object") {
+      args.push(first as Record<string, unknown>)
+    }
+  }
+  return args
+}
+
+/**
+ * Extract every `.set(...)` argument across every `update()` result chain
+ * (vs. `extractUpdateSetArgs` which only takes the first set-call per chain).
+ */
+function extractAllUpdateSetArgs(
+  updateMock: { mock: { results: Array<{ value: unknown }> } }
+): Array<Record<string, unknown>> {
+  const args: Array<Record<string, unknown>> = []
+  // mockReturnValue gives back the same chain object on every call, so we
+  // only need to read the set-calls from the first result.
+  const first = updateMock.mock.results[0]
+  if (!first) return args
+  const chain = first.value as UpdateChain
+  for (const callArgs of chain.set.mock.calls) {
+    const arg = callArgs[0]
+    if (arg && typeof arg === "object") {
+      args.push(arg as Record<string, unknown>)
+    }
+  }
+  return args
+}
 
 vi.mock("@/lib/interest/overdue", () => ({
   computeLoanOverdueInfo: vi.fn().mockReturnValue({
@@ -140,7 +194,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -209,7 +263,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -222,10 +276,9 @@ describe("Payment Service", () => {
 
       // Payment completes successfully — loan remains active (no status update called)
       expect(result.id).toBe("pay-1")
-      const setCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
-      const setCallArgs = setCalls.map((setFn: any) => setFn.mock.calls[0]?.[0]).filter(Boolean)
+      const setCallArgs = extractUpdateSetArgs(mockTx.update)
       // No status transition to "fully_paid" since balance is not zero
-      const fullyPaidUpdate = setCallArgs.find((arg: any) => arg.status === "fully_paid")
+      const fullyPaidUpdate = setCallArgs.find((arg) => arg.status === "fully_paid")
       expect(fullyPaidUpdate).toBeUndefined()
     })
 
@@ -280,7 +333,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -295,11 +348,10 @@ describe("Payment Service", () => {
       expect(result.allocation.principalBalanceAfter).toBe("0.00")
 
       // Verify loan status was updated to "fully_paid"
-      const setCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
-      const setCallArgs = setCalls.map((setFn: any) => setFn.mock.calls[0]?.[0]).filter(Boolean)
-      const fullyPaidUpdate = setCallArgs.find((arg: any) => arg.status === "fully_paid")
+      const setCallArgs = extractUpdateSetArgs(mockTx.update)
+      const fullyPaidUpdate = setCallArgs.find((arg) => arg.status === "fully_paid")
       expect(fullyPaidUpdate).toBeDefined()
-      expect(fullyPaidUpdate.status).toBe("fully_paid")
+      expect(fullyPaidUpdate?.status).toBe("fully_paid")
     })
 
     it("recordPayment: rejects zero-amount payments (L2)", async () => {
@@ -323,7 +375,7 @@ describe("Payment Service", () => {
         update: vi.fn(),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -336,7 +388,7 @@ describe("Payment Service", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("ValidationError")
         expect(error.message).toContain("greater than zero")
       }
@@ -363,7 +415,7 @@ describe("Payment Service", () => {
         update: vi.fn(),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -376,7 +428,7 @@ describe("Payment Service", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("ValidationError")
         expect(error.message).toContain("greater than zero")
       }
@@ -403,7 +455,7 @@ describe("Payment Service", () => {
         update: vi.fn(),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -417,7 +469,7 @@ describe("Payment Service", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("ValidationError")
         expect(error.message).toContain("before loan start date")
       }
@@ -454,7 +506,7 @@ describe("Payment Service", () => {
         update: vi.fn(),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
@@ -467,7 +519,7 @@ describe("Payment Service", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("ValidationError")
         expect(error.message).toContain("exceeds total owed")
       }
@@ -489,7 +541,7 @@ describe("Payment Service", () => {
         }),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { editPayment } = await import("@/services/payment.service")
@@ -499,7 +551,7 @@ describe("Payment Service", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("PaymentNotFound")
       }
     })
@@ -550,7 +602,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { editPayment } = await import("@/services/payment.service")
@@ -620,7 +672,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       // Clear the mock so we can check calls from just this test
@@ -684,7 +736,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { deletePayment } = await import("@/services/payment.service")
@@ -760,7 +812,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { deletePayment } = await import("@/services/payment.service")
@@ -826,7 +878,7 @@ describe("Payment Service", () => {
         execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
-        async (cb: any) => cb(mockTx)
+        async (cb: TransactionCallback) => cb(mockTx as unknown as DrizzleTx)
       )
 
       const { deletePayment } = await import("@/services/payment.service")
@@ -837,16 +889,14 @@ describe("Payment Service", () => {
       expect(result).toBeDefined()
 
       // Verify soft-delete happened
-      const updateSetCalls = mockTx.update.mock.results.map((r: any) => r.value.set)
-      const softDeleteArgs = updateSetCalls[0].mock.calls[0][0]
+      const allSetArgs = extractAllUpdateSetArgs(mockTx.update)
+      const softDeleteArgs = allSetArgs[0]
       expect(softDeleteArgs.deletedAt).toBeDefined()
       expect(softDeleteArgs.deletedBy).toBe("actor-1")
 
       // Verify status reverted to active
       // All update().set() calls go through the same mock, check all set call args
-      const setMock = mockTx.update.mock.results[0].value.set
-      const allSetArgs = setMock.mock.calls.map((c: any) => c[0])
-      const activeRevert = allSetArgs.find((args: any) => args?.status === "active")
+      const activeRevert = allSetArgs.find((args) => args?.status === "active")
       expect(activeRevert).toBeDefined()
     })
 
@@ -901,7 +951,7 @@ describe("Payment Service", () => {
       // also include eq(payments.markedWrong, false).
 
       // Track all where calls to inspect conditions passed
-      const whereArgs: any[][] = []
+      const whereArgs: unknown[][] = []
 
       // Main query: returns 1 row
       const mainRow = {
@@ -917,10 +967,7 @@ describe("Payment Service", () => {
         createdAt: new Date(),
       }
 
-      let selectCallCount = 0
-      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation((...args: any[]) => {
-        selectCallCount++
-        const call = selectCallCount
+      ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => {
         return {
           from: vi.fn().mockReturnValue({
             innerJoin: vi.fn().mockReturnValue({
@@ -937,7 +984,7 @@ describe("Payment Service", () => {
                 where: vi.fn().mockReturnValue([{ value: 1 }]),
               }),
             }),
-            where: vi.fn().mockImplementation((...whereConditions: any[]) => {
+            where: vi.fn().mockImplementation((...whereConditions: unknown[]) => {
               whereArgs.push(whereConditions)
               return {
                 orderBy: vi.fn().mockResolvedValue([
@@ -1006,7 +1053,6 @@ describe("Payment Service", () => {
 
     it("uses ledger balance when available", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const BigNumber = require("bignumber.js").default
       const { getLoanBalancesFromLedger } = await import("@/services/ledger-queries.service")
 
       // Mock ledger to return 400000 for loan-1
@@ -1082,7 +1128,6 @@ describe("Payment Service", () => {
 
     it("computes reducing_balance interest from outstanding principal", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const BigNumber = require("bignumber.js").default
       const { getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
       const { computeLoanOverdueInfo } = await import("@/lib/interest/overdue")
       const reducingLoan = { ...mockLoan, loanType: "reducing_balance", termMonths: 12 }
@@ -1212,7 +1257,7 @@ describe("Payment Service", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("DatabaseError")
       }
     })
@@ -1230,7 +1275,7 @@ describe("Payment Service", () => {
     it("returns empty array for user with no payments", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
-      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue([])
+      ;(mockedDb.execute as ReturnType<typeof vi.fn>).mockResolvedValue([])
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
       const result = await Effect.runPromise(getRecentlyCollectedLoans("unknown-user"))
@@ -1254,7 +1299,7 @@ describe("Payment Service", () => {
         },
       ]
 
-      ;(mockedDb.execute as any) = vi.fn().mockResolvedValue(mockRows)
+      ;(mockedDb.execute as ReturnType<typeof vi.fn>).mockResolvedValue(mockRows)
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
       const result = await Effect.runPromise(getRecentlyCollectedLoans("user-1"))
@@ -1269,14 +1314,14 @@ describe("Payment Service", () => {
     it("wraps DB errors in DatabaseError", async () => {
       const { db: mockedDb } = await import("@/lib/db")
 
-      ;(mockedDb.execute as any) = vi.fn().mockRejectedValue(new Error("DB error"))
+      ;(mockedDb.execute as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("DB error"))
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
       const exit = await Effect.runPromiseExit(getRecentlyCollectedLoans("user-1"))
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
+        const error = failureError(exit) as { _tag?: string; message?: string }
         expect(error._tag).toBe("DatabaseError")
       }
     })
@@ -1285,7 +1330,8 @@ describe("Payment Service", () => {
       const { db: mockedDb } = await import("@/lib/db")
 
       const executeMock = vi.fn().mockResolvedValue([])
-      ;(mockedDb.execute as any) = executeMock
+      const executeFn = mockedDb.execute as ReturnType<typeof vi.fn>
+      executeFn.mockImplementation(executeMock)
 
       const { getRecentlyCollectedLoans } = await import("@/services/payment.service")
       await Effect.runPromise(getRecentlyCollectedLoans("user-1"))

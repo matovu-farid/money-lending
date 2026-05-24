@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import { revalidatePath } from "next/cache"
 import {
   createCreditor,
@@ -36,9 +36,9 @@ export const getSystemCapitalAction = withAction({
   effect: () => getSystemCapital(),
 })
 
-export const createCreditorAction = withAction<CreateCreditorInput, any>({
+export const createCreditorAction = withAction({
   permission: "creditor:create",
-  action: async (session, input) => {
+  action: async (session: Session, input: CreateCreditorInput) => {
     if (!input.name?.trim()) return { error: "Creditor name is required" }
     if (!input.contact?.trim()) return { error: "Contact is required" }
     if (!input.address?.trim()) return { error: "Address is required" }
@@ -60,9 +60,9 @@ export async function updateCreditorAction(
   return updateCreditorWrapped({ id, input })
 }
 
-const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInput }, any>({
+const updateCreditorWrapped = withAction({
   permission: "creditor:update",
-  action: async (session, { id, input }) => {
+  action: async (session: Session, { id, input }: { id: string; input: UpdateCreditorInput }) => {
     try {
       const { creditor, txid } = await Effect.runPromise(
         updateCreditorWithTxid(id, input, session.user.id)
@@ -80,9 +80,9 @@ const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInpu
   },
 })
 
-export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithInvestmentInput, any>({
+export const createCreditorWithInvestmentAction = withAction({
   permission: "creditor:create",
-  action: async (session, input) => {
+  action: async (session: Session, input: CreateCreditorWithInvestmentInput) => {
     if (!input.name?.trim()) return { error: "Creditor name is required" }
     if (!input.contact?.trim()) return { error: "Contact is required" }
     if (!input.address?.trim()) return { error: "Address is required" }
@@ -118,9 +118,9 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
   },
 })
 
-export const addInvestmentAction = withAction<AddInvestmentInput, any>({
+export const addInvestmentAction = withAction({
   permission: "creditor:create",
-  action: async (session, input) => {
+  action: async (session: Session, input: AddInvestmentInput) => {
     if (!input.creditorId?.trim()) return { error: "Creditor ID is required" }
     if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
       return { error: "A valid positive amount is required" }
@@ -140,9 +140,9 @@ export const addInvestmentAction = withAction<AddInvestmentInput, any>({
   },
 })
 
-export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentInput, any>({
+export const recordCreditorRepaymentAction = withAction({
   permission: "creditor:update",
-  action: async (session, input) => {
+  action: async (session: Session, input: RecordCreditorRepaymentInput) => {
     if (!input.investmentId?.trim()) return { error: "Investment ID is required" }
     if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
       return { error: "A valid positive amount is required" }
@@ -180,9 +180,9 @@ export const getCreditorMonthlyInterestDueAction = withAction({
   },
 })
 
-export const getCreditorMonthlySummaryAction = withAction<string, any>({
+export const getCreditorMonthlySummaryAction = withAction({
   permission: "creditor:read",
-  action: async (_session, creditorId) => {
+  action: async (_session: Session, creditorId: string) => {
     try {
       const data = await Effect.runPromise(getCreditorMonthlySummary(creditorId))
       return { data }
@@ -192,9 +192,9 @@ export const getCreditorMonthlySummaryAction = withAction<string, any>({
   },
 })
 
-export const getCreditorDashboardAction = withAction<string, any>({
+export const getCreditorDashboardAction = withAction({
   permission: "creditor:read",
-  action: async (_session, creditorId) => {
+  action: async (_session: Session, creditorId: string) => {
     try {
       const data = await Effect.runPromise(getCreditorDashboard(creditorId))
       return { data }
@@ -206,9 +206,9 @@ export const getCreditorDashboardAction = withAction<string, any>({
   },
 })
 
-export const getCreditorRepaymentPortionsAction = withAction<string[], any>({
+export const getCreditorRepaymentPortionsAction = withAction({
   permission: "creditor:read",
-  action: async (_session, repaymentIds) => {
+  action: async (_session: Session, repaymentIds: string[]) => {
     if (repaymentIds.length === 0) return { data: {} }
     try {
       const map = await getCreditorRepaymentPortionsFromLedger(repaymentIds)

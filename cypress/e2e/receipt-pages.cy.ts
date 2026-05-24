@@ -5,6 +5,8 @@
  *
  * These are the printable full-page receipts (not the POS modals).
  */
+import type { DbLoanRow, DbPaymentRow } from "../support/types"
+
 describe("Receipt Pages (Direct URL)", () => {
   let customerId: string
   let loanId: string
@@ -41,7 +43,7 @@ describe("Receipt Pages (Direct URL)", () => {
       cy.url({ timeout: 10000 }).should("include", `/customers/${customerId}`)
     })
 
-    cy.task("db:getLoans").then((loans: any) => {
+    cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
       loanId = loans[0].id
     })
   })
@@ -119,7 +121,7 @@ describe("Receipt Pages (Direct URL)", () => {
         cy.url({ timeout: 10000 }).should("include", `/loans/${loanId}`)
       })
 
-      cy.task("db:getPayments").then((payments: any) => {
+      cy.task<DbPaymentRow[]>("db:getPayments").then((payments) => {
         paymentId = payments[0].id
       })
     })

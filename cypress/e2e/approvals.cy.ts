@@ -3,6 +3,7 @@
  * Covers page rendering, access control, empty state,
  * pending/reviewed request tables, and review dialog interactions.
  */
+import type { DbLoanRow } from "../support/types"
 
 function createCustomerAndLoan(customerName: string, contact: string, principalAmount: string) {
   cy.visit("/customers/new")
@@ -121,7 +122,7 @@ describe("Approvals Page (/approvals)", () => {
       // Create customer and loan
       createCustomerAndLoan("Approval Test Customer", "0771000099", "3000000")
 
-      cy.task("db:getLoans").then((loans: any) => {
+      cy.task<DbLoanRow[]>("db:getLoans").then((loans) => {
         loanId = loans[0].id
 
         // Navigate to loan detail and request a rate change

@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
+import type { db as realDb } from "@/lib/db"
+
+// `db.select()` and `db.insert()` return rich `PgSelectBuilder` /
+// `PgInsertBuilder` types whose chain shape would require modelling many
+// builder methods just to satisfy mocks. Each test only stubs the leaf
+// promise — `as` to the precise return-type at the test/prod boundary keeps
+// the production signature strict while letting the mocks stay terse.
+type DbSelectReturn = ReturnType<typeof realDb.select>
+type DbInsertReturn = ReturnType<typeof realDb.insert>
 
 vi.mock("@/lib/db", () => {
   const mockDb = {
@@ -39,11 +49,11 @@ describe("Category Service", () => {
     // No existing categories
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockResolvedValue([]),
-    } as any)
+    } as unknown as DbSelectReturn)
 
     mockedDb.insert.mockReturnValue({
       values: vi.fn().mockResolvedValue(undefined),
-    } as any)
+    } as unknown as DbInsertReturn)
 
     await Effect.runPromise(seedDefaultCategories())
 
@@ -78,7 +88,7 @@ describe("Category Service", () => {
 
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockResolvedValue(existing),
-    } as any)
+    } as unknown as DbSelectReturn)
 
     await Effect.runPromise(seedDefaultCategories())
 
@@ -102,7 +112,7 @@ describe("Category Service", () => {
       from: vi.fn().mockReturnValue({
         orderBy: vi.fn().mockResolvedValue(mockCategories),
       }),
-    } as any)
+    } as unknown as DbSelectReturn)
 
     const result = await Effect.runPromise(listCategories())
 
@@ -125,7 +135,7 @@ describe("Category Service", () => {
           orderBy: vi.fn().mockResolvedValue(expenseCategories),
         }),
       }),
-    } as any)
+    } as unknown as DbSelectReturn)
 
     const result = await Effect.runPromise(listCategories("expense"))
 
@@ -151,11 +161,11 @@ describe("Category Service", () => {
       values: vi.fn().mockReturnValue({
         returning: vi.fn().mockResolvedValue([mockCategory]),
       }),
-    } as any)
+    } as unknown as DbInsertReturn)
 
-    mockedDb.transaction.mockImplementation(async (fn: any) => {
-      return await fn(mockedDb)
-    })
+    mockedDb.transaction.mockImplementation(
+      async (fn: TransactionCallback) => await fn(mockedDb as unknown as DrizzleTx)
+    )
 
     const result = await Effect.runPromise(
       createCategory({ name: "Transport", type: "expense" }, "actor-1")
@@ -186,7 +196,9 @@ describe("Category Service", () => {
         }),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (fn: any) => fn(mockTx))
+    mockedDb.transaction.mockImplementation(
+      async (fn: TransactionCallback) => fn(mockTx as unknown as DrizzleTx)
+    )
 
     const exit = await Effect.runPromiseExit(deleteCategory("nonexistent", "actor-1"))
 
@@ -195,7 +207,7 @@ describe("Category Service", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("CategoryNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("CategoryNotFound")
       }
     }
   })
@@ -230,8 +242,8 @@ describe("Category Service", () => {
       }),
     }
 
-    mockedDb.transaction.mockImplementation(async (fn: any) => {
-      await fn(mockTx)
+    mockedDb.transaction.mockImplementation(async (fn: TransactionCallback) => {
+      await fn(mockTx as unknown as DrizzleTx)
     })
 
     await Effect.runPromise(deleteCategory("cat-del", "actor-1"))
@@ -269,7 +281,9 @@ describe("Category Service", () => {
         }
       }),
     }
-    mockedDb.transaction.mockImplementation(async (fn: any) => fn(mockTx))
+    mockedDb.transaction.mockImplementation(
+      async (fn: TransactionCallback) => fn(mockTx as unknown as DrizzleTx)
+    )
 
     const exit = await Effect.runPromiseExit(deleteCategory("cat-1", "actor-1"))
 
@@ -278,7 +292,7 @@ describe("Category Service", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("CategoryInUseError")
+        expect((error.value as { _tag?: string })._tag).toBe("CategoryInUseError")
       }
     }
   })
@@ -296,7 +310,7 @@ describe("Category Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([mockCategory]),
       }),
-    } as any)
+    } as unknown as DbSelectReturn)
 
     const result = await Effect.runPromise(getCategoryByName("Interest Earned", "revenue"))
 
@@ -312,7 +326,7 @@ describe("Category Service", () => {
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([]),
       }),
-    } as any)
+    } as unknown as DbSelectReturn)
 
     const exit = await Effect.runPromiseExit(getCategoryByName("Nonexistent", "revenue"))
 
@@ -321,7 +335,7 @@ describe("Category Service", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("CategoryNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("CategoryNotFound")
       }
     }
   })

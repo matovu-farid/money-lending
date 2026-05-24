@@ -1,11 +1,15 @@
 import type { InferSelectModel, InferInsertModel } from "drizzle-orm"
 import type { customers } from "@/lib/db/schema/customers"
 import type { LoanStatus } from "./loan"
+import type { CustomerStatus } from "@/lib/constants"
 
 export type Customer = InferSelectModel<typeof customers>
 export type NewCustomer = InferInsertModel<typeof customers>
 
-export type CustomerStatus = "active" | "blacklisted" | "inactive"
+// `CustomerStatus` is derived from `VALID_CUSTOMER_STATUSES` in `@/lib/constants`
+// (single source of truth). Re-exported so `import type { CustomerStatus } from "@/types"`
+// keeps working.
+export type { CustomerStatus }
 
 export interface CreateCustomerInput {
   id?: string

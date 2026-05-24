@@ -1,15 +1,15 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import {
   getDailyCollections,
   getLoansDueToday,
 } from "@/services/daily-collections.service"
 
-export const getDailyCollectionsAction = withAction<string, any>({
+export const getDailyCollectionsAction = withAction({
   permission: "payment:read",
-  action: async (_session, date) => {
+  action: async (_session: Session, date: string) => {
     if (!date?.trim() || isNaN(Date.parse(date))) {
       return { error: "Invalid date" }
     }

@@ -1,15 +1,32 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { NextRequest } from "next/server"
 import { payments } from "@/lib/db/schema/payments"
+import { loans } from "@/lib/db/schema/loans"
+import type { InferSelectModel } from "drizzle-orm"
+
+// Mocked db chain — keys are populated dynamically inside the mock factory and
+// returned to the caller. We capture this Drizzle-shaped chain in a recursive
+// `unknown`-valued record so we don't need `any`.
+type ChainNode = Record<string, unknown>
+
+// A Drizzle SQL node we walk over in `findColumnNames` to discover column
+// references. Real `SQL` instances expose `.queryChunks`, which may itself
+// hold further `SQL` instances or `Column` references with `.name`/`.table`.
+interface SqlLikeNode {
+  queryChunks?: ReadonlyArray<SqlLikeNode | { name?: string; table?: unknown }>
+}
 
 // ── helpers ────────────────────────────────────────────────────────────
 // Recursively extract column names referenced in a Drizzle SQL node.
-function findColumnNames(node: any): string[] {
-  if (!node) return []
+function findColumnNames(node: unknown): string[] {
+  if (!node || typeof node !== "object") return []
   const cols: string[] = []
-  if (node.queryChunks) {
-    for (const c of node.queryChunks) {
-      if (c.name !== undefined && c.table !== undefined) {
-        cols.push(c.name)
+  const queryChunks = (node as SqlLikeNode).queryChunks
+  if (queryChunks) {
+    for (const c of queryChunks) {
+      const maybeCol = c as { name?: unknown; table?: unknown }
+      if (maybeCol.name !== undefined && maybeCol.table !== undefined) {
+        if (typeof maybeCol.name === "string") cols.push(maybeCol.name)
       } else {
         cols.push(...findColumnNames(c))
       }
@@ -25,28 +42,28 @@ let capturedPaymentsWhere: unknown = undefined
 vi.mock("@/lib/db", () => {
   const mockDb = {
     select: vi.fn().mockImplementation(() => {
-      const chain: Record<string, any> = {}
+      const chain: ChainNode = {}
       chain.select = vi.fn().mockReturnValue(chain)
 
-      chain.from = vi.fn().mockImplementation((table: any) => {
-        const innerChain: Record<string, any> = {}
+      chain.from = vi.fn().mockImplementation((table: unknown) => {
+        const innerChain: ChainNode = {}
 
-        innerChain.where = vi.fn().mockImplementation((...args: any[]) => {
+        innerChain.where = vi.fn().mockImplementation((...args: unknown[]) => {
           // Detect the payments table by checking the table reference
           if (table === payments) {
             capturedPaymentsWhere = args[0]
           }
-          const next: Record<string, any> = {}
+          const next: ChainNode = {}
           next.orderBy = vi.fn().mockImplementation(() => {
-            const thenable: Record<string, any> = {}
-            thenable.then = (resolve: any) => resolve([])
+            const thenable: ChainNode = {}
+            thenable.then = (resolve: (value: unknown[]) => unknown) => resolve([])
             return thenable
           })
-          next.then = (resolve: any) => resolve([])
+          next.then = (resolve: (value: unknown[]) => unknown) => resolve([])
           return next
         })
 
-        innerChain.then = (resolve: any) => resolve([])
+        innerChain.then = (resolve: (value: unknown[]) => unknown) => resolve([])
         return innerChain
       })
 
@@ -87,11 +104,11 @@ vi.mock("@/lib/interest/engine", () => ({
 }))
 
 // ── helpers ────────────────────────────────────────────────────────────
-function buildRequest() {
-  return new Request("http://localhost/api/cron/overdue", {
+function buildRequest(): NextRequest {
+  return new NextRequest("http://localhost/api/cron/overdue", {
     method: "GET",
     headers: { authorization: "Bearer test-secret" },
-  }) as any
+  })
 }
 
 describe("Overdue cron – payment query filters", () => {
@@ -106,7 +123,7 @@ describe("Overdue cron – payment query filters", () => {
     // payments query actually executes.
     const { db } = await import("@/lib/db")
 
-    const fakeLoan = {
+    const fakeLoan: InferSelectModel<typeof loans> = {
       id: "loan-1",
       customerId: "cust-1",
       principalAmount: "500000",
@@ -122,10 +139,11 @@ describe("Overdue cron – payment query filters", () => {
       minPeriodOverride: null,
       issuedBy: "actor-1",
       disbursementSource: "cash",
+      subLocationId: null,
       deletedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      penaltyMultiplier: null,
+      penaltyMultiplier: "0.1000",
       penaltyWaivedBy: null,
       penaltyWaivedAt: null,
       rolledOverFrom: null,
@@ -134,7 +152,6 @@ describe("Overdue cron – payment query filters", () => {
       backdatedBy: null,
       backdatedAt: null,
       backdateNote: null,
-      lowRateReason: null,
     }
 
     // First select() → loans query → return one loan
@@ -145,35 +162,35 @@ describe("Overdue cron – payment query filters", () => {
       selectCallCount++
       const callNum = selectCallCount
 
-      const chain: Record<string, any> = {}
-      chain.from = vi.fn().mockImplementation((table: any) => {
-        const inner: Record<string, any> = {}
+      const chain: ChainNode = {}
+      chain.from = vi.fn().mockImplementation((table: unknown) => {
+        const inner: ChainNode = {}
 
-        inner.where = vi.fn().mockImplementation((...args: any[]) => {
+        inner.where = vi.fn().mockImplementation((...args: unknown[]) => {
           if (table === payments) {
             capturedPaymentsWhere = args[0]
           }
 
-          const next: Record<string, any> = {}
+          const next: ChainNode = {}
           next.orderBy = vi.fn().mockImplementation(() => {
-            const thenable: Record<string, any> = {}
-            thenable.then = (resolve: any) => resolve([])
+            const thenable: ChainNode = {}
+            thenable.then = (resolve: (value: unknown[]) => unknown) => resolve([])
             return thenable
           })
 
           // For loans query, return the fake loan
           if (callNum === 1) {
-            next.then = (resolve: any) => resolve([fakeLoan])
-            inner.then = (resolve: any) => resolve([fakeLoan])
+            next.then = (resolve: (value: unknown[]) => unknown) => resolve([fakeLoan])
+            inner.then = (resolve: (value: unknown[]) => unknown) => resolve([fakeLoan])
           } else {
-            next.then = (resolve: any) => resolve([])
-            inner.then = (resolve: any) => resolve([])
+            next.then = (resolve: (value: unknown[]) => unknown) => resolve([])
+            inner.then = (resolve: (value: unknown[]) => unknown) => resolve([])
           }
 
           return next
         })
 
-        inner.then = (resolve: any) => resolve([])
+        inner.then = (resolve: (value: unknown[]) => unknown) => resolve([])
         return inner
       })
 

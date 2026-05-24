@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { db } from "@/lib/db"
+
+type LedgerQueryDb = Pick<typeof db, "select">
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn() }
@@ -13,7 +16,7 @@ vi.mock("drizzle-orm", async () => {
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 /** Build a chained mock for select().from().innerJoin().where().groupBy() */
-function ledgerQuery(rows: any[]) {
+function ledgerQuery<T>(rows: T[]) {
   return {
     from: vi.fn().mockReturnValue({
       innerJoin: vi.fn().mockReturnValue({
@@ -26,22 +29,22 @@ function ledgerQuery(rows: any[]) {
 }
 
 /** Create a mock queryDb object that resolves the given rows */
-function mockQueryDb(rows: any[]) {
-  return { select: vi.fn().mockReturnValue(ledgerQuery(rows)) }
+function mockQueryDb<T>(rows: T[]): LedgerQueryDb {
+  return { select: vi.fn().mockReturnValue(ledgerQuery(rows)) } as unknown as LedgerQueryDb
 }
 
 /** Shorthand to set up db.select to return the given rows through the chain */
-function setupDbLedger(mockedDb: any, rows: any[]) {
+function setupDbLedger<T>(mockedDb: { select: ReturnType<typeof vi.fn> }, rows: T[]) {
   mockedDb.select.mockReturnValue(ledgerQuery(rows))
 }
 
 describe("ledger-queries.service", () => {
-  let mockedDb: any
+  let mockedDb: { select: ReturnType<typeof vi.fn> }
 
   beforeEach(async () => {
     vi.clearAllMocks()
     const dbMod = await import("@/lib/db")
-    mockedDb = dbMod.db as any
+    mockedDb = dbMod.db as unknown as { select: ReturnType<typeof vi.fn> }
   })
 
   // ── getLoanBalancesFromLedger ────────────────────────────────────────
@@ -67,7 +70,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalancesFromLedger(
         ["loan-1"],
         undefined,
-        qdb as any
+        qdb
       )
       expect(result.get("loan-1")!.toFixed(0)).toBe("400000")
     })
@@ -84,7 +87,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalancesFromLedger(
         ["loan-1", "loan-2"],
         undefined,
-        qdb as any
+        qdb
       )
       expect(result.get("loan-1")!.toFixed(0)).toBe("800000")
       expect(result.get("loan-2")!.toFixed(0)).toBe("500000")
@@ -101,7 +104,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalancesFromLedger(
         ["loan-1"],
         undefined,
-        qdb as any
+        qdb
       )
       expect(result.size).toBe(1)
       expect(result.get("loan-1")!.toFixed(0)).toBe("300000")
@@ -117,7 +120,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalancesFromLedger(
         ["loan-1"],
         new Date("2026-01-01"),
-        qdb as any
+        qdb
       )
       expect(result.get("loan-1")!.toFixed(0)).toBe("500000")
     })
@@ -149,7 +152,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalanceFromLedger(
         "loan-1",
         undefined,
-        qdb as any
+        qdb
       )
       expect(result.toFixed(0)).toBe("500000")
     })
@@ -162,7 +165,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalanceFromLedger(
         "nonexistent",
         undefined,
-        qdb as any
+        qdb
       )
       expect(result.toFixed(0)).toBe("0")
     })
@@ -178,7 +181,7 @@ describe("ledger-queries.service", () => {
       const result = await getLoanBalanceFromLedger(
         "loan-1",
         asOf,
-        qdb as any
+        qdb
       )
       expect(result.toFixed(0)).toBe("100000")
     })
@@ -311,7 +314,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getCreditorBalancesFromLedger(
         ["inv-1"],
-        qdb as any
+        qdb
       )
       expect(result.get("inv-1")!.toFixed(0)).toBe("1000000")
     })
@@ -326,7 +329,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getCreditorBalancesFromLedger(
         ["inv-1"],
-        qdb as any
+        qdb
       )
       expect(result.get("inv-1")!.toFixed(0)).toBe("700000")
     })
@@ -340,7 +343,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getCreditorBalancesFromLedger(
         ["inv-1"],
-        qdb as any
+        qdb
       )
       expect(result.size).toBe(0)
     })
@@ -383,7 +386,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1"],
-        qdb as any
+        qdb
       )
       const portions = result.get("pay-1")!
       expect(portions.interestPortion).toBe("25000.00")
@@ -404,7 +407,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1"],
-        qdb as any
+        qdb
       )
       const portions = result.get("pay-1")!
       expect(portions.interestPortion).toBe("0.00")
@@ -431,7 +434,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1"],
-        qdb as any
+        qdb
       )
       const portions = result.get("pay-1")!
       expect(portions.interestPortion).toBe("20000.00")
@@ -458,7 +461,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1"],
-        qdb as any
+        qdb
       )
       expect(result.get("pay-1")!.interestPortion).toBe("20000.00")
     })
@@ -483,7 +486,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1"],
-        qdb as any
+        qdb
       )
       expect(result.get("pay-1")!.principalPortion).toBe("40000.00")
     })
@@ -502,7 +505,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1"],
-        qdb as any
+        qdb
       )
       expect(result.size).toBe(0)
     })
@@ -539,7 +542,7 @@ describe("ledger-queries.service", () => {
       ])
       const result = await getPaymentPortionsFromLedger(
         ["pay-1", "pay-2"],
-        qdb as any
+        qdb
       )
       expect(result.get("pay-1")!.interestPortion).toBe("10000.00")
       expect(result.get("pay-1")!.principalPortion).toBe("40000.00")

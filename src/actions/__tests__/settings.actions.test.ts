@@ -27,14 +27,13 @@ vi.mock("@/lib/db/schema/settings", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, requireRole, checkPermission } from "@/lib/action-utils"
+import { getSession, checkPermission } from "@/lib/action-utils"
 import { db } from "@/lib/db"
 
 import { getSettingsAction, updateSettingAction } from "../settings.actions"
 
 import { superAdminSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
-const mockRequireRole = vi.mocked(requireRole)
 const mockCheckPermission = vi.mocked(checkPermission)
 
 const fakeSession = superAdminSession
@@ -64,7 +63,7 @@ describe("Settings Actions", () => {
       mockGetSession.mockResolvedValue(fakeSession)
       vi.mocked(db.select).mockReturnValueOnce({
         from: vi.fn().mockRejectedValueOnce(new Error("db fail")),
-      } as any)
+      } as unknown as ReturnType<typeof db.select>)
       const result = await getSettingsAction()
       expect(result).toEqual({ error: "Failed to load settings" })
     })
@@ -90,7 +89,7 @@ describe("Settings Actions", () => {
       mockCheckPermission.mockResolvedValue(null)
       const result = await updateSettingAction({ key: "bogus_key", value: "0.12" })
       expect(result).toHaveProperty("error")
-      expect((result as any).error).toContain("Invalid setting key")
+      expect((result as { error: string }).error).toContain("Invalid setting key")
     })
 
     it("returns error for empty value", async () => {

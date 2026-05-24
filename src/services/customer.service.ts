@@ -4,9 +4,10 @@ import { customers } from "@/lib/db/schema/customers"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { eq, ilike, inArray, and, count, isNull, desc, sql } from "drizzle-orm"
+import { eq, ilike, inArray, and, count, isNull, desc } from "drizzle-orm"
 import { DatabaseError, CustomerNotFound } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
+import { getCurrentTxid } from "@/lib/db-txid"
 import { writeAuditLog } from "./audit.service"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
 import { formatAmount } from "@/lib/interest/engine"
@@ -61,10 +62,7 @@ export const createCustomerWithTxid = (
             address: input.address,
           })
           .returning()
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { customer, txid }
       }),
     catch: (e) => new DatabaseError({ cause: e }),
@@ -130,10 +128,7 @@ export const updateCustomerWithTxid = (
           .where(eq(customers.id, id))
           .returning()
         if (!customer) throw new CustomerNotFound({ id })
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { customer, txid }
       }),
     catch: (e) => {
@@ -345,10 +340,7 @@ export const changeCustomerStatusWithTxid = (
           afterValue: JSON.stringify({ status: newStatus, reason }),
         })
 
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+        const txid = await getCurrentTxid(tx)
         return { customer: updated, txid }
       })
     },

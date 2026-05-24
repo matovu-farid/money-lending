@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useMemo } from "react"
 import {
   Card,
   CardContent,
@@ -24,21 +24,25 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
     q.from({ ba: bankAccountCollection }).select(({ ba }) => ba)
   )
 
-  const bsData: BalanceSheetData = data ?? {
-    asOf: period,
-    assets: {
-      cashBalance: "0",
-      bankBalance: "0",
-      strongRoomBalance: "0",
-      totalLoansOutstanding: "0",
-      interestReceivable: "0",
-      seizedCollateralValue: "0",
-      totalAssets: "0",
-      bankAccountBalances: {},
-    },
-    liabilities: { totalCreditorBalances: "0" },
-    equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },
-  }
+  const bsData: BalanceSheetData = useMemo(
+    () =>
+      data ?? {
+        asOf: period,
+        assets: {
+          cashBalance: "0",
+          bankBalance: "0",
+          strongRoomBalance: "0",
+          totalLoansOutstanding: "0",
+          interestReceivable: "0",
+          seizedCollateralValue: "0",
+          totalAssets: "0",
+          bankAccountBalances: {},
+        },
+        liabilities: { totalCreditorBalances: "0" },
+        equity: { shareCapital: "0", retainedEarnings: "0", totalEquity: "0" },
+      },
+    [data, period]
+  )
 
   const onExport = useCallback(async (format: "pdf" | "excel") => {
     if (!bsData) throw new Error("No data")

@@ -27,39 +27,6 @@ const makePaymentRow = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 })
 
-const makeLoan = (overrides: Record<string, unknown> = {}) => ({
-  id: "loan-1",
-  customerId: "cust-1",
-  principalAmount: "1000000.00",
-  issuanceFee: "0.00",
-
-  interestRate: "0.1000",
-  minInterestDays: 30,
-  startDate: new Date("2026-01-01T00:00:00.000Z"),
-  status: "active",
-  interestRateOverride: null,
-  minPeriodOverride: null,
-  issuedBy: "actor-1",
-  disbursementSource: "cash",
-  loanType: "perpetual",
-  termMonths: null,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  deletedAt: null,
-  ...overrides,
-})
-
-const makeCustomer = (overrides: Record<string, unknown> = {}) => ({
-  id: "cust-1",
-  fullName: "John Doe",
-  contact: "+256700000000",
-  address: "Kampala",
-  status: "active",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  ...overrides,
-})
-
 // Shape returned by the new innerJoin query in getLoansDueToday
 const makeLoanWithCustomer = (overrides: Record<string, unknown> = {}) => ({
   id: "loan-1",

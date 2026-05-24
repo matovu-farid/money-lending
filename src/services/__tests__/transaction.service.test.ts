@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import type * as TransactionService from "@/services/transaction.service"
+import type { db } from "@/lib/db"
+import type { DrizzleTx, TransactionCallback } from "./_test-helpers"
+
+type RealDb = typeof db
+type DbMocks = {
+  [K in keyof RealDb]: ReturnType<typeof vi.fn>
+}
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -15,25 +23,25 @@ vi.mock("@/services/audit.service", () => ({
 }))
 
 describe("Transaction Service — DB operations (mocked)", () => {
-  let mockedDb: any
-  let mockedWriteAuditLog: any
+  let mockedDb: DbMocks
+  let mockedWriteAuditLog: ReturnType<typeof vi.fn>
 
-  let recordExpense: any
-  let recordIncome: any
-  let listTransactions: any
-  let getTransactionById: any
-  let deleteTransaction: any
-  let autoPostInterestEarned: any
-  let autoPostInterestExpense: any
-  let getPaymentPortionsFromLedger: any
-  let getCreditorRepaymentPortionsFromLedger: any
+  let recordExpense: typeof TransactionService.recordExpense
+  let recordIncome: typeof TransactionService.recordIncome
+  let listTransactions: typeof TransactionService.listTransactions
+  let getTransactionById: typeof TransactionService.getTransactionById
+  let deleteTransaction: typeof TransactionService.deleteTransaction
+  let autoPostInterestEarned: typeof TransactionService.autoPostInterestEarned
+  let autoPostInterestExpense: typeof TransactionService.autoPostInterestExpense
+  let getPaymentPortionsFromLedger: typeof TransactionService.getPaymentPortionsFromLedger
+  let getCreditorRepaymentPortionsFromLedger: typeof TransactionService.getCreditorRepaymentPortionsFromLedger
 
   beforeEach(async () => {
     vi.clearAllMocks()
     const dbMod = await import("@/lib/db")
-    mockedDb = dbMod.db as any
+    mockedDb = dbMod.db as unknown as DbMocks
     const auditMod = await import("@/services/audit.service")
-    mockedWriteAuditLog = auditMod.writeAuditLog as any
+    mockedWriteAuditLog = auditMod.writeAuditLog as unknown as ReturnType<typeof vi.fn>
     const svc = await import("@/services/transaction.service")
     svc.__resetCategoryCacheForTests()
     recordExpense = svc.recordExpense
@@ -71,8 +79,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
     description: "Application fee",
   }
 
-  function makeTxMock(overrides?: { insertResult?: any }) {
-    const mockTx: any = {
+  type TxMock = {
+    select: ReturnType<typeof vi.fn>
+    insert: ReturnType<typeof vi.fn>
+    delete?: ReturnType<typeof vi.fn>
+  }
+
+  function makeTxMock(overrides?: { insertResult?: Record<string, unknown> }): TxMock {
+    const mockTx: TxMock = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn().mockResolvedValue([{ id: "cat-cash", name: "Cash", type: "asset", isDefault: true }]),
@@ -87,11 +101,13 @@ describe("Transaction Service — DB operations (mocked)", () => {
     return mockTx
   }
 
-  function setupTransaction(txMock: any) {
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+  function setupTransaction(txMock: object) {
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
   }
 
-  function setupDbSelect(rows: any[]) {
+  function setupDbSelect<T>(rows: T[]) {
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(rows),
@@ -170,7 +186,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
         },
         "actor-1"
       )
-    ) as any
+    )
 
     expect(result.description).toBeNull()
   })
@@ -205,7 +221,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
         },
         "actor-1"
       )
-    ) as any
+    )
 
     expect(result).toEqual(mockIncomeTransaction)
     expect(result.type).toBe("credit")
@@ -245,7 +261,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("getTransactionById: returns a transaction by ID", async () => {
     setupDbSelect([mockTransaction])
 
-    const result = await Effect.runPromise(getTransactionById("txn-1")) as any
+    const result = await Effect.runPromise(getTransactionById("txn-1"))
 
     expect(result).toEqual(mockTransaction)
     expect(result.id).toBe("txn-1")
@@ -262,7 +278,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("TransactionNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("TransactionNotFound")
       }
     }
   })
@@ -272,12 +288,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("deleteTransaction: deletes transaction and writes audit log", async () => {
     setupDbSelect([mockTransaction])
 
-    const txMock: any = {
+    const txMock = {
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
 
     await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
 
@@ -311,7 +329,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("TransactionNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("TransactionNotFound")
       }
     }
   })
@@ -336,7 +354,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("TransactionNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("TransactionNotFound")
       }
     }
     // Verify no actual deletion happened (transaction was never called)
@@ -361,7 +379,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("TransactionNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("TransactionNotFound")
       }
     }
     expect(mockedDb.transaction).not.toHaveBeenCalled()
@@ -371,12 +389,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
     // mockTransaction has referenceType: null — should be deletable
     setupDbSelect([mockTransaction])
 
-    const txMock: any = {
+    const txMock = {
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
 
     await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
 
@@ -396,7 +416,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
     categoryName: "Application Fees",
   }
 
-  function setupListTransactions(rows: any[], total: number) {
+  function setupListTransactions<T>(rows: T[], total: number) {
     const dataSelect = {
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -420,8 +440,8 @@ describe("Transaction Service — DB operations (mocked)", () => {
     }
 
     mockedDb.select
-      .mockReturnValueOnce(dataSelect as any)
-      .mockReturnValueOnce(countSelect as any)
+      .mockReturnValueOnce(dataSelect)
+      .mockReturnValueOnce(countSelect)
   }
 
   it("listTransactions: returns data and total with empty filters", async () => {
@@ -429,7 +449,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const result = await Effect.runPromise(
       listTransactions({}, 1, 20)
-    ) as any
+    )
 
     expect(result.data).toHaveLength(2)
     expect(result.total).toBe(2)
@@ -442,7 +462,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const result = await Effect.runPromise(
       listTransactions({ type: "debit" }, 1, 20)
-    ) as any
+    )
 
     expect(result.data).toHaveLength(1)
     expect(result.total).toBe(1)
@@ -454,7 +474,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const result = await Effect.runPromise(
       listTransactions({ dateFrom: "2026-01-01", dateTo: "2026-03-31" }, 1, 20)
-    ) as any
+    )
 
     expect(result.data).toHaveLength(1)
     expect(result.total).toBe(1)
@@ -465,7 +485,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const result = await Effect.runPromise(
       listTransactions({}, 2, 20)
-    ) as any
+    )
 
     // Page 2 with pageSize 20 should still return whatever the mock gives
     expect(result.data).toHaveLength(1)
@@ -477,7 +497,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
     const result = await Effect.runPromise(
       listTransactions({ type: "credit" }, 1, 20)
-    ) as any
+    )
 
     expect(result.data).toEqual([])
     expect(result.total).toBe(0)
@@ -510,7 +530,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("autoPostInterestEarned: inserts debit+credit transactions when categories exist", async () => {
     const mockCashCategory = { id: "cat-cash", name: "Cash", type: "asset", isDefault: true }
     const mockInterestCategory = { id: "cat-interest", name: "Interest Earned", type: "revenue", isDefault: true }
-    const txMock: any = {
+    const txMock = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn()
@@ -523,7 +543,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       }),
     }
 
-    await autoPostInterestEarned(txMock, {
+    await autoPostInterestEarned(txMock as unknown as DrizzleTx, {
       amount: "100000",
       loanId: "loan-1",
       paymentId: "payment-1",
@@ -561,7 +581,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("autoPostInterestEarned: auto-creates missing categories and still posts entries", async () => {
     const createdCashCat = { id: "cat-cash-new", name: "Cash", type: "asset", isDefault: true }
     const createdInterestCat = { id: "cat-interest-new", name: "Interest Earned", type: "revenue", isDefault: true }
-    const txMock: any = {
+    const txMock = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn()
@@ -592,7 +612,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
         }),
     }
 
-    await autoPostInterestEarned(txMock, {
+    await autoPostInterestEarned(txMock as unknown as DrizzleTx, {
       amount: "100000",
       loanId: "loan-1",
       paymentId: "payment-1",
@@ -609,7 +629,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("autoPostInterestExpense: inserts debit+credit transactions when categories exist", async () => {
     const mockInterestExpCat = { id: "cat-interest-exp", name: "Interest Payments", type: "expense", isDefault: true }
     const mockCashCategory = { id: "cat-cash", name: "Cash", type: "asset", isDefault: true }
-    const txMock: any = {
+    const txMock = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn()
@@ -622,7 +642,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       }),
     }
 
-    await autoPostInterestExpense(txMock, {
+    await autoPostInterestExpense(txMock as unknown as DrizzleTx, {
       amount: "50000",
       investmentId: "inv-1",
       repaymentDate: "2026-03-01",
@@ -655,7 +675,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
   it("autoPostInterestExpense: auto-creates missing categories and still posts entries", async () => {
     const createdInterestExpCat = { id: "cat-interest-exp-new", name: "Interest Payments", type: "expense", isDefault: true }
     const createdCashCat = { id: "cat-cash-new", name: "Cash", type: "asset", isDefault: true }
-    const txMock: any = {
+    const txMock = {
       select: vi.fn().mockReturnValue({
         from: vi.fn().mockReturnValue({
           where: vi.fn()
@@ -686,7 +706,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
         }),
     }
 
-    await autoPostInterestExpense(txMock, {
+    await autoPostInterestExpense(txMock as unknown as DrizzleTx, {
       amount: "50000",
       investmentId: "inv-1",
       repaymentDate: "2026-03-01",
@@ -699,7 +719,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
 
   // ── getPaymentPortionsFromLedger ─────────────────────────────────────
 
-  function setupLedgerPortionsSelect(rows: any[]) {
+  function setupLedgerPortionsSelect<T>(rows: T[]) {
     mockedDb.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
         innerJoin: vi.fn().mockReturnValue({
@@ -910,7 +930,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       const error = Cause.failureOption(exit.cause)
       expect(error._tag).toBe("Some")
       if (error._tag === "Some") {
-        expect((error.value as any)._tag).toBe("TransactionNotFound")
+        expect((error.value as { _tag?: string })._tag).toBe("TransactionNotFound")
       }
     }
     expect(mockedDb.transaction).not.toHaveBeenCalled()
@@ -923,12 +943,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
     }
     setupDbSelect([otherUserTransaction])
 
-    const txMock: any = {
+    const txMock = {
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
 
     await Effect.runPromise(deleteTransaction("txn-1", "actor-1", "admin"))
 
@@ -943,12 +965,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
     }
     setupDbSelect([otherUserTransaction])
 
-    const txMock: any = {
+    const txMock = {
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
 
     await Effect.runPromise(deleteTransaction("txn-1", "actor-1", "superAdmin"))
 
@@ -990,12 +1014,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
     }
     setupDbSelect([journalTxn])
 
-    const txMock: any = {
+    const txMock = {
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
 
     await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
 
@@ -1011,12 +1037,14 @@ describe("Transaction Service — DB operations (mocked)", () => {
     }
     setupDbSelect([legacyTxn])
 
-    const txMock: any = {
+    const txMock = {
       delete: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue(undefined),
       }),
     }
-    mockedDb.transaction.mockImplementation(async (cb: any) => cb(txMock))
+    mockedDb.transaction.mockImplementation(
+      async (cb: TransactionCallback) => cb(txMock as unknown as DrizzleTx)
+    )
 
     await Effect.runPromise(deleteTransaction("txn-1", "actor-1"))
 

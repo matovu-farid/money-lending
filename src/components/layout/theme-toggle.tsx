@@ -2,17 +2,21 @@
 
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
+
+// Subscription that never fires — the server snapshot returning a different
+// value than the client snapshot is exactly how `useSyncExternalStore` signals
+// "hydration boundary", and the canonical React-19-recommended replacement for
+// the older `useEffect(() => setMounted(true), [])` pattern.
+const noopSubscribe = () => () => {}
+const getMountedClient = () => true
+const getMountedServer = () => false
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = useState(false)
+  const mounted = useSyncExternalStore(noopSubscribe, getMountedClient, getMountedServer)
 
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  // Avoid hydration mismatch — render nothing until mounted
+  // Avoid hydration mismatch — render a stub until mounted on the client
   if (!mounted) {
     return (
       <div className="h-8 w-8 rounded-md" aria-hidden="true" />

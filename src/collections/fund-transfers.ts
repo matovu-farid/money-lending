@@ -2,7 +2,6 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   createFundTransferAction,
   createCapitalInjectionAction,
@@ -13,7 +12,7 @@ import type {
 } from "@/types/fund-transfer"
 import type { DepositLocation } from "@/types/common"
 import { fundTransferSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -29,11 +28,7 @@ export const fundTransferCollection = createCollection(
     id: "fund-transfers",
     schema: fundTransferSchema,
     getKey: (transfer) => transfer.id,
-    shapeOptions: {
-      url: shapeUrl("fund_transfers"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("fund_transfers"),
-    },
+    shapeOptions: electricShapeOptionsFor("fund_transfers"),
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       let txid: number

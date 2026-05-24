@@ -5,6 +5,9 @@ import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp, clearCache
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
+import type { SessionUser } from "@/lib/action-utils"
+import { narrowRole } from "@/lib/action-utils"
+import type { UserRole } from "@/types"
 
 const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
 
@@ -67,7 +70,10 @@ export async function proxy(request: NextRequest) {
 
   const isTestEnv = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
   let emailVerified = session.user.emailVerified
-  let role = (session.user as Record<string, unknown>).role as string | undefined
+  // Better Auth's TS surface doesn't include `role` on its user type — the
+  // admin plugin adds it at runtime — so we widen via SessionUser to access
+  // it without a structural cast.
+  let role: UserRole | undefined = (session.user as SessionUser).role ?? undefined
 
   // Re-check the DB when the session holds potentially stale values.
   // The cookie cache is also stale-by-design (refreshes every cookieCache
@@ -83,10 +89,11 @@ export async function proxy(request: NextRequest) {
           setTimeout(() => reject(new Error("user lookup timed out")), DB_LOOKUP_TIMEOUT_MS)
         ),
       ])
-      const dbUser = (rows as unknown as Array<{ role: string; email_verified: boolean }>)[0]
+      const dbUser = (rows as unknown as Array<{ role: string | null; email_verified: boolean }>)[0]
       if (dbUser) {
         if (dbUser.email_verified) emailVerified = true
-        if (dbUser.role && dbUser.role !== "unassigned") role = dbUser.role
+        const narrowed = narrowRole(dbUser.role)
+        if (narrowed !== "unassigned") role = narrowed
       }
     } catch (err) {
       // Fall through with whatever the session already has — better to send

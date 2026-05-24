@@ -13,7 +13,6 @@ import {
 } from "@/services/creditor.service"
 import { CreditorNotFound, InvestmentNotFound } from "@/lib/errors"
 import { auditLog } from "@/lib/db/schema/audit"
-import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import { transactions } from "@/lib/db/schema/transactions"
 import { eq } from "drizzle-orm"
@@ -416,7 +415,7 @@ describe("Creditor Service (integration)", { timeout: 30_000 }, () => {
       ),
     )
 
-    const repayment = await Effect.runPromise(
+    await Effect.runPromise(
       recordCreditorRepayment(
         {
           investmentId: investment.id,

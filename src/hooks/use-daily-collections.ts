@@ -13,9 +13,13 @@ export function useDailyCollections(date: string) {
     [date]
   )
   const row = data?.[0]
-  const summary: DailyCollectionsSummary | undefined = row
-    ? { ...row, _key: undefined } as unknown as DailyCollectionsSummary
-    : undefined
+  // Strip the synthetic `_key` Electric uses to satisfy `getKey` requirements
+  // (it's not part of the DailyCollectionsSummary contract).
+  let summary: DailyCollectionsSummary | undefined
+  if (row) {
+    const { _key: _unused, ...rest } = row
+    summary = rest
+  }
   return { data: summary, isLoading }
 }
 

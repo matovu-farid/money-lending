@@ -162,7 +162,7 @@ export const deleteCategory = (
           .from(transactionCategories)
           .where(eq(transactionCategories.id, id))
 
-        if (!category) throw { _tag: "CategoryNotFound", id }
+        if (!category) throw new CategoryNotFound({ id })
 
         const [result] = await tx
           .select({ count: count() })
@@ -170,7 +170,7 @@ export const deleteCategory = (
           .where(eq(transactions.categoryId, id))
 
         const usageCount = Number(result?.count ?? 0)
-        if (usageCount > 0) throw { _tag: "CategoryInUseError", categoryId: id }
+        if (usageCount > 0) throw new CategoryInUseError({ categoryId: id })
 
         await tx
           .delete(transactionCategories)
@@ -186,10 +186,9 @@ export const deleteCategory = (
         })
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "CategoryNotFound") return new CategoryNotFound({ id: e.id })
-      if (e?._tag === "CategoryInUseError")
-        return new CategoryInUseError({ categoryId: e.categoryId })
+    catch: (e: unknown) => {
+      if (e instanceof CategoryNotFound) return e
+      if (e instanceof CategoryInUseError) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -244,13 +243,12 @@ export const getCategoryByName = (
         )
 
       if (!category)
-        throw { _tag: "CategoryNotFound", id: `${type}:${name}` }
+        throw new CategoryNotFound({ id: `${type}:${name}` })
 
       return category
     },
-    catch: (e: any) => {
-      if (e?._tag === "CategoryNotFound")
-        return new CategoryNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof CategoryNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })

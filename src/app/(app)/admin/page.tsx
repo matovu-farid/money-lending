@@ -415,8 +415,9 @@ function InvitationsSection({
       setEmail("")
       setInviteeName("")
       setInviteRole("")
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to send invitation")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send invitation"
+      toast.error(message)
     } finally {
       setIsSending(false)
     }
@@ -427,8 +428,9 @@ function InvitationsSection({
       const tx = invitationCollection.delete(invitationId)
       await tx.isPersisted.promise
       toast.success("Invitation revoked")
-    } catch (err: any) {
-      toast.error(err.message ?? "Failed to revoke invitation")
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to revoke invitation"
+      toast.error(message)
     }
   }
 

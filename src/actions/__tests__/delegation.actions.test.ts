@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { Session } from "@/lib/with-action"
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
@@ -7,20 +8,27 @@ vi.mock("@/lib/action-utils", () => ({
   checkPermission: vi.fn().mockResolvedValue(null),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
-    if ("_tag" in error && typeof (error as any)._tag === "string") {
-      return (error as any)._tag
+    if ("_tag" in error) {
+      const tag = (error as { _tag: unknown })._tag
+      if (typeof tag === "string") return tag
     }
     return undefined
   },
 }))
 
+// Minimal withAction stub that bypasses real auth/permission/IP-allowlist
+// machinery and just invokes the inner classic action. Typed using the
+// concrete shapes the action delegate expects.
+type ClassicActionOpts<TInput, TResult> = {
+  permission?: string
+  forbiddenMessage?: string
+  action: (session: Session, input: TInput) => Promise<TResult>
+}
 vi.mock("@/lib/with-action", () => ({
-  withAction: (opts: any) => {
-    return async (input?: any) => {
-      const session = { user: { id: "test-user", role: "admin" } }
-      if (opts.action) {
-        return opts.action(session, input ?? {})
-      }
+  withAction: <TInput, TResult>(opts: ClassicActionOpts<TInput, TResult>) => {
+    return async (input?: TInput) => {
+      const session = { user: { id: "test-user", role: "admin" } } as unknown as Session
+      return opts.action(session, (input ?? ({} as TInput)))
     }
   },
 }))
@@ -61,7 +69,9 @@ describe("createDelegationAction", () => {
 
   it("succeeds and returns data", async () => {
     const mockData = { id: "del-1", userId: "user-1" }
-    vi.mocked(createDelegation).mockResolvedValue(mockData as any)
+    vi.mocked(createDelegation).mockResolvedValue(
+      mockData as unknown as Awaited<ReturnType<typeof createDelegation>>,
+    )
 
     const result = await createDelegationAction({ id: "del-1", userId: "user-1" })
     expect(result).toEqual({ data: mockData })
@@ -88,7 +98,9 @@ describe("revokeDelegationAction", () => {
 
   it("succeeds and returns data", async () => {
     const mockData = { id: "del-1", revoked: true }
-    vi.mocked(revokeDelegation).mockResolvedValue(mockData as any)
+    vi.mocked(revokeDelegation).mockResolvedValue(
+      mockData as unknown as Awaited<ReturnType<typeof revokeDelegation>>,
+    )
 
     const result = await revokeDelegationAction({ delegationId: "del-1" })
     expect(result).toEqual({ data: mockData })
@@ -110,7 +122,9 @@ describe("listDelegationsAction", () => {
 
   it("returns data on success", async () => {
     const mockData = [{ id: "del-1" }, { id: "del-2" }]
-    vi.mocked(listDelegations).mockResolvedValue(mockData as any)
+    vi.mocked(listDelegations).mockResolvedValue(
+      mockData as unknown as Awaited<ReturnType<typeof listDelegations>>,
+    )
 
     const result = await listDelegationsAction()
     expect(result).toEqual({ data: mockData })

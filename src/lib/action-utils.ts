@@ -8,6 +8,27 @@ import { delegations } from "@/lib/db/schema/delegations"
 import { eq, isNull, and } from "drizzle-orm"
 import type { Permission } from "@/types"
 
+// ---------------------------------------------------------------------------
+// Session types
+// ---------------------------------------------------------------------------
+//
+// Better Auth's TS surface doesn't include `role` on its user type — the field
+// is added at runtime by the `admin` plugin. We widen the inferred user shape
+// here so every consumer of `getSession()` sees `role` without resorting to
+// structural casts at every callsite.
+
+type BetterAuthSession = NonNullable<
+  Awaited<ReturnType<typeof auth.api.getSession>>
+>
+
+export type SessionUser = BetterAuthSession["user"] & {
+  role?: UserRole | null
+}
+
+export type Session = Omit<BetterAuthSession, "user"> & {
+  user: SessionUser
+}
+
 /**
  * Get the current authenticated session, or null if not logged in.
  *
@@ -15,16 +36,29 @@ import type { Permission } from "@/types"
  * the same request reuse a single DB round-trip to better-auth's
  * session validator (which can be ~1s on remote DBs).
  */
-export const getSession = cache(async () => {
+export const getSession = cache(async (): Promise<Session | null> => {
   const session = await auth.api.getSession({ headers: await headers() })
-  return session?.user ? session : null
+  // The admin plugin attaches `role` to user at runtime; widen via Session.
+  return session?.user ? (session as Session) : null
 })
 
 /**
  * Extract the user's role from a session, defaulting to "unassigned".
+ * Accepts the widened Session shape as well as ad-hoc `{ user: { role } }`
+ * objects used in tests and at the proxy boundary where role originates
+ * as a plain DB string.
  */
-export function getUserRole(session: { user: Record<string, unknown> }): UserRole {
-  return (session.user.role ?? "unassigned") as UserRole
+export function getUserRole(session: { user: { role?: string | null } }): UserRole {
+  return narrowRole(session.user.role)
+}
+
+/**
+ * Narrow an arbitrary string (e.g. a DB column value) into a UserRole,
+ * defaulting to "unassigned" for null/undefined or unrecognised values.
+ * Centralises the boundary between wire/DB data and our typed role union.
+ */
+export function narrowRole(value: string | null | undefined): UserRole {
+  return value != null && value in ROLE_LEVELS ? (value as UserRole) : "unassigned"
 }
 
 /**
@@ -32,7 +66,7 @@ export function getUserRole(session: { user: Record<string, unknown> }): UserRol
  * Returns an error string if forbidden, or null if permitted.
  */
 export function requireRole(
-  session: { user: Record<string, unknown> },
+  session: { user: { role?: string | null } },
   minRole: UserRole,
   message?: string,
 ): string | null {
@@ -178,13 +212,40 @@ export const getEffectivePermissions = cache(async (
  * Returns an error string if forbidden, or null if permitted.
  */
 export async function checkPermission(
-  session: { user: { id: string } & Record<string, unknown> },
+  session: { user: { id: string; role?: string | null } },
   permission: Permission,
   message?: string,
 ): Promise<string | null> {
   const role = getUserRole(session)
   const perms = await getEffectivePermissions(session.user.id, role)
   return perms.has(permission) ? null : (message ?? "Forbidden")
+}
+
+/**
+ * Narrow `unknown` to an object that owns the given key, without resorting
+ * to `as any`. Use after `typeof obj === "object" && obj !== null`-style
+ * checks where you also need to access a specific property.
+ */
+export function hasProperty<K extends string>(
+  obj: unknown,
+  key: K,
+): obj is Record<K, unknown> {
+  return typeof obj === "object" && obj !== null && key in obj
+}
+
+const FIBER_FAILURE_CAUSE = Symbol.for("effect/Runtime/FiberFailure/Cause")
+
+/**
+ * Extract the inner error wrapped by an Effect FiberFailure, if any.
+ * Returns the unwrapped error (or undefined).
+ */
+function unwrapEffectFailure(error: unknown): unknown {
+  if (typeof error !== "object" || error === null) return undefined
+  const causeContainer = error as Record<string | symbol, unknown>
+  const cause = causeContainer[FIBER_FAILURE_CAUSE] ?? causeContainer.cause
+  if (typeof cause !== "object" || cause === null) return undefined
+  const causeObj = cause as Record<string, unknown>
+  return causeObj.failure ?? causeObj.error
 }
 
 /**
@@ -197,19 +258,13 @@ export async function checkPermission(
 export function getErrorTag(error: unknown): string | undefined {
   if (error == null || typeof error !== "object") return undefined
   // Direct _tag (plain throw or already unwrapped)
-  if ("_tag" in error && typeof (error as any)._tag === "string") {
-    return (error as any)._tag
+  if (hasProperty(error, "_tag") && typeof error._tag === "string") {
+    return error._tag
   }
   // Effect FiberFailure wrapper: the cause chain holds the real error
-  const cause =
-    (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ??
-    (error as any).cause
-  if (cause && typeof cause === "object") {
-    // Cause.Fail stores the error under "failure" or "error"
-    const inner = cause.failure ?? cause.error
-    if (inner && typeof inner === "object" && "_tag" in inner) {
-      return inner._tag as string
-    }
+  const inner = unwrapEffectFailure(error)
+  if (hasProperty(inner, "_tag") && typeof inner._tag === "string") {
+    return inner._tag
   }
   return undefined
 }
@@ -219,17 +274,14 @@ export function getErrorTag(error: unknown): string | undefined {
  */
 export function getErrorField(error: unknown, field: string): unknown {
   if (error == null || typeof error !== "object") return undefined
-  // Direct access
-  if ("_tag" in error && field in error) return (error as any)[field]
+  // Direct access — only when we can identify this as a tagged error
+  if (hasProperty(error, "_tag") && hasProperty(error, field)) {
+    return error[field]
+  }
   // Effect FiberFailure wrapper
-  const cause =
-    (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ??
-    (error as any).cause
-  if (cause && typeof cause === "object") {
-    const inner = cause.failure ?? cause.error
-    if (inner && typeof inner === "object" && field in inner) {
-      return (inner as any)[field]
-    }
+  const inner = unwrapEffectFailure(error)
+  if (hasProperty(inner, field)) {
+    return inner[field]
   }
   return undefined
 }

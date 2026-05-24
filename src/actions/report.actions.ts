@@ -1,7 +1,7 @@
 "use server"
 
 import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
+import { withAction, type Session } from "@/lib/with-action"
 import {
   getPortfolioData,
   getPnlData,
@@ -17,21 +17,21 @@ export const getPortfolioReportAction = withAction({
   errors: { DatabaseError: "Database error" },
 })
 
-export const getPnlReportAction = withAction<{ period: string }, any>({
+export const getPnlReportAction = withAction({
   permission: "reports:read",
-  effect: (_session, { period }) => getPnlData(period || getCurrentMonth()),
+  effect: (_session: Session, { period }: { period: string }) => getPnlData(period || getCurrentMonth()),
   errors: { DatabaseError: "Database error" },
 })
 
-export const getBalanceSheetReportAction = withAction<{ period: string }, any>({
+export const getBalanceSheetReportAction = withAction({
   permission: "reports:read",
-  effect: (_session, { period }) => getBalanceSheetData(period || getCurrentMonth()),
+  effect: (_session: Session, { period }: { period: string }) => getBalanceSheetData(period || getCurrentMonth()),
   errors: { DatabaseError: "Database error" },
 })
 
-export const getRetainedEarningsReportAction = withAction<{ period: string }, any>({
+export const getRetainedEarningsReportAction = withAction({
   permission: "reports:read",
-  effect: (_session, { period }) => getRetainedEarningsData(period || getCurrentMonth()),
+  effect: (_session: Session, { period }: { period: string }) => getRetainedEarningsData(period || getCurrentMonth()),
   errors: { DatabaseError: "Database error" },
 })
 

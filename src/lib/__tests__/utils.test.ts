@@ -157,12 +157,12 @@ describe("localDateString", () => {
   it("differs from toISOString().slice(0,10) for late-night local dates in UTC+ zones", () => {
     // This test documents the bug: toISOString gives UTC which can be a different date
     const lateNight = new Date(2026, 3, 13, 23, 30) // Apr 13 23:30 local
-    const utcDate = lateNight.toISOString().slice(0, 10)
+    // utcDate (toISOString().slice(0,10)) could be Apr 14 in UTC+N zones,
+    // while localDateString stays on Apr 13. The point of this test is that
+    // localDateString always reports the local date — the UTC variant is the bug.
     const localDate = localDateString(lateNight)
-    // In UTC+N zones, utcDate could be Apr 14 while localDate is Apr 13
     // In UTC or UTC- zones, they match. Either way, localDate must be Apr 13.
     expect(localDate).toBe("2026-04-13")
-    // The UTC version may or may not match depending on server TZ — this is the bug
   })
 })
 

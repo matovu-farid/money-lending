@@ -52,7 +52,7 @@ export const createLoan = (
         .from(customers)
         .where(eq(customers.id, input.customerId))
 
-      if (!customer) throw { _tag: "CustomerNotFound", id: input.customerId }
+      if (!customer) throw new CustomerNotFound({ id: input.customerId })
 
       if (customer.status === "blacklisted") {
         throw new ValidationError({ message: "This customer is blacklisted and cannot receive new loans.", field: "customerId" })
@@ -60,7 +60,7 @@ export const createLoan = (
 
       const missingFields = checkCustomerCompleteness(customer)
       if (missingFields.length > 0) {
-        throw { _tag: "IncompleteLoanRequirements", missing: missingFields }
+        throw new IncompleteLoanRequirements({ missing: missingFields })
       }
 
       const startDate = new Date(input.startDate)
@@ -290,12 +290,10 @@ export const createLoan = (
         return { ...loan, collateral: coll }
       })
     },
-    catch: (e: any) => {
+    catch: (e: unknown) => {
       if (e instanceof ValidationError) return e
-      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
-      if (e?._tag === "CustomerNotFound") return new CustomerNotFound({ id: e.id })
-      if (e?._tag === "IncompleteLoanRequirements")
-        return new IncompleteLoanRequirements({ missing: e.missing })
+      if (e instanceof CustomerNotFound) return e
+      if (e instanceof IncompleteLoanRequirements) return e
       return new DatabaseError({ cause: e })
     },
   }).pipe(
@@ -374,7 +372,7 @@ export const updateLoan = (
         .from(loans)
         .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
-      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!existingLoan) throw new LoanNotFound({ id: input.loanId })
 
       const setObj: Partial<typeof loans.$inferInsert> & { updatedAt: Date } = {
         updatedAt: new Date(),
@@ -614,8 +612,8 @@ export const updateLoan = (
         return updatedLoan as Loan
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })
@@ -631,7 +629,7 @@ export const deleteLoan = (
         .from(loans)
         .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
-      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!existingLoan) throw new LoanNotFound({ id: input.loanId })
 
       const now = new Date()
 
@@ -834,8 +832,8 @@ export const deleteLoan = (
         return existingLoan as Loan
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      if (e instanceof LoanNotFound) return e
       return new DatabaseError({ cause: e })
     },
   })

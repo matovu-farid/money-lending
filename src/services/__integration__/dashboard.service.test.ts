@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { resetDb, testDb, seedCategories } from "./setup"
+import { resetDb, seedCategories } from "./setup"
 import { Effect } from "effect"
+import type { ActivityFeedItem } from "@/types"
 import { createCustomer } from "@/services/customer.service"
 import { createLoan } from "@/services/loan.service"
 import { recordPayment } from "@/services/payment.service"
 import { getDashboardKPIs, getRecentActivity } from "@/services/dashboard.service"
-import { auditLog } from "@/lib/db/schema/audit"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -208,7 +208,7 @@ describe(
         const result = await Effect.runPromise(getRecentActivity())
 
         // Should have at least the loan.create entry
-        const loanIssued = result.items.find((r: any) => r.type === "loan_issued")
+        const loanIssued = result.items.find((r: ActivityFeedItem) => r.type === "loan_issued")
         expect(loanIssued).toBeDefined()
         expect(loanIssued!.description).toContain("Alice Nakamya")
         expect(loanIssued!.description).toContain("500,000")
@@ -224,7 +224,7 @@ describe(
         const result = await Effect.runPromise(getRecentActivity())
 
         const paymentActivity = result.items.find(
-          (r: any) => r.type === "payment_received" && r.description.includes("200,000")
+          (r: ActivityFeedItem) => r.type === "payment_received" && r.description.includes("200,000")
         )
         expect(paymentActivity).toBeDefined()
         expect(paymentActivity!.loanId).toBe(loan.id)
@@ -268,7 +268,7 @@ describe(
         const result = await Effect.runPromise(getRecentActivity())
 
         const paymentEntry = result.items.find(
-          (r: any) => r.type === "payment_received" && r.description.includes("50,000")
+          (r: ActivityFeedItem) => r.type === "payment_received" && r.description.includes("50,000")
         )
         expect(paymentEntry).toBeDefined()
         expect(paymentEntry!.loanId).toBe(loan.id)

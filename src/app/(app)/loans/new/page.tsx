@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useCallback, useEffect, useRef, useState } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import { useLiveQuery, eq } from "@tanstack/react-db"
 import { useForm } from "react-hook-form"
@@ -50,8 +50,14 @@ function NewLoanPageInner() {
 
   // Wrap setters to sync to store
   const setStep = (s: number) => { setStepRaw(s); draft.setField("step", s) }
-  const setLoanType = (t: LoanType) => { setLoanTypeRaw(t); draft.setField("loanType", t) }
-  const setTermMonths = (v: string) => { setTermMonthsRaw(v); draft.setField("termMonths", v) }
+  const setLoanType = useCallback(
+    (t: LoanType) => { setLoanTypeRaw(t); draft.setField("loanType", t) },
+    [draft]
+  )
+  const setTermMonths = useCallback(
+    (v: string) => { setTermMonthsRaw(v); draft.setField("termMonths", v) },
+    [draft]
+  )
 
   const {
     register,
@@ -78,11 +84,17 @@ function NewLoanPageInner() {
     mode: "onTouched",
   })
 
-  // On mount: clear stale draft so the watch subscription below starts clean
+  // On mount: clear stale draft so the watch subscription below starts clean.
+  // `draft` is a Zustand store hook — its return value's identity is stable
+  // across renders, and `resumingDraft` is derived from values captured at
+  // first render (search params + a useRef snapshot), so this effectively
+  // runs once. A ref gate makes that "once" explicit at the call site.
+  const didClearDraftRef = useRef(false)
   useEffect(() => {
+    if (didClearDraftRef.current) return
+    didClearDraftRef.current = true
     if (!resumingDraft) draft.clear()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []) // runs once on mount
+  }, [resumingDraft, draft])
 
   // Warm only the per-loan collateral collection when the receipt modal opens.
   // (No router.prefetch — explicit RSC prefetching has been removed app-wide.)
@@ -92,8 +104,10 @@ function NewLoanPageInner() {
     getLoanCollateralCollection(id)
   }, [receiptData?.loanId])
 
-  // Sync form changes back to the store
+  // Sync form changes back to the store. `draft` (Zustand store hook return)
+  // is identity-stable across renders, so listing it in deps doesn't re-subscribe.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/incompatible-library -- react-hook-form's watch() is intentionally non-memoizable; the library manages its own subscription stability.
     const subscription = watch((values) => {
       draft.setFields({
         customerId: values.customerId ?? "",
@@ -107,8 +121,7 @@ function NewLoanPageInner() {
       })
     })
     return () => subscription.unsubscribe()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [watch])
+  }, [watch, draft])
 
   // Watch values for computed fields and display
   const customerId = watch("customerId")
@@ -147,21 +160,23 @@ function NewLoanPageInner() {
   const customerPhone = matchedCustomers?.[0]?.contact ?? null
 
   const activeLoanCheckColl = customerId ? getActiveLoanCheckCollection(customerId) : null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: activeLoanCheckRows } = useLiveQuery(((q: any) =>
-    activeLoanCheckColl ? q.from({ a: activeLoanCheckColl }).select(({ a }: any) => a) : undefined
-  ) as any, [customerId])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const activeLoanData = (activeLoanCheckRows as any)?.[0]?.data ?? null
+  const { data: activeLoanCheckRows } = useLiveQuery(
+    (q) => activeLoanCheckColl
+      ? q.from({ a: activeLoanCheckColl }).select(({ a }) => a)
+      : undefined,
+    [customerId],
+  )
+  const activeLoanData = activeLoanCheckRows?.[0]?.data ?? null
 
   const activeLoanId = activeLoanData?.loan.id
   const activeLoanCollateralColl = activeLoanId ? getLoanCollateralCollection(activeLoanId) : null
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: activeLoanCollateralRows } = useLiveQuery(((q: any) =>
-    activeLoanCollateralColl ? q.from({ c: activeLoanCollateralColl }).select(({ c }: any) => c) : undefined
-  ) as any, [activeLoanId])
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const activeLoanCollateral = (activeLoanCollateralRows as any)?.[0] ?? null
+  const { data: activeLoanCollateralRows } = useLiveQuery(
+    (q) => activeLoanCollateralColl
+      ? q.from({ c: activeLoanCollateralColl }).select(({ c }) => c)
+      : undefined,
+    [activeLoanId],
+  )
+  const activeLoanCollateral = activeLoanCollateralRows?.[0] ?? null
 
   // --- Rollover pre-fill effects ---
 

@@ -2,7 +2,6 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   createCreditorWithInvestmentAction,
   updateCreditorAction,
@@ -12,7 +11,7 @@ import type {
   UpdateCreditorInput,
 } from "@/types/creditor"
 import { creditorSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -39,11 +38,7 @@ export const creditorCollection = createCollection(
     id: "creditors",
     schema: creditorSchema,
     getKey: (creditor) => creditor.id,
-    shapeOptions: {
-      url: shapeUrl("creditors"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("creditors"),
-    },
+    shapeOptions: electricShapeOptionsFor("creditors"),
     onInsert: async ({ transaction }) => {
       const { modified, metadata } = transaction.mutations[0]
       const meta = metadata as CreditorInsertMetadata | undefined

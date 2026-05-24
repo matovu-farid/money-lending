@@ -1,3 +1,5 @@
+import type { DbInvitationRow, DbUserRoleRow } from "../support/types"
+
 describe("Invitation System", () => {
   const password = "TestPass123!"
   let adminEmail: string
@@ -57,13 +59,13 @@ describe("Invitation System", () => {
    * Checks the DB for the invitation row to confirm server processed it.
    */
   function waitForInviteProcessed(email: string) {
-    cy.task("db:getInvitations").then((rows: any) => {
-      const found = rows.find((r: any) => r.email === email)
+    cy.task<DbInvitationRow[]>("db:getInvitations").then((rows) => {
+      const found = rows.find((r) => r.email === email)
       if (!found) {
         // Retry after a short delay
         cy.wait(500)
-        cy.task("db:getInvitations").then((rows2: any) => {
-          expect(rows2.find((r: any) => r.email === email)).to.not.be.undefined
+        cy.task<DbInvitationRow[]>("db:getInvitations").then((rows2) => {
+          expect(rows2.find((r) => r.email === email)).to.not.equal(undefined)
         })
       }
     })
@@ -125,10 +127,10 @@ describe("Invitation System", () => {
 
       // Verify the invitation was revoked by checking the DB
       cy.wait(2000) // Allow server-side onDelete to process
-      cy.task("db:getInvitations").then((rows: any) => {
-        const invite = rows.find((r: any) => r.email === "revoke@example.com")
-        expect(invite).to.not.be.undefined
-        expect(invite.status).to.equal("revoked")
+      cy.task<DbInvitationRow[]>("db:getInvitations").then((rows) => {
+        const invite = rows.find((r) => r.email === "revoke@example.com")
+        expect(invite).to.not.equal(undefined)
+        expect(invite?.status).to.equal("revoked")
       })
     })
 
@@ -177,12 +179,12 @@ describe("Invitation System", () => {
 
       // Get the invite URL — retry since the in-memory map may not be populated yet
       function getInviteUrlWithRetry(email: string, retries = 5): void {
-        cy.task("db:getInviteUrl", { email }).then((url) => {
+        cy.task<string | null>("db:getInviteUrl", { email }).then((url) => {
           if (!url && retries > 0) {
             cy.wait(1000)
             getInviteUrlWithRetry(email, retries - 1)
           } else {
-            expect(url).to.not.be.null
+            expect(url).to.not.equal(null)
             const parsed = new URL(url as string)
             cy.visit(parsed.pathname + parsed.search)
           }
@@ -205,10 +207,10 @@ describe("Invitation System", () => {
       cy.url({ timeout: 15000 }).should("not.include", "/accept-invite")
 
       // Verify the user was created with the correct role
-      cy.task("db:getUserRole", { email: "officer@example.com" }).then(
-        (result: any) => {
-          expect(result).to.not.be.null
-          expect(result.role).to.equal("loanOfficer")
+      cy.task<DbUserRoleRow | null>("db:getUserRole", { email: "officer@example.com" }).then(
+        (result) => {
+          expect(result).to.not.equal(null)
+          expect(result?.role).to.equal("loanOfficer")
         }
       )
     })

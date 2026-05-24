@@ -273,11 +273,23 @@ function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => b
             </p>
           ) : (
             <div>
-              {activity.map((item: any, index: number) => {
-                const href = "href" in item ? item.href : item.loanId ? `/loans/${item.loanId}` : null
-                const description = item.description ?? ""
-                const actorName = item.actorName ?? undefined
-                const timestamp = item.occurredAt ?? item.timestamp
+              {activity.map((item, index) => {
+                // The collection items union: supervisor+ get ActivityItem
+                // (audit-log derived; has `href`, `occurredAt`), loan officers
+                // get ActivityFeedItem (has `loanId`, `timestamp`). Narrow at
+                // the use site without re-typing the union.
+                const narrow = item as {
+                  description?: string
+                  actorName?: string
+                  href?: string | null
+                  loanId?: string
+                  occurredAt?: Date | string
+                  timestamp?: Date | string
+                }
+                const href = narrow.href ?? (narrow.loanId ? `/loans/${narrow.loanId}` : null)
+                const description = narrow.description ?? ""
+                const actorName = narrow.actorName ?? undefined
+                const timestamp = narrow.occurredAt ?? narrow.timestamp
                 return (
                   <div
                     key={item.id}
@@ -298,7 +310,7 @@ function DashboardContent({ has, isAdmin }: { has: (permission: Permission) => b
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
                         <p className="text-xs text-muted-foreground font-mono">
-                          {formatRelativeTime(timestamp)}
+                          {timestamp ? formatRelativeTime(timestamp) : null}
                         </p>
                         {actorName && (
                           <span className="text-xs text-muted-foreground">

@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import type { DrizzleTx } from "./_test-helpers"
+
+type InsertedTransaction = Record<string, unknown>
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -26,7 +29,7 @@ vi.mock("crypto", () => ({
 }))
 
 describe("Auto-Post Service", () => {
-  const mockTx: any = {
+  const mockTxImpl = {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([{ id: "cat-id-1", name: "Loans Receivable", type: "asset", isDefault: true }]),
@@ -42,15 +45,17 @@ describe("Auto-Post Service", () => {
     }),
   }
 
+  const mockTx = mockTxImpl as unknown as DrizzleTx
+
   beforeEach(() => {
     vi.clearAllMocks()
     // Reset mock chain for tx
-    mockTx.select.mockReturnValue({
+    mockTxImpl.select.mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockResolvedValue([{ id: "cat-id-1", name: "Loans Receivable", type: "asset", isDefault: true }]),
       }),
     })
-    mockTx.insert.mockReturnValue({
+    mockTxImpl.insert.mockReturnValue({
       values: vi.fn().mockReturnValue({
         onConflictDoNothing: vi.fn().mockReturnValue({
           returning: vi.fn().mockResolvedValue([{ id: "cat-id-1" }]),
@@ -233,15 +238,15 @@ describe("Auto-Post Service", () => {
 
   describe("autoPostRolloverPrincipalTransfer", () => {
     it("inserts debit and credit entries using tx.insert directly", async () => {
-      const insertValues: any[] = []
-      const localTx: any = {
+      const insertValues: InsertedTransaction[] = []
+      const localTx = {
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockResolvedValue([{ id: "cat-lr-id", name: "Loans Receivable", type: "asset" }]),
           }),
         }),
         insert: vi.fn().mockReturnValue({
-          values: vi.fn().mockImplementation((vals: any) => {
+          values: vi.fn().mockImplementation((vals: InsertedTransaction) => {
             insertValues.push(vals)
             return {
               onConflictDoNothing: vi.fn().mockReturnValue({
@@ -254,7 +259,7 @@ describe("Auto-Post Service", () => {
       }
 
       const { autoPostRolloverPrincipalTransfer } = await import("@/services/auto-post.service")
-      await autoPostRolloverPrincipalTransfer(localTx, {
+      await autoPostRolloverPrincipalTransfer(localTx as unknown as DrizzleTx, {
         amount: "500000",
         newLoanId: "new-loan-1234-5678-9abc-000000000000",
         oldLoanId: "old-loan-abcd-efgh-ijkl-000000000000",
@@ -296,7 +301,7 @@ describe("Auto-Post Service", () => {
 
     it("uses getOrCreateCategory with Loans Receivable / asset", async () => {
       const whereFn = vi.fn().mockResolvedValue([{ id: "existing-cat-id" }])
-      const localTx: any = {
+      const localTx = {
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: whereFn,
@@ -310,7 +315,7 @@ describe("Auto-Post Service", () => {
       }
 
       const { autoPostRolloverPrincipalTransfer } = await import("@/services/auto-post.service")
-      await autoPostRolloverPrincipalTransfer(localTx, {
+      await autoPostRolloverPrincipalTransfer(localTx as unknown as DrizzleTx, {
         amount: "100000",
         newLoanId: "new-loan-0000-0000-0000-000000000000",
         oldLoanId: "old-loan-0000-0000-0000-000000000000",
@@ -323,15 +328,15 @@ describe("Auto-Post Service", () => {
     })
 
     it("shares the same journalGroupId across both entries", async () => {
-      const insertValues: any[] = []
-      const localTx: any = {
+      const insertValues: InsertedTransaction[] = []
+      const localTx = {
         select: vi.fn().mockReturnValue({
           from: vi.fn().mockReturnValue({
             where: vi.fn().mockResolvedValue([{ id: "cat-id" }]),
           }),
         }),
         insert: vi.fn().mockReturnValue({
-          values: vi.fn().mockImplementation((vals: any) => {
+          values: vi.fn().mockImplementation((vals: InsertedTransaction) => {
             insertValues.push(vals)
             return { returning: vi.fn().mockResolvedValue([]) }
           }),
@@ -339,7 +344,7 @@ describe("Auto-Post Service", () => {
       }
 
       const { autoPostRolloverPrincipalTransfer } = await import("@/services/auto-post.service")
-      await autoPostRolloverPrincipalTransfer(localTx, {
+      await autoPostRolloverPrincipalTransfer(localTx as unknown as DrizzleTx, {
         amount: "200000",
         newLoanId: "new-loan-0000-0000-0000-000000000000",
         oldLoanId: "old-loan-0000-0000-0000-000000000000",

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { resetDb, testDb, seedCategories } from "./setup"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Cause, Option } from "effect"
 import { createCustomer } from "@/services/customer.service"
 import { createLoan } from "@/services/loan.service"
 import {
@@ -15,10 +15,8 @@ import {
 import { loans } from "@/lib/db/schema/loans"
 import { auditLog } from "@/lib/db/schema/audit"
 import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { eq, and } from "drizzle-orm"
+import { eq } from "drizzle-orm"
 import { randomUUID } from "crypto"
-import { payments } from "@/lib/db/schema/payments"
 import BigNumber from "bignumber.js"
 import {
   getLoanBalancesFromLedger,
@@ -213,8 +211,10 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
-        expect(error._tag).toBe("LoanNotFound")
+        const failure = Cause.failureOption(exit.cause)
+        if (Option.isSome(failure)) {
+          expect(failure.value._tag).toBe("LoanNotFound")
+        }
       }
     })
   })
@@ -309,8 +309,10 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
-        expect(error._tag).toBe("PaymentNotFound")
+        const failure = Cause.failureOption(exit.cause)
+        if (Option.isSome(failure)) {
+          expect(failure.value._tag).toBe("PaymentNotFound")
+        }
       }
     })
 
@@ -505,8 +507,10 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
 
       expect(Exit.isFailure(exit)).toBe(true)
       if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
-        expect(error._tag).toBe("LoanNotFound")
+        const failure = Cause.failureOption(exit.cause)
+        if (Option.isSome(failure)) {
+          expect(failure.value._tag).toBe("LoanNotFound")
+        }
       }
     })
 

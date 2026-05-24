@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { resetDb, testDb, seedCategories } from "./setup"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Cause, Option } from "effect"
 import { createLoan, getLoan, listLoans, deleteLoan } from "@/services/loan.service"
 import { recordPayment } from "@/services/payment.service"
-import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service"
 import { transactions } from "@/lib/db/schema/transactions"
 import { sql } from "drizzle-orm"
 import BigNumber from "bignumber.js"
@@ -138,9 +137,15 @@ describe("Loan Service — Integration", () => {
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error
-      expect(error._tag).toBe("IncompleteLoanRequirements")
-      expect(error.missing).toContain("address")
+      const failure = Cause.failureOption(exit.cause)
+      expect(Option.isSome(failure)).toBe(true)
+      if (Option.isSome(failure)) {
+        const error = failure.value
+        expect(error._tag).toBe("IncompleteLoanRequirements")
+        if (error._tag === "IncompleteLoanRequirements") {
+          expect(error.missing).toContain("address")
+        }
+      }
     }
   })
 
@@ -159,8 +164,10 @@ describe("Loan Service — Integration", () => {
     expect(Exit.isFailure(exit)).toBe(true)
     // The ValidationError is wrapped in a DatabaseError by the catch handler
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error
-      expect(error._tag).toBe("DatabaseError")
+      const failure = Cause.failureOption(exit.cause)
+      if (Option.isSome(failure)) {
+        expect(failure.value._tag).toBe("DatabaseError")
+      }
     }
   })
 
@@ -171,8 +178,10 @@ describe("Loan Service — Integration", () => {
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error
-      expect(error._tag).toBe("CustomerNotFound")
+      const failure = Cause.failureOption(exit.cause)
+      if (Option.isSome(failure)) {
+        expect(failure.value._tag).toBe("CustomerNotFound")
+      }
     }
   })
 
@@ -198,8 +207,10 @@ describe("Loan Service — Integration", () => {
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (exit._tag === "Failure") {
-      const error = (exit.cause as any).error
-      expect(error._tag).toBe("LoanNotFound")
+      const failure = Cause.failureOption(exit.cause)
+      if (Option.isSome(failure)) {
+        expect(failure.value._tag).toBe("LoanNotFound")
+      }
     }
   })
 

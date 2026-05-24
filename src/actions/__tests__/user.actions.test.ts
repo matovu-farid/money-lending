@@ -41,6 +41,14 @@ const mockGetUser = vi.mocked(auth.api.getUser)
 const mockSetRole = vi.mocked(auth.api.setRole)
 const mockRevokeUserSessions = vi.mocked(auth.api.revokeUserSessions)
 
+type GetUserReturn = Awaited<ReturnType<typeof auth.api.getUser>>
+type SetRoleReturn = Awaited<ReturnType<typeof auth.api.setRole>>
+type RevokeReturn = Awaited<ReturnType<typeof auth.api.revokeUserSessions>>
+const userAs = (u: { role: string | null }): GetUserReturn =>
+  u as unknown as GetUserReturn
+const setRoleVoid = undefined as unknown as SetRoleReturn
+const revokeVoid = undefined as unknown as RevokeReturn
+
 // ---------- Tests ----------
 
 describe("User Actions — assignRole", () => {
@@ -64,7 +72,8 @@ describe("User Actions — assignRole", () => {
 
   it("returns error for invalid role", async () => {
     mockGetSession.mockResolvedValue(fakeSession)
-    const result = await assignRole({ userId: "u2", role: "godMode" as any })
+    // Intentionally pass an invalid role to exercise the runtime validation.
+    const result = await assignRole({ userId: "u2", role: "godMode" as unknown as UserRole })
     expect(result).toEqual({ error: "Invalid role" })
   })
 
@@ -110,8 +119,8 @@ describe("User Actions — assignRole", () => {
 
   it("supervisor can assign loanOfficer (has role:assign-loan-officer permission)", async () => {
     mockGetSession.mockResolvedValue(supervisorSession)
-    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "unassigned" }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
     expect(result).toEqual({ data: { role: "loanOfficer" } })
   })
@@ -133,14 +142,14 @@ describe("User Actions — assignRole", () => {
   // ===== Target user role hierarchy enforcement =====
   it("admin cannot modify a user at or above their own level", async () => {
     mockGetSession.mockResolvedValue(fakeSession) // admin level 3
-    mockGetUser.mockResolvedValue({ role: "admin" } as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "admin" }))
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
     expect(result).toEqual({ error: "Cannot modify a user at or above your own role level" })
   })
 
   it("admin cannot modify a superAdmin user", async () => {
     mockGetSession.mockResolvedValue(fakeSession) // admin level 3
-    mockGetUser.mockResolvedValue({ role: "superAdmin" } as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "superAdmin" }))
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
     expect(result).toEqual({ error: "Cannot modify a user at or above your own role level" })
   })
@@ -148,8 +157,8 @@ describe("User Actions — assignRole", () => {
   // ===== Successful role assignment =====
   it("admin assigns loanOfficer to an unassigned user", async () => {
     mockGetSession.mockResolvedValue(fakeSession) // admin level 3
-    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "unassigned" }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
 
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
 
@@ -162,8 +171,8 @@ describe("User Actions — assignRole", () => {
 
   it("superAdmin assigns admin to a supervisor", async () => {
     mockGetSession.mockResolvedValue(superAdminSession) // superAdmin level 4
-    mockGetUser.mockResolvedValue({ role: "supervisor" } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "supervisor" }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
 
     const result = await assignRole({ userId: "u9", role: "admin" })
 
@@ -176,8 +185,8 @@ describe("User Actions — assignRole", () => {
 
   it("admin assigns supervisor to a loanOfficer", async () => {
     mockGetSession.mockResolvedValue(fakeSession) // admin level 3
-    mockGetUser.mockResolvedValue({ role: "loanOfficer" } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "loanOfficer" }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
 
     const result = await assignRole({ userId: "u9", role: "supervisor" })
 
@@ -187,7 +196,7 @@ describe("User Actions — assignRole", () => {
   // ===== Error handling =====
   it("returns error when auth API fails", async () => {
     mockGetSession.mockResolvedValue(fakeSession)
-    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "unassigned" }))
     mockSetRole.mockRejectedValue(new Error("Network error"))
 
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
@@ -197,8 +206,8 @@ describe("User Actions — assignRole", () => {
 
   it("handles target user with null role as unassigned", async () => {
     mockGetSession.mockResolvedValue(fakeSession) // admin level 3
-    mockGetUser.mockResolvedValue({ role: null } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: null }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
 
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
 
@@ -208,9 +217,9 @@ describe("User Actions — assignRole", () => {
   // ===== Session revocation =====
   it("revokes target user sessions on successful role change", async () => {
     mockGetSession.mockResolvedValue(fakeSession) // admin level 3
-    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
-    mockRevokeUserSessions.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "unassigned" }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
+    mockRevokeUserSessions.mockResolvedValue(revokeVoid)
 
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
 
@@ -223,7 +232,7 @@ describe("User Actions — assignRole", () => {
 
   it("does not revoke sessions when role change fails", async () => {
     mockGetSession.mockResolvedValue(fakeSession)
-    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "unassigned" }))
     mockSetRole.mockRejectedValue(new Error("setRole failed"))
 
     const result = await assignRole({ userId: "u9", role: "loanOfficer" })
@@ -234,8 +243,8 @@ describe("User Actions — assignRole", () => {
 
   it("succeeds even if session revocation fails", async () => {
     mockGetSession.mockResolvedValue(fakeSession)
-    mockGetUser.mockResolvedValue({ role: "unassigned" } as any)
-    mockSetRole.mockResolvedValue(undefined as any)
+    mockGetUser.mockResolvedValue(userAs({ role: "unassigned" }))
+    mockSetRole.mockResolvedValue(setRoleVoid)
     mockRevokeUserSessions.mockRejectedValue(new Error("revoke failed"))
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
