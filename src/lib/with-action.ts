@@ -1,13 +1,22 @@
-import { getSession, checkPermission, getErrorTag } from "@/lib/action-utils"
+import "server-only"
+import { getSession, checkPermission, getErrorTag, type Session, type SessionUser } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { Effect } from "effect"
 import type { Permission } from "@/types"
 import { headers } from "next/headers"
 import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
 import { captureServerError } from "@/lib/sentry"
+import { isErrorResult } from "@/lib/action-result"
 
-/** The session type returned by getSession() when non-null. */
-export type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>
+// Re-export the canonical Session types defined alongside getSession() so
+// existing imports `from "@/lib/with-action"` keep working.
+export type { Session, SessionUser }
+
+// Re-exported from the client-safe module so existing server-side imports
+// `from "@/lib/with-action"` keep working. Client components must import the
+// guard directly from `@/lib/action-result` — pulling it through this file
+// drags the whole server graph (DB, next/headers) into the browser bundle.
+export { isErrorResult }
 
 // ---------------------------------------------------------------------------
 // Classic mode interfaces
@@ -36,13 +45,26 @@ interface EffectOptionsBase {
 }
 
 interface EffectOptionsWithInput<TInput, TData> extends EffectOptionsBase {
-  effect: (session: Session, input: TInput) => Effect.Effect<TData, any>
+  // Error channel is `unknown` so any service-level tagged-error union from
+  // `Effect.fail(new XError())` is acceptable. The implementation reaches into
+  // thrown errors via `getErrorTag` which already accepts `unknown`.
+  effect: (session: Session, input: TInput) => Effect.Effect<TData, unknown>
   revalidate?: string[] | ((input: TInput) => string[])
 }
 
 interface EffectOptionsNoInput<TData> extends EffectOptionsBase {
-  effect: (session: Session) => Effect.Effect<TData, any>
+  effect: (session: Session) => Effect.Effect<TData, unknown>
   revalidate?: string[]
+}
+
+// Permissive structural shape that covers all four overloads below without
+// resorting to `any`. The public API is exposed via the typed overloads — this
+// describes the runtime branching needs only (`action` vs `effect`, optional
+// `revalidate`, optional `errors`, etc.).
+type AnyWithActionOptions = EffectOptionsBase & {
+  action?: (session: Session, input?: unknown) => Promise<unknown>
+  effect?: (session: Session, input?: unknown) => Effect.Effect<unknown, unknown>
+  revalidate?: string[] | ((input: unknown) => string[])
 }
 
 // ---------------------------------------------------------------------------
@@ -73,8 +95,10 @@ export function withAction<TInput, TData>(
 // Implementation
 // ---------------------------------------------------------------------------
 
-export function withAction(opts: any): (input?: any) => Promise<any> {
-  return async (input?: any) => {
+export function withAction(
+  opts: AnyWithActionOptions,
+): (input?: unknown) => Promise<unknown> {
+  return async (input?: unknown) => {
     const session = await getSession()
     if (!session) return { error: "Unauthorized" }
 
@@ -84,7 +108,7 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
     }
 
     // IP allowlist gate (lower roles only)
-    const role = (session.user as Record<string, unknown>).role
+    const role = session.user.role
     if (role !== "admin" && role !== "superAdmin") {
       if (await isIpAllowlistEnabled()) {
         const h = await headers()
@@ -98,7 +122,7 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
     }
 
     // Effect mode
-    if ("effect" in opts) {
+    if (opts.effect) {
       try {
         const eff = opts.effect(session, input)
         const data = await Effect.runPromise(eff)
@@ -128,7 +152,7 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
           source: "withAction:effect",
           permission: opts.permission,
           userId: session.user.id,
-          role: (session.user as Record<string, unknown>).role,
+          role: session.user.role,
           errorTag: tag,
         })
         console.error("[withAction]", error)
@@ -139,6 +163,9 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
     // Classic mode — wrap so unhandled exceptions reach Sentry instead of
     // being swallowed by Next.js's server-action error boundary as a
     // generic "Server Action error".
+    if (!opts.action) {
+      throw new Error("withAction: options must include either `action` or `effect`")
+    }
     try {
       const result = await opts.action(session, input)
       // Many classic actions catch their own errors and return a generic
@@ -147,19 +174,14 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
       // low-fidelity warning to Sentry so the rate of these is visible
       // (we won't have a stack trace, but we'll see "this action is
       // failing more than expected" trends).
-      if (
-        result &&
-        typeof result === "object" &&
-        "error" in (result as Record<string, unknown>) &&
-        (result as Record<string, unknown>).error === "Internal server error"
-      ) {
+      if (isErrorResult(result) && result.error === "Internal server error") {
         captureServerError(
           new Error("Action returned 'Internal server error' (original swallowed in inner try/catch)"),
           {
             source: "withAction:classic:swallowed",
             permission: opts.permission,
             userId: session.user.id,
-            role: (session.user as Record<string, unknown>).role,
+            role: session.user.role,
           },
         )
       }
@@ -169,7 +191,7 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
         source: "withAction:classic",
         permission: opts.permission,
         userId: session.user.id,
-        role: (session.user as Record<string, unknown>).role,
+        role: session.user.role,
       })
       // Re-throw so Next.js's normal server-action error flow still applies.
       throw error

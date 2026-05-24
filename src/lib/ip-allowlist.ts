@@ -1,3 +1,4 @@
+import "server-only"
 import { db } from "@/lib/db"
 import { adminIpAllowlist, ipBlockLog } from "@/lib/db/schema/ip-allowlist"
 import { systemSettings } from "@/lib/db/schema/settings"

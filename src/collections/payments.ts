@@ -2,7 +2,6 @@
 
 import { createCollection } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
 import {
   recordPaymentAction,
   editPaymentAction,
@@ -10,19 +9,24 @@ import {
   markPaymentWrongAction,
   unmarkPaymentWrongAction,
 } from "@/actions/payment.actions"
+import { isErrorResult } from "@/lib/action-result"
 import type {
   RecordPaymentInput,
   EditPaymentInput,
 } from "@/types/payment"
 import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { electricShapeOptionsFor } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
 /**
  * Row shape synced via Electric — mirrors the `payments` DB table after
- * snake_case → camelCase mapping AND `paymentSchema` coercion (date columns
- * arrive as ISO strings on the wire and are coerced to `Date` here).
+ * snake_case → camelCase column-name mapping AND `electricDateParsers`
+ * timestamp coercion at the wire layer (date columns arrive as ISO strings
+ * from the Electric stream and are turned into `Date` objects before they
+ * reach consumers). Note: `paymentSchema` is wired into the collection but
+ * @tanstack/electric-db-collection only runs it for client-side mutations,
+ * NOT for synced rows — so the parser is what makes Date work end-to-end.
  *
  * Server-only enrichments (customerName, recorderName, interest/principal
  * portions, balances) are NOT on this row. Consumers join them client-side:
@@ -70,11 +74,7 @@ export const paymentCollection = createCollection(
     id: "payments",
     schema: paymentSchema,
     getKey: (payment) => payment.id,
-    shapeOptions: {
-      url: shapeUrl("payments"),
-      columnMapper: snakeCamelMapper(),
-      onError: shapeOnError("payments"),
-    },
+    shapeOptions: electricShapeOptionsFor("payments"),
     onInsert: async ({ transaction }) => {
       const { modified, metadata } = transaction.mutations[0]
       const meta = metadata as PaymentInsertMetadata | undefined
@@ -100,14 +100,16 @@ export const paymentCollection = createCollection(
     },
     onUpdate: async ({ transaction }) => {
       const { original, changes, metadata } = transaction.mutations[0]
-      const loanId = (original as PaymentRow).loanId
+      // `original` is already typed as PaymentRow via the collection schema —
+      // no cast needed for `.loanId`.
+      const loanId = original.loanId
       const meta = metadata as PaymentUpdateMetadata | undefined
 
       // Mark-wrong / unmark-wrong dispatch to dedicated server actions that
       // also reverse (or re-post) ledger journal entries — not a plain edit.
       if (meta?.intent === "mark-wrong") {
         const result = await markPaymentWrongAction(original.id, meta.reason)
-        if ("error" in result && result.error) {
+        if (isErrorResult(result)) {
           throw new Error(result.error)
         }
         invalidateCrossCutting(loanId)
@@ -116,7 +118,7 @@ export const paymentCollection = createCollection(
 
       if (meta?.intent === "unmark-wrong") {
         const result = await unmarkPaymentWrongAction(original.id)
-        if ("error" in result && result.error) {
+        if (isErrorResult(result)) {
           throw new Error(result.error)
         }
         invalidateCrossCutting(loanId)
@@ -132,11 +134,11 @@ export const paymentCollection = createCollection(
         paymentId: original.id,
         reason: meta.reason,
       }
-      const changedAmount = (changes as Partial<PaymentRow>).amount
-      if (changedAmount !== undefined) editInput.amount = changedAmount
-      const changedDate = (changes as Partial<PaymentRow>).paymentDate
-      if (changedDate !== undefined) {
-        editInput.paymentDate = changedDate.toISOString()
+      // `changes` is `ResolveTransactionChanges<PaymentRow, "update">` which
+      // is a Partial-like view of PaymentRow; no cast needed.
+      if (changes.amount !== undefined) editInput.amount = changes.amount
+      if (changes.paymentDate !== undefined) {
+        editInput.paymentDate = changes.paymentDate.toISOString()
       }
       const result = await editPaymentAction(editInput)
       if ("error" in result) {
@@ -158,7 +160,7 @@ export const paymentCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
-      invalidateCrossCutting((original as PaymentRow).loanId)
+      invalidateCrossCutting(original.loanId)
       return { txid: result.txid }
     },
   })
