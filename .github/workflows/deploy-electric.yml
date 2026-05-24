@@ -177,30 +177,36 @@ jobs:
               fi
             done
 
-            # Postgres smoke test — pg_isready from inside the service confirms
-            # the cert+config block didn't break startup. Failure here means
-            # the new postgres container is stuck; Electric will be unhealthy too.
-            echo "Smoke-testing postgres..."
-            for i in $(seq 1 20); do
-              if docker exec "$(docker ps -q -f name=electric_postgres -n 1)" \
-                   pg_isready -U money -d money_lending >/dev/null 2>&1; then
+            # Postgres smoke test — uses swarm's ingress mesh so it works
+            # regardless of which node postgres is pinned to. `docker exec`
+            # would only see containers on this manager node; postgres is
+            # pinned to node.labels.tier=data which can be elsewhere.
+            echo "Smoke-testing postgres via ingress mesh..."
+            for i in $(seq 1 30); do
+              if docker run --rm --network host \
+                   -e PGPASSWORD="$PG_PASSWORD" \
+                   postgres:17 \
+                   pg_isready -h 127.0.0.1 -p 5432 -U money -d money_lending \
+                   >/dev/null 2>&1; then
                 echo "Postgres is accepting connections."
                 break
               fi
-              if [ "$i" = "20" ]; then
-                echo "ERROR: Postgres never became ready."
+              if [ "$i" = "30" ]; then
+                echo "ERROR: Postgres never became ready via 127.0.0.1:5432."
                 docker service logs --tail 100 electric_postgres || true
                 exit 1
               fi
               sleep 3
             done
 
-            # Verify TLS is on — connecting with sslmode=disable should be
-            # rejected (or the response shows ssl=on). Use psql inside the
-            # container so we don't need a host-installed client.
+            # Verify TLS is on by querying SHOW ssl. The container connects
+            # over the swarm ingress mesh to wherever postgres lives.
             echo "Verifying TLS is enabled on postgres..."
-            SSL_STATE=$(docker exec "$(docker ps -q -f name=electric_postgres -n 1)" \
-                         psql -U money -d money_lending -tAc "SHOW ssl;" 2>/dev/null || echo "fail")
+            SSL_STATE=$(docker run --rm --network host \
+                          -e PGPASSWORD="$PG_PASSWORD" \
+                          postgres:17 \
+                          psql "host=127.0.0.1 port=5432 user=money dbname=money_lending sslmode=require" \
+                          -tAc "SHOW ssl;" 2>/dev/null | tr -d '[:space:]' || echo "fail")
             if [ "$SSL_STATE" != "on" ]; then
               echo "ERROR: ssl is '$SSL_STATE', expected 'on'."
               docker service logs --tail 100 electric_postgres || true
