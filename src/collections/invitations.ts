@@ -8,7 +8,7 @@ import {
   revokeInviteAction,
 } from "@/actions/invitation.actions"
 import { invitationSchema, type InvitationRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import type { UserRole } from "@/types"
 
 export type { InvitationRow }
@@ -24,6 +24,7 @@ export const invitationCollection = createCollection(
         columns: ["id", "email", "name", "role", "status", "invited_by", "expires_at", "created_at", "accepted_at"],
       },
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("invitation"),
     },
     onInsert: async ({ transaction }) => {

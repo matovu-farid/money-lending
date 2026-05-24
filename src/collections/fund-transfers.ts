@@ -13,7 +13,7 @@ import type {
 } from "@/types/fund-transfer"
 import type { DepositLocation } from "@/types/common"
 import { fundTransferSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -32,6 +32,7 @@ export const fundTransferCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("fund_transfers"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("fund_transfers"),
     },
     onInsert: async ({ transaction }) => {

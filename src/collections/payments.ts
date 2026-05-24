@@ -15,7 +15,7 @@ import type {
   EditPaymentInput,
 } from "@/types/payment"
 import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -73,6 +73,7 @@ export const paymentCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("payments"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("payments"),
     },
     onInsert: async ({ transaction }) => {

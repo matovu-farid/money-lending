@@ -11,7 +11,7 @@ import {
 import { settleWithCollateralAction } from "@/actions/settlement.actions"
 import type { CreateLoanInput } from "@/types/loan"
 import { loanRowSchema, type LoanBaseRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -49,6 +49,7 @@ export const loanCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("loans"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("loans"),
     },
     onInsert: async ({ transaction }) => {

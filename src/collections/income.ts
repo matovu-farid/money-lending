@@ -12,7 +12,7 @@ import type {
   DepositLocation,
 } from "@/types"
 import { transactionSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -34,6 +34,7 @@ export const incomeCollection = createCollection(
       // (`transaction_type`). Sync the full table here and filter by
       // `type === "credit" && referenceType == null` in the live-query consumer.
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("transactions[income]"),
     },
     onInsert: async ({ transaction }) => {

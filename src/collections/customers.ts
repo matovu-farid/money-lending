@@ -14,7 +14,7 @@ import type {
   UpdateCustomerInput,
 } from "@/types/customer"
 import { customerSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 
 /**
  * Metadata routed through `customerCollection.update(id, { metadata }, draft)`.
@@ -37,6 +37,7 @@ export const customerCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("customers"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("customers"),
     },
     onInsert: async ({ transaction }) => {

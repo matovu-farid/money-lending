@@ -8,7 +8,7 @@ import {
   revokeDelegationAction,
 } from "@/actions/delegation.actions"
 import { delegationSchema, type DelegationRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 
 export type { DelegationRow }
 
@@ -20,6 +20,7 @@ export const delegationCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("delegation"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("delegation"),
     },
     onInsert: async ({ transaction }) => {

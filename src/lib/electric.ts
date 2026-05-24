@@ -27,6 +27,20 @@ export function shapeOnError(label: string) {
 }
 
 /**
+ * Postgres type parsers for ShapeStream. Electric's default parser handles
+ * int/bool/float/json but leaves `timestamp*` and `date` as ISO strings, so
+ * `row.someTimestamp.getTime()` blows up at runtime. Spread this into every
+ * collection's `shapeOptions.parser` to coerce date-shaped columns to `Date`
+ * at the sync source — matches what the drizzle-zod collection schemas claim
+ * at compile time. `numeric` stays string on purpose to preserve precision.
+ */
+export const shapeParser = {
+  timestamptz: (v: string) => new Date(v),
+  timestamp: (v: string) => new Date(v),
+  date: (v: string) => new Date(v),
+}
+
+/**
  * Build the shape proxy URL for a given table.
  * In the browser this resolves to /api/electric/<table>.
  * The proxy route handles auth, secret injection, and table whitelisting.

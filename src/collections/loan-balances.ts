@@ -3,7 +3,7 @@
 import { createCollection, BasicIndex } from "@tanstack/react-db"
 import { electricCollectionOptions } from "@tanstack/electric-db-collection"
 import { snakeCamelMapper } from "@electric-sql/client"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { loanBalanceSchema, type LoanBalanceRow } from "@/lib/schemas/collections"
 
 export type { LoanBalanceRow }
@@ -23,6 +23,7 @@ export const loanBalanceCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("loan_balances"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("loan_balances"),
     },
   }),

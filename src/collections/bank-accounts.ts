@@ -9,7 +9,7 @@ import {
 } from "@/actions/bank-account.actions"
 import type { UpdateBankAccountInput } from "@/types"
 import { bankAccountSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError } from "@/lib/electric"
+import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 
@@ -21,6 +21,7 @@ export const bankAccountCollection = createCollection(
     shapeOptions: {
       url: shapeUrl("bank_accounts"),
       columnMapper: snakeCamelMapper(),
+      parser: shapeParser,
       onError: shapeOnError("bank_accounts"),
     },
     onInsert: async ({ transaction }) => {
