@@ -23,6 +23,7 @@ jobs:
         env:
           ELECTRIC_DATABASE_URL: postgres://stub
           ELECTRIC_SECRET: stub
+          PG_PASSWORD: stub
           NGINX_CONF_HASH: stub
         run: |
           # `docker compose config` understands the v3.8 compose schema and
