@@ -67,12 +67,13 @@ jobs:
         env:
           ELECTRIC_DATABASE_URL: ${{ secrets.ELECTRIC_DATABASE_URL }}
           ELECTRIC_SECRET: ${{ secrets.ELECTRIC_SECRET }}
+          PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
         with:
           host: ${{ secrets.ELECTRIC_SSH_HOST }}
           username: ${{ secrets.ELECTRIC_SSH_USER }}
           key: ${{ secrets.ELECTRIC_SSH_KEY }}
-          envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET
-          command_timeout: 5m
+          envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET,PG_PASSWORD
+          command_timeout: 10m
           script: |
             set -euo pipefail
 
@@ -82,12 +83,19 @@ jobs:
             # Pull pinned images up front so deploy doesn't stall on first start.
             docker pull electricsql/electric:latest
             docker pull nginx:1.27-alpine
+            docker pull postgres:17
 
             cd ~/electric-deploy
 
             export ELECTRIC_DATABASE_URL="$ELECTRIC_DATABASE_URL"
             export ELECTRIC_SECRET="$ELECTRIC_SECRET"
+            export PG_PASSWORD="$PG_PASSWORD"
             export ELECTRIC_LOG_LEVEL=info
+
+            if [ -z "$PG_PASSWORD" ]; then
+              echo "ERROR: PG_PASSWORD secret is not set. Add it in GitHub repo settings."
+              exit 1
+            fi
 
             # Hash nginx.conf content so the swarm config gets a new name
             # whenever content changes — swarm configs are immutable, this
@@ -145,7 +153,8 @@ jobs:
               sleep 3
               ELECTRIC_REPLICAS=$(docker service ls --filter name=electric_electric --format '{{.Replicas}}')
               NGINX_REPLICAS=$(docker service ls --filter name=electric_nginx --format '{{.Replicas}}')
-              echo "  Attempt $i/40: electric=$ELECTRIC_REPLICAS nginx=$NGINX_REPLICAS"
+              POSTGRES_REPLICAS=$(docker service ls --filter name=electric_postgres --format '{{.Replicas}}')
+              echo "  Attempt $i/40: postgres=$POSTGRES_REPLICAS electric=$ELECTRIC_REPLICAS nginx=$NGINX_REPLICAS"
 
               # Health endpoint is served by nginx (cache-bypassed) and proxied to Electric.
               if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1; then
@@ -157,13 +166,46 @@ jobs:
 
               if [ "$i" = "40" ]; then
                 echo "ERROR: Stack did not become healthy in time."
+                docker service ps electric_postgres --no-trunc || true
                 docker service ps electric_electric --no-trunc || true
                 docker service ps electric_nginx --no-trunc || true
+                docker service logs --tail 100 electric_postgres || true
                 docker service logs --tail 100 electric_electric || true
                 docker service logs --tail 100 electric_nginx || true
                 exit 1
               fi
             done
+
+            # Postgres smoke test — pg_isready from inside the service confirms
+            # the cert+config block didn't break startup. Failure here means
+            # the new postgres container is stuck; Electric will be unhealthy too.
+            echo "Smoke-testing postgres..."
+            for i in $(seq 1 20); do
+              if docker exec "$(docker ps -q -f name=electric_postgres -n 1)" \
+                   pg_isready -U money -d money_lending >/dev/null 2>&1; then
+                echo "Postgres is accepting connections."
+                break
+              fi
+              if [ "$i" = "20" ]; then
+                echo "ERROR: Postgres never became ready."
+                docker service logs --tail 100 electric_postgres || true
+                exit 1
+              fi
+              sleep 3
+            done
+
+            # Verify TLS is on — connecting with sslmode=disable should be
+            # rejected (or the response shows ssl=on). Use psql inside the
+            # container so we don't need a host-installed client.
+            echo "Verifying TLS is enabled on postgres..."
+            SSL_STATE=$(docker exec "$(docker ps -q -f name=electric_postgres -n 1)" \
+                         psql -U money -d money_lending -tAc "SHOW ssl;" 2>/dev/null || echo "fail")
+            if [ "$SSL_STATE" != "on" ]; then
+              echo "ERROR: ssl is '$SSL_STATE', expected 'on'."
+              docker service logs --tail 100 electric_postgres || true
+              exit 1
+            fi
+            echo "TLS confirmed enabled."
 
             # Smoke test: confirm nginx is actually in front. nginx always
             # rewrites the Server: header to "nginx/<version>"; Electric's

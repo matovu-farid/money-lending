@@ -33,6 +33,11 @@ if [ -z "${ELECTRIC_SECRET:-}" ]; then
   exit 1
 fi
 
+if [ -z "${PG_PASSWORD:-}" ]; then
+  echo "Error: PG_PASSWORD is not set (required by the postgres service in the stack)"
+  exit 1
+fi
+
 # Warn if pooler URL is being used
 if echo "$ELECTRIC_DATABASE_URL" | grep -q "pooler"; then
   echo "WARNING: DATABASE_URL appears to be a pooler URL."

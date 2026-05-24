@@ -1,14 +1,88 @@
 version: "3.8"
 
 services:
+  postgres:
+    image: postgres:17
+    # Published on the host so Vercel functions and local drizzle-kit can
+    # reach it. Internal traffic (Electric) uses the overlay network and
+    # the service name `postgres` instead.
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: money
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD must be set}
+      POSTGRES_DB: money_lending
+      # PGDATA in a subdirectory so the volume root can hold other artifacts
+      # (TLS certs) without confusing the entrypoint's empty-dir check.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Inline command does two things on every start:
+    #   1. Generate a self-signed cert into the data volume if absent
+    #      (idempotent — first boot only).
+    #   2. Exec the upstream entrypoint with the runtime flags Electric
+    #      needs (logical replication) plus TLS enabled.
+    # postgres:17 (Debian) includes openssl out of the box, so no apk/apt.
+    command:
+      - bash
+      - -c
+      - |
+        set -e
+        CERT_DIR=/var/lib/postgresql/data/certs
+        if [ ! -f "$$CERT_DIR/server.crt" ]; then
+          mkdir -p "$$CERT_DIR"
+          openssl req -new -x509 -days 3650 -nodes -text \
+            -out "$$CERT_DIR/server.crt" \
+            -keyout "$$CERT_DIR/server.key" \
+            -subj "/CN=money-lending-postgres"
+          chmod 600 "$$CERT_DIR/server.key"
+          chown -R postgres:postgres "$$CERT_DIR"
+        fi
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=$$CERT_DIR/server.crt \
+          -c ssl_key_file=$$CERT_DIR/server.key \
+          -c wal_level=logical \
+          -c max_wal_senders=10 \
+          -c max_replication_slots=10 \
+          -c shared_buffers=128MB \
+          -c effective_cache_size=384MB \
+          -c max_connections=100
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U money -d money_lending"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          # CRITICAL: pin postgres to a specific node because the volume is
+          # `driver: local` — it lives on whichever node the container ran on.
+          # If swarm reschedules postgres to a different node, it gets a fresh
+          # empty volume there and the old data is orphaned. The label is
+          # applied with: docker node update --label-add tier=data <node>
+          - node.labels.tier == data
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
   electric:
     image: electricsql/electric:latest
     # No host port — only nginx is reachable from outside the swarm.
     # Services on the same overlay network can reach each other on any port
     # without an explicit `expose:`, which compose v3 deprecated.
     environment:
-      # Direct (non-pooled) Neon connection — required for logical replication.
-      # IMPORTANT: Do NOT use the -pooler URL. Remove channel_binding param.
+      # After cutover this points at the local `postgres` service over the
+      # overlay network (postgres://money:PASS@postgres:5432/money_lending).
+      # Before cutover it can still point at Neon's direct URL — Electric
+      # doesn't care, the connection string is opaque to the stack.
       DATABASE_URL: ${ELECTRIC_DATABASE_URL}
       # Secret used to authenticate shape requests from the Next.js proxy.
       ELECTRIC_SECRET: ${ELECTRIC_SECRET}
@@ -91,4 +165,6 @@ volumes:
   electric_data:
     driver: local
   nginx_cache:
+    driver: local
+  postgres_data:
     driver: local
