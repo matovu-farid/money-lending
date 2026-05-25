@@ -38,7 +38,7 @@ export const loans = pgTable("loans", {
   penaltyWaived: boolean("penalty_waived").notNull().default(false),
   penaltyWaivedBy: text("penalty_waived_by"),
   penaltyWaivedAt: timestamp("penalty_waived_at", { withTimezone: true }),
-  rolledOverFrom: uuid("rolled_over_from").references((): any => loans.id),
+  rolledOverFrom: uuid("rolled_over_from").references((): any => loans.id, { onDelete: "set null" }),
   rolloverAmount: numeric("rollover_amount", { precision: 15, scale: 2 }),
   backdatedFrom: timestamp("backdated_from", { withTimezone: true }),
   backdatedBy: text("backdated_by"),

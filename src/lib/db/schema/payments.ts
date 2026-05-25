@@ -6,7 +6,7 @@ import { bankAccounts } from "./bank-accounts"
 
 export const payments = pgTable("payments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  loanId: uuid("loan_id").notNull().references(() => loans.id),
+  loanId: uuid("loan_id").notNull().references(() => loans.id, { onDelete: "cascade" }),
   paymentDate: timestamp("payment_date", { withTimezone: true }).notNull(),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   recordedBy: text("recorded_by").notNull(),

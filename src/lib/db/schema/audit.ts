@@ -3,7 +3,7 @@ import { user } from "./auth"
 
 export const auditLog = pgTable("audit_log", {
   id: uuid("id").primaryKey().defaultRandom(),
-  actorId: text("actor_id").notNull().references(() => user.id),
+  actorId: text("actor_id").references(() => user.id, { onDelete: "set null" }),
   action: text("action").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),

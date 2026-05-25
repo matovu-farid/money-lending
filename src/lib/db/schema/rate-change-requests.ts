@@ -9,7 +9,7 @@ export const rateRequestStatusEnum = pgEnum("rate_request_status", [
 
 export const rateChangeRequests = pgTable("rate_change_requests", {
   id: uuid("id").primaryKey().defaultRandom(),
-  loanId: uuid("loan_id").notNull().references(() => loans.id),
+  loanId: uuid("loan_id").notNull().references(() => loans.id, { onDelete: "cascade" }),
   requestedRate: numeric("requested_rate", { precision: 5, scale: 4 }).notNull(),
   currentRate: numeric("current_rate", { precision: 5, scale: 4 }).notNull(),
   requestedBy: text("requested_by").notNull(),

@@ -4,7 +4,7 @@ import { creditors } from "./creditors"
 
 export const creditorInvestments = pgTable("creditor_investments", {
   id: uuid("id").primaryKey().defaultRandom(),
-  creditorId: uuid("creditor_id").notNull().references(() => creditors.id),
+  creditorId: uuid("creditor_id").notNull().references(() => creditors.id, { onDelete: "cascade" }),
   amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
   interestRateMonthly: numeric("interest_rate_monthly", { precision: 5, scale: 4 }).notNull(),
   investmentDate: timestamp("investment_date", { withTimezone: true }).notNull(),

@@ -3,7 +3,7 @@ import { loans } from "./loans"
 
 export const collateral = pgTable("collateral", {
   id: uuid("id").primaryKey().defaultRandom(),
-  loanId: uuid("loan_id").notNull().references(() => loans.id),
+  loanId: uuid("loan_id").notNull().references(() => loans.id, { onDelete: "cascade" }),
   nature: text("nature").notNull(),
   description: text("description").notNull(),
   seizedAt: timestamp("seized_at", { withTimezone: true }),
