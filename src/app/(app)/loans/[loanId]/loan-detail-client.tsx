@@ -33,6 +33,7 @@ import { useLoanDetailStore } from "@/lib/stores/loan-detail"
 import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button"
 import { Breadcrumb } from "@/components/ui/breadcrumb"
+import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { LoanInfoCards } from "./loan-info-cards"
 import { PaymentTable } from "./payment-table"
 import { EditPaymentDialog } from "./edit-payment-dialog"
@@ -213,6 +214,8 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
   const principalNum = parseFloat(loan.principalAmount)
   const balanceNum = parseFloat(outstandingBalance)
+  const unpaidInterestNum = parseFloat(loanEntry.unpaidInterest ?? "0")
+  const totalDue = balanceNum + unpaidInterestNum
   const totalPaid = Math.max(0, principalNum - balanceNum)
   const repaymentPercent = principalNum > 0 ? Math.min(100, Math.max(0, Math.round((totalPaid / principalNum) * 100))) : 0
 
@@ -443,24 +446,78 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       <div className="rounded-xl border border-border bg-card p-6">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
           <div className="space-y-3 flex-1">
-            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
-              Principal Balance
-              <InfoPopover>
-                <p className="font-semibold text-sm mb-1">Principal Balance</p>
-                <p className="text-xs text-muted-foreground mb-2">
-                  The remaining principal the borrower still owes. This decreases only when a payment exceeds the accrued interest — the excess reduces the principal.
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+                  Principal Balance
+                  <InfoPopover>
+                    <p className="font-semibold text-sm mb-1">Principal Balance</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      The remaining principal the borrower still owes. This decreases only when a payment exceeds the accrued interest — the excess reduces the principal.
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Different from the total amount owed, which also includes unpaid interest.
+                    </p>
+                    <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                      Payment → Interest first, then Principal
+                    </p>
+                  </InfoPopover>
                 </p>
-                <p className="text-xs text-muted-foreground mb-2">
-                  Different from the total amount owed, which also includes unpaid interest.
+                <p className="text-3xl font-bold font-mono tracking-tight tabular-nums mt-2">
+                  {formatCurrency(outstandingBalance)}
                 </p>
-                <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-                  Payment → Interest first, then Principal
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
+                  Total Due
+                  <InfoPopover>
+                    <p className="font-semibold text-sm mb-1">Total Due</p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      The total amount the borrower must pay right now to fully settle the loan.
+                    </p>
+                    <p className="text-xs font-semibold mb-1">Formula</p>
+                    <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                      Total Due = Principal Balance + Unpaid Interest
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      This figure changes daily as interest continues to accrue.
+                    </p>
+                  </InfoPopover>
                 </p>
-              </InfoPopover>
-            </p>
-            <p className="text-3xl font-bold font-mono tracking-tight tabular-nums">
-              {formatCurrency(outstandingBalance)}
-            </p>
+                <p className="text-3xl font-bold font-mono tracking-tight tabular-nums mt-2">
+                  {formatCurrency(totalDue.toString())}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 font-mono">
+                  Unpaid interest: {formatCurrency(unpaidInterestNum.toString())}
+                </p>
+                {daysOverdue > 0 && (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <span className="text-xs text-muted-foreground">Days overdue:</span>
+                    <OverdueBadge daysOverdue={daysOverdue} />
+                    {penaltyActive && (
+                      <Badge variant="destructive" className="rounded-full text-[10px] px-1.5">
+                        Penalty
+                      </Badge>
+                    )}
+                    <InfoPopover>
+                      <p className="font-semibold text-sm mb-1">Days Overdue</p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        How many days of interest remain unpaid on this loan.
+                      </p>
+                      <p className="text-xs font-semibold mb-1">Formula</p>
+                      <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
+                        Days Overdue = Unpaid Interest ÷ Daily Interest
+                      </p>
+                      {penaltyActive && (
+                        <p className="text-xs text-muted-foreground">
+                          A penalty rate is active because unpaid interest has gone past the threshold. The effective rate is higher until the borrower catches up.
+                        </p>
+                      )}
+                    </InfoPopover>
+                  </div>
+                )}
+              </div>
+            </div>
             {/* Repayment progress */}
             <div className="space-y-1.5 max-w-md">
               <div className="flex justify-between text-xs text-muted-foreground">
