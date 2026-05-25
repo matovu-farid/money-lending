@@ -24,8 +24,8 @@ const PRINT_STYLES = `
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     font-family: "Courier New", Courier, monospace;
-    font-size: 11px;
-    line-height: 1.3;
+    font-size: 14px;
+    line-height: 1.35;
     background: white;
     color: black;
     padding: 4mm;
@@ -104,8 +104,8 @@ export function PosReceiptModal({
     clone.style.margin = "0"
     clone.style.padding = "0"
     clone.style.fontFamily = "'Courier New', Courier, monospace"
-    clone.style.fontSize = "11px"
-    clone.style.lineHeight = "1.3"
+    clone.style.fontSize = "14px"
+    clone.style.lineHeight = "1.35"
     iframeDoc.body.appendChild(clone)
 
     setTimeout(() => {
