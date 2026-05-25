@@ -170,11 +170,21 @@ export const recordPaymentWithTxid = (
         })
         const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
 
+        // prevDate is the boundary of the *previous* interest period — the
+        // latest prior payment whose date is strictly before this one, falling
+        // back to startDate when none exists. Using strictly-less-than (rather
+        // than "the immediately previous payment in sorted order") makes
+        // same-day payments share the same period boundary, which is what
+        // lets the dedup logic below treat them as peers in one window.
+        const newPaymentDate = new Date(input.paymentDate)
+        const beforeCurrent = activePayments.filter(
+          (p) => new Date(p.paymentDate) < newPaymentDate,
+        )
         const prevDate =
-          activePayments.length === 0
+          beforeCurrent.length === 0
             ? new Date(loan.startDate)
-            : new Date(activePayments[activePayments.length - 1].paymentDate)
-        const daysElapsed = daysBetween(prevDate, new Date(input.paymentDate))
+            : new Date(beforeCurrent[beforeCurrent.length - 1].paymentDate)
+        const daysElapsed = daysBetween(prevDate, newPaymentDate)
 
         const loanType = loan.loanType ?? "perpetual"
         const paymentNumber = activePayments.length + 1
@@ -186,9 +196,13 @@ export const recordPaymentWithTxid = (
         // payments go directly to principal, rewarding borrowers who pay more often.
         let interestAlreadyPaidInPeriod = "0"
         {
-          // Payments that share the same prevDate window (from prevDate onward)
+          // Current period is (prevDate, newPaymentDate]: strict > on the
+          // lower bound excludes the previous-period boundary payment, and
+          // <= on the upper bound keeps same-day peers in the dedup set.
           const paymentsSincePrevDate = activePayments.filter(
-            (p) => new Date(p.paymentDate) >= prevDate
+            (p) =>
+              new Date(p.paymentDate) > prevDate &&
+              new Date(p.paymentDate) <= newPaymentDate,
           )
           if (paymentsSincePrevDate.length > 0) {
             const portionsMap = await getPaymentPortionsFromLedger(
@@ -435,9 +449,16 @@ export const editPaymentWithTxid = (
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
 
         const paymentIdx = activePayments.findIndex((p) => p.id === input.paymentId)
-        const prevDate = paymentIdx === 0
-          ? new Date(loan.startDate)
-          : new Date(activePayments[paymentIdx - 1].paymentDate)
+        // Match recordPayment: prevDate is the latest *other* payment strictly
+        // before this one's date, falling back to startDate. Same-day peers
+        // share a period boundary rather than chaining off each other.
+        const beforeEdited = activePayments.filter(
+          (p) => p.id !== input.paymentId && new Date(p.paymentDate) < newPaymentDate,
+        )
+        const prevDate =
+          beforeEdited.length === 0
+            ? new Date(loan.startDate)
+            : new Date(beforeEdited[beforeEdited.length - 1].paymentDate)
         const daysElapsed = daysBetween(prevDate, newPaymentDate)
         const paymentNumber = paymentIdx + 1
 
@@ -482,11 +503,16 @@ export const editPaymentWithTxid = (
         const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
 
         // Compute interest already paid by earlier payments in the same period
-        // (excluding the payment being edited, since its journals were reversed above)
+        // (excluding the payment being edited, since its journals were reversed above).
+        // The period this payment falls into is (prevDate, paymentDate]. Future-period
+        // payments must also be excluded — they belong to a later window, not this one.
         let interestAlreadyPaidInPeriod = "0"
         {
           const earlierInPeriod = activePayments.filter(
-            (p) => p.id !== input.paymentId && new Date(p.paymentDate) >= prevDate
+            (p) =>
+              p.id !== input.paymentId &&
+              new Date(p.paymentDate) > prevDate &&
+              new Date(p.paymentDate) <= newPaymentDate,
           )
           if (earlierInPeriod.length > 0) {
             const portionsMap = await getPaymentPortionsFromLedger(

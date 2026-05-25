@@ -606,6 +606,52 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       expect(p2.allocation.principalBalanceBefore).toBe(p1.allocation.principalBalanceAfter)
       expect(p1.allocation.principalBalanceAfter).toBe("900000.00")
       expect(p2.allocation.principalBalanceBefore).toBe("900000.00")
+
+      // Each payment's split must be allocated for its own period — the prior
+      // payment's interest belongs to the previous period and must not be
+      // credited against this one (period boundary off-by-one regression).
+      expect(p1.allocation.interestPortion).toBe("100000.00")
+      expect(p1.allocation.principalPortion).toBe("100000.00")
+      expect(p2.allocation.interestPortion).toBe("90000.00")
+      expect(p2.allocation.principalPortion).toBe("110000.00")
+      expect(p2.allocation.principalBalanceAfter).toBe("790000.00")
+    })
+
+    it("20. three consecutive monthly payments each accrue their own period's interest", async () => {
+      const customer = await makeCustomer()
+      // 3,000,000 @ 10%/mo, minInterestDays=30 — matches the Brian Sentamu repro.
+      const loan = await makeLoan(customer.id, "3000000.00", "0.10")
+
+      const p1 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-02-01", amount: "1300000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+      const p2 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-03-01", amount: "500000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+      const p3 = await Effect.runPromise(
+        recordPayment(
+          { loanId: loan.id, paymentDate: "2025-04-01", amount: "500000", depositLocation: "cash" },
+          "test-actor"
+        )
+      )
+
+      // p1: 3M × 10% × 30/30 = 300k interest, 1M principal, balance 2M
+      expect(p1.allocation.interestPortion).toBe("300000.00")
+      expect(p1.allocation.principalPortion).toBe("1000000.00")
+
+      // p2 (bug repro): 2M × 10% × 28/30 ≈ 186,666.67 interest. The bug
+      // previously subtracted p1's 300k from this, zeroing out interest.
+      expect(new BigNumber(p2.allocation.interestPortion).isGreaterThan(0)).toBe(true)
+      expect(new BigNumber(p2.allocation.principalPortion).isLessThan("500000")).toBe(true)
+
+      // p3 follows from p2's correct balance, not the buggy one.
+      expect(new BigNumber(p3.allocation.interestPortion).isGreaterThan(0)).toBe(true)
     })
   })
 
