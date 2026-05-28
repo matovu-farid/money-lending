@@ -3,7 +3,7 @@
   "version": "1.3.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --turbopack",
     "dev:stack": "NGINX_CONF_HASH=dev docker compose --project-directory . -f deploy/electric/docker-stack.yml -f docker-compose.dev.yml up -d",
     "dev:stack:down": "NGINX_CONF_HASH=dev docker compose --project-directory . -f deploy/electric/docker-stack.yml -f docker-compose.dev.yml down",
     "dev:stack:logs": "NGINX_CONF_HASH=dev docker compose --project-directory . -f deploy/electric/docker-stack.yml -f docker-compose.dev.yml logs -f",
