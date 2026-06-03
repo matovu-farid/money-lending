@@ -7,12 +7,14 @@ import {
   getPnlCollection,
   getBalanceSheetCollection,
   getRetainedEarningsCollection,
+  getCashflowCollection,
 } from "@/collections/reports"
 import type {
   PortfolioEntry,
   PnlData,
   BalanceSheetData,
   RetainedEarningsData,
+  CashflowData,
 } from "@/types"
 
 export type TransactionReportData = {
@@ -66,6 +68,18 @@ export function useBalanceSheetReport(period: string) {
   if (!row) return { data: undefined }
   const { _key, ...bsData } = row
   return { data: bsData satisfies BalanceSheetData }
+}
+
+export function useCashflowReport(period: string) {
+  const collection = getCashflowCollection(period)
+  const { data } = useLiveQuery(
+    (q) => q.from({ r: collection }).select(({ r }) => r),
+    [period]
+  )
+  const row = data?.[0]
+  if (!row) return { data: undefined }
+  const { _key, ...cf } = row
+  return { data: cf satisfies CashflowData }
 }
 
 export function useRetainedEarningsReport(period: string) {

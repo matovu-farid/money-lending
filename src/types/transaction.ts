@@ -82,6 +82,27 @@ export interface PnlData {
   netProfit: string
 }
 
+export interface CashflowMonth {
+  month: string  // "YYYY-MM"
+  inflows: string
+  outflows: string
+  net: string
+}
+
+export interface CashflowData {
+  /** Anchor month for the "Breakdown" section (most recent month displayed). */
+  period: string
+  /** Sequential months ending at `period`, oldest first. */
+  months: CashflowMonth[]
+  /** Per-source totals for `period`. */
+  inflowsByType: { label: string; amount: string }[]
+  outflowsByType: { label: string; amount: string }[]
+  /** Sum across `months`. */
+  totalInflows: string
+  totalOutflows: string
+  totalNet: string
+}
+
 export interface BalanceSheetData {
   asOf: string
   assets: {

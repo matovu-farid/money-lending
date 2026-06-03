@@ -7,6 +7,7 @@ import {
   getPnlReportAction,
   getBalanceSheetReportAction,
   getRetainedEarningsReportAction,
+  getCashflowReportAction,
   getTransactionReportDataAction,
 } from "@/actions/report.actions"
 import type {
@@ -14,6 +15,7 @@ import type {
   PnlData,
   BalanceSheetData,
   RetainedEarningsData,
+  CashflowData,
 } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
@@ -37,6 +39,7 @@ subscribeToTableChanges("transactions", getQueryClient(), [
   queryKeys.reports.transactions,
   queryKeys.reports.pnl(),
   queryKeys.reports.balanceSheet(),
+  queryKeys.reports.cashflow(),
 ])
 
 // --- Portfolio (no params) ---
@@ -187,6 +190,36 @@ export function getRetainedEarningsCollection(period: string) {
   if (!collection) {
     collection = createRetainedEarningsCollection(period)
     boundedSet(retainedEarningsCollections, period, collection, MAX_REPORT_CACHED, (c) => c.cleanup())
+  }
+  return collection
+}
+
+export type CashflowRow = CashflowData & { _key: string }
+
+function createCashflowCollection(period: string) {
+  return createCollection(
+    queryCollectionOptions<CashflowRow>({
+      queryKey: [...queryKeys.reports.cashflow(period)],
+      queryClient: getQueryClient(),
+      queryFn: async (_ctx): Promise<Array<CashflowRow>> => {
+        const result = await getCashflowReportAction({ period })
+        if ("error" in result) throw new Error(result.error)
+        return [{ ...(result.data as CashflowData), _key: "singleton" }]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+    })
+  )
+}
+
+type CashflowCollectionType = ReturnType<typeof createCashflowCollection>
+const cashflowCollections = new Map<string, CashflowCollectionType>()
+
+export function getCashflowCollection(period: string) {
+  let collection = cashflowCollections.get(period)
+  if (!collection) {
+    collection = createCashflowCollection(period)
+    boundedSet(cashflowCollections, period, collection, MAX_REPORT_CACHED, (c) => c.cleanup())
   }
   return collection
 }

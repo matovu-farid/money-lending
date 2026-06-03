@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { FileText, TrendingUp, Scale, ScrollText, ClipboardList, PiggyBank } from "lucide-react"
+import { FileText, TrendingUp, Scale, ScrollText, ClipboardList, PiggyBank, ArrowLeftRight } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -29,6 +29,14 @@ const reportCards: ReportCard[] = [
     description:
       "Active loans with days remaining, interest accrued, and risk flags.",
     href: "/reports/portfolio",
+  },
+  {
+    icon: ArrowLeftRight,
+    title: "Monthly Cashflow",
+    description:
+      "Cash in vs. cash out per month over the last 12 months with category breakdown.",
+    href: "/reports/cashflow",
+    permission: "reports:financial",
   },
   {
     icon: TrendingUp,

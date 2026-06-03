@@ -105,6 +105,10 @@ export const queryKeys = {
       period
         ? (["reports", "retained-earnings", period] as const)
         : (["reports", "retained-earnings"] as const),
+    cashflow: (period?: string) =>
+      period
+        ? (["reports", "cashflow", period] as const)
+        : (["reports", "cashflow"] as const),
   },
 
   // ── Delegations ──────────────────────────────────────────────────────

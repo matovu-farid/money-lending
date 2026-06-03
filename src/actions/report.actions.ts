@@ -7,6 +7,7 @@ import {
   getPnlData,
   getBalanceSheetData,
   getRetainedEarningsData,
+  getCashflowData,
 } from "@/services/report.service"
 import { listTransactions } from "@/services/transaction.service"
 import { getCurrentMonth } from "@/lib/utils"
@@ -32,6 +33,12 @@ export const getBalanceSheetReportAction = withAction<{ period: string }, any>({
 export const getRetainedEarningsReportAction = withAction<{ period: string }, any>({
   permission: "reports:read",
   effect: (_session, { period }) => getRetainedEarningsData(period || getCurrentMonth()),
+  errors: { DatabaseError: "Database error" },
+})
+
+export const getCashflowReportAction = withAction<{ period: string }, any>({
+  permission: "reports:read",
+  effect: (_session, { period }) => getCashflowData(period || getCurrentMonth()),
   errors: { DatabaseError: "Database error" },
 })
 

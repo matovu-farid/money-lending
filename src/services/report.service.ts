@@ -23,7 +23,7 @@ import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import BigNumber from "bignumber.js"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./ledger-queries.service"
 import { periodBoundsUTC, asOfDateUTC } from "@/lib/date-utils"
-import { toLoanType, type PnlData, type BalanceSheetData, type PortfolioEntry, type RetainedEarningsData } from "@/types"
+import { toLoanType, type PnlData, type BalanceSheetData, type PortfolioEntry, type RetainedEarningsData, type CashflowData, type CashflowMonth } from "@/types"
 
 export const getPnlData = (
   period: string
@@ -569,6 +569,158 @@ export const generateMonthlySnapshot = (
 
       if (insertRows.length > 0) {
         await db.insert(financialSnapshots).values(insertRows).onConflictDoNothing()
+      }
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })
+
+/**
+ * Monthly cashflow over the 12 months ending at `period`.
+ *
+ * A single query against the unified `transactions` ledger classifies each
+ * row as inflow / outflow / ignored by referenceType + category type, then
+ * aggregates per (month, direction, sourceLabel).
+ *
+ * Cashflow excludes purely accounting moves: fund transfers (between our own
+ * locations), capital injections (equity injection, not cash earned), interest
+ * accruals, and rate-change adjustments. Loan disbursements and creditor
+ * investments/repayments are real cash motion and are included.
+ */
+const MONTHS_IN_CASHFLOW = 12
+
+function shiftMonth(period: string, deltaMonths: number): string {
+  const [y, m] = period.split("-").map(Number)
+  const date = new Date(Date.UTC(y, m - 1 + deltaMonths, 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`
+}
+
+export const getCashflowData = (
+  period: string
+): Effect.Effect<CashflowData, DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      const { periodEnd: rangeEnd } = periodBoundsUTC(period)
+      const earliestMonth = shiftMonth(period, -(MONTHS_IN_CASHFLOW - 1))
+      const { periodStart: rangeStart } = periodBoundsUTC(earliestMonth)
+
+      const rows = await db
+        .select({
+          monthStart: sql<string>`to_char(date_trunc('month', ${transactions.transactionDate} AT TIME ZONE 'UTC'), 'YYYY-MM')`,
+          referenceType: transactions.referenceType,
+          txType: transactions.type,
+          categoryType: transactionCategories.type,
+          categoryName: sql<string>`coalesce(${transactions.category}, ${transactionCategories.name})`,
+          amount: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+        })
+        .from(transactions)
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id)
+        )
+        .where(
+          and(
+            gte(transactions.transactionDate, rangeStart),
+            lte(transactions.transactionDate, rangeEnd),
+            inArray(transactionCategories.type, ["revenue", "expense", "asset", "liability"])
+          )
+        )
+        .groupBy(
+          sql`date_trunc('month', ${transactions.transactionDate} AT TIME ZONE 'UTC')`,
+          transactions.referenceType,
+          transactions.type,
+          transactionCategories.type,
+          sql`coalesce(${transactions.category}, ${transactionCategories.name})`
+        )
+
+      type Direction = "in" | "out" | "skip"
+      function classify(row: typeof rows[number]): { direction: Direction; label: string } {
+        const ref = row.referenceType
+        // Real-cash sources keyed off referenceType when set.
+        if (ref === "loan_disbursement") return { direction: "out", label: "Loan disbursements" }
+        if (ref === "payment" || ref === "payment_reversal") {
+          // Only the Cash leg of a payment is cash motion. The Interest Earned
+          // and Loans Receivable legs are accounting recognition.
+          if (row.categoryName === "Cash") {
+            return { direction: ref === "payment_reversal" ? "out" : "in", label: "Loan payments received" }
+          }
+          return { direction: "skip", label: "" }
+        }
+        if (ref === "creditor_investment") {
+          if (row.categoryName === "Cash") return { direction: "in", label: "Creditor investments received" }
+          return { direction: "skip", label: "" }
+        }
+        if (ref === "creditor_repayment") {
+          if (row.categoryName === "Cash") return { direction: "out", label: "Creditor repayments" }
+          return { direction: "skip", label: "" }
+        }
+        if (ref === "fund_transfer" || ref === "capital_injection") return { direction: "skip", label: "" }
+        if (ref === "interest_accrual" || ref === "penalty_interest_accrual") return { direction: "skip", label: "" }
+        if (ref === "collateral_settlement") return { direction: "skip", label: "" }
+
+        // Manual entries (no referenceType): user-typed expense/income lines.
+        // Use the leg with the user-typed category label.
+        if (row.categoryType === "revenue" && row.txType === "credit") {
+          return { direction: "in", label: `Income: ${row.categoryName}` }
+        }
+        if (row.categoryType === "expense" && row.txType === "debit") {
+          return { direction: "out", label: `Expense: ${row.categoryName}` }
+        }
+        return { direction: "skip", label: "" }
+      }
+
+      // Initialize months ascending.
+      const months: CashflowMonth[] = []
+      const monthIndex = new Map<string, number>()
+      for (let i = -(MONTHS_IN_CASHFLOW - 1); i <= 0; i++) {
+        const m = shiftMonth(period, i)
+        monthIndex.set(m, months.length)
+        months.push({ month: m, inflows: "0", outflows: "0", net: "0" })
+      }
+
+      const inflowsByType = new Map<string, BigNumber>()
+      const outflowsByType = new Map<string, BigNumber>()
+      const monthlyInflows = months.map(() => new BigNumber(0))
+      const monthlyOutflows = months.map(() => new BigNumber(0))
+
+      for (const row of rows) {
+        const { direction, label } = classify(row)
+        if (direction === "skip") continue
+        const idx = monthIndex.get(row.monthStart)
+        if (idx === undefined) continue
+        const amt = new BigNumber(row.amount)
+        if (direction === "in") {
+          monthlyInflows[idx] = monthlyInflows[idx].plus(amt)
+          if (row.monthStart === period) {
+            inflowsByType.set(label, (inflowsByType.get(label) ?? new BigNumber(0)).plus(amt))
+          }
+        } else {
+          monthlyOutflows[idx] = monthlyOutflows[idx].plus(amt)
+          if (row.monthStart === period) {
+            outflowsByType.set(label, (outflowsByType.get(label) ?? new BigNumber(0)).plus(amt))
+          }
+        }
+      }
+
+      let totalIn = new BigNumber(0)
+      let totalOut = new BigNumber(0)
+      for (let i = 0; i < months.length; i++) {
+        const inAmt = monthlyInflows[i]
+        const outAmt = monthlyOutflows[i]
+        months[i].inflows = formatAmount(inAmt)
+        months[i].outflows = formatAmount(outAmt)
+        months[i].net = formatAmount(inAmt.minus(outAmt))
+        totalIn = totalIn.plus(inAmt)
+        totalOut = totalOut.plus(outAmt)
+      }
+
+      return {
+        period,
+        months,
+        inflowsByType: Array.from(inflowsByType.entries()).map(([label, amt]) => ({ label, amount: formatAmount(amt) })),
+        outflowsByType: Array.from(outflowsByType.entries()).map(([label, amt]) => ({ label, amount: formatAmount(amt) })),
+        totalInflows: formatAmount(totalIn),
+        totalOutflows: formatAmount(totalOut),
+        totalNet: formatAmount(totalIn.minus(totalOut)),
       }
     },
     catch: (e) => new DatabaseError({ cause: e }),

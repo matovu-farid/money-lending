@@ -631,3 +631,92 @@ describe("Report Service — Period boundary construction (BUG-9/12)", () => {
     expect(priorEnd.toISOString()).toBe("2026-02-28T23:59:59.999Z")
   })
 })
+
+describe("Report Service — getCashflowData", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("classifies loan disbursement as outflow and payment cash leg as inflow (RPTS-CF-01)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
+      chainedSelect([
+        // Loan disbursement (outflow)
+        { monthStart: "2026-06", referenceType: "loan_disbursement", txType: "debit",  categoryType: "asset",   categoryName: "Loans Receivable", amount: "1000000" },
+        // Loan payment received — only the Cash leg counts
+        { monthStart: "2026-06", referenceType: "payment",            txType: "debit",  categoryType: "asset",   categoryName: "Cash",            amount: "400000" },
+        { monthStart: "2026-06", referenceType: "payment",            txType: "credit", categoryType: "revenue", categoryName: "Interest Earned",  amount: "50000" },
+        { monthStart: "2026-06", referenceType: "payment",            txType: "credit", categoryType: "asset",   categoryName: "Loans Receivable", amount: "350000" },
+        // Manual expense
+        { monthStart: "2026-06", referenceType: null,                  txType: "debit",  categoryType: "expense", categoryName: "Rent",             amount: "120000" },
+        // Manual income
+        { monthStart: "2026-06", referenceType: null,                  txType: "credit", categoryType: "revenue", categoryName: "Misc Fees",        amount: "30000" },
+        // Skipped — internal fund transfer
+        { monthStart: "2026-06", referenceType: "fund_transfer",       txType: "debit",  categoryType: "asset",   categoryName: "Cash",            amount: "9999999" },
+        // Skipped — interest accrual (not cash)
+        { monthStart: "2026-06", referenceType: "interest_accrual",    txType: "credit", categoryType: "revenue", categoryName: "Interest Earned", amount: "9999999" },
+      ])
+    )
+
+    const { getCashflowData } = await import("@/services/report.service")
+    const result = await Effect.runPromise(getCashflowData("2026-06"))
+
+    expect(result.period).toBe("2026-06")
+    expect(result.months).toHaveLength(12)
+
+    // Anchor month = 2026-06
+    const anchor = result.months.find((m) => m.month === "2026-06")!
+    // Inflows: 400000 (loan payment cash) + 30000 (manual income) = 430000
+    expect(anchor.inflows).toBe("430000.00")
+    // Outflows: 1000000 (disbursement) + 120000 (rent) = 1120000
+    expect(anchor.outflows).toBe("1120000.00")
+    expect(anchor.net).toBe("-690000.00")
+
+    // Breakdown labels
+    const inflowLabels = result.inflowsByType.map((r) => r.label).sort()
+    expect(inflowLabels).toEqual(["Income: Misc Fees", "Loan payments received"])
+    const outflowLabels = result.outflowsByType.map((r) => r.label).sort()
+    expect(outflowLabels).toEqual(["Expense: Rent", "Loan disbursements"])
+  })
+
+  it("ignores rows outside the 12-month window (RPTS-CF-02)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
+      chainedSelect([
+        // 2024-01 — outside window when anchor is 2026-06 (window starts 2025-07)
+        { monthStart: "2024-01", referenceType: "loan_disbursement", txType: "debit", categoryType: "asset", categoryName: "Loans Receivable", amount: "5000000" },
+      ])
+    )
+
+    const { getCashflowData } = await import("@/services/report.service")
+    const result = await Effect.runPromise(getCashflowData("2026-06"))
+
+    expect(result.totalOutflows).toBe("0.00")
+    expect(result.totalInflows).toBe("0.00")
+  })
+
+  it("classifies creditor cash flow correctly (RPTS-CF-03)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue(
+      chainedSelect([
+        // Creditor investment received — Cash leg is inflow, Liability leg is skipped
+        { monthStart: "2026-06", referenceType: "creditor_investment", txType: "debit",  categoryType: "asset",     categoryName: "Cash",                amount: "2000000" },
+        { monthStart: "2026-06", referenceType: "creditor_investment", txType: "credit", categoryType: "liability", categoryName: "Creditor Investment", amount: "2000000" },
+        // Creditor repayment — Cash leg is outflow, Liability leg is skipped
+        { monthStart: "2026-06", referenceType: "creditor_repayment",  txType: "credit", categoryType: "asset",     categoryName: "Cash",                amount: "500000" },
+        { monthStart: "2026-06", referenceType: "creditor_repayment",  txType: "debit",  categoryType: "liability", categoryName: "Creditor Investment", amount: "500000" },
+      ])
+    )
+
+    const { getCashflowData } = await import("@/services/report.service")
+    const result = await Effect.runPromise(getCashflowData("2026-06"))
+
+    const anchor = result.months.find((m) => m.month === "2026-06")!
+    expect(anchor.inflows).toBe("2000000.00")
+    expect(anchor.outflows).toBe("500000.00")
+    expect(anchor.net).toBe("1500000.00")
+  })
+})
