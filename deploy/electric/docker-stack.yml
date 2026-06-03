@@ -4,13 +4,18 @@ services:
   postgres:
     image: postgres:17
     # Bound to 127.0.0.1 only — not reachable from the public internet.
-    # BSI flagged the previous 0.0.0.0:5432 binding. While the
-    # Neon-migration is in flight, drizzle-kit / pg_dump reach this via
-    # SSH local-forward: `ssh -L 5432:127.0.0.1:5432 node1`.
+    # BSI flagged the previous 0.0.0.0:5432 binding. Swarm's ingress
+    # mesh ignores `host_ip` for routed (vip) publishing, so we use
+    # `mode: host` to bind directly on the node's interface.
+    # During the Neon migration window dev access goes via SSH
+    # local-forward: `ssh -L 5432:127.0.0.1:5432 node1`.
     # Once Vercel is cut over to Neon and the migration is done, the
     # whole stack gets torn down.
     ports:
-      - "127.0.0.1:5432:5432"
+      - target: 5432
+        published: 5432
+        host_ip: "127.0.0.1"
+        mode: host
     environment:
       POSTGRES_USER: money
       POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD must be set}
