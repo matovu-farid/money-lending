@@ -1,9 +1,11 @@
 import { db } from "@/lib/db"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
+import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import {
   eq,
   and,
+  or,
   lte,
   sql,
   inArray,
@@ -160,6 +162,10 @@ export async function getInterestPayableFromLedger(
 /**
  * Derive per-investment creditor principal balances from the ledger.
  * Creditor Investment is a liability: CR adds, DR subtracts.
+ *
+ * Investment legs use referenceId = investmentId. Repayment legs use
+ * referenceId = repaymentId, so we LEFT JOIN creditor_repayments to recover
+ * the investmentId for those rows and group on the effective investment id.
  */
 export async function getCreditorBalancesFromLedger(
   investmentIds: string[],
@@ -167,9 +173,16 @@ export async function getCreditorBalancesFromLedger(
 ): Promise<Map<string, BigNumber>> {
   if (investmentIds.length === 0) return new Map();
 
+  // transactions.referenceId is text; creditor_repayments.id and .investmentId
+  // are uuid. Postgres rejects text=uuid without a cast, so we coerce the uuid
+  // columns to text for join/filter/group expressions.
+  const repaymentIdText = sql<string>`${creditorRepayments.id}::text`;
+  const repaymentInvestmentIdText = sql<string>`${creditorRepayments.investmentId}::text`;
+  const effectiveInvestmentId = sql<string>`COALESCE(${repaymentInvestmentIdText}, ${transactions.referenceId})`;
+
   const rows = await queryDb
     .select({
-      referenceId: transactions.referenceId,
+      investmentId: effectiveInvestmentId,
       txType: transactions.type,
       total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
     })
@@ -178,22 +191,38 @@ export async function getCreditorBalancesFromLedger(
       transactionCategories,
       eq(transactions.categoryId, transactionCategories.id)
     )
+    .leftJoin(
+      creditorRepayments,
+      and(
+        eq(transactions.referenceType, "creditor_repayment"),
+        eq(transactions.referenceId, repaymentIdText)
+      )
+    )
     .where(
       and(
         eq(transactionCategories.name, "Creditor Investment"),
-        inArray(transactions.referenceId, investmentIds)
+        or(
+          and(
+            eq(transactions.referenceType, "creditor_investment"),
+            inArray(transactions.referenceId, investmentIds)
+          ),
+          and(
+            eq(transactions.referenceType, "creditor_repayment"),
+            inArray(repaymentInvestmentIdText, investmentIds)
+          )
+        )
       )
     )
-    .groupBy(transactions.referenceId, transactions.type);
+    .groupBy(effectiveInvestmentId, transactions.type);
 
   const balances = new Map<string, BigNumber>();
   for (const row of rows) {
-    if (!row.referenceId) continue;
-    const current = balances.get(row.referenceId) ?? new BigNumber(0);
+    if (!row.investmentId) continue;
+    const current = balances.get(row.investmentId) ?? new BigNumber(0);
     const amount = new BigNumber(row.total);
     // Liability: CR adds, DR subtracts
     balances.set(
-      row.referenceId,
+      row.investmentId,
       row.txType === "credit" ? current.plus(amount) : current.minus(amount)
     );
   }
@@ -366,11 +395,19 @@ export async function getCreditorTotalInvestedFromLedger(
  * Derive total amount repaid to creditors from the ledger.
  * Queries "Creditor Investment" DR entries (liability decrease = principal repaid)
  * plus "Interest Payments" DR entries (expense = interest paid).
+ *
+ * Repayment ledger legs have referenceId = repaymentId, so we JOIN
+ * creditor_repayments to filter by the investmentIds those repayments belong to.
  */
 export async function getCreditorTotalRepaidFromLedger(
   investmentIds: string[]
 ): Promise<BigNumber> {
   if (investmentIds.length === 0) return new BigNumber(0);
+
+  // See getCreditorBalancesFromLedger — uuid columns need ::text casts for
+  // comparison with the text `transactions.referenceId` and the string[] input.
+  const repaymentIdText = sql<string>`${creditorRepayments.id}::text`;
+  const repaymentInvestmentIdText = sql<string>`${creditorRepayments.investmentId}::text`;
 
   const rows = await db
     .select({
@@ -383,10 +420,14 @@ export async function getCreditorTotalRepaidFromLedger(
       transactionCategories,
       eq(transactions.categoryId, transactionCategories.id)
     )
+    .innerJoin(
+      creditorRepayments,
+      eq(transactions.referenceId, repaymentIdText)
+    )
     .where(
       and(
         eq(transactions.referenceType, "creditor_repayment"),
-        inArray(transactions.referenceId, investmentIds),
+        inArray(repaymentInvestmentIdText, investmentIds),
         inArray(transactionCategories.name, ["Creditor Investment", "Interest Payments"])
       )
     )

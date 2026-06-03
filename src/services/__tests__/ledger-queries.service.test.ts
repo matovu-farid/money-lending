@@ -12,16 +12,23 @@ vi.mock("drizzle-orm", async () => {
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
-/** Build a chained mock for select().from().innerJoin().where().groupBy() */
+/**
+ * Build a chained mock for select().from().(innerJoin|leftJoin)*.where().groupBy()
+ *
+ * Supports arbitrary numbers of innerJoin/leftJoin calls before where().
+ */
 function ledgerQuery(rows: any[]) {
-  return {
-    from: vi.fn().mockReturnValue({
-      innerJoin: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          groupBy: vi.fn().mockResolvedValue(rows),
-        }),
-      }),
+  const terminator = {
+    where: vi.fn().mockReturnValue({
+      groupBy: vi.fn().mockResolvedValue(rows),
     }),
+  }
+  const joinable: Record<string, any> = {}
+  joinable.innerJoin = vi.fn().mockReturnValue(joinable)
+  joinable.leftJoin = vi.fn().mockReturnValue(joinable)
+  joinable.where = terminator.where
+  return {
+    from: vi.fn().mockReturnValue(joinable),
   }
 }
 
@@ -307,7 +314,7 @@ describe("ledger-queries.service", () => {
         "@/services/ledger-queries.service"
       )
       const qdb = mockQueryDb([
-        { referenceId: "inv-1", txType: "credit", total: "1000000" },
+        { investmentId: "inv-1", txType: "credit", total: "1000000" },
       ])
       const result = await getCreditorBalancesFromLedger(
         ["inv-1"],
@@ -321,8 +328,8 @@ describe("ledger-queries.service", () => {
         "@/services/ledger-queries.service"
       )
       const qdb = mockQueryDb([
-        { referenceId: "inv-1", txType: "credit", total: "1000000" },
-        { referenceId: "inv-1", txType: "debit", total: "300000" },
+        { investmentId: "inv-1", txType: "credit", total: "1000000" },
+        { investmentId: "inv-1", txType: "debit", total: "300000" },
       ])
       const result = await getCreditorBalancesFromLedger(
         ["inv-1"],
@@ -331,12 +338,34 @@ describe("ledger-queries.service", () => {
       expect(result.get("inv-1")!.toFixed(0)).toBe("700000")
     })
 
-    it("skips rows with null referenceId", async () => {
+    it("repayment leg keyed via creditor_repayments.investmentId reduces balance (regression)", async () => {
+      // Regression: repayment ledger legs have referenceId=repaymentId, not
+      // referenceId=investmentId. The fixed query LEFT JOINs creditor_repayments
+      // and groups on COALESCE(creditorRepayments.investmentId, referenceId)
+      // — i.e. the row shape returned for a repayment leg has
+      // investmentId="inv-1" derived from the join, not from referenceId.
       const { getCreditorBalancesFromLedger } = await import(
         "@/services/ledger-queries.service"
       )
       const qdb = mockQueryDb([
-        { referenceId: null, txType: "credit", total: "500000" },
+        // Original investment credit (investmentId = referenceId)
+        { investmentId: "inv-1", txType: "credit", total: "5000000" },
+        // Repayment debit — investmentId comes from the JOIN, not the tx
+        { investmentId: "inv-1", txType: "debit", total: "1000000" },
+      ])
+      const result = await getCreditorBalancesFromLedger(
+        ["inv-1"],
+        qdb as any
+      )
+      expect(result.get("inv-1")!.toFixed(0)).toBe("4000000")
+    })
+
+    it("skips rows with null investmentId", async () => {
+      const { getCreditorBalancesFromLedger } = await import(
+        "@/services/ledger-queries.service"
+      )
+      const qdb = mockQueryDb([
+        { investmentId: null, txType: "credit", total: "500000" },
       ])
       const result = await getCreditorBalancesFromLedger(
         ["inv-1"],
@@ -350,7 +379,7 @@ describe("ledger-queries.service", () => {
         "@/services/ledger-queries.service"
       )
       setupDbLedger(mockedDb, [
-        { referenceId: "inv-1", txType: "credit", total: "200000" },
+        { investmentId: "inv-1", txType: "credit", total: "200000" },
       ])
       const result = await getCreditorBalancesFromLedger(["inv-1"])
       expect(mockedDb.select).toHaveBeenCalled()
