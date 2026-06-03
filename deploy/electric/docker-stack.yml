@@ -3,11 +3,14 @@ version: "3.8"
 services:
   postgres:
     image: postgres:17
-    # Published on the host so Vercel functions and local drizzle-kit can
-    # reach it. Internal traffic (Electric) uses the overlay network and
-    # the service name `postgres` instead.
+    # Bound to 127.0.0.1 only — not reachable from the public internet.
+    # BSI flagged the previous 0.0.0.0:5432 binding. While the
+    # Neon-migration is in flight, drizzle-kit / pg_dump reach this via
+    # SSH local-forward: `ssh -L 5432:127.0.0.1:5432 node1`.
+    # Once Vercel is cut over to Neon and the migration is done, the
+    # whole stack gets torn down.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_USER: money
       POSTGRES_PASSWORD: ${PG_PASSWORD:?PG_PASSWORD must be set}
