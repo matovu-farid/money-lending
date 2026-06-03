@@ -13,8 +13,7 @@ import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull, sql } from "drizzle-orm"
 import { toLoanType, type RecordPaymentInput, type EditPaymentInput, type DeletePaymentInput, type ListPaymentsInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
-import { shortId } from "@/lib/utils"
-import { sendAdminNotification } from "@/lib/email"
+import { sendAdminNotification, resolveLoanContext } from "@/lib/email"
 import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
 import { autoPostInterestEarned, autoPostPrincipalRepayment } from "@/services/auto-post.service"
 import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
@@ -46,13 +45,15 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
       const { payment, txid } = await Effect.runPromise(recordPaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${input.loanId}`)
       revalidatePath("/payments")
-      void sendAdminNotification("payment.created", {
-        actorName: session.user.name ?? "Unknown",
-        actorEmail: session.user.email,
-        loanRef: `LOAN-${shortId(input.loanId).toUpperCase()}`,
-        amount: input.amount,
-        timestamp: new Date(),
-      })
+      void resolveLoanContext(input.loanId).then((ctx) =>
+        sendAdminNotification("payment.created", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: input.amount,
+          ...ctx,
+        })
+      )
       return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "LoanNotFound") {
@@ -93,13 +94,15 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
       const { payment, txid } = await Effect.runPromise(editPaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${payment.loanId}`)
       revalidatePath("/payments")
-      void sendAdminNotification("payment.updated", {
-        actorName: session.user.name ?? "Unknown",
-        actorEmail: session.user.email,
-        loanRef: `LOAN-${shortId(payment.loanId).toUpperCase()}`,
-        amount: payment.amount,
-        timestamp: new Date(),
-      })
+      void resolveLoanContext(payment.loanId).then((ctx) =>
+        sendAdminNotification("payment.updated", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: payment.amount,
+          ...ctx,
+        })
+      )
       return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "PaymentNotFound") {
@@ -143,13 +146,15 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
       const { payment, txid } = await Effect.runPromise(deletePaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${payment.loanId}`)
       revalidatePath("/payments")
-      void sendAdminNotification("payment.deleted", {
-        actorName: session.user.name ?? "Unknown",
-        actorEmail: session.user.email,
-        loanRef: `LOAN-${shortId(payment.loanId).toUpperCase()}`,
-        amount: payment.amount,
-        timestamp: new Date(),
-      })
+      void resolveLoanContext(payment.loanId).then((ctx) =>
+        sendAdminNotification("payment.deleted", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: payment.amount,
+          ...ctx,
+        })
+      )
       return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "PaymentNotFound") {

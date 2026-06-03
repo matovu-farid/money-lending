@@ -18,7 +18,7 @@ interface KpiCardProps {
 export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName, loading, labelExtra }: KpiCardProps) {
 
   return (
-    <Card interactive>
+    <Card interactive data-testid="kpi-card" data-kpi-label={label}>
       <CardContent className="pt-6">
         <div className="space-y-3">
           <div className="inline-flex items-center gap-2 text-muted-foreground">
@@ -28,7 +28,7 @@ export function KpiCard({ label, value, icon: Icon, subtitle, valueClassName, lo
           {loading ? (
             <div className="h-9 w-32 rounded bg-muted-foreground/10 animate-pulse" />
           ) : (
-            <p className={cn("text-3xl font-semibold tracking-tight tabular-nums", valueClassName)}>
+            <p data-testid="kpi-value" className={cn("text-3xl font-semibold tracking-tight tabular-nums", valueClassName)}>
               {value}
             </p>
           )}

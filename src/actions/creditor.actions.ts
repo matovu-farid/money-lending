@@ -18,6 +18,12 @@ import {
 } from "@/services/creditor.service"
 import { getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { getErrorTag } from "@/lib/action-utils"
+import {
+  sendAdminNotification,
+  resolveCreditorContext,
+  resolveCreditorRepaymentContext,
+} from "@/lib/email"
+import { shortId } from "@/lib/utils"
 import type {
   CreateCreditorInput,
   CreateCreditorWithInvestmentInput,
@@ -101,7 +107,7 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
         address: input.address.trim(),
       }, session.user.id))
 
-      await Effect.runPromise(addInvestment({
+      const investment = await Effect.runPromise(addInvestment({
         creditorId: creditor.id,
         amount: input.amount,
         interestRateMonthly: input.interestRateMonthly,
@@ -110,10 +116,22 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
         subLocationId: input.subLocationId,
       }, session.user.id))
 
+      void resolveCreditorContext(creditor.id).then((ctx) =>
+        sendAdminNotification("creditor.investment.recorded", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: input.amount,
+          entityRef: `INV-${shortId(investment.id).toUpperCase()}`,
+          ...ctx,
+        })
+      )
+
       revalidatePath("/creditors")
-      return { data: creditor, txid }
-    } catch {
-      return { error: "Internal server error" }
+      return { data: creditor, txid, investmentId: investment.id }
+    } catch (err) {
+      console.error("[createCreditorWithInvestmentAction] failed", err)
+      return { error: err instanceof Error ? err.message : "Internal server error" }
     }
   },
 })
@@ -133,6 +151,16 @@ export const addInvestmentAction = withAction<AddInvestmentInput, any>({
       const data = await Effect.runPromise(addInvestment(input, session.user.id))
       revalidatePath("/creditors")
       revalidatePath(`/creditors/${input.creditorId}`)
+      void resolveCreditorContext(input.creditorId).then((ctx) =>
+        sendAdminNotification("creditor.investment.recorded", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: input.amount,
+          entityRef: `INV-${shortId((data as { id: string }).id).toUpperCase()}`,
+          ...ctx,
+        })
+      )
       return { data }
     } catch {
       return { error: "Internal server error" }
@@ -154,6 +182,15 @@ export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentI
     try {
       const data = await Effect.runPromise(recordCreditorRepayment(input, session.user.id))
       revalidatePath("/creditors")
+      void resolveCreditorRepaymentContext((data as { id: string }).id).then((ctx) =>
+        sendAdminNotification("creditor.repayment.recorded", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: input.amount,
+          ...ctx,
+        })
+      )
       return { data }
     } catch {
       return { error: "Internal server error" }

@@ -11,7 +11,7 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import { createLoan, listLoans } from "@/services/loan.service"
 import { toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
 import { revalidatePath } from "next/cache"
-import { sendAdminNotification } from "@/lib/email"
+import { sendAdminNotification, resolveLoanContext } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { payments } from "@/lib/db/schema/payments"
@@ -331,13 +331,15 @@ export async function createLoanAction(input: CreateLoanInput) {
     )
     revalidatePath("/loans")
     revalidatePath(`/customers/${input.customerId}`)
-    void sendAdminNotification("loan.disbursed", {
-      actorName: session.user.name ?? "Unknown",
-      actorEmail: session.user.email,
-      loanRef: `LOAN-${shortId(data.id).toUpperCase()}`,
-      amount: input.principalAmount,
-      timestamp: new Date(),
-    })
+    void resolveLoanContext(data.id).then((ctx) =>
+      sendAdminNotification("loan.disbursed", {
+        actorName: session.user.name ?? "Unknown",
+        actorEmail: session.user.email,
+        timestamp: new Date(),
+        amount: input.principalAmount,
+        ...ctx,
+      })
+    )
     return { data }
   } catch (error) {
     if (getErrorTag(error) === "CustomerNotFound") {

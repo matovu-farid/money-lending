@@ -1,5 +1,6 @@
 import {
   Body,
+  Button,
   Column,
   Container,
   Head,
@@ -16,24 +17,46 @@ type AdminNotificationProps = {
   eventLabel: string
   actorName: string
   actorEmail: string
-  loanRef: string
+  /** Entity reference shown in monospace, e.g. "LOAN-A3B2C1D4". */
+  entityRef: string
   amount: string
   formattedTimestamp: string
+  /** Absolute URL into the app at the relevant entity. */
+  deepLink: string
+  /** "Paid to" / "Received from" — omit for internal events. */
+  counterpartyHeading?: string
+  /** Counterparty name (customer / creditor / vendor). */
+  counterpartyName?: string
+  /** Counterparty role badge, e.g. "Customer", "Creditor". */
+  counterpartyLabel?: string
+  /** Optional free-form note (transaction description). */
+  notes?: string
 }
 
 export function AdminNotificationTemplate({
   eventLabel,
   actorName,
   actorEmail,
-  loanRef,
+  entityRef,
   amount,
   formattedTimestamp,
+  deepLink,
+  counterpartyHeading,
+  counterpartyName,
+  counterpartyLabel,
+  notes,
 }: AdminNotificationProps) {
+  const counterpartyValue = counterpartyName
+    ? counterpartyLabel
+      ? `${counterpartyLabel}: ${counterpartyName}`
+      : counterpartyName
+    : null
+
   return (
     <Html>
       <Head />
       <Preview>
-        {eventLabel} — {loanRef} — UGX {amount}
+        {eventLabel} — {entityRef} — UGX {amount}
       </Preview>
       <Body style={body}>
         <Container style={container}>
@@ -43,32 +66,52 @@ export function AdminNotificationTemplate({
           <Section style={content}>
             <Heading style={heading}>{eventLabel}</Heading>
             <Text style={subheading}>
-              A transaction event was recorded in the system.
+              {actorName} recorded this event on {formattedTimestamp}.
             </Text>
 
             <Section style={dataCard}>
               <Row style={dataRow}>
-                <Column style={labelCol}>Event</Column>
-                <Column style={valueCol}>{eventLabel}</Column>
-              </Row>
-              <Row style={dataRowAlt}>
-                <Column style={labelCol}>Actor</Column>
+                <Column style={labelCol}>Recorded by</Column>
                 <Column style={valueCol}>
                   {actorName} ({actorEmail})
                 </Column>
               </Row>
-              <Row style={dataRow}>
-                <Column style={labelCol}>Loan Ref</Column>
-                <Column style={valueColMono}>{loanRef}</Column>
-              </Row>
               <Row style={dataRowAlt}>
+                <Column style={labelCol}>When</Column>
+                <Column style={valueCol}>{formattedTimestamp}</Column>
+              </Row>
+              {counterpartyValue && (
+                <Row style={dataRow}>
+                  <Column style={labelCol}>
+                    {counterpartyHeading ?? "Counterparty"}
+                  </Column>
+                  <Column style={valueCol}>{counterpartyValue}</Column>
+                </Row>
+              )}
+              <Row style={dataRowAlt}>
+                <Column style={labelCol}>Reference</Column>
+                <Column style={valueColMono}>{entityRef}</Column>
+              </Row>
+              <Row style={dataRow}>
                 <Column style={labelCol}>Amount</Column>
                 <Column style={valueColAmount}>UGX {amount}</Column>
               </Row>
-              <Row style={dataRow}>
-                <Column style={labelCol}>Timestamp</Column>
-                <Column style={valueCol}>{formattedTimestamp}</Column>
-              </Row>
+              {notes && (
+                <Row style={dataRowAlt}>
+                  <Column style={labelCol}>Notes</Column>
+                  <Column style={valueCol}>{notes}</Column>
+                </Row>
+              )}
+            </Section>
+
+            <Section style={ctaSection}>
+              <Button href={deepLink} style={ctaButton}>
+                Open in app
+              </Button>
+              <Text style={ctaFallback}>
+                or paste this link into your browser:{" "}
+                <span style={ctaUrl}>{deepLink}</span>
+              </Text>
             </Section>
           </Section>
           <Hr style={hr} />
@@ -177,6 +220,34 @@ const valueColAmount: React.CSSProperties = {
   fontWeight: "700",
   color: "#1e293b",
   fontSize: "15px",
+}
+
+const ctaSection: React.CSSProperties = {
+  marginTop: "28px",
+  textAlign: "center" as const,
+}
+
+const ctaButton: React.CSSProperties = {
+  backgroundColor: "#1e293b",
+  borderRadius: "8px",
+  color: "#ffffff",
+  fontSize: "14px",
+  fontWeight: "600",
+  padding: "12px 24px",
+  textDecoration: "none",
+  display: "inline-block",
+}
+
+const ctaFallback: React.CSSProperties = {
+  color: "#94a3b8",
+  fontSize: "11px",
+  marginTop: "12px",
+}
+
+const ctaUrl: React.CSSProperties = {
+  color: "#4f46e5",
+  fontFamily: "'SF Mono', Monaco, 'Cascadia Code', monospace",
+  wordBreak: "break-all" as const,
 }
 
 const hr: React.CSSProperties = {

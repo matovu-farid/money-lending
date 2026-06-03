@@ -6,6 +6,8 @@ import { withAction } from "@/lib/with-action"
 import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
+import { sendAdminNotification } from "@/lib/email"
+import { shortId } from "@/lib/utils"
 import { listDistinctTransactionCategories } from "@/services/category.service"
 import { getLocationBalances } from "@/services/report.service"
 import type { CreateTransactionInput, UserRole } from "@/types"
@@ -82,9 +84,23 @@ export const recordExpenseAction = withAction<
     }
 
     try {
-      await Effect.runPromise(recordExpense(input, session.user.id))
+      const tx = await Effect.runPromise(recordExpense(input, session.user.id))
       revalidatePath("/expenses")
       revalidatePath("/transactions")
+      const txId = (tx as { id?: string } | undefined)?.id
+      if (txId) {
+        void sendAdminNotification("expense.recorded", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: input.amount,
+          entityRef: `EXP-${shortId(txId).toUpperCase()}`,
+          counterpartyLabel: "Category",
+          counterpartyName: input.categoryName,
+          deepLinkPath: "/expenses",
+          notes: input.notes ?? undefined,
+        })
+      }
       return { success: true as const }
     } catch (err) {
       console.error("[recordExpenseAction]", err)

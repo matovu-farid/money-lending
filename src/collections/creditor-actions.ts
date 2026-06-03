@@ -50,32 +50,52 @@ async function refetchCreditorAggregates(creditorId: string) {
   })
 }
 
-export const addInvestment = createOptimisticAction<AddInvestmentInput>({
+/**
+ * Optional success-side callbacks the dialogs use to capture the
+ * server-assigned id and open a POS receipt. Threading them through the
+ * input keeps the mutation-fn API surface unchanged while letting the
+ * caller react to the persisted row without a second round-trip.
+ */
+type AddInvestmentClientInput = AddInvestmentInput & {
+  onInvestmentCreated?: (investmentId: string) => void
+}
+
+type RecordCreditorRepaymentClientInput = RecordCreditorRepaymentInput & {
+  creditorId: string
+  onRepaymentCreated?: (repaymentId: string) => void
+}
+
+export const addInvestment = createOptimisticAction<AddInvestmentClientInput>({
   onMutate: () => {
     // No optimistic update — interest-accrual values are server-computed and
     // we can't synthesize the dashboard's derived fields client-side.
   },
   mutationFn: async (input) => {
-    const result = await addInvestmentAction(input)
+    const { onInvestmentCreated, ...rest } = input
+    const result = await addInvestmentAction(rest)
     if ("error" in result) {
       throw new Error(result.error)
+    }
+    if (onInvestmentCreated && result.data?.id) {
+      onInvestmentCreated(result.data.id as string)
     }
     await refetchCreditorAggregates(input.creditorId)
     return result
   },
 })
 
-export const recordCreditorRepayment = createOptimisticAction<
-  RecordCreditorRepaymentInput & { creditorId: string }
->({
+export const recordCreditorRepayment = createOptimisticAction<RecordCreditorRepaymentClientInput>({
   onMutate: () => {
     // Same reasoning as `addInvestment`: aggregates are server-computed.
   },
   mutationFn: async (input) => {
-    const { creditorId, ...rest } = input
+    const { creditorId, onRepaymentCreated, ...rest } = input
     const result = await recordCreditorRepaymentAction(rest)
     if ("error" in result) {
       throw new Error(result.error)
+    }
+    if (onRepaymentCreated && result.data?.id) {
+      onRepaymentCreated(result.data.id as string)
     }
     await refetchCreditorAggregates(creditorId)
     return result

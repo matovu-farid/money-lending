@@ -32,6 +32,12 @@ export interface CreditorInsertMetadata {
     depositLocation?: CreateCreditorWithInvestmentInput["depositLocation"]
     subLocationId?: string
   }
+  /**
+   * Optional callback fired with the server-assigned investment id after the
+   * action succeeds. The AddCreditorDialog uses this to open a POS receipt
+   * for the newly-created investment.
+   */
+  onInvestmentCreated?: (investmentId: string) => void
 }
 
 export const creditorCollection = createCollection(
@@ -65,6 +71,9 @@ export const creditorCollection = createCollection(
       const result = await createCreditorWithInvestmentAction(input)
       if ("error" in result) {
         throw new Error(result.error)
+      }
+      if (meta.onInvestmentCreated && "investmentId" in result && typeof result.investmentId === "string") {
+        meta.onInvestmentCreated(result.investmentId)
       }
       // Invalidate query-based collections that depend on creditor data
       const qc = getQueryClient()

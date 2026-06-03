@@ -12,6 +12,9 @@ import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog
 import { DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 
 interface SettleCollateralDialogProps {
   open: boolean
@@ -33,31 +36,47 @@ export function SettleCollateralDialog({
   collateralDescription,
 }: SettleCollateralDialogProps) {
   const [reason, setReason] = useState("")
-  const isPending = false
+  const [isPending, setIsPending] = useState(false)
+  const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
 
   const totalWriteOff = (
     parseFloat(outstandingPrincipal) + parseFloat(accruedInterest)
   ).toFixed(0)
 
-  function handleSubmit() {
+  async function handleSubmit() {
     if (!reason.trim()) {
       toast.error("Reason is required")
       return
     }
 
-    loanCollection.update(
-      loanId,
-      { metadata: { intent: "settle", reason: reason.trim() } },
-      (draft) => {
-        draft.status = "fully_paid"
-      },
-    )
-    toast.success("Loan settled with collateral")
-    onOpenChange(false)
-    setReason("")
+    try {
+      setIsPending(true)
+      const tx = loanCollection.update(
+        loanId,
+        { metadata: { intent: "settle", reason: reason.trim() } },
+        (draft) => {
+          draft.status = "fully_paid"
+        },
+      )
+      await tx.isPersisted.promise
+      toast.success("Loan settled with collateral")
+      onOpenChange(false)
+      setReason("")
+
+      const result = await getTransactionReceiptDataAction({
+        kind: "collateral_settlement",
+        loanId,
+      })
+      if ("data" in result) setReceipt(result.data)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to settle loan")
+    } finally {
+      setIsPending(false)
+    }
   }
 
   return (
+    <>
     <DrawerDialog open={open} onOpenChange={onOpenChange}>
       <DrawerDialogContent>
         <DialogHeader>
@@ -128,5 +147,15 @@ export function SettleCollateralDialog({
         </DialogFooter>
       </DrawerDialogContent>
     </DrawerDialog>
+
+    <PosReceiptModal
+      open={receipt !== null}
+      onClose={() => setReceipt(null)}
+      title="Collateral Settlement Receipt"
+      autoActions
+    >
+      {receipt && <PosReceiptTransaction data={receipt} />}
+    </PosReceiptModal>
+    </>
   )
 }

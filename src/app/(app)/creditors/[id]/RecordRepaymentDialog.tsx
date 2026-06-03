@@ -5,6 +5,9 @@ import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { recordCreditorRepayment } from "@/collections/creditor-actions"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -42,6 +45,7 @@ interface RepaymentFormValues {
 export function RecordRepaymentDialog({ creditorId, investments, outstandingBalance }: Props) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
 
   const {
     register,
@@ -72,16 +76,26 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
   function onSubmit(data: RepaymentFormValues) {
     startTransition(async () => {
       try {
+        let createdRepaymentId: string | null = null
         const tx = recordCreditorRepayment({
           creditorId,
           investmentId: data.investmentId,
           amount: data.amount.trim(),
           repaymentDate: data.date,
+          onRepaymentCreated: (id) => { createdRepaymentId = id },
         })
         await tx.isPersisted.promise
         toast.success("Repayment recorded successfully")
         setOpen(false)
         resetForm()
+
+        if (createdRepaymentId) {
+          const result = await getTransactionReceiptDataAction({
+            kind: "creditor_repayment",
+            repaymentId: createdRepaymentId,
+          })
+          if ("data" in result) setReceipt(result.data)
+        }
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to record repayment")
       }
@@ -193,6 +207,15 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
         </form>
       </DrawerDialogContent>
       </DrawerDialog>
+
+      <PosReceiptModal
+        open={receipt !== null}
+        onClose={() => setReceipt(null)}
+        title="Creditor Repayment Receipt"
+        autoActions
+      >
+        {receipt && <PosReceiptTransaction data={receipt} />}
+      </PosReceiptModal>
     </>
   )
 }

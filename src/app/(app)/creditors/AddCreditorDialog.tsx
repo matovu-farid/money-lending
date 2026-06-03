@@ -6,6 +6,9 @@ import { toast } from "sonner"
 import { creditorCollection } from "@/collections/creditors"
 import { generateClientId } from "@/lib/client-id"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import {
   DialogHeader,
   DialogTitle,
@@ -39,6 +42,7 @@ interface AddCreditorDialogProps {
 
 export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps) {
   const [isPending, setIsPending] = useState(false)
+  const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
 
   const {
     register,
@@ -58,13 +62,14 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
     },
   })
 
-  function onSubmit(data: CreditorFormValues) {
+  async function onSubmit(data: CreditorFormValues) {
     try {
       setIsPending(true)
       const id = generateClientId()
       const now = new Date()
+      let createdInvestmentId: string | null = null
 
-      creditorCollection.insert(
+      const tx = creditorCollection.insert(
         {
           id,
           name: data.name.trim(),
@@ -82,21 +87,38 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
               depositLocation: "bank",
               subLocationId: data.bankAccountId,
             },
+            onInvestmentCreated: (investmentId: string) => {
+              createdInvestmentId = investmentId
+            },
           },
         }
       )
+      await tx.isPersisted.promise
 
       toast.success("Creditor registered")
       onOpenChange(false)
       reset()
-    } catch {
-      toast.error("Failed to register creditor")
+
+      if (createdInvestmentId) {
+        const result = await getTransactionReceiptDataAction({
+          kind: "creditor_investment",
+          investmentId: createdInvestmentId,
+        })
+        if ("data" in result) {
+          setReceipt(result.data)
+        }
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to register creditor"
+      console.error("[AddCreditorDialog] register failed", err)
+      toast.error(msg)
     } finally {
       setIsPending(false)
     }
   }
 
   return (
+    <>
     <DrawerDialog open={open} onOpenChange={onOpenChange}>
       <DrawerDialogContent className="sm:max-w-lg">
         <DialogHeader>
@@ -236,5 +258,15 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
         </DialogFooter>
       </DrawerDialogContent>
     </DrawerDialog>
+
+    <PosReceiptModal
+      open={receipt !== null}
+      onClose={() => setReceipt(null)}
+      title="Creditor Investment Receipt"
+      autoActions
+    >
+      {receipt && <PosReceiptTransaction data={receipt} />}
+    </PosReceiptModal>
+    </>
   )
 }

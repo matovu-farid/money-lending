@@ -6,6 +6,8 @@ import { validatePositiveDecimal } from "@/lib/validators"
 import { createFundTransferWithTxid, createCapitalInjectionWithTxid, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
+import { sendAdminNotification } from "@/lib/email"
+import { shortId } from "@/lib/utils"
 
 // NOTE: No revalidatePath calls in these actions. The /fund-transfers and
 // /reports/balance-sheet pages are client-rendered with TanStack DB collections
@@ -37,6 +39,15 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
 
     try {
       const { transfer, txid } = await Effect.runPromise(createFundTransferWithTxid(input, session.user.id))
+      void sendAdminNotification("fund.transfer.created", {
+        actorName: session.user.name ?? "Unknown",
+        actorEmail: session.user.email,
+        timestamp: new Date(),
+        amount: input.amount,
+        entityRef: `FT-${shortId(transfer.id).toUpperCase()}`,
+        deepLinkPath: "/fund-transfers",
+        notes: `From ${input.fromLocation} to ${input.toLocation}${input.note ? ` — ${input.note}` : ""}`,
+      })
       return { data: transfer, txid }
     } catch {
       return { error: "Internal server error" }
@@ -59,6 +70,15 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
 
     try {
       const { transfer, txid } = await Effect.runPromise(createCapitalInjectionWithTxid(input, session.user.id))
+      void sendAdminNotification("capital.injection.created", {
+        actorName: session.user.name ?? "Unknown",
+        actorEmail: session.user.email,
+        timestamp: new Date(),
+        amount: input.amount,
+        entityRef: `INJ-${shortId(transfer.id).toUpperCase()}`,
+        deepLinkPath: "/fund-transfers",
+        notes: `Injected to ${input.toLocation}${input.note ? ` — ${input.note}` : ""}`,
+      })
       return { data: transfer, txid }
     } catch {
       return { error: "Internal server error" }

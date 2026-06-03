@@ -23,6 +23,7 @@ import {
   getCreditorRepaymentPortionsCollection,
 } from "@/collections/creditor-extras"
 import { KpiCard } from "@/components/dashboard/kpi-card"
+import { TransactionReceiptButton } from "@/components/receipts/transaction-receipt-button"
 import { Landmark, TrendingUp, CreditCard, DollarSign } from "lucide-react"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -234,6 +235,7 @@ export function CreditorProfileClient({ creditorId }: Props) {
                       <TableHead className="text-right">Principal Balance</TableHead>
                       <TableHead className="text-right">Interest Accrued</TableHead>
                       <TableHead className="text-right">Total Repaid</TableHead>
+                      <TableHead className="text-right">Receipt</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -245,6 +247,9 @@ export function CreditorProfileClient({ creditorId }: Props) {
                         <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.principalBalance)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.interestAccrued)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.totalRepaid)}</TableCell>
+                        <TableCell className="text-right">
+                          <TransactionReceiptButton input={{ kind: "creditor_investment", investmentId: inv.id }} />
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -267,6 +272,7 @@ export function CreditorProfileClient({ creditorId }: Props) {
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead className="text-right">Interest Portion</TableHead>
                       <TableHead className="text-right">Principal Portion</TableHead>
+                      <TableHead className="text-right">Receipt</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -278,6 +284,9 @@ export function CreditorProfileClient({ creditorId }: Props) {
                           <TableCell className="text-right font-mono tabular-nums">{formatCurrency(repayment.amount)}</TableCell>
                           <TableCell className="text-right font-mono tabular-nums">{formatCurrency(portions?.interestPortion ?? "0")}</TableCell>
                           <TableCell className="text-right font-mono tabular-nums">{formatCurrency(portions?.principalPortion ?? "0")}</TableCell>
+                          <TableCell className="text-right">
+                            <TransactionReceiptButton input={{ kind: "creditor_repayment", repaymentId: repayment.id }} />
+                          </TableCell>
                         </TableRow>
                       )
                     })}

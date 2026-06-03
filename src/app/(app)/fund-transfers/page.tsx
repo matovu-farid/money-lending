@@ -22,6 +22,10 @@ import { MoneyInput } from "@/components/ui/money-input"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { BankAccountSelect } from "@/components/ui/bank-account-select"
+import { TransactionReceiptButton } from "@/components/receipts/transaction-receipt-button"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import {
   Dialog,
   DialogContent,
@@ -84,6 +88,12 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   const [dialogOpen, setDialogOpen] = useState(false)
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false)
+  const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
+
+  async function openTransferReceipt(transferId: string) {
+    const result = await getTransactionReceiptDataAction({ kind: "fund_transfer", transferId })
+    if ("data" in result) setReceipt(result.data)
+  }
   const { has } = usePermissions()
   const isAdmin = has("fund-transfer:create")
 
@@ -164,7 +174,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
   }
 
-  function onInjectionSubmit(data: InjectionFormValues) {
+  async function onInjectionSubmit(data: InjectionFormValues) {
     const id = generateClientId()
     const optimistic: FundTransfer = {
       id,
@@ -180,16 +190,18 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     try {
-      fundTransferCollection.insert(optimistic)
+      const tx = fundTransferCollection.insert(optimistic)
+      await tx.isPersisted.promise
       toast.success("Capital injection recorded")
       injectionForm.reset()
       setInjectionDialogOpen(false)
+      await openTransferReceipt(id)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to record injection")
     }
   }
 
-  function onSubmit(data: TransferFormValues) {
+  async function onSubmit(data: TransferFormValues) {
     if (data.fromLocation === data.toLocation) {
       toast.error("Source and destination must be different")
       return
@@ -210,10 +222,12 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     try {
-      fundTransferCollection.insert(optimistic)
+      const tx = fundTransferCollection.insert(optimistic)
+      await tx.isPersisted.promise
       toast.success("Fund transfer recorded")
       reset()
       setDialogOpen(false)
+      await openTransferReceipt(id)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to record transfer")
     }
@@ -594,6 +608,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                   <TableHead>To</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Note</TableHead>
+                  <TableHead className="text-right">Receipt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -623,6 +638,9 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                     <TableCell className="text-muted-foreground text-sm max-w-[200px] truncate">
                       {t.note || "-"}
                     </TableCell>
+                    <TableCell className="text-right">
+                      <TransactionReceiptButton input={{ kind: "fund_transfer", transferId: t.id }} />
+                    </TableCell>
                   </TableRow>
                   )
                 })}
@@ -631,6 +649,15 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
           )}
         </CardContent>
       </Card>
+
+      <PosReceiptModal
+        open={receipt !== null}
+        onClose={() => setReceipt(null)}
+        title={receipt?.headerTitle ?? "Receipt"}
+        autoActions
+      >
+        {receipt && <PosReceiptTransaction data={receipt} />}
+      </PosReceiptModal>
     </div>
   )
 }

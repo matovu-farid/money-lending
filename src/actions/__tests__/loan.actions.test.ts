@@ -111,6 +111,23 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("@/lib/email", () => ({
   sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+  resolveLoanContext: vi.fn().mockResolvedValue({
+    entityRef: "LOAN-TEST",
+    counterpartyLabel: "Customer",
+    counterpartyName: "Test Customer",
+    deepLinkPath: "/loans/test",
+  }),
+  resolveCreditorContext: vi.fn().mockResolvedValue({
+    counterpartyLabel: "Creditor",
+    counterpartyName: "Test Creditor",
+    deepLinkPath: "/creditors/test",
+  }),
+  resolveCreditorRepaymentContext: vi.fn().mockResolvedValue({
+    entityRef: "REP-TEST",
+    counterpartyLabel: "Creditor",
+    counterpartyName: "Test Creditor",
+    deepLinkPath: "/creditors/test",
+  }),
 }))
 
 vi.mock("@/lib/interest/overdue", () => ({

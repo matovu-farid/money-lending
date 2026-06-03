@@ -6,6 +6,8 @@ import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction, listTransactions } from "@/services/transaction.service"
 import { listDistinctTransactionCategories } from "@/services/category.service"
+import { sendAdminNotification } from "@/lib/email"
+import { shortId } from "@/lib/utils"
 import type { CreateTransactionInput, UserRole } from "@/types"
 
 export const listIncomeTransactionsAction = withAction({
@@ -56,9 +58,23 @@ export const recordIncomeAction = withAction<
     }
 
     try {
-      await Effect.runPromise(recordIncome(input, session.user.id))
+      const tx = await Effect.runPromise(recordIncome(input, session.user.id))
       revalidatePath("/income")
       revalidatePath("/transactions")
+      const txId = (tx as { id?: string } | undefined)?.id
+      if (txId) {
+        void sendAdminNotification("income.recorded", {
+          actorName: session.user.name ?? "Unknown",
+          actorEmail: session.user.email,
+          timestamp: new Date(),
+          amount: input.amount,
+          entityRef: `INC-${shortId(txId).toUpperCase()}`,
+          counterpartyLabel: "Category",
+          counterpartyName: input.categoryName,
+          deepLinkPath: "/income",
+          notes: input.notes ?? undefined,
+        })
+      }
       return { success: true as const }
     } catch (err) {
       console.error("[recordIncomeAction]", err)

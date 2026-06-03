@@ -19,6 +19,21 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }))
 
+vi.mock("@/lib/email", () => ({
+  sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+  resolveCreditorContext: vi.fn().mockResolvedValue({
+    counterpartyLabel: "Creditor",
+    counterpartyName: "Test Creditor",
+    deepLinkPath: "/creditors/test",
+  }),
+  resolveCreditorRepaymentContext: vi.fn().mockResolvedValue({
+    entityRef: "REP-TEST",
+    counterpartyLabel: "Creditor",
+    counterpartyName: "Test Creditor",
+    deepLinkPath: "/creditors/test",
+  }),
+}))
+
 vi.mock("@/services/creditor.service", () => ({
   createCreditor: vi.fn(),
   updateCreditor: vi.fn(),

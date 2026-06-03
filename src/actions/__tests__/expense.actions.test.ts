@@ -15,6 +15,10 @@ vi.mock("next/headers", () => ({
   headers: vi.fn().mockResolvedValue(new Headers()),
 }))
 
+vi.mock("@/lib/email", () => ({
+  sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock("@/lib/action-utils", async () => {
   const { auth } = await import("@/lib/auth") as any
   const { headers } = await import("next/headers") as any

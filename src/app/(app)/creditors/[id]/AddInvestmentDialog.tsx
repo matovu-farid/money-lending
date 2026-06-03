@@ -5,6 +5,9 @@ import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
 import { addInvestment } from "@/collections/creditor-actions"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
   DialogHeader,
@@ -35,6 +38,7 @@ interface InvestmentFormValues {
 export function AddInvestmentDialog({ creditorId }: Props) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
+  const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
 
   const {
     register,
@@ -63,6 +67,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
   function onSubmit(data: InvestmentFormValues) {
     startTransition(async () => {
       try {
+        let createdInvestmentId: string | null = null
         const tx = addInvestment({
           creditorId,
           amount: data.amount.trim(),
@@ -70,11 +75,20 @@ export function AddInvestmentDialog({ creditorId }: Props) {
           investmentDate: data.date,
           depositLocation: "bank",
           subLocationId: data.bankAccountId,
+          onInvestmentCreated: (id) => { createdInvestmentId = id },
         })
         await tx.isPersisted.promise
         toast.success("Investment added successfully")
         setOpen(false)
         resetForm()
+
+        if (createdInvestmentId) {
+          const result = await getTransactionReceiptDataAction({
+            kind: "creditor_investment",
+            investmentId: createdInvestmentId,
+          })
+          if ("data" in result) setReceipt(result.data)
+        }
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to add investment")
       }
@@ -184,6 +198,15 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         </form>
       </DrawerDialogContent>
       </DrawerDialog>
+
+      <PosReceiptModal
+        open={receipt !== null}
+        onClose={() => setReceipt(null)}
+        title="Creditor Investment Receipt"
+        autoActions
+      >
+        {receipt && <PosReceiptTransaction data={receipt} />}
+      </PosReceiptModal>
     </>
   )
 }

@@ -25,6 +25,10 @@ vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
 }))
 
+vi.mock("@/lib/email", () => ({
+  sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+}))
+
 vi.mock("@/services/fund-transfer.service", () => ({
   createFundTransferWithTxid: vi.fn(),
   createCapitalInjectionWithTxid: vi.fn(),

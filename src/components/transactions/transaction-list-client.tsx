@@ -10,6 +10,10 @@ import { incomeCollection, type IncomeInsertMetadata } from "@/collections/incom
 import { locationBalancesCollection } from "@/collections/loan-extras"
 import { generateClientId } from "@/lib/client-id"
 import { ResponsiveTable } from "@/components/ui/responsive-table"
+import { TransactionReceiptButton } from "@/components/receipts/transaction-receipt-button"
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
+import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -104,6 +108,7 @@ export function TransactionListClient({
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [isAddPending, setIsAddPending] = useState(false)
   const [isDeletePending, setIsDeletePending] = useState(false)
+  const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
 
   // Category combobox state
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
@@ -172,7 +177,7 @@ export function TransactionListClient({
     return initialCategories.filter((name) => name.toLowerCase().includes(q))
   }, [initialCategories, watchedCategoryName])
 
-  function onFormSubmit(data: TransactionFormValues) {
+  async function onFormSubmit(data: TransactionFormValues) {
     try {
       setIsAddPending(true)
 
@@ -209,12 +214,20 @@ export function TransactionListClient({
         subLocationId: data.location === "bank" ? data.subLocationId || undefined : undefined,
         backdateNote: data.backdateNote?.trim() || undefined,
       }
-      collection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
+      const tx = collection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
+      await tx.isPersisted.promise
       toast.success(labels.successRecord)
       setIsSheetOpen(false)
       reset()
-    } catch {
-      toast.error(labels.failRecord)
+
+      const result = await getTransactionReceiptDataAction({
+        kind: variant,
+        transactionId: id,
+      })
+      if ("data" in result) setReceipt(result.data)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : labels.failRecord
+      toast.error(msg)
     } finally {
       setIsAddPending(false)
     }
@@ -275,6 +288,16 @@ export function TransactionListClient({
               header: "Notes",
               hideInCard: true,
               render: (tx) => <span className="text-muted-foreground">{tx.description ?? "\u2014"}</span>,
+            },
+            {
+              key: "receipt",
+              header: "",
+              hideInCard: false,
+              render: (tx) => (
+                <TransactionReceiptButton
+                  input={{ kind: variant, transactionId: tx.id }}
+                />
+              ),
             },
             {
               key: "actions",
@@ -468,6 +491,15 @@ export function TransactionListClient({
             </form>
           </DrawerDialogContent>
         </DrawerDialog>
+
+        <PosReceiptModal
+          open={receipt !== null}
+          onClose={() => setReceipt(null)}
+          title={`${variant === "income" ? "Income" : "Expense"} Receipt`}
+          autoActions
+        >
+          {receipt && <PosReceiptTransaction data={receipt} />}
+        </PosReceiptModal>
 
         {/* Delete Confirmation */}
         <DrawerDialog open={deleteTarget !== null} onOpenChange={(open) => { if (!open) setDeleteTarget(null) }}>
