@@ -154,7 +154,7 @@ jobs:
             # spec hash is unchanged. A force update guarantees fresh
             # tasks. Idempotent — succeeds even when service is already
             # healthy. Run sequentially to avoid simultaneous restarts.
-            for svc in electric_electric electric_electric_dev electric_nginx; do
+            for svc in electric_electric electric_electric-dev electric_nginx; do
               if docker service inspect "$svc" >/dev/null 2>&1; then
                 echo "Forcing rolling update of $svc..."
                 docker service update --force --detach=true "$svc" >/dev/null

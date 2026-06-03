@@ -118,19 +118,23 @@ services:
           memory: 256M
 
   # Second Electric instance for the dev database. Identical to `electric`
-  # except it taps a different DB (`money_lending` vs `money_lending_prod`)
-  # and uses its own secret + storage volume so its shape state can't
-  # collide with prod's. Reached from outside via nginx on host port 3002.
-  electric_dev:
+  # except it taps a different DB (`money_lending` vs `money_lending_prod`),
+  # uses its own secret + storage volume, and namespaces its Postgres
+  # replication slot via ELECTRIC_REPLICATION_STREAM_ID so it doesn't
+  # collide with prod's `default` slot — Postgres slots are cluster-wide,
+  # not per-database. Hyphen, not underscore, so nginx can DNS-resolve it.
+  # Reached from outside via nginx on host port 3002.
+  electric-dev:
     image: electricsql/electric:latest
     environment:
       DATABASE_URL: ${ELECTRIC_DATABASE_URL_DEV}
       ELECTRIC_SECRET: ${ELECTRIC_SECRET_DEV}
+      ELECTRIC_REPLICATION_STREAM_ID: dev
       ELECTRIC_STORAGE_DIR: /var/lib/electric/data
       ELECTRIC_LOG_LEVEL: ${ELECTRIC_LOG_LEVEL:-info}
       ELECTRIC_USAGE_REPORTING: "false"
     volumes:
-      - electric_data_dev:/var/lib/electric/data
+      - electric-data-dev:/var/lib/electric/data
     healthcheck:
       test: ["CMD", "curl", "-sf", "http://localhost:3000/v1/health"]
       interval: 10s
@@ -201,7 +205,7 @@ configs:
 volumes:
   electric_data:
     driver: local
-  electric_data_dev:
+  electric-data-dev:
     driver: local
   nginx_cache:
     driver: local
