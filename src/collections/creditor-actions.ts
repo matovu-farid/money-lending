@@ -18,6 +18,7 @@ import {
 import { locationBalancesCollection } from "@/collections/loan-extras"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 /**
  * Intent-based actions for the creditor pages. Investments + repayments now
@@ -40,12 +41,19 @@ async function refetchCreditorAggregates(creditorId: string) {
     getCreditorDashboardCollection(creditorId).utils.refetch(),
     getCreditorMonthlySummaryCollection(creditorId).utils.refetch(),
   ])
+  const qc = getQueryClient()
+  // The collections above are query-backed; their list rows are keyed by
+  // queryKeys.creditorInvestments.all / creditorRepayments.all — invalidate
+  // those too so the per-row tables in /creditors/[id] pick up the new entry
+  // without waiting for the 30s staleTime tick.
+  qc.invalidateQueries({ queryKey: queryKeys.creditorInvestments.all })
+  qc.invalidateQueries({ queryKey: queryKeys.creditorRepayments.all })
   // Balance sheet collections are parameterized by period; mark every
   // instantiated period stale so visible reports refetch.
-  getQueryClient().invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+  qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
   // Repayment portions are keyed by the (sorted) repayment-id list; the keys
   // are opaque so we invalidate the whole namespace.
-  getQueryClient().invalidateQueries({
+  qc.invalidateQueries({
     queryKey: ["creditors", "repayment-portions"],
   })
 }
@@ -80,6 +88,8 @@ export const addInvestment = createOptimisticAction<AddInvestmentClientInput>({
       onInvestmentCreated(result.data.id as string)
     }
     await refetchCreditorAggregates(input.creditorId)
+    emitTableChange("creditor_investments")
+    emitTableChange("transactions")
     return result
   },
 })
@@ -98,6 +108,8 @@ export const recordCreditorRepayment = createOptimisticAction<RecordCreditorRepa
       onRepaymentCreated(result.data.id as string)
     }
     await refetchCreditorAggregates(creditorId)
+    emitTableChange("creditor_repayments")
+    emitTableChange("transactions")
     return result
   },
 })

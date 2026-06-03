@@ -1,20 +1,20 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   recordIncomeAction,
   deleteIncomeAction,
+  listIncomeAction,
 } from "@/actions/income.actions"
 import type {
   CreateTransactionInput,
   DepositLocation,
 } from "@/types"
-import { transactionSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
+import type { TransactionRow } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 /** Extra context for the onInsert handler that isn't part of the synced row. */
 export interface IncomeInsertMetadata {
@@ -24,19 +24,28 @@ export interface IncomeInsertMetadata {
 }
 
 export const incomeCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions<TransactionRow>({
     id: "income",
-    schema: transactionSchema,
-    getKey: (income) => income.id,
-    shapeOptions: {
-      url: shapeUrl("transactions"),
-      // Electric 1.5.x rejects WHERE clauses on user-defined enum columns
-      // (`transaction_type`). Sync the full table here and filter by
-      // `type === "credit" && referenceType == null` in the live-query consumer.
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("transactions[income]"),
+    queryKey: [...queryKeys.income.all],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<TransactionRow[]> => {
+      const result = await listIncomeAction()
+      if ("error" in result) throw new Error(result.error)
+      // Augment the JOIN-projected rows with nullable columns present in the
+      // full schema (loanId, depositLocation, subLocationId, journalGroupId).
+      // These are null for manual income rows; needed so the row shape matches
+      // TransactionRow and optimistic inserts typecheck correctly.
+      return result.data.data.map((row) => ({
+        ...row,
+        category: row.category ?? null,
+        loanId: null,
+        depositLocation: null,
+        subLocationId: null,
+        journalGroupId: null,
+      }))
     },
+    getKey: (income) => income.id,
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified, metadata } = transaction.mutations[0]
       const meta = metadata as IncomeInsertMetadata | undefined
@@ -61,11 +70,15 @@ export const incomeCollection = createCollection(
         throw new Error(result.error)
       }
       const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.income.all })
       qc.invalidateQueries({ queryKey: queryKeys.income.categories })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.cashflow() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.transactions })
+      emitTableChange("transactions")
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -74,11 +87,15 @@ export const incomeCollection = createCollection(
         throw new Error(result.error)
       }
       const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.income.all })
       qc.invalidateQueries({ queryKey: queryKeys.income.categories })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
       qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.cashflow() })
+      qc.invalidateQueries({ queryKey: queryKeys.reports.transactions })
+      emitTableChange("transactions")
     },
   })
 )

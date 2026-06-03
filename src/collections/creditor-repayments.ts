@@ -1,27 +1,30 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
+import { listCreditorRepaymentsAction } from "@/actions/creditor.actions"
 import { creditorRepaymentSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 /**
- * Electric-synced rows from `creditor_repayments`. Reads only — repayments
+ * Query-polled rows from `creditor_repayments`. Reads only — repayments
  * are recorded server-side by `recordCreditorRepaymentAction` via the
  * `recordCreditorRepayment` createOptimisticAction (see `creditor-actions.ts`),
- * and the Electric shape pushes the new row back automatically.
+ * which also invalidates this collection's query key.
  */
 export const creditorRepaymentCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "creditor-repayments",
     schema: creditorRepaymentSchema,
-    getKey: (repayment) => repayment.id,
-    shapeOptions: {
-      url: shapeUrl("creditor_repayments"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("creditor_repayments"),
+    queryKey: [...queryKeys.creditorRepayments.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listCreditorRepaymentsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    getKey: (repayment) => repayment.id,
+    staleTime: 30_000,
   })
 )

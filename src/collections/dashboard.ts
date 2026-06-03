@@ -6,7 +6,7 @@ import { getDashboardAction, getDashboardActivityAction } from "@/actions/dashbo
 import type { DashboardKPIs } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
+import { subscribeToTableChanges } from "@/lib/table-events"
 
 // Auto-refresh dashboard when key tables change via Electric
 subscribeToTableChanges("loans", getQueryClient(), [

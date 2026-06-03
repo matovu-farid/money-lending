@@ -7,6 +7,7 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import { customers } from "@/lib/db/schema/customers"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
+import { loanBalances } from "@/lib/db/schema/loan-balances"
 import { eq, desc, asc, and, isNull, sql } from "drizzle-orm"
 import { shortId } from "@/lib/utils"
 import BigNumber from "bignumber.js"
@@ -838,4 +839,17 @@ export const deleteLoan = (
       if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
       return new DatabaseError({ cause: e })
     },
+  })
+
+/**
+ * List all loan_balances projection rows. Used by the query-backed
+ * loanBalanceCollection after migrating from Electric.
+ */
+export const listLoanBalances = (): Effect.Effect<
+  (typeof loanBalances.$inferSelect)[],
+  DatabaseError
+> =>
+  Effect.tryPromise({
+    try: () => db.select().from(loanBalances),
+    catch: (e) => new DatabaseError({ cause: e }),
   })

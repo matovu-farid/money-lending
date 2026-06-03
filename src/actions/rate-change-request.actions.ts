@@ -9,6 +9,7 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import {
   applyRateChangeImmediately,
   listAllRequests,
+  listRateChangeRequests,
   listRequestsForLoan,
   reviewRequest,
   countPendingRequests,
@@ -223,6 +224,11 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
     return { error: "Internal server error" }
   }
 }
+
+export const listRateChangeRequestsAction = withAction({
+  permission: "loan:read",
+  effect: () => listRateChangeRequests(),
+})
 
 export async function countPendingRequestsAction() {
   const session = await getSession()

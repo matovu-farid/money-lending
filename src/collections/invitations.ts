@@ -1,32 +1,34 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
+  listInvitationsAction,
   createInviteAction,
   revokeInviteAction,
 } from "@/actions/invitation.actions"
 import { invitationSchema, type InvitationRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 import type { UserRole } from "@/types"
 
 export type { InvitationRow }
 
 export const invitationCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "invitations",
     schema: invitationSchema,
-    getKey: (invitation) => invitation.id,
-    shapeOptions: {
-      url: shapeUrl("invitation"),
-      params: {
-        columns: ["id", "email", "name", "role", "status", "invited_by", "expires_at", "created_at", "accepted_at"],
-      },
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("invitation"),
+    queryKey: [...queryKeys.invitations.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listInvitationsAction()
+      if ("error" in result) throw new Error(result.error)
+      // listInvitations returns extra `inviterName` (join); strip it to match schema
+      return result.data.map(({ inviterName: _inviterName, ...row }) => row)
     },
+    getKey: (invitation) => invitation.id,
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await createInviteAction({
@@ -38,6 +40,8 @@ export const invitationCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.invitations.all })
+      emitTableChange("invitation")
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
@@ -45,6 +49,8 @@ export const invitationCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.invitations.all })
+      emitTableChange("invitation")
     },
   }),
 )

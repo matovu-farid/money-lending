@@ -11,7 +11,7 @@ import {
 } from "@/actions/creditor.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
+import { subscribeToTableChanges } from "@/lib/table-events"
 import { boundedSet } from "@/lib/bounded-map"
 import type { CreditorDashboard, MonthlySummaryRow, PaymentPortionsMap } from "@/types"
 

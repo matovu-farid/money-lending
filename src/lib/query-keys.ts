@@ -69,6 +69,16 @@ export const queryKeys = {
     repaymentPortions: (key: string) => ["creditors", "repayment-portions", key] as const,
   },
 
+  // ── Creditor Investments ─────────────────────────────────────────────
+  creditorInvestments: {
+    all: ["creditor-investments"] as const,
+  },
+
+  // ── Creditor Repayments ──────────────────────────────────────────────
+  creditorRepayments: {
+    all: ["creditor-repayments"] as const,
+  },
+
   // ── Rate Change Requests ─────────────────────────────────────────────
   rateChangeRequests: {
     all: ["rate-change-requests"] as const,
@@ -78,6 +88,11 @@ export const queryKeys = {
   dashboard: {
     kpis: ["dashboard", "kpis"] as const,
     activity: ["dashboard", "activity"] as const,
+  },
+
+  // ── Loan Balances (projection table) ─────────────────────────────────
+  loanBalances: {
+    all: ["loan-balances"] as const,
   },
 
   // ── Location Balances ────────────────────────────────────────────────

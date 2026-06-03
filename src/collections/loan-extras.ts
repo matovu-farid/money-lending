@@ -14,7 +14,7 @@ import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import type { UserRole, PaymentPortionsMap } from "@/types"
-import { subscribeToTableChanges } from "@/lib/electric"
+import { subscribeToTableChanges } from "@/lib/table-events"
 import { boundedSet } from "@/lib/bounded-map"
 
 // Cap on each per-id collection cache. Each entry has `startSync: true` and
@@ -22,11 +22,16 @@ import { boundedSet } from "@/lib/bounded-map"
 // dozens of background subscriptions for loans/customers no longer in view.
 const MAX_PER_ID_CACHED = 32
 
-// Auto-refresh location balances when financial tables change via Electric
+// Auto-refresh location balances when any cash-moving table changes.
+// Creditor investments/repayments deposit/withdraw from a location too;
+// subscribing here closes the fan-out so future creditor mutations that
+// skip the direct refetch in creditor-actions still keep balances fresh.
 subscribeToTableChanges("loans", getQueryClient(), [queryKeys.locationBalances.all])
 subscribeToTableChanges("payments", getQueryClient(), [queryKeys.locationBalances.all])
 subscribeToTableChanges("transactions", getQueryClient(), [queryKeys.locationBalances.all])
 subscribeToTableChanges("fund_transfers", getQueryClient(), [queryKeys.locationBalances.all])
+subscribeToTableChanges("creditor_investments", getQueryClient(), [queryKeys.locationBalances.all])
+subscribeToTableChanges("creditor_repayments", getQueryClient(), [queryKeys.locationBalances.all])
 
 // --- Collateral natures (no params, singleton array) ---
 

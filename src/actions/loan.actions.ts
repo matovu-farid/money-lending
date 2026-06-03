@@ -8,7 +8,7 @@ import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
 import { user } from "@/lib/db/schema/auth"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { createLoan, listLoans } from "@/services/loan.service"
+import { createLoan, listLoans, listLoanBalances } from "@/services/loan.service"
 import { toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
 import { revalidatePath } from "next/cache"
 import { sendAdminNotification, resolveLoanContext } from "@/lib/email"
@@ -634,4 +634,13 @@ const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: 
       return { error: "Internal server error" }
     }
   },
+})
+
+/**
+ * List all loan_balances projection rows for the loanBalanceCollection.
+ * Returns the same data the `loan_balances` Electric shape was syncing.
+ */
+export const listLoanBalancesAction = withAction({
+  permission: "loan:read",
+  effect: () => listLoanBalances(),
 })

@@ -247,6 +247,28 @@ export const listCreditors = (): Effect.Effect<Creditor[], DatabaseError> =>
     catch: (e) => new DatabaseError({ cause: e }),
   });
 
+// Defensive caps to bound the wire payload for collections that load the
+// full table client-side. Matches the listAllPayments ceiling (2000); when
+// real data approaches the cap, replace with proper pagination instead of
+// raising further.
+const CREDITOR_LEDGER_LIST_CAP = 2000;
+
+export const listCreditorInvestments = (): Effect.Effect<CreditorInvestment[], DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      return await db.select().from(creditorInvestments).orderBy(asc(creditorInvestments.createdAt)).limit(CREDITOR_LEDGER_LIST_CAP);
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  });
+
+export const listCreditorRepayments = (): Effect.Effect<CreditorRepayment[], DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      return await db.select().from(creditorRepayments).orderBy(asc(creditorRepayments.repaymentDate)).limit(CREDITOR_LEDGER_LIST_CAP);
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  });
+
 export const addInvestment = (
   input: AddInvestmentInput,
   actorId: string,

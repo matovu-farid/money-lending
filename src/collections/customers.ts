@@ -1,12 +1,12 @@
 "use client"
 
 import { createCollection, BasicIndex } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   changeCustomerStatusAction,
   createCustomerAction,
   updateCustomerAction,
+  listCustomersAction,
 } from "@/actions/customer.actions"
 import type {
   CreateCustomerInput,
@@ -14,7 +14,9 @@ import type {
   UpdateCustomerInput,
 } from "@/types/customer"
 import { customerSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 /**
  * Metadata routed through `customerCollection.update(id, { metadata }, draft)`.
@@ -28,18 +30,20 @@ type CustomerUpdateMetadata = {
 }
 
 export const customerCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "customers",
     schema: customerSchema,
     getKey: (customer) => customer.id,
     autoIndex: "eager",
     defaultIndexType: BasicIndex,
-    shapeOptions: {
-      url: shapeUrl("customers"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("customers"),
+    queryKey: [...queryKeys.customers.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listCustomersAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const input: CreateCustomerInput = {
@@ -53,6 +57,7 @@ export const customerCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      emitTableChange("customers")
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
@@ -75,6 +80,7 @@ export const customerCollection = createCollection(
         if ("error" in result) {
           throw new Error(result.error)
         }
+        emitTableChange("customers")
         return { txid: result.txid }
       }
 
@@ -88,6 +94,7 @@ export const customerCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      emitTableChange("customers")
       return { txid: result.txid }
     },
   })

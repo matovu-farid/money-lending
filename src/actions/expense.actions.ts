@@ -17,6 +17,12 @@ export const listExpenseTransactionsAction = withAction({
   effect: () => listTransactions({ type: "debit", manualOnly: true }, 1, 50),
 })
 
+/** Returns ALL manual expense rows (type=debit, referenceType IS NULL) for the collection queryFn. */
+export const listExpensesAction = withAction({
+  permission: "expense:read",
+  effect: () => listTransactions({ type: "debit", manualOnly: true }, 1, 10_000),
+})
+
 /** Returns distinct user-typed expense categories for the combobox dropdown. */
 export const listExpenseCategoriesAction = withAction({
   permission: "expense:read",

@@ -1,9 +1,9 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
+  listCreditorsAction,
   createCreditorWithInvestmentAction,
   updateCreditorAction,
 } from "@/actions/creditor.actions"
@@ -12,9 +12,9 @@ import type {
   UpdateCreditorInput,
 } from "@/types/creditor"
 import { creditorSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 /**
  * Investment fields aren't part of the Creditor row, so callers pass them
@@ -41,16 +41,18 @@ export interface CreditorInsertMetadata {
 }
 
 export const creditorCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "creditors",
     schema: creditorSchema,
-    getKey: (creditor) => creditor.id,
-    shapeOptions: {
-      url: shapeUrl("creditors"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("creditors"),
+    queryKey: [...queryKeys.creditors.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listCreditorsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    getKey: (creditor) => creditor.id,
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified, metadata } = transaction.mutations[0]
       const meta = metadata as CreditorInsertMetadata | undefined
@@ -77,8 +79,15 @@ export const creditorCollection = createCollection(
       }
       // Invalidate query-based collections that depend on creditor data
       const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
+      qc.invalidateQueries({ queryKey: queryKeys.creditorInvestments.all })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
       qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
       qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      emitTableChange("creditors")
+      emitTableChange("creditor_investments")
+      emitTableChange("transactions")
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
@@ -91,6 +100,9 @@ export const creditorCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
+      emitTableChange("creditors")
       return { txid: result.txid }
     },
   })

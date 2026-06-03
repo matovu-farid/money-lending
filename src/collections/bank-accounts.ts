@@ -1,29 +1,31 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   createBankAccountAction,
   updateBankAccountAction,
+  listBankAccountsAction,
 } from "@/actions/bank-account.actions"
 import type { UpdateBankAccountInput } from "@/types"
 import { bankAccountSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 export const bankAccountCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "bank-accounts",
     schema: bankAccountSchema,
     getKey: (account) => account.id,
-    shapeOptions: {
-      url: shapeUrl("bank_accounts"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("bank_accounts"),
+    queryKey: [...queryKeys.bankAccounts.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listBankAccountsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await createBankAccountAction({ id: modified.id, name: modified.name })
@@ -31,6 +33,7 @@ export const bankAccountCollection = createCollection(
         throw new Error(result.error)
       }
       getQueryClient().invalidateQueries({ queryKey: queryKeys.locationBalances.all })
+      emitTableChange("bank_accounts")
       return { txid: result.txid }
     },
     onUpdate: async ({ transaction }) => {
@@ -40,6 +43,7 @@ export const bankAccountCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      emitTableChange("bank_accounts")
       return { txid: result.txid }
     },
   })

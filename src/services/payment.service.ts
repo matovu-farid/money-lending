@@ -950,3 +950,20 @@ export const getRecentlyCollectedLoans = (
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
+
+/**
+ * List all non-deleted payment rows from the `payments` table without joins.
+ * Mirrors the data Electric was syncing for the paymentCollection.
+ * Returns up to 2000 rows ordered by payment date descending.
+ */
+export const listAllPayments = (): Effect.Effect<Payment[], DatabaseError> =>
+  Effect.tryPromise({
+    try: () =>
+      db
+        .select()
+        .from(payments)
+        .where(isNull(payments.deletedAt))
+        .orderBy(desc(payments.paymentDate), desc(payments.createdAt))
+        .limit(2000),
+    catch: (e) => new DatabaseError({ cause: e }),
+  })

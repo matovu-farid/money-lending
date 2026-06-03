@@ -5,7 +5,7 @@ import { withAction } from "@/lib/with-action"
 import { getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
-import { recordPaymentWithTxid, editPaymentWithTxid, deletePaymentWithTxid, listPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
+import { recordPaymentWithTxid, editPaymentWithTxid, deletePaymentWithTxid, listPayments, listAllPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
 import { db } from "@/lib/db"
 import { payments } from "@/lib/db/schema/payments"
 import { loans } from "@/lib/db/schema/loans"
@@ -500,4 +500,13 @@ export const getPaymentPortionsAction = withAction<string[], any>({
       return { error: "Internal server error" }
     }
   },
+})
+
+/**
+ * List all non-deleted raw payment rows for the paymentCollection.
+ * Returns the same set of columns Electric was syncing from the `payments` table.
+ */
+export const listAllPaymentsAction = withAction({
+  permission: "payment:read",
+  effect: () => listAllPayments(),
 })

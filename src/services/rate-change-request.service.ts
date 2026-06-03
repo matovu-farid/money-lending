@@ -241,3 +241,19 @@ export const countPendingRequests = (): Effect.Effect<number, DatabaseError> =>
     },
     catch: (e) => new DatabaseError({ cause: e }),
   })
+
+/**
+ * Lists all rate change requests (base table columns only — no joins).
+ * Used by the query-polled collection accessible to any user with loan:read.
+ */
+export const listRateChangeRequests = (): Effect.Effect<RateChangeRequest[], DatabaseError> =>
+  Effect.tryPromise({
+    try: async () => {
+      return await db
+        .select()
+        .from(rateChangeRequests)
+        .orderBy(desc(rateChangeRequests.createdAt))
+        .limit(200)
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  })

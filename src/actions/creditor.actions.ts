@@ -10,6 +10,8 @@ import {
   addInvestment,
   recordCreditorRepayment,
   listCreditors,
+  listCreditorInvestments,
+  listCreditorRepayments,
   getSystemCapital,
   getCreditorMonthlyInterestDue,
   getCreditorMonthlySummary,
@@ -35,6 +37,16 @@ import type {
 export const listCreditorsAction = withAction({
   permission: "creditor:read",
   effect: () => listCreditors(),
+})
+
+export const listCreditorInvestmentsAction = withAction({
+  permission: "creditor:read",
+  effect: () => listCreditorInvestments(),
+})
+
+export const listCreditorRepaymentsAction = withAction({
+  permission: "creditor:read",
+  effect: () => listCreditorRepayments(),
 })
 
 export const getSystemCapitalAction = withAction({

@@ -1,28 +1,27 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
   recordPaymentAction,
   editPaymentAction,
   deletePaymentAction,
   markPaymentWrongAction,
   unmarkPaymentWrongAction,
+  listAllPaymentsAction,
 } from "@/actions/payment.actions"
 import type {
   RecordPaymentInput,
   EditPaymentInput,
 } from "@/types/payment"
 import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 /**
- * Row shape synced via Electric — mirrors the `payments` DB table after
- * snake_case → camelCase mapping AND `paymentSchema` coercion (date columns
- * arrive as ISO strings on the wire and are coerced to `Date` here).
+ * Row shape synced via HTTP polling — mirrors the `payments` DB table after
+ * `paymentSchema` coercion (date columns are coerced to `Date`).
  *
  * Server-only enrichments (customerName, recorderName, interest/principal
  * portions, balances) are NOT on this row. Consumers join them client-side:
@@ -56,6 +55,7 @@ type PaymentDeleteMetadata = { reason: string }
 
 function invalidateCrossCutting(_loanId: string) {
   const qc = getQueryClient()
+  qc.invalidateQueries({ queryKey: queryKeys.loanBalances.all })
   qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
   qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
   qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
@@ -63,19 +63,25 @@ function invalidateCrossCutting(_loanId: string) {
   qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
   qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
   qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
+  // Fan out to subscribeToTableChanges consumers (dashboard, daily-collections, loan-extras location-balances, reports).
+  emitTableChange("payments")
+  emitTableChange("transactions")
+  emitTableChange("loans")
 }
 
 export const paymentCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "payments",
     schema: paymentSchema,
     getKey: (payment) => payment.id,
-    shapeOptions: {
-      url: shapeUrl("payments"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("payments"),
+    queryKey: [...queryKeys.payments.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listAllPaymentsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified, metadata } = transaction.mutations[0]
       const meta = metadata as PaymentInsertMetadata | undefined
@@ -95,9 +101,8 @@ export const paymentCollection = createCollection(
         throw new Error(result.error)
       }
       invalidateCrossCutting(input.loanId)
-      // Don't return txid: under flaky Electric replication the awaitTxId
-      // wait will time out even though the server already wrote the row.
-      // Reconciliation by id still works when the synced row arrives.
+      // Don't return txid: under polling the collection will refresh on the
+      // next staleTime cycle; we don't need to await a specific transaction.
     },
     onUpdate: async ({ transaction }) => {
       const { original, changes, metadata } = transaction.mutations[0]

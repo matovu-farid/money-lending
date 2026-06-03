@@ -1,28 +1,30 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
 import {
+  listRateChangeRequestsAction,
   requestRateChangeAction,
   reviewRateChangeRequestAction,
 } from "@/actions/rate-change-request.actions"
 import { rateChangeRequestSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { emitTableChange } from "@/lib/table-events"
 
 export const rateChangeRequestCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "rate-change-requests",
     schema: rateChangeRequestSchema,
-    getKey: (request) => request.id,
-    shapeOptions: {
-      url: shapeUrl("rate_change_requests"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("rate_change_requests"),
+    queryKey: [...queryKeys.rateChangeRequests.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listRateChangeRequestsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    getKey: (request) => request.id,
+    staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
       const result = await requestRateChangeAction({
@@ -33,6 +35,8 @@ export const rateChangeRequestCollection = createCollection(
       if ("error" in result) {
         throw new Error(result.error)
       }
+      getQueryClient().invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
+      emitTableChange("rate_change_requests")
     },
     onUpdate: async ({ transaction }) => {
       const { original, changes } = transaction.mutations[0]
@@ -50,13 +54,16 @@ export const rateChangeRequestCollection = createCollection(
         reviewNote: changes.reviewNote ?? undefined,
       })
       if ("error" in result) throw new Error(result.error)
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
       if (changes.status === "approved") {
         // Invalidate query-based collections
-        const qc = getQueryClient()
         qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
         qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
         qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+        emitTableChange("loans")
       }
+      emitTableChange("rate_change_requests")
     },
   })
 )

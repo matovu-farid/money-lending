@@ -15,6 +15,12 @@ export const listIncomeTransactionsAction = withAction({
   effect: () => listTransactions({ type: "credit", manualOnly: true }, 1, 50),
 })
 
+/** Returns ALL manual income rows (type=credit, referenceType IS NULL) for the collection queryFn. */
+export const listIncomeAction = withAction({
+  permission: "income:read",
+  effect: () => listTransactions({ type: "credit", manualOnly: true }, 1, 10_000),
+})
+
 /** Returns distinct user-typed income categories for the combobox dropdown. */
 export const listIncomeCategoriesAction = withAction({
   permission: "income:read",

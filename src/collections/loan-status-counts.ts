@@ -6,7 +6,7 @@ import { getLoanStatusCountsAction } from "@/actions/loan.actions"
 import type { LoanStatus } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import { subscribeToTableChanges } from "@/lib/electric"
+import { subscribeToTableChanges } from "@/lib/table-events"
 
 // Auto-refresh status counts when the loans table changes via Electric
 subscribeToTableChanges("loans", getQueryClient(), [

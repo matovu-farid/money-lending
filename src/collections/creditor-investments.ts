@@ -1,28 +1,31 @@
 "use client"
 
 import { createCollection } from "@tanstack/react-db"
-import { electricCollectionOptions } from "@tanstack/electric-db-collection"
-import { snakeCamelMapper } from "@electric-sql/client"
+import { queryCollectionOptions } from "@/lib/collection-options"
+import { listCreditorInvestmentsAction } from "@/actions/creditor.actions"
 import { creditorInvestmentSchema } from "@/lib/schemas/collections"
-import { shapeUrl, shapeOnError, shapeParser } from "@/lib/electric"
+import { getQueryClient } from "@/lib/query-client"
+import { queryKeys } from "@/lib/query-keys"
 
 /**
- * Electric-synced rows from `creditor_investments`. Reads only — investments
+ * Query-polled rows from `creditor_investments`. Reads only — investments
  * are created server-side by `addInvestmentAction` via the
- * `addInvestment` createOptimisticAction (see `creditor-actions.ts`), and the
- * Electric shape pushes the new row back automatically. No collection-level
+ * `addInvestment` createOptimisticAction (see `creditor-actions.ts`), which
+ * also invalidates this collection's query key. No collection-level
  * onInsert/onUpdate/onDelete needed.
  */
 export const creditorInvestmentCollection = createCollection(
-  electricCollectionOptions({
+  queryCollectionOptions({
     id: "creditor-investments",
     schema: creditorInvestmentSchema,
-    getKey: (investment) => investment.id,
-    shapeOptions: {
-      url: shapeUrl("creditor_investments"),
-      columnMapper: snakeCamelMapper(),
-      parser: shapeParser,
-      onError: shapeOnError("creditor_investments"),
+    queryKey: [...queryKeys.creditorInvestments.all],
+    queryClient: getQueryClient(),
+    queryFn: async () => {
+      const result = await listCreditorInvestmentsAction()
+      if ("error" in result) throw new Error(result.error)
+      return result.data
     },
+    getKey: (investment) => investment.id,
+    staleTime: 30_000,
   })
 )

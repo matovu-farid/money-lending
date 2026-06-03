@@ -20,7 +20,7 @@ import type {
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { boundedSet } from "@/lib/bounded-map"
-import { subscribeToTableChanges } from "@/lib/electric"
+import { subscribeToTableChanges } from "@/lib/table-events"
 
 // Auto-refresh reports when underlying data tables change via Electric
 subscribeToTableChanges("loans", getQueryClient(), [
