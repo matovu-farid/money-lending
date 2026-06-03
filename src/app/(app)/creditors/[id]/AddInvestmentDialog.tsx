@@ -4,11 +4,15 @@ import { useState, useTransition } from "react"
 import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
+import { useLiveQuery } from "@tanstack/react-db"
 import { addInvestment } from "@/collections/creditor-actions"
+import { bankAccountCollection } from "@/collections/bank-accounts"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { ConfirmSummaryDialog, type SummaryLine } from "@/components/ui/confirm-summary-dialog"
 import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import {
   DialogHeader,
   DialogTitle,
@@ -39,6 +43,10 @@ export function AddInvestmentDialog({ creditorId }: Props) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
+  const [pending, setPending] = useState<InvestmentFormValues | null>(null)
+  const { data: bankAccounts } = useLiveQuery((q) =>
+    q.from({ b: bankAccountCollection }).select(({ b }) => b),
+  )
 
   const {
     register,
@@ -64,21 +72,27 @@ export function AddInvestmentDialog({ creditorId }: Props) {
     })
   }
 
-  function onSubmit(data: InvestmentFormValues) {
+  function onValidated(data: InvestmentFormValues) {
+    setPending(data)
+  }
+
+  function onConfirm() {
+    if (!pending) return
     startTransition(async () => {
       try {
         let createdInvestmentId: string | null = null
         const tx = addInvestment({
           creditorId,
-          amount: data.amount.trim(),
-          interestRateMonthly: (Number(data.interestRate) / 100).toString(),
-          investmentDate: data.date,
+          amount: pending.amount.trim(),
+          interestRateMonthly: (Number(pending.interestRate) / 100).toString(),
+          investmentDate: pending.date,
           depositLocation: "bank",
-          subLocationId: data.bankAccountId,
+          subLocationId: pending.bankAccountId,
           onInvestmentCreated: (id) => { createdInvestmentId = id },
         })
         await tx.isPersisted.promise
         toast.success("Investment added successfully")
+        setPending(null)
         setOpen(false)
         resetForm()
 
@@ -95,6 +109,18 @@ export function AddInvestmentDialog({ creditorId }: Props) {
     })
   }
 
+  const summaryLines: SummaryLine[] = pending
+    ? [
+        { label: "Amount", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        { label: "Monthly rate", value: `${pending.interestRate}%` },
+        { label: "Date", value: formatDate(pending.date) },
+        {
+          label: "Deposit to",
+          value: (bankAccounts ?? []).find((b) => b.id === pending.bankAccountId)?.name ?? "—",
+        },
+      ]
+    : []
+
   return (
     <>
       <Button variant="outline" onClick={() => setOpen(true)}>
@@ -108,7 +134,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         <DialogHeader>
           <DialogTitle>Add Investment</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onValidated)} className="space-y-4">
           <MoneyInput
             name="amount"
             control={control}
@@ -191,13 +217,24 @@ export function AddInvestmentDialog({ creditorId }: Props) {
                   Adding...
                 </>
               ) : (
-                "Add Investment"
+                "Review"
               )}
             </Button>
           </DialogFooter>
         </form>
       </DrawerDialogContent>
       </DrawerDialog>
+
+      <ConfirmSummaryDialog
+        open={pending !== null}
+        onOpenChange={(o) => { if (!o) setPending(null) }}
+        title="Confirm investment"
+        description="Review the investment before posting to the ledger."
+        lines={summaryLines}
+        isPending={isPending}
+        onConfirm={onConfirm}
+        confirmLabel="Add investment"
+      />
 
       <PosReceiptModal
         open={receipt !== null}

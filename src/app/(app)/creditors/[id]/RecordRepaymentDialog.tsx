@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react"
 import { recordCreditorRepayment } from "@/collections/creditor-actions"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { ConfirmSummaryDialog, type SummaryLine } from "@/components/ui/confirm-summary-dialog"
 import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
 import {
@@ -46,6 +47,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
+  const [pending, setPending] = useState<RepaymentFormValues | null>(null)
 
   const {
     register,
@@ -73,19 +75,25 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     })
   }
 
-  function onSubmit(data: RepaymentFormValues) {
+  function onValidated(data: RepaymentFormValues) {
+    setPending(data)
+  }
+
+  function onConfirm() {
+    if (!pending) return
     startTransition(async () => {
       try {
         let createdRepaymentId: string | null = null
         const tx = recordCreditorRepayment({
           creditorId,
-          investmentId: data.investmentId,
-          amount: data.amount.trim(),
-          repaymentDate: data.date,
+          investmentId: pending.investmentId,
+          amount: pending.amount.trim(),
+          repaymentDate: pending.date,
           onRepaymentCreated: (id) => { createdRepaymentId = id },
         })
         await tx.isPersisted.promise
         toast.success("Repayment recorded successfully")
+        setPending(null)
         setOpen(false)
         resetForm()
 
@@ -101,6 +109,22 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
       }
     })
   }
+
+  const selectedInvestment = pending
+    ? investments.find((i) => i.id === pending.investmentId)
+    : null
+  const summaryLines: SummaryLine[] = pending
+    ? [
+        {
+          label: "Investment",
+          value: selectedInvestment
+            ? `UGX ${formatCurrency(selectedInvestment.amount)} — ${new Date(selectedInvestment.investmentDate).toLocaleDateString("en-UG")}`
+            : "—",
+        },
+        { label: "Repayment", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        { label: "Date", value: new Date(pending.date).toLocaleDateString("en-UG") },
+      ]
+    : []
 
   return (
     <>
@@ -123,7 +147,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
             </InfoPopover>
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(onValidated)} className="space-y-4">
           <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
             <span className="text-muted-foreground inline-flex items-center gap-1">
               Outstanding Balance:
@@ -200,13 +224,24 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
                   Recording...
                 </>
               ) : (
-                "Record Repayment"
+                "Review"
               )}
             </Button>
           </DialogFooter>
         </form>
       </DrawerDialogContent>
       </DrawerDialog>
+
+      <ConfirmSummaryDialog
+        open={pending !== null}
+        onOpenChange={(o) => { if (!o) setPending(null) }}
+        title="Confirm repayment"
+        description="Review the repayment before posting to the ledger."
+        lines={summaryLines}
+        isPending={isPending}
+        onConfirm={onConfirm}
+        confirmLabel="Record repayment"
+      />
 
       <PosReceiptModal
         open={receipt !== null}

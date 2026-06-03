@@ -3,12 +3,16 @@
 import { useState } from "react"
 import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
+import { useLiveQuery } from "@tanstack/react-db"
 import { creditorCollection } from "@/collections/creditors"
+import { bankAccountCollection } from "@/collections/bank-accounts"
 import { generateClientId } from "@/lib/client-id"
 import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import { ConfirmSummaryDialog, type SummaryLine } from "@/components/ui/confirm-summary-dialog"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
 import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
+import { formatCurrency, formatDate } from "@/lib/utils"
 import {
   DialogHeader,
   DialogTitle,
@@ -43,6 +47,10 @@ interface AddCreditorDialogProps {
 export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps) {
   const [isPending, setIsPending] = useState(false)
   const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
+  const [pending, setPending] = useState<CreditorFormValues | null>(null)
+  const { data: bankAccounts } = useLiveQuery((q) =>
+    q.from({ b: bankAccountCollection }).select(({ b }) => b),
+  )
 
   const {
     register,
@@ -62,7 +70,12 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
     },
   })
 
-  async function onSubmit(data: CreditorFormValues) {
+  function onValidated(data: CreditorFormValues) {
+    setPending(data)
+  }
+
+  async function onConfirm() {
+    if (!pending) return
     try {
       setIsPending(true)
       const id = generateClientId()
@@ -72,20 +85,20 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
       const tx = creditorCollection.insert(
         {
           id,
-          name: data.name.trim(),
-          contact: data.contact.trim(),
-          address: data.address.trim(),
+          name: pending.name.trim(),
+          contact: pending.contact.trim(),
+          address: pending.address.trim(),
           createdAt: now,
           updatedAt: now,
         },
         {
           metadata: {
             investment: {
-              amount: data.amount.trim(),
-              interestRateMonthly: (Number(data.interestRateMonthly) / 100).toString(),
-              investmentDate: data.investmentDate,
+              amount: pending.amount.trim(),
+              interestRateMonthly: (Number(pending.interestRateMonthly) / 100).toString(),
+              investmentDate: pending.investmentDate,
               depositLocation: "bank",
-              subLocationId: data.bankAccountId,
+              subLocationId: pending.bankAccountId,
             },
             onInvestmentCreated: (investmentId: string) => {
               createdInvestmentId = investmentId
@@ -96,6 +109,7 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
       await tx.isPersisted.promise
 
       toast.success("Creditor registered")
+      setPending(null)
       onOpenChange(false)
       reset()
 
@@ -117,6 +131,22 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
     }
   }
 
+  const summaryLines: SummaryLine[] = pending
+    ? [
+        { label: "Name", value: pending.name.trim() },
+        { label: "Contact", value: pending.contact.trim() },
+        { label: "Address", value: pending.address.trim() },
+        { label: "Amount", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        { label: "Monthly rate", value: `${pending.interestRateMonthly}%` },
+        { label: "Date", value: formatDate(pending.investmentDate) },
+        {
+          label: "Deposit to",
+          value:
+            (bankAccounts ?? []).find((b) => b.id === pending.bankAccountId)?.name ?? "—",
+        },
+      ]
+    : []
+
   return (
     <>
     <DrawerDialog open={open} onOpenChange={onOpenChange}>
@@ -128,7 +158,7 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 py-4" id="add-creditor-form">
+        <form onSubmit={handleSubmit(onValidated)} className="space-y-4 py-4" id="add-creditor-form">
           {/* Creditor Information */}
           <div className="space-y-1">
             <Label htmlFor="cred-name">Name</Label>
@@ -253,11 +283,22 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
 
         <DialogFooter>
           <Button type="submit" form="add-creditor-form" disabled={isPending}>
-            Register Creditor
+            Review
           </Button>
         </DialogFooter>
       </DrawerDialogContent>
     </DrawerDialog>
+
+    <ConfirmSummaryDialog
+      open={pending !== null}
+      onOpenChange={(o) => { if (!o) setPending(null) }}
+      title="Confirm new creditor"
+      description="Review the details below. Go back to edit, or confirm to register the creditor and post the first investment."
+      lines={summaryLines}
+      isPending={isPending}
+      onConfirm={onConfirm}
+      confirmLabel="Register creditor"
+    />
 
     <PosReceiptModal
       open={receipt !== null}

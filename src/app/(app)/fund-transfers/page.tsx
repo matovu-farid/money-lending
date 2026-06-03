@@ -25,6 +25,7 @@ import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import { TransactionReceiptButton } from "@/components/receipts/transaction-receipt-button"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { ConfirmSummaryDialog, type SummaryLine } from "@/components/ui/confirm-summary-dialog"
 import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
 import {
   Dialog,
@@ -89,11 +90,16 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   const [injectionDialogOpen, setInjectionDialogOpen] = useState(false)
   const [bankAccountDialogOpen, setBankAccountDialogOpen] = useState(false)
   const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
+  const [pendingTransfer, setPendingTransfer] = useState<TransferFormValues | null>(null)
+  const [pendingInjection, setPendingInjection] = useState<InjectionFormValues | null>(null)
+  const [isConfirmingTransfer, setIsConfirmingTransfer] = useState(false)
+  const [isConfirmingInjection, setIsConfirmingInjection] = useState(false)
 
   async function openTransferReceipt(transferId: string) {
     const result = await getTransactionReceiptDataAction({ kind: "fund_transfer", transferId })
     if ("data" in result) setReceipt(result.data)
   }
+
   const { has } = usePermissions()
   const isAdmin = has("fund-transfer:create")
 
@@ -108,6 +114,15 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     q.from({ ba: bankAccountCollection }).select(({ ba }) => ba)
   )
   const bankAccountsList = allBankAccounts ?? []
+
+  function locationLabel(loc: DepositLocation | null, subId: string | null): string {
+    if (!loc) return "—"
+    if (loc === "bank") {
+      return `Bank — ${bankAccountsList.find((b) => b.id === subId)?.name ?? "Unspecified"}`
+    }
+    if (loc === "strong_room") return "Strong Room"
+    return "Cash on Hand"
+  }
 
   const { data: locationBalanceRows, isLoading: balancesLoading } = useLiveQuery((q) =>
     q.from({ lb: locationBalancesCollection }).select(({ lb }) => lb)
@@ -174,7 +189,13 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
   }
 
-  async function onInjectionSubmit(data: InjectionFormValues) {
+  function onInjectionSubmit(data: InjectionFormValues) {
+    setPendingInjection(data)
+  }
+
+  async function onConfirmInjection() {
+    if (!pendingInjection) return
+    const data = pendingInjection
     const id = generateClientId()
     const optimistic: FundTransfer = {
       id,
@@ -190,23 +211,32 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     try {
+      setIsConfirmingInjection(true)
       const tx = fundTransferCollection.insert(optimistic)
       await tx.isPersisted.promise
       toast.success("Capital injection recorded")
+      setPendingInjection(null)
       injectionForm.reset()
       setInjectionDialogOpen(false)
       await openTransferReceipt(id)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to record injection")
+    } finally {
+      setIsConfirmingInjection(false)
     }
   }
 
-  async function onSubmit(data: TransferFormValues) {
+  function onSubmit(data: TransferFormValues) {
     if (data.fromLocation === data.toLocation) {
       toast.error("Source and destination must be different")
       return
     }
+    setPendingTransfer(data)
+  }
 
+  async function onConfirmTransfer() {
+    if (!pendingTransfer) return
+    const data = pendingTransfer
     const id = generateClientId()
     const optimistic: FundTransfer = {
       id,
@@ -222,16 +252,67 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     }
 
     try {
+      setIsConfirmingTransfer(true)
       const tx = fundTransferCollection.insert(optimistic)
       await tx.isPersisted.promise
       toast.success("Fund transfer recorded")
+      setPendingTransfer(null)
       reset()
       setDialogOpen(false)
       await openTransferReceipt(id)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to record transfer")
+    } finally {
+      setIsConfirmingTransfer(false)
     }
   }
+
+  const transferSummaryLines: SummaryLine[] = pendingTransfer
+    ? [
+        {
+          label: "From",
+          value: locationLabel(
+            pendingTransfer.fromLocation,
+            pendingTransfer.fromLocation === "bank" ? pendingTransfer.fromSubLocationId : null,
+          ),
+        },
+        {
+          label: "To",
+          value: locationLabel(
+            pendingTransfer.toLocation,
+            pendingTransfer.toLocation === "bank" ? pendingTransfer.toSubLocationId : null,
+          ),
+        },
+        {
+          label: "Amount",
+          value: `UGX ${formatCurrency(pendingTransfer.amount)}`,
+          emphasis: true,
+        },
+        ...(pendingTransfer.note?.trim()
+          ? [{ label: "Note", value: pendingTransfer.note.trim() }]
+          : []),
+      ]
+    : []
+
+  const injectionSummaryLines: SummaryLine[] = pendingInjection
+    ? [
+        {
+          label: "Deposit to",
+          value: locationLabel(
+            pendingInjection.toLocation,
+            pendingInjection.toLocation === "bank" ? pendingInjection.toSubLocationId : null,
+          ),
+        },
+        {
+          label: "Amount",
+          value: `UGX ${formatCurrency(pendingInjection.amount)}`,
+          emphasis: true,
+        },
+        ...(pendingInjection.note?.trim()
+          ? [{ label: "Note", value: pendingInjection.note.trim() }]
+          : []),
+      ]
+    : []
 
   if (isInitialLoading) {
     return <LoadingSkeleton />
@@ -337,7 +418,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               </div>
 
               <Button type="submit" className="w-full">
-                Record Injection
+                Review
               </Button>
             </form>
           </DialogContent>
@@ -452,7 +533,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               </div>
 
               <Button type="submit" className="w-full">
-                Record Transfer
+                Review
               </Button>
             </form>
           </DialogContent>
@@ -649,6 +730,28 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
           )}
         </CardContent>
       </Card>
+
+      <ConfirmSummaryDialog
+        open={pendingTransfer !== null}
+        onOpenChange={(o) => { if (!o) setPendingTransfer(null) }}
+        title="Confirm fund transfer"
+        description="Review the transfer before moving funds."
+        lines={transferSummaryLines}
+        isPending={isConfirmingTransfer}
+        onConfirm={onConfirmTransfer}
+        confirmLabel="Transfer funds"
+      />
+
+      <ConfirmSummaryDialog
+        open={pendingInjection !== null}
+        onOpenChange={(o) => { if (!o) setPendingInjection(null) }}
+        title="Confirm capital injection"
+        description="Review the injection before posting capital."
+        lines={injectionSummaryLines}
+        isPending={isConfirmingInjection}
+        onConfirm={onConfirmInjection}
+        confirmLabel="Inject capital"
+      />
 
       <PosReceiptModal
         open={receipt !== null}

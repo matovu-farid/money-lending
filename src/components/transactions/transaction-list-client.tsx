@@ -13,7 +13,9 @@ import { ResponsiveTable } from "@/components/ui/responsive-table"
 import { TransactionReceiptButton } from "@/components/receipts/transaction-receipt-button"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
+import { ConfirmSummaryDialog, type SummaryLine } from "@/components/ui/confirm-summary-dialog"
 import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
+import { bankAccountCollection } from "@/collections/bank-accounts"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { DatePicker } from "@/components/ui/date-picker"
@@ -109,6 +111,10 @@ export function TransactionListClient({
   const [isAddPending, setIsAddPending] = useState(false)
   const [isDeletePending, setIsDeletePending] = useState(false)
   const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
+  const [pending, setPending] = useState<TransactionFormValues | null>(null)
+  const { data: bankAccounts } = useLiveQuery((q) =>
+    q.from({ b: bankAccountCollection }).select(({ b }) => b),
+  )
 
   // Category combobox state
   const [categoryDropdownOpen, setCategoryDropdownOpen] = useState(false)
@@ -177,16 +183,21 @@ export function TransactionListClient({
     return initialCategories.filter((name) => name.toLowerCase().includes(q))
   }, [initialCategories, watchedCategoryName])
 
-  async function onFormSubmit(data: TransactionFormValues) {
+  function onFormSubmit(data: TransactionFormValues) {
+    const categoryName = data.categoryName.trim()
+    if (!categoryName) {
+      toast.error("Category is required")
+      return
+    }
+    setPending(data)
+  }
+
+  async function onConfirmRecord() {
+    if (!pending) return
     try {
       setIsAddPending(true)
-
+      const data = pending
       const categoryName = data.categoryName.trim()
-      if (!categoryName) {
-        toast.error("Category is required")
-        return
-      }
-
       const id = generateClientId()
       const optimistic: TransactionShapeRow = {
         id,
@@ -217,6 +228,7 @@ export function TransactionListClient({
       const tx = collection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
       await tx.isPersisted.promise
       toast.success(labels.successRecord)
+      setPending(null)
       setIsSheetOpen(false)
       reset()
 
@@ -232,6 +244,27 @@ export function TransactionListClient({
       setIsAddPending(false)
     }
   }
+
+  const summaryLines: SummaryLine[] = pending
+    ? [
+        { label: "Date", value: formatDate(new Date(pending.date)) },
+        { label: "Category", value: pending.categoryName.trim() },
+        { label: "Amount", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        {
+          label: "Location",
+          value:
+            pending.location === "bank"
+              ? `Bank — ${(bankAccounts ?? []).find((b) => b.id === pending.subLocationId)?.name ?? "Unspecified"}`
+              : pending.location === "strong_room"
+              ? "Strong Room"
+              : "Cash on Hand",
+        },
+        ...(pending.notes?.trim() ? [{ label: "Notes", value: pending.notes.trim() }] : []),
+        ...(pending.backdateNote?.trim()
+          ? [{ label: "Backdate reason", value: pending.backdateNote.trim() }]
+          : []),
+      ]
+    : []
 
   function handleDelete() {
     if (!deleteTarget) return
@@ -485,12 +518,23 @@ export function TransactionListClient({
 
               <DialogFooter>
                 <Button type="submit" disabled={isAddPending || !!insufficientFundsLocation} className="w-full">
-                  {isAddPending ? "Saving..." : labels.recordButton}
+                  Review
                 </Button>
               </DialogFooter>
             </form>
           </DrawerDialogContent>
         </DrawerDialog>
+
+        <ConfirmSummaryDialog
+          open={pending !== null}
+          onOpenChange={(o) => { if (!o) setPending(null) }}
+          title={variant === "income" ? "Confirm income entry" : "Confirm expense"}
+          description="Review the entry before posting to the ledger."
+          lines={summaryLines}
+          isPending={isAddPending}
+          onConfirm={onConfirmRecord}
+          confirmLabel={labels.recordButton}
+        />
 
         <PosReceiptModal
           open={receipt !== null}
