@@ -12,11 +12,17 @@ We moved off Neon to a Postgres on the same box as Electric because:
 
 | File | Purpose |
 |---|---|
-| `docker-stack.yml` | Three-service swarm stack: `postgres` (data) + `electric` (sync) + `nginx` (cache/proxy) |
-| `nginx.conf` | nginx config: long-poll-aware caching, gzip, live-bypass, request collapsing |
+| `docker-stack.yml` | Swarm stack: `postgres` + two `electric` instances (prod + dev) + `nginx` (cache/proxy) |
+| `nginx.conf` | nginx config: long-poll-aware caching, gzip, live-bypass, request collapsing — port 3001 → prod, port 3002 → dev |
 | `deploy.sh` | Manual deploy script (mostly superseded by CI; useful for local debugging) |
 | `migrate-from-neon.sh` | One-shot `pg_dump | pg_restore` from Neon into the new Postgres |
-| `.env.example` | Required env vars: `ELECTRIC_DATABASE_URL`, `ELECTRIC_SECRET`, `PG_PASSWORD` |
+| `.env.example` | Required env vars: `ELECTRIC_DATABASE_URL`, `ELECTRIC_SECRET`, `ELECTRIC_DATABASE_URL_DEV`, `ELECTRIC_SECRET_DEV`, `PG_PASSWORD` |
+
+The two Electric instances tap different databases on the same Postgres:
+prod replicates `money_lending_prod`, dev replicates `money_lending`. Each
+holds its own logical replication slot, its own shape storage volume
+(`electric_data` / `electric_data_dev`), and its own auth secret so a
+leaked dev token can't pull prod shapes.
 
 ## How it gets deployed
 
@@ -25,7 +31,7 @@ Pushing changes under `deploy/electric/**` to `main` triggers `.github/workflows
 1. Validates `docker-stack.yml` and `nginx.conf` syntactically.
 2. SCPs the two files to `node1`.
 3. SSHes in and runs `docker stack deploy` with the secrets from GitHub Actions.
-4. Smoke-tests `http://127.0.0.1:3001/v1/health` and verifies the response went through nginx (checks `Server: nginx/...`).
+4. Smoke-tests both `http://127.0.0.1:3001/v1/health` (prod) and `http://127.0.0.1:3002/v1/health` (dev), verifying the response went through nginx (checks `Server: nginx/...`).
 5. Cleans up orphaned nginx config versions.
 
 The nginx config is rotated by content hash (`NGINX_CONF_HASH = sha256(nginx.conf) | head -c12`) because swarm configs are immutable — only the *name* can carry new content. Identical content → identical name → no-op deploy.

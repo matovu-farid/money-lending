@@ -23,6 +23,8 @@ jobs:
         env:
           ELECTRIC_DATABASE_URL: postgres://stub
           ELECTRIC_SECRET: stub
+          ELECTRIC_DATABASE_URL_DEV: postgres://stub
+          ELECTRIC_SECRET_DEV: stub
           PG_PASSWORD: stub
           NGINX_CONF_HASH: stub
         run: |
@@ -68,12 +70,14 @@ jobs:
         env:
           ELECTRIC_DATABASE_URL: ${{ secrets.ELECTRIC_DATABASE_URL }}
           ELECTRIC_SECRET: ${{ secrets.ELECTRIC_SECRET }}
+          ELECTRIC_DATABASE_URL_DEV: ${{ secrets.ELECTRIC_DATABASE_URL_DEV }}
+          ELECTRIC_SECRET_DEV: ${{ secrets.ELECTRIC_SECRET_DEV }}
           PG_PASSWORD: ${{ secrets.PG_PASSWORD }}
         with:
           host: ${{ secrets.ELECTRIC_SSH_HOST }}
           username: ${{ secrets.ELECTRIC_SSH_USER }}
           key: ${{ secrets.ELECTRIC_SSH_KEY }}
-          envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET,PG_PASSWORD
+          envs: ELECTRIC_DATABASE_URL,ELECTRIC_SECRET,ELECTRIC_DATABASE_URL_DEV,ELECTRIC_SECRET_DEV,PG_PASSWORD
           command_timeout: 10m
           script: |
             set -euo pipefail
@@ -90,11 +94,19 @@ jobs:
 
             export ELECTRIC_DATABASE_URL="$ELECTRIC_DATABASE_URL"
             export ELECTRIC_SECRET="$ELECTRIC_SECRET"
+            export ELECTRIC_DATABASE_URL_DEV="$ELECTRIC_DATABASE_URL_DEV"
+            export ELECTRIC_SECRET_DEV="$ELECTRIC_SECRET_DEV"
             export PG_PASSWORD="$PG_PASSWORD"
             export ELECTRIC_LOG_LEVEL=info
 
             if [ -z "$PG_PASSWORD" ]; then
               echo "ERROR: PG_PASSWORD secret is not set. Add it in GitHub repo settings."
+              exit 1
+            fi
+
+            if [ -z "$ELECTRIC_DATABASE_URL_DEV" ] || [ -z "$ELECTRIC_SECRET_DEV" ]; then
+              echo "ERROR: ELECTRIC_DATABASE_URL_DEV / ELECTRIC_SECRET_DEV not set."
+              echo "Add both in GitHub repo settings (Settings -> Secrets and variables -> Actions)."
               exit 1
             fi
 
@@ -142,7 +154,7 @@ jobs:
             # spec hash is unchanged. A force update guarantees fresh
             # tasks. Idempotent — succeeds even when service is already
             # healthy. Run sequentially to avoid simultaneous restarts.
-            for svc in electric_electric electric_nginx; do
+            for svc in electric_electric electric_electric_dev electric_nginx; do
               if docker service inspect "$svc" >/dev/null 2>&1; then
                 echo "Forcing rolling update of $svc..."
                 docker service update --force --detach=true "$svc" >/dev/null
@@ -158,9 +170,14 @@ jobs:
               echo "  Attempt $i/40: postgres=$POSTGRES_REPLICAS electric=$ELECTRIC_REPLICAS nginx=$NGINX_REPLICAS"
 
               # Health endpoint is served by nginx (cache-bypassed) and proxied to Electric.
-              if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1; then
-                echo "Electric is healthy via nginx!"
+              if curl -sf http://127.0.0.1:3001/v1/health > /dev/null 2>&1 \
+                 && curl -sf http://127.0.0.1:3002/v1/health > /dev/null 2>&1; then
+                echo "Both Electric instances are healthy via nginx!"
+                echo "Prod (3001):"
                 curl -s http://127.0.0.1:3001/v1/health
+                echo
+                echo "Dev (3002):"
+                curl -s http://127.0.0.1:3002/v1/health
                 echo
                 break
               fi
