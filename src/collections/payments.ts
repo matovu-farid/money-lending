@@ -17,7 +17,9 @@ import type {
 import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { invalidateLendingProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /**
  * Row shape synced via HTTP polling — mirrors the `payments` DB table after
@@ -55,13 +57,9 @@ type PaymentDeleteMetadata = { reason: string }
 
 function invalidateCrossCutting(_loanId: string) {
   const qc = getQueryClient()
-  qc.invalidateQueries({ queryKey: queryKeys.loanBalances.all })
-  qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-  qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
+  invalidateLendingProjections(qc)
+  // Payment-specific extras beyond the shared lending set.
   qc.invalidateQueries({ queryKey: queryKeys.dailyCollections.all })
-  qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-  qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-  qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
   qc.invalidateQueries({ queryKey: queryKeys.payments.portionsAll })
   // Fan out to subscribeToTableChanges consumers (dashboard, daily-collections, loan-extras location-balances, reports).
   emitTableChange("payments")
@@ -77,9 +75,8 @@ export const paymentCollection = createCollection(
     queryKey: [...queryKeys.payments.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listAllPaymentsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listAllPaymentsAction()).data
+      return coerceDates(rows, ["paymentDate", "createdAt", "updatedAt", "deletedAt"])
     },
     staleTime: 30_000,
     onInsert: async ({ transaction }) => {
@@ -96,10 +93,7 @@ export const paymentCollection = createCollection(
         depositLocation: modified.depositLocation,
         subLocationId: modified.subLocationId ?? undefined,
       }
-      const result = await recordPaymentAction(input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      throwIfActionError(await recordPaymentAction(input))
       invalidateCrossCutting(input.loanId)
       // Don't return txid: under polling the collection will refresh on the
       // next staleTime cycle; we don't need to await a specific transaction.
@@ -112,19 +106,17 @@ export const paymentCollection = createCollection(
       // Mark-wrong / unmark-wrong dispatch to dedicated server actions that
       // also reverse (or re-post) ledger journal entries — not a plain edit.
       if (meta?.intent === "mark-wrong") {
-        const result = await markPaymentWrongAction(original.id, meta.reason)
-        if ("error" in result && result.error) {
-          throw new Error(result.error)
-        }
+        const result = throwIfActionError(
+          await markPaymentWrongAction(original.id, meta.reason),
+        )
         invalidateCrossCutting(loanId)
         return { txid: result.txid }
       }
 
       if (meta?.intent === "unmark-wrong") {
-        const result = await unmarkPaymentWrongAction(original.id)
-        if ("error" in result && result.error) {
-          throw new Error(result.error)
-        }
+        const result = throwIfActionError(
+          await unmarkPaymentWrongAction(original.id),
+        )
         invalidateCrossCutting(loanId)
         return { txid: result.txid }
       }
@@ -144,10 +136,7 @@ export const paymentCollection = createCollection(
       if (changedDate !== undefined) {
         editInput.paymentDate = changedDate.toISOString()
       }
-      const result = await editPaymentAction(editInput)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const result = throwIfActionError(await editPaymentAction(editInput))
       invalidateCrossCutting(loanId)
       return { txid: result.txid }
     },
@@ -157,13 +146,12 @@ export const paymentCollection = createCollection(
       if (!meta?.reason) {
         throw new Error("Payment deletes must include metadata.reason")
       }
-      const result = await deletePaymentAction({
-        paymentId: original.id,
-        reason: meta.reason,
-      })
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const result = throwIfActionError(
+        await deletePaymentAction({
+          paymentId: original.id,
+          reason: meta.reason,
+        }),
+      )
       invalidateCrossCutting((original as PaymentRow).loanId)
       return { txid: result.txid }
     },

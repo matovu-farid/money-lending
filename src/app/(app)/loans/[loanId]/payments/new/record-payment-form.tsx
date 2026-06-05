@@ -25,7 +25,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { formatCurrency, formatDate, formatNumberWithCommas, todayDateString } from "@/lib/utils"
+import { formatDate, todayDateString } from "@/lib/utils"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import type { ReceiptPaymentData, DepositLocation } from "@/types"
@@ -183,13 +184,13 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Outstanding Principal</span>
             {balanceLoading || !balanceData ? <BalanceSkeleton /> : (
-              <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.outstandingPrincipal)}</span>
+              <CurrencyCell amount={balanceData.outstandingPrincipal} className="text-sm" />
             )}
           </div>
           <div className="flex items-center justify-between mb-1">
             <span className="text-sm text-muted-foreground">Accrued Interest</span>
             {balanceLoading || !balanceData ? <BalanceSkeleton /> : (
-              <span className="font-mono tabular-nums text-sm">{formatCurrency(balanceData.accruedInterest)}</span>
+              <CurrencyCell amount={balanceData.accruedInterest} className="text-sm" />
             )}
           </div>
           <Separator className="my-2" />
@@ -198,7 +199,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
             {balanceLoading || !balanceData ? (
               <span className="inline-block h-6 w-32 rounded bg-muted-foreground/10 animate-pulse align-middle" />
             ) : (
-              <span className="font-mono tabular-nums font-bold text-lg">{formatCurrency(balanceData.totalBalance)}</span>
+              <CurrencyCell amount={balanceData.totalBalance} className="font-bold text-lg" />
             )}
           </div>
         </CardContent>
@@ -310,9 +311,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Amount</span>
-                    <span className="font-mono tabular-nums font-semibold">
-                      UGX {formatNumberWithCommas(pendingData.amount)}
-                    </span>
+                    <CurrencyCell amount={pendingData.amount} className="font-semibold" />
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Deposit Location</span>

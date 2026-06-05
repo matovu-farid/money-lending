@@ -16,16 +16,41 @@ vi.mock("@/lib/validators", () => ({
   validateRequired: vi.fn(),
 }))
 
-vi.mock("@/lib/action-utils", () => ({
-  getSession: vi.fn(),
-  getUserRole: vi.fn(),
-  requireRole: vi.fn(),
-  checkPermission: vi.fn(async () => null),
-  getEffectivePermissions: vi.fn().mockResolvedValue(new Set([
+vi.mock("@/lib/action-utils", () => {
+  const getUserRole = vi.fn((session: any) => session?.user?.role ?? "unassigned")
+  const getEffectivePermissions = vi.fn().mockResolvedValue(new Set([
     "loan:create", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
     "backdate:beyond-3-days", "fund-transfer:create", "settings:update",
     "rate-change:approve-standard", "rate-change:approve-low",
-  ])),
+  ]))
+  const getSessionPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    return getEffectivePermissions(session?.user?.id, role)
+  })
+  const getSessionRoleAndPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    const perms = await getEffectivePermissions(session?.user?.id, role)
+    return { role, perms }
+  })
+  return {
+  getSession: vi.fn(),
+  getUserRole,
+  requireRole: vi.fn(),
+  checkPermission: vi.fn(async () => null),
+  getEffectivePermissions,
+  getSessionPermissions,
+  getSessionRoleAndPermissions,
+  validateBackdating: vi.fn((dateStr: string, _perms: Set<string>, opts?: { futureErrorMessage?: string }) => {
+    // Minimal mock — only future-date rejection is exercised by tests.
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const input = new Date(dateStr)
+    input.setHours(0, 0, 0, 0)
+    if (input.getTime() > today.getTime()) {
+      return opts?.futureErrorMessage ?? "Date cannot be in the future"
+    }
+    return null
+  }),
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -52,7 +77,8 @@ vi.mock("@/lib/action-utils", () => ({
     }
     return undefined
   },
-}))
+  }
+})
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -111,6 +137,7 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("@/lib/email", () => ({
   sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+  notifyAdmin: vi.fn(),
   resolveLoanContext: vi.fn().mockResolvedValue({
     entityRef: "LOAN-TEST",
     counterpartyLabel: "Customer",

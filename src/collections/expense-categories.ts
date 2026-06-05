@@ -5,6 +5,7 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { listExpenseCategoriesAction } from "@/actions/expense.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { throwIfActionError } from "./_utils"
 
 /**
  * Distinct user-typed expense category labels backing the combobox dropdown.
@@ -20,10 +21,11 @@ export const expenseCategoryCollection = createCollection(
     queryKey: [...queryKeys.expenses.categories],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = (await listExpenseCategoriesAction()) as
-        | { data: string[] }
-        | { error: string }
-      if ("error" in result) throw new Error(result.error)
+      const result = throwIfActionError(
+        (await listExpenseCategoriesAction()) as
+          | { data: string[] }
+          | { error: string },
+      )
       return result.data.map((name) => ({ name }))
     },
     getKey: (row) => row.name,

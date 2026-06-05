@@ -2,7 +2,8 @@
 
 import { AlertTriangle } from "lucide-react"
 import { Separator } from "@/components/ui/separator"
-import { formatCurrency, shortId } from "@/lib/utils"
+import { shortId } from "@/lib/utils"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import BigNumber from "bignumber.js"
 
 interface RolloverBannerProps {
@@ -41,16 +42,16 @@ export function RolloverBanner({
       <div className="rounded-md border border-orange-200 bg-white p-3 space-y-1.5 text-sm">
         <div className="flex justify-between">
           <span className="text-muted-foreground">Outstanding Principal</span>
-          <span className="font-medium font-mono tabular-nums">{formatCurrency(outstandingPrincipal)}</span>
+          <CurrencyCell amount={outstandingPrincipal} className="font-medium" />
         </div>
         <div className="flex justify-between">
           <span className="text-muted-foreground">Accrued Interest</span>
-          <span className="font-medium font-mono tabular-nums">{formatCurrency(accruedInterest)}</span>
+          <CurrencyCell amount={accruedInterest} className="font-medium" />
         </div>
         <Separator />
         <div className="flex justify-between font-semibold">
           <span>Amount to Roll Over</span>
-          <span className="font-mono tabular-nums">{formatCurrency(totalCarryOver)}</span>
+          <CurrencyCell amount={totalCarryOver} />
         </div>
       </div>
 

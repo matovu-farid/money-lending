@@ -21,6 +21,7 @@ vi.mock("next/cache", () => ({
 
 vi.mock("@/lib/email", () => ({
   sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+  notifyAdmin: vi.fn(),
   resolveCreditorContext: vi.fn().mockResolvedValue({
     counterpartyLabel: "Creditor",
     counterpartyName: "Test Creditor",

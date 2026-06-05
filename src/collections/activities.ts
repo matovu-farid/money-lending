@@ -7,6 +7,7 @@ import type { GetActivitiesResult } from "@/types/activity"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { boundedSet } from "@/lib/bounded-map"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 // Cap distinct (filter, page) combos kept alive at once. A user paging
 // through filtered activity views can otherwise accumulate dozens of
@@ -38,10 +39,18 @@ function createActivitiesCollection(params: ActivityFilterParams, page: number) 
           ...(params.dateFrom ? { dateFrom: params.dateFrom } : {}),
           ...(params.dateTo ? { dateTo: params.dateTo } : {}),
         }
-        const result = await getActivitiesAction(input)
-        const data = result as { data: GetActivitiesResult } | { error: string }
-        if ("error" in data) throw new Error(data.error)
-        return [{ ...data.data, _key: "singleton" }]
+        const { data } = throwIfActionError(
+          (await getActivitiesAction(input)) as
+            | { data: GetActivitiesResult }
+            | { error: string },
+        )
+        return [
+          {
+            ...data,
+            items: coerceDates(data.items, ["occurredAt"]),
+            _key: "singleton",
+          },
+        ]
       },
       getKey: (row) => row._key,
     })

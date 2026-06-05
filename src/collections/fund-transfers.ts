@@ -15,13 +15,14 @@ import type { DepositLocation } from "@/types/common"
 import { fundTransferSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { invalidateFinancialProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 // Dashboard KPIs depend on the Cash ledger but the dashboard collection only
 // subscribes to loans/payments tables — capital injections + fund transfers
-// don't touch those, so we invalidate the KPI key explicitly here. Other
-// dependent collections (locationBalances, reports.balanceSheet) are also
-// invalidated since Electric's automatic propagation is gone.
+// don't touch those, so we invalidate the financial-projection set explicitly
+// here since Electric's automatic propagation is gone.
 
 export const fundTransferCollection = createCollection(
   queryCollectionOptions({
@@ -30,9 +31,8 @@ export const fundTransferCollection = createCollection(
     queryKey: [...queryKeys.fundTransfers.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listFundTransfersAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listFundTransfersAction()).data
+      return coerceDates(rows, ["createdAt"])
     },
     getKey: (transfer) => transfer.id,
     staleTime: 30_000,
@@ -47,10 +47,7 @@ export const fundTransferCollection = createCollection(
           amount: modified.amount,
           note: modified.note ?? undefined,
         }
-        const result = await createCapitalInjectionAction(input)
-        if ("error" in result) {
-          throw new Error(result.error)
-        }
+        const result = throwIfActionError(await createCapitalInjectionAction(input))
         txid = result.txid
       } else {
         const input: CreateFundTransferInput = {
@@ -62,17 +59,12 @@ export const fundTransferCollection = createCollection(
           amount: modified.amount,
           note: modified.note ?? undefined,
         }
-        const result = await createFundTransferAction(input)
-        if ("error" in result) {
-          throw new Error(result.error)
-        }
+        const result = throwIfActionError(await createFundTransferAction(input))
         txid = result.txid
       }
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.fundTransfers.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      invalidateFinancialProjections(qc)
       emitTableChange("fund_transfers")
       emitTableChange("transactions")
       return { txid }

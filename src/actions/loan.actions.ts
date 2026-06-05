@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, getErrorTag, getErrorField, getEffectivePermissions } from "@/lib/action-utils"
+import { getSession, getUserRole, getErrorTag, getErrorField, getSessionRoleAndPermissions, validateBackdating } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { db } from "@/lib/db"
 import { collateral } from "@/lib/db/schema"
@@ -11,7 +11,7 @@ import { getBaseRate } from "@/lib/interest/effective-rate"
 import { createLoan, listLoans, listLoanBalances } from "@/services/loan.service"
 import { toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
 import { revalidatePath } from "next/cache"
-import { sendAdminNotification, resolveLoanContext } from "@/lib/email"
+import { notifyAdmin, resolveLoanContext } from "@/lib/email"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { payments } from "@/lib/db/schema/payments"
@@ -170,8 +170,7 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Unauthorized" }
   }
 
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const { role, perms } = await getSessionRoleAndPermissions(session)
   if (!perms.has("loan:create")) {
     return { error: "Forbidden" }
   }
@@ -192,32 +191,14 @@ export async function createLoanAction(input: CreateLoanInput) {
     return { error: "Start date is required" }
   }
 
-  // Backdate validation: compare start date to today using local date strings
-  // to avoid UTC-shift bugs where new Date("2026-04-13") parses as UTC midnight
-  // which can be a different calendar day in UTC+ timezones (BUG-10).
-  const startDateStr = localDateString(new Date(input.startDate))
-  const todayStr = localDateString(new Date())
-
-  if (startDateStr > todayStr) {
-    return { error: "Start date cannot be in the future" }
-  }
-
-  // Use date-only components to compute day difference, avoiding DST/timezone drift
-  const [sy, sm, sd] = startDateStr.split("-").map(Number)
-  const [ty, tm, td] = todayStr.split("-").map(Number)
-  const startNoon = new Date(sy, sm - 1, sd, 12, 0, 0)
-  const todayNoon = new Date(ty, tm - 1, td, 12, 0, 0)
-  const daysDiff = Math.round((todayNoon.getTime() - startNoon.getTime()) / (1000 * 60 * 60 * 24))
-  const isBackdated = daysDiff > 0
-
-  if (isBackdated) {
-    if (daysDiff > 3 && !perms.has("backdate:beyond-3-days")) {
-      return { error: `Backdating beyond 3 days requires supervisor permission. You selected ${daysDiff} days ago.` }
-    }
-    if (!input.backdateNote?.trim()) {
-      return { error: "A note is required when backdating a loan to explain the reason" }
-    }
-  }
+  // Backdate validation: timezone-safe future-rejection + backdate-permission
+  // check (see validateBackdating for the underlying math / BUG-10 context).
+  const backdateErr = validateBackdating(input.startDate, perms, {
+    futureErrorMessage: "Start date cannot be in the future",
+    noteValue: input.backdateNote,
+    noteErrorMessage: "A note is required when backdating a loan to explain the reason",
+  })
+  if (backdateErr) return { error: backdateErr }
   if (!input.collateral?.nature?.trim()) {
     return { error: "Collateral nature is required" }
   }
@@ -331,15 +312,12 @@ export async function createLoanAction(input: CreateLoanInput) {
     )
     revalidatePath("/loans")
     revalidatePath(`/customers/${input.customerId}`)
-    void resolveLoanContext(data.id).then((ctx) =>
-      sendAdminNotification("loan.disbursed", {
-        actorName: session.user.name ?? "Unknown",
-        actorEmail: session.user.email,
-        timestamp: new Date(),
-        amount: input.principalAmount,
-        ...ctx,
-      })
-    )
+    notifyAdmin({
+      eventType: "loan.disbursed",
+      context: resolveLoanContext(data.id),
+      session,
+      amount: input.principalAmount,
+    })
     return { data }
   } catch (error) {
     if (getErrorTag(error) === "CustomerNotFound") {

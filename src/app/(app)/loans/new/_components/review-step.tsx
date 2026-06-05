@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { formatDate, formatCurrency } from "@/lib/utils"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import type { calculateLoanSummary } from "@/lib/interest"
 
 interface ActiveLoanInfo {
@@ -65,12 +66,12 @@ export function ReviewStep({
           )}
           <div className="flex justify-between">
             <dt className="text-muted-foreground">Principal Amount</dt>
-            <dd className="font-semibold font-mono tabular-nums">{formatCurrency(principalAmount)}</dd>
+            <dd><CurrencyCell amount={principalAmount} className="font-semibold" /></dd>
           </div>
           {!activeLoanData && (
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Issuance Fee</dt>
-              <dd className="font-semibold font-mono tabular-nums">{formatCurrency(issuanceFee)}</dd>
+              <dd><CurrencyCell amount={issuanceFee} className="font-semibold" /></dd>
             </div>
           )}
           <div className="flex justify-between">
@@ -305,15 +306,15 @@ function InterestPreview({
           <dl className="space-y-2 text-sm">
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Daily interest amount</dt>
-              <dd className="font-medium font-mono tabular-nums">{formatCurrency(loanSummary.dailyInterest)}</dd>
+              <dd><CurrencyCell amount={loanSummary.dailyInterest} className="font-medium" /></dd>
             </div>
             <div className="flex justify-between">
               <dt className="text-muted-foreground">Total interest at minimum period</dt>
-              <dd className="font-medium font-mono tabular-nums">{formatCurrency(loanSummary.totalInterestAtMinPeriod)}</dd>
+              <dd><CurrencyCell amount={loanSummary.totalInterestAtMinPeriod} className="font-medium" /></dd>
             </div>
             <div className="flex justify-between border-t border-border pt-2 mt-2">
               <dt className="font-medium">Total owed at minimum period</dt>
-              <dd className="font-semibold font-mono tabular-nums">{formatCurrency(loanSummary.totalOwedAtMinPeriod)}</dd>
+              <dd><CurrencyCell amount={loanSummary.totalOwedAtMinPeriod} className="font-semibold" /></dd>
             </div>
           </dl>
           <p className="text-xs text-muted-foreground">

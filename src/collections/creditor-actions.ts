@@ -19,6 +19,7 @@ import { locationBalancesCollection } from "@/collections/loan-extras"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError } from "./_utils"
 
 /**
  * Intent-based actions for the creditor pages. Investments + repayments now
@@ -80,10 +81,7 @@ export const addInvestment = createOptimisticAction<AddInvestmentClientInput>({
   },
   mutationFn: async (input) => {
     const { onInvestmentCreated, ...rest } = input
-    const result = await addInvestmentAction(rest)
-    if ("error" in result) {
-      throw new Error(result.error)
-    }
+    const result = throwIfActionError(await addInvestmentAction(rest))
     if (onInvestmentCreated && result.data?.id) {
       onInvestmentCreated(result.data.id as string)
     }
@@ -100,10 +98,7 @@ export const recordCreditorRepayment = createOptimisticAction<RecordCreditorRepa
   },
   mutationFn: async (input) => {
     const { creditorId, onRepaymentCreated, ...rest } = input
-    const result = await recordCreditorRepaymentAction(rest)
-    if ("error" in result) {
-      throw new Error(result.error)
-    }
+    const result = throwIfActionError(await recordCreditorRepaymentAction(rest))
     if (onRepaymentCreated && result.data?.id) {
       onRepaymentCreated(result.data.id as string)
     }

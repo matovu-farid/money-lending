@@ -11,6 +11,7 @@ import { rateChangeRequestSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 export const rateChangeRequestCollection = createCollection(
   queryCollectionOptions({
@@ -19,22 +20,20 @@ export const rateChangeRequestCollection = createCollection(
     queryKey: [...queryKeys.rateChangeRequests.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listRateChangeRequestsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listRateChangeRequestsAction()).data
+      return coerceDates(rows, ["createdAt", "reviewedAt"])
     },
     getKey: (request) => request.id,
     staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
-      const result = await requestRateChangeAction({
-        id: modified.id,
-        loanId: modified.loanId,
-        requestedRate: modified.requestedRate,
-      })
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      throwIfActionError(
+        await requestRateChangeAction({
+          id: modified.id,
+          loanId: modified.loanId,
+          requestedRate: modified.requestedRate,
+        }),
+      )
       getQueryClient().invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
       emitTableChange("rate_change_requests")
     },
@@ -48,12 +47,13 @@ export const rateChangeRequestCollection = createCollection(
           "rateChangeRequestCollection only supports review updates (status: approved | rejected)"
         )
       }
-      const result = await reviewRateChangeRequestAction({
-        requestId: original.id,
-        action: changes.status,
-        reviewNote: changes.reviewNote ?? undefined,
-      })
-      if ("error" in result) throw new Error(result.error)
+      throwIfActionError(
+        await reviewRateChangeRequestAction({
+          requestId: original.id,
+          action: changes.status,
+          reviewNote: changes.reviewNote ?? undefined,
+        }),
+      )
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
       if (changes.status === "approved") {

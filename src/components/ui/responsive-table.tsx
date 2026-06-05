@@ -113,7 +113,7 @@ export function ResponsiveTable<T>({
               key={getRowKey(row)}
               data-testid="data-row"
               className={cn(
-                "rounded-lg border bg-card p-4 space-y-2",
+                "rounded-lg border bg-card p-4",
                 restRowProps.onClick
                   ? "cursor-pointer hover:bg-muted/50 transition-colors"
                   : undefined,
@@ -123,34 +123,41 @@ export function ResponsiveTable<T>({
             >
               {/* Primary field row — with actions if available */}
               {actionsCol ? (
-                <div className="flex justify-between items-center">
-                  <div className="flex-1 text-sm font-semibold">
+                <div className="flex justify-between items-start gap-2 pb-3 mb-3 border-b border-border/60">
+                  <div className="flex-1 min-w-0 text-base font-semibold truncate">
                     {primaryCol.render(row)}
                   </div>
-                  <div>{actionsCol.render(row)}</div>
+                  <div className="shrink-0 -mr-2 -mt-1">{actionsCol.render(row)}</div>
                 </div>
               ) : (
-                <div className="text-sm font-semibold">{primaryCol.render(row)}</div>
+                <div className="text-base font-semibold pb-3 mb-3 border-b border-border/60">
+                  {primaryCol.render(row)}
+                </div>
               )}
 
-              {/* Detail grid */}
+              {/* Detail rows — each label/value pair shares a row, value
+                  right-aligned so numbers form a clean column. */}
               {detailCols.length > 0 && (
-                <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+                <dl className="space-y-1.5 text-sm">
                   {detailCols.map((col) => (
-                    <React.Fragment key={col.key}>
-                      <dt className="text-muted-foreground">
+                    <div
+                      key={col.key}
+                      className="flex items-baseline justify-between gap-3"
+                    >
+                      <dt className="text-muted-foreground shrink-0">
                         {col.cardLabel ?? col.header}
                       </dt>
                       <dd
-                        className={
+                        className={cn(
+                          "min-w-0 text-right",
                           col.align === "right"
-                            ? "text-right font-mono tabular-nums"
+                            ? "font-mono tabular-nums"
                             : undefined
-                        }
+                        )}
                       >
                         {col.render(row)}
                       </dd>
-                    </React.Fragment>
+                    </div>
                   ))}
                 </dl>
               )}

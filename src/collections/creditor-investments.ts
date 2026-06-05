@@ -6,6 +6,7 @@ import { listCreditorInvestmentsAction } from "@/actions/creditor.actions"
 import { creditorInvestmentSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /**
  * Query-polled rows from `creditor_investments`. Reads only — investments
@@ -21,9 +22,8 @@ export const creditorInvestmentCollection = createCollection(
     queryKey: [...queryKeys.creditorInvestments.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listCreditorInvestmentsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listCreditorInvestmentsAction()).data
+      return coerceDates(rows, ["investmentDate", "createdAt", "updatedAt"])
     },
     getKey: (investment) => investment.id,
     staleTime: 30_000,

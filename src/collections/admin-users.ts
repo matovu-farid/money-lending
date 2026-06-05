@@ -7,6 +7,7 @@ import { assignRole } from "@/actions/user.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import type { UserRole } from "@/types"
+import { throwIfActionError } from "./_utils"
 
 export interface AdminUser {
   id: string
@@ -33,8 +34,9 @@ export const adminUserCollection = createCollection(
     onUpdate: async ({ transaction }) => {
       const { original, changes } = transaction.mutations[0]
       if (changes.role !== undefined) {
-        const result = await assignRole({ userId: original.id, role: changes.role as UserRole })
-        if ("error" in result) throw new Error(result.error)
+        throwIfActionError(
+          await assignRole({ userId: original.id, role: changes.role as UserRole }),
+        )
         const qc = getQueryClient()
         qc.invalidateQueries({ queryKey: queryKeys.auth.currentUserRole })
         qc.invalidateQueries({ queryKey: queryKeys.auth.effectivePermissions })

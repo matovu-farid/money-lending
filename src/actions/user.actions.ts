@@ -6,6 +6,7 @@ import {
   getSession,
   getUserRole,
   getEffectivePermissions,
+  getSessionPermissions,
   invalidateUserPermissions,
 } from "@/lib/action-utils"
 import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
@@ -118,7 +119,6 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
 export async function getEffectivePermissionsAction(): Promise<string[]> {
   const session = await getSession()
   if (!session) return []
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const perms = await getSessionPermissions(session)
   return [...perms]
 }

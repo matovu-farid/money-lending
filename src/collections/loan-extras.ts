@@ -16,6 +16,7 @@ import { queryKeys } from "@/lib/query-keys"
 import type { UserRole, PaymentPortionsMap } from "@/types"
 import { subscribeToTableChanges } from "@/lib/table-events"
 import { boundedSet } from "@/lib/bounded-map"
+import { coerceDates } from "./_utils"
 
 // Cap on each per-id collection cache. Each entry has `startSync: true` and
 // holds a live query observer; without bounding, long sessions accumulate
@@ -197,7 +198,11 @@ function createActiveLoanCheckCollection(customerId: string) {
       queryFn: async (_ctx): Promise<Array<ActiveLoanCheckRow>> => {
         const result = await checkCustomerActiveLoanAction(customerId)
         if ("error" in result || !result.data) return []
-        return [{ _key: "singleton", data: result.data }]
+        const [loan] = coerceDates(
+          [result.data.loan],
+          ["startDate", "penaltyWaivedAt", "backdatedFrom", "backdatedAt", "createdAt", "updatedAt", "deletedAt"],
+        )
+        return [{ _key: "singleton", data: { ...result.data, loan } }]
       },
       getKey: (row) => row._key,
       startSync: true,

@@ -6,6 +6,7 @@ import { getPermissionsForRole, MANAGING_SUPERVISOR_ELEVATED } from "@/lib/permi
 import { db } from "@/lib/db"
 import { delegations } from "@/lib/db/schema/delegations"
 import { eq, isNull, and } from "drizzle-orm"
+import { localDateString } from "@/lib/utils"
 import type { Permission } from "@/types"
 
 /**
@@ -174,6 +175,33 @@ export const getEffectivePermissions = cache(async (
 })
 
 /**
+ * Convenience helper that bundles the common two-step lookup:
+ *   const role = getUserRole(session)
+ *   const perms = await getEffectivePermissions(session.user.id, role)
+ *
+ * Use this when a server action only needs the permissions Set. If you
+ * also need the resolved role, use `getSessionRoleAndPermissions` below.
+ */
+export async function getSessionPermissions(
+  session: { user: { id: string } & Record<string, unknown> },
+): Promise<Set<Permission>> {
+  const role = getUserRole(session)
+  return getEffectivePermissions(session.user.id, role)
+}
+
+/**
+ * Same as `getSessionPermissions` but also returns the resolved role.
+ * Use only when the caller needs both values.
+ */
+export async function getSessionRoleAndPermissions(
+  session: { user: { id: string } & Record<string, unknown> },
+): Promise<{ role: UserRole; perms: Set<Permission> }> {
+  const role = getUserRole(session)
+  const perms = await getEffectivePermissions(session.user.id, role)
+  return { role, perms }
+}
+
+/**
  * Check if the session user has the required permission.
  * Returns an error string if forbidden, or null if permitted.
  */
@@ -182,9 +210,67 @@ export async function checkPermission(
   permission: Permission,
   message?: string,
 ): Promise<string | null> {
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const perms = await getSessionPermissions(session)
   return perms.has(permission) ? null : (message ?? "Forbidden")
+}
+
+/**
+ * Validate a user-supplied date against backdating rules.
+ *
+ * Behavior (identical across loan / expense / income actions):
+ *   1. Reject dates parsed in the future.
+ *   2. If the date is `daysLimit` or fewer days in the past, allow it.
+ *   3. If it is more than `daysLimit` days in the past, require the
+ *      `backdate:beyond-3-days` permission.
+ *   4. Optionally enforce that a backdate note was provided whenever the
+ *      date is in the past (any positive `daysDiff`).
+ *
+ * Date math is timezone-safe: both `dateStr` and "today" are converted to
+ * `YYYY-MM-DD` via `localDateString`, then their components are rebuilt at
+ * local noon to dodge DST/UTC-shift drift (BUG-10).
+ *
+ * Returns `null` on success, or a human-readable error string. The caller
+ * is responsible for resolving `perms` (typically via `getSessionPermissions`).
+ */
+export function validateBackdating(
+  dateStr: string,
+  perms: Set<Permission>,
+  opts?: {
+    daysLimit?: number
+    futureErrorMessage?: string
+    permissionErrorMessage?: (daysDiff: number) => string
+    noteValue?: string | null | undefined
+    noteErrorMessage?: string
+  },
+): string | null {
+  const daysLimit = opts?.daysLimit ?? 3
+  const todayStr = localDateString(new Date())
+  const inputDateStr = localDateString(new Date(dateStr))
+
+  if (inputDateStr > todayStr) {
+    return opts?.futureErrorMessage ?? "Date cannot be in the future"
+  }
+
+  const [iy, im, id] = inputDateStr.split("-").map(Number)
+  const [ty, tm, td] = todayStr.split("-").map(Number)
+  const inputNoon = new Date(iy, im - 1, id, 12, 0, 0)
+  const todayNoon = new Date(ty, tm - 1, td, 12, 0, 0)
+  const daysDiff = Math.round((todayNoon.getTime() - inputNoon.getTime()) / (1000 * 60 * 60 * 24))
+
+  if (daysDiff <= 0) return null
+
+  if (daysDiff > daysLimit && !perms.has("backdate:beyond-3-days")) {
+    return (
+      opts?.permissionErrorMessage?.(daysDiff) ??
+      `Backdating beyond ${daysLimit} days requires supervisor permission. You selected ${daysDiff} days ago.`
+    )
+  }
+
+  if (opts?.noteErrorMessage !== undefined && !opts.noteValue?.trim()) {
+    return opts.noteErrorMessage
+  }
+
+  return null
 }
 
 /**

@@ -34,8 +34,9 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import { useSession } from "@/lib/auth-client"
-import { formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
+import { formatDate, shortId } from "@/lib/utils"
 import type { PaymentWithCustomer } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { usePaymentsPageStore } from "@/lib/stores/payments-page"
@@ -408,7 +409,7 @@ function PaymentsContent({
       key: "amount",
       header: "Amount",
       align: "right",
-      render: (row) => <>UGX {formatNumberWithCommas(row.amount)}</>,
+      render: (row) => <CurrencyCell amount={row.amount} />,
     },
     {
       key: "interestPortion",
@@ -427,7 +428,7 @@ function PaymentsContent({
         </span>
       ),
       align: "right",
-      render: (row) => <>UGX {formatNumberWithCommas(row.interestPortion)}</>,
+      render: (row) => <CurrencyCell amount={row.interestPortion} />,
     },
     {
       key: "principalPortion",
@@ -446,7 +447,7 @@ function PaymentsContent({
         </span>
       ),
       align: "right",
-      render: (row) => <>UGX {formatNumberWithCommas(row.principalPortion)}</>,
+      render: (row) => <CurrencyCell amount={row.principalPortion} />,
     },
     {
       key: "principalBalanceAfter",
@@ -462,7 +463,7 @@ function PaymentsContent({
         </span>
       ),
       align: "right",
-      render: (row) => <>UGX {formatNumberWithCommas(row.principalBalanceAfter)}</>,
+      render: (row) => <CurrencyCell amount={row.principalBalanceAfter} />,
     },
     {
       key: "receipt",
@@ -762,7 +763,7 @@ function PaymentsContent({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Amount</span>
-                  <span className="font-mono tabular-nums">UGX {formatNumberWithCommas(markWrongTarget.amount)}</span>
+                  <CurrencyCell amount={markWrongTarget.amount} />
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Date</span>

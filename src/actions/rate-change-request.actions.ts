@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
+import { getSession, getErrorTag, getSessionPermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { type Permission, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
@@ -26,8 +26,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     return { error: "Unauthorized" }
   }
 
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const perms = await getSessionPermissions(session)
   if (!perms.has("loan:create")) {
     return { error: "Forbidden" }
   }
@@ -135,8 +134,7 @@ export async function listAllRequestsAction() {
     return { error: "Unauthorized" }
   }
 
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const perms = await getSessionPermissions(session)
   if (!perms.has("rate-change:approve-standard")) {
     return { error: "Forbidden" }
   }
@@ -172,8 +170,7 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
     return { error: "Unauthorized" }
   }
 
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const perms = await getSessionPermissions(session)
   if (!perms.has("rate-change:approve-standard")) {
     return { error: "Forbidden" }
   }
@@ -236,8 +233,7 @@ export async function countPendingRequestsAction() {
     return { error: "Unauthorized" }
   }
 
-  const role = getUserRole(session)
-  const perms = await getEffectivePermissions(session.user.id, role)
+  const perms = await getSessionPermissions(session)
   if (!perms.has("rate-change:approve-standard")) {
     return { data: 0 }
   }

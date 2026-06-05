@@ -28,17 +28,31 @@ vi.mock("@/lib/validators", () => ({
   validateRequired: vi.fn(),
 }))
 
-vi.mock("@/lib/action-utils", () => ({
-  getSession: vi.fn(),
-  getUserRole: vi.fn((session: any) => session?.user?.role ?? "unassigned"),
-  requireRole: vi.fn(),
-  checkPermission: vi.fn(async (_session: any, permission: string) => {
-    // Real implementation delegates to getEffectivePermissions.
-    // In these tests we control it directly per-test.
-    return null
-  }),
-  getEffectivePermissions: vi.fn().mockResolvedValue(new Set<Permission>()),
-  getErrorTag: (error: unknown): string | undefined => {
+vi.mock("@/lib/action-utils", () => {
+  const getUserRole = vi.fn((session: any) => session?.user?.role ?? "unassigned")
+  const getEffectivePermissions = vi.fn().mockResolvedValue(new Set<Permission>())
+  const getSessionPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    return getEffectivePermissions(session?.user?.id, role)
+  })
+  const getSessionRoleAndPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    const perms = await getEffectivePermissions(session?.user?.id, role)
+    return { role, perms }
+  })
+  return {
+    getSession: vi.fn(),
+    getUserRole,
+    requireRole: vi.fn(),
+    checkPermission: vi.fn(async (_session: any, _permission: string) => {
+      // Real implementation delegates to getEffectivePermissions.
+      // In these tests we control it directly per-test.
+      return null
+    }),
+    getEffectivePermissions,
+    getSessionPermissions,
+    getSessionRoleAndPermissions,
+    getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
       return (error as any)._tag
@@ -52,8 +66,9 @@ vi.mock("@/lib/action-utils", () => ({
     }
     return undefined
   },
-  getErrorField: () => undefined,
-}))
+    getErrorField: () => undefined,
+  }
+})
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),

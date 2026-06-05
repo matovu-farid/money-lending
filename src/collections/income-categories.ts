@@ -5,6 +5,7 @@ import { queryCollectionOptions } from "@/lib/collection-options"
 import { listIncomeCategoriesAction } from "@/actions/income.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { throwIfActionError } from "./_utils"
 
 /**
  * Distinct user-typed income category labels backing the combobox dropdown.
@@ -20,10 +21,11 @@ export const incomeCategoryCollection = createCollection(
     queryKey: [...queryKeys.income.categories],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = (await listIncomeCategoriesAction()) as
-        | { data: string[] }
-        | { error: string }
-      if ("error" in result) throw new Error(result.error)
+      const result = throwIfActionError(
+        (await listIncomeCategoriesAction()) as
+          | { data: string[] }
+          | { error: string },
+      )
       return result.data.map((name) => ({ name }))
     },
     getKey: (row) => row.name,

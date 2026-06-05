@@ -14,6 +14,7 @@ import { queryKeys } from "@/lib/query-keys"
 import { subscribeToTableChanges } from "@/lib/table-events"
 import { boundedSet } from "@/lib/bounded-map"
 import type { CreditorDashboard, MonthlySummaryRow, PaymentPortionsMap } from "@/types"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 // Auto-refresh capital totals and monthly due when creditor tables change via Electric
 subscribeToTableChanges("creditor_investments", getQueryClient(), [
@@ -40,9 +41,8 @@ export const systemCapitalCollection = createCollection(
     queryKey: [...queryKeys.creditors.capital],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<SystemCapitalRow>> => {
-      const result = await getSystemCapitalAction()
-      if ("error" in result) throw new Error(result.error)
-      return [{ ...result.data, _key: "singleton" }]
+      const { data } = throwIfActionError(await getSystemCapitalAction())
+      return [{ ...data, _key: "singleton" }]
     },
     getKey: (row) => row._key,
   })
@@ -77,9 +77,18 @@ function createCreditorDashboardCollection(creditorId: string) {
       queryKey: [...queryKeys.creditors.dashboard(creditorId)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<CreditorDashboardRow>> => {
-        const result = await getCreditorDashboardAction(creditorId)
-        if ("error" in result) throw new Error(result.error)
-        return [{ _key: "singleton", data: result.data }]
+        const { data } = throwIfActionError(
+          await getCreditorDashboardAction(creditorId),
+        )
+        return [
+          {
+            _key: "singleton",
+            data: {
+              ...data,
+              investments: coerceDates(data.investments, ["investmentDate"]),
+            },
+          },
+        ]
       },
       getKey: (row) => row._key,
       startSync: true,
@@ -109,9 +118,10 @@ function createCreditorMonthlySummaryCollection(creditorId: string) {
       queryKey: [...queryKeys.creditors.monthlySummary(creditorId)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<CreditorMonthlySummaryRow>> => {
-        const result = await getCreditorMonthlySummaryAction(creditorId)
-        if ("error" in result) throw new Error(result.error)
-        return [{ _key: "singleton", data: result.data }]
+        const { data } = throwIfActionError(
+          await getCreditorMonthlySummaryAction(creditorId),
+        )
+        return [{ _key: "singleton", data }]
       },
       getKey: (row) => row._key,
       startSync: true,
@@ -142,9 +152,10 @@ function createCreditorRepaymentPortionsCollection(repaymentIds: string[]) {
       queryKey: [...queryKeys.creditors.repaymentPortions(key)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<CreditorRepaymentPortionsRow>> => {
-        const result = await getCreditorRepaymentPortionsAction(repaymentIds)
-        if ("error" in result) throw new Error(result.error)
-        return [{ _key: "singleton", data: result.data }]
+        const { data } = throwIfActionError(
+          await getCreditorRepaymentPortionsAction(repaymentIds),
+        )
+        return [{ _key: "singleton", data }]
       },
       getKey: (row) => row._key,
       startSync: true,

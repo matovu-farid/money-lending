@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getUserRole, getErrorTag, getEffectivePermissions } from "@/lib/action-utils"
+import { getErrorTag, getSessionPermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
 import { recordPaymentWithTxid, editPaymentWithTxid, deletePaymentWithTxid, listPayments, listAllPayments, searchActiveLoans, getRecentlyCollectedLoans, getLoanBalanceSummary } from "@/services/payment.service"
@@ -13,7 +13,7 @@ import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
 import { eq, and, asc, isNull, sql } from "drizzle-orm"
 import { toLoanType, type RecordPaymentInput, type EditPaymentInput, type DeletePaymentInput, type ListPaymentsInput } from "@/types"
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
-import { sendAdminNotification, resolveLoanContext } from "@/lib/email"
+import { notifyAdmin, resolveLoanContext } from "@/lib/email"
 import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
 import { autoPostInterestEarned, autoPostPrincipalRepayment } from "@/services/auto-post.service"
 import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
@@ -45,15 +45,12 @@ export const recordPaymentAction = withAction<RecordPaymentInput, any>({
       const { payment, txid } = await Effect.runPromise(recordPaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${input.loanId}`)
       revalidatePath("/payments")
-      void resolveLoanContext(input.loanId).then((ctx) =>
-        sendAdminNotification("payment.created", {
-          actorName: session.user.name ?? "Unknown",
-          actorEmail: session.user.email,
-          timestamp: new Date(),
-          amount: input.amount,
-          ...ctx,
-        })
-      )
+      notifyAdmin({
+        eventType: "payment.created",
+        context: resolveLoanContext(input.loanId),
+        session,
+        amount: input.amount,
+      })
       return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "LoanNotFound") {
@@ -75,8 +72,7 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
     }
 
     // Permission check: must be own payment or have payment:edit-any
-    const role = getUserRole(session)
-    const perms = await getEffectivePermissions(session.user.id, role)
+    const perms = await getSessionPermissions(session)
     if (!perms.has("payment:edit-any")) {
       const [payment] = await db
         .select()
@@ -94,15 +90,12 @@ export const editPaymentAction = withAction<EditPaymentInput, any>({
       const { payment, txid } = await Effect.runPromise(editPaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${payment.loanId}`)
       revalidatePath("/payments")
-      void resolveLoanContext(payment.loanId).then((ctx) =>
-        sendAdminNotification("payment.updated", {
-          actorName: session.user.name ?? "Unknown",
-          actorEmail: session.user.email,
-          timestamp: new Date(),
-          amount: payment.amount,
-          ...ctx,
-        })
-      )
+      notifyAdmin({
+        eventType: "payment.updated",
+        context: resolveLoanContext(payment.loanId),
+        session,
+        amount: payment.amount,
+      })
       return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "PaymentNotFound") {
@@ -127,8 +120,7 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
     }
 
     // Permission check: must be own payment or have payment:delete-any
-    const role = getUserRole(session)
-    const perms = await getEffectivePermissions(session.user.id, role)
+    const perms = await getSessionPermissions(session)
     if (!perms.has("payment:delete-any")) {
       const [payment] = await db
         .select()
@@ -146,15 +138,12 @@ export const deletePaymentAction = withAction<DeletePaymentInput, any>({
       const { payment, txid } = await Effect.runPromise(deletePaymentWithTxid(input, session.user.id))
       revalidatePath(`/loans/${payment.loanId}`)
       revalidatePath("/payments")
-      void resolveLoanContext(payment.loanId).then((ctx) =>
-        sendAdminNotification("payment.deleted", {
-          actorName: session.user.name ?? "Unknown",
-          actorEmail: session.user.email,
-          timestamp: new Date(),
-          amount: payment.amount,
-          ...ctx,
-        })
-      )
+      notifyAdmin({
+        eventType: "payment.deleted",
+        context: resolveLoanContext(payment.loanId),
+        session,
+        amount: payment.amount,
+      })
       return { data: payment, txid }
     } catch (error) {
       if (getErrorTag(error) === "PaymentNotFound") {

@@ -6,8 +6,8 @@ import { ArrowLeft } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import type { LoanListEntry } from "@/types"
-import { formatCurrency } from "@/lib/utils"
 import BigNumber from "bignumber.js"
 
 interface ActiveLoansClientProps {
@@ -34,11 +34,7 @@ export default function ActiveLoansClient({ data }: ActiveLoansClientProps) {
       key: "principal",
       header: "Principal",
       align: "right",
-      render: (row) => (
-        <span className="font-mono tabular-nums">
-          {formatCurrency(row.principalAmount)}
-        </span>
-      ),
+      render: (row) => <CurrencyCell amount={row.principalAmount} />,
     },
     {
       key: "interest",
@@ -66,11 +62,7 @@ export default function ActiveLoansClient({ data }: ActiveLoansClientProps) {
         const total = new BigNumber(row.outstandingBalance).plus(
           new BigNumber(row.unpaidInterest)
         )
-        return (
-          <span className="font-mono tabular-nums">
-            {formatCurrency(total.toFixed(0))}
-          </span>
-        )
+        return <CurrencyCell amount={total.toFixed(0)} />
       },
     },
     {

@@ -16,12 +16,26 @@ vi.mock("@/lib/validators", () => ({
   validateRequired: vi.fn(),
 }))
 
-vi.mock("@/lib/action-utils", () => ({
+vi.mock("@/lib/action-utils", () => {
+  const getUserRole = vi.fn((session: any) => session?.user?.role ?? "unassigned")
+  const getEffectivePermissions = vi.fn().mockResolvedValue(new Set(["payment:edit-any", "payment:delete-any"]))
+  const getSessionPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    return getEffectivePermissions(session?.user?.id, role)
+  })
+  const getSessionRoleAndPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    const perms = await getEffectivePermissions(session?.user?.id, role)
+    return { role, perms }
+  })
+  return {
   getSession: vi.fn(),
-  getUserRole: vi.fn(),
+  getUserRole,
   requireRole: vi.fn(),
   checkPermission: vi.fn().mockResolvedValue(null),
-  getEffectivePermissions: vi.fn().mockResolvedValue(new Set(["payment:edit-any", "payment:delete-any"])),
+  getEffectivePermissions,
+  getSessionPermissions,
+  getSessionRoleAndPermissions,
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -36,7 +50,8 @@ vi.mock("@/lib/action-utils", () => ({
     }
     return undefined
   },
-}))
+  }
+})
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
@@ -82,6 +97,7 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("@/lib/email", () => ({
   sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+  notifyAdmin: vi.fn(),
   resolveLoanContext: vi.fn().mockResolvedValue({
     entityRef: "LOAN-TEST",
     counterpartyLabel: "Customer",

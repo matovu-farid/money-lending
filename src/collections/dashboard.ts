@@ -7,6 +7,7 @@ import type { DashboardKPIs } from "@/types"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { subscribeToTableChanges } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 // Auto-refresh dashboard when key tables change via Electric
 subscribeToTableChanges("loans", getQueryClient(), [
@@ -29,10 +30,12 @@ export const dashboardCollection = createCollection(
     queryKey: [...queryKeys.dashboard.kpis],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<DashboardRow>> => {
-      const result = await getDashboardAction()
-      const data = result as { data: DashboardData } | { error: string }
-      if ("error" in data) throw new Error(data.error)
-      return [{ ...data.data, _key: "singleton" }]
+      const { data } = throwIfActionError(
+        (await getDashboardAction()) as
+          | { data: DashboardData }
+          | { error: string },
+      )
+      return [{ ...data, _key: "singleton" }]
     },
     getKey: (row) => row._key,
   })
@@ -52,9 +55,18 @@ export const dashboardActivityCollection = createCollection(
     queryKey: [...queryKeys.dashboard.activity],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<DashboardActivityRow>> => {
-      const result = await getDashboardActivityAction() as { data: { items: ActivityItem[]; total: number } } | { error: string }
-      if ("error" in result) throw new Error(result.error)
-      return [{ ...result.data, _key: "singleton" }]
+      const result = throwIfActionError(
+        (await getDashboardActivityAction()) as
+          | { data: { items: ActivityItem[]; total: number } }
+          | { error: string },
+      )
+      return [
+        {
+          ...result.data,
+          items: coerceDates(result.data.items, ["occurredAt"]),
+          _key: "singleton",
+        },
+      ]
     },
     getKey: (row) => row._key,
   })

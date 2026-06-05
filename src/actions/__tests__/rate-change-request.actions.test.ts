@@ -3,14 +3,28 @@ import { Effect } from "effect"
 
 // ---------- Mocks ----------
 
-vi.mock("@/lib/action-utils", () => ({
+vi.mock("@/lib/action-utils", () => {
+  const getUserRole = vi.fn((session: any) => session?.user?.role ?? "unassigned")
+  const getEffectivePermissions = vi.fn().mockResolvedValue(new Set([
+    "loan:create", "rate-change:approve-standard", "rate-change:approve-low",
+  ]))
+  const getSessionPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    return getEffectivePermissions(session?.user?.id, role)
+  })
+  const getSessionRoleAndPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    const perms = await getEffectivePermissions(session?.user?.id, role)
+    return { role, perms }
+  })
+  return {
   getSession: vi.fn(),
-  getUserRole: vi.fn(),
+  getUserRole,
   requireRole: vi.fn(),
   checkPermission: vi.fn(async () => null),
-  getEffectivePermissions: vi.fn().mockResolvedValue(new Set([
-    "loan:create", "rate-change:approve-standard", "rate-change:approve-low",
-  ])),
+  getEffectivePermissions,
+  getSessionPermissions,
+  getSessionRoleAndPermissions,
   getErrorTag: (error: unknown): string | undefined => {
     if (error == null || typeof error !== "object") return undefined
     if ("_tag" in error && typeof (error as any)._tag === "string") {
@@ -25,7 +39,8 @@ vi.mock("@/lib/action-utils", () => ({
     }
     return undefined
   },
-}))
+  }
+})
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),

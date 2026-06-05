@@ -11,6 +11,7 @@ import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { boundedSet } from "@/lib/bounded-map"
 import { subscribeToTableChanges } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 // Auto-refresh daily collections when payments or loans change via Electric
 subscribeToTableChanges("payments", getQueryClient(), [
@@ -33,10 +34,18 @@ function createDailyCollection(date: string) {
       queryKey: [...queryKeys.dailyCollections.date(date)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<DailyCollectionsRow>> => {
-        const result = await getDailyCollectionsAction(date)
-        const data = result as { data: DailyCollectionsSummary } | { error: string }
-        if ("error" in data) throw new Error(data.error)
-        return [{ ...data.data, _key: "singleton" }]
+        const { data } = throwIfActionError(
+          (await getDailyCollectionsAction(date)) as
+            | { data: DailyCollectionsSummary }
+            | { error: string },
+        )
+        return [
+          {
+            ...data,
+            rows: coerceDates(data.rows, ["paymentDate"]),
+            _key: "singleton",
+          },
+        ]
       },
       getKey: (row) => row._key,
     })
@@ -64,13 +73,13 @@ export const loansDueTodayCollection = createCollection(
     queryKey: [...queryKeys.loans.dueToday],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<LoanDueTodayRow>> => {
-      const result = await getLoansDueTodayAction()
-      const data = result as { data: LoanDueToday[] } | { error: string }
-      if ("error" in data) throw new Error(data.error)
-      return data.data.map((entry) => ({
-        ...entry,
-        _key: entry.loanId,
-      }))
+      const { data } = throwIfActionError(
+        (await getLoansDueTodayAction()) as
+          | { data: LoanDueToday[] }
+          | { error: string },
+      )
+      const withKey = data.map((entry) => ({ ...entry, _key: entry.loanId }))
+      return coerceDates(withKey, ["lastPaymentDate"])
     },
     getKey: (row) => row._key,
   })

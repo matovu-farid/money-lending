@@ -6,6 +6,7 @@ import { listLoanBalancesAction } from "@/actions/loan.actions"
 import { type LoanBalanceRow } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 export type { LoanBalanceRow }
 
@@ -26,9 +27,8 @@ export const loanBalanceCollection = createCollection(
     queryKey: [...queryKeys.loanBalances.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listLoanBalancesAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listLoanBalancesAction()).data
+      return coerceDates(rows, ["lastPaymentDate", "updatedAt"])
     },
     staleTime: 30_000,
   }),

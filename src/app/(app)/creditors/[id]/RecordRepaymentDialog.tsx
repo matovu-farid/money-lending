@@ -28,6 +28,7 @@ import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { formatCurrency, todayDateString } from "@/lib/utils"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
 import type { CreditorInvestment } from "@/types"
 
@@ -158,7 +159,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
                 </p>
               </InfoPopover>
             </span>
-            <span className="font-medium font-mono tabular-nums">{formatCurrency(outstandingBalance)}</span>
+            <CurrencyCell amount={outstandingBalance} className="font-medium" />
           </div>
 
           <div className="space-y-1">
@@ -173,7 +174,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
               <SelectContent>
                 {investments.map((inv) => (
                   <SelectItem key={inv.id} value={inv.id}>
-                    <span className="font-mono tabular-nums">{formatCurrency(inv.amount)}</span>{" — "}<span className="font-mono tabular-nums">{new Date(inv.investmentDate).toLocaleDateString("en-UG")}</span>
+                    <CurrencyCell amount={inv.amount} />{" — "}<span className="font-mono tabular-nums">{new Date(inv.investmentDate).toLocaleDateString("en-UG")}</span>
                   </SelectItem>
                 ))}
               </SelectContent>

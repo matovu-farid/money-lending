@@ -12,8 +12,13 @@ interface PageHeaderProps {
 export function PageHeader({ title, subtitle, breadcrumbs, children, className }: PageHeaderProps) {
   if (children) {
     return (
-      <div className={cn("flex items-center justify-between", className)}>
-        <div>
+      <div
+        className={cn(
+          "flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between",
+          className,
+        )}
+      >
+        <div className="min-w-0">
           {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
           <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
           {subtitle && (
@@ -26,7 +31,7 @@ export function PageHeader({ title, subtitle, breadcrumbs, children, className }
             )
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {children}
         </div>
       </div>

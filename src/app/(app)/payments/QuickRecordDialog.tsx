@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { MoneyInput } from "@/components/ui/money-input"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
 import { generateReceiptNumber } from "@/lib/receipt-number"
@@ -30,7 +31,7 @@ import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { LoanSearchCombobox } from "./LoanSearchCombobox"
 import { generateClientId } from "@/lib/client-id"
 import type { RecordPaymentInput, ReceiptPaymentData } from "@/types"
-import { formatNumberWithCommas, formatCurrency, formatDate, shortId } from "@/lib/utils"
+import { formatDate, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult, DepositLocation } from "@/types"
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
 import { computeReceiptAllocation } from "@/lib/receipt-allocation"
@@ -225,9 +226,7 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Amount</span>
-                    <span className="font-mono tabular-nums font-semibold">
-                      UGX {formatNumberWithCommas(pendingData.amount)}
-                    </span>
+                    <CurrencyCell amount={pendingData.amount} className="font-semibold" />
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Deposit Location</span>
@@ -296,16 +295,16 @@ export function QuickRecordDialog({ open, onOpenChange }: QuickRecordDialogProps
                   <div className="rounded-lg border bg-muted/30 p-3 space-y-1 text-sm">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Outstanding Principal</span>
-                      <span className="font-mono tabular-nums">{formatCurrency(balanceData.outstandingPrincipal)}</span>
+                      <CurrencyCell amount={balanceData.outstandingPrincipal} />
                     </div>
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Accrued Interest</span>
-                      <span className="font-mono tabular-nums">{formatCurrency(balanceData.accruedInterest)}</span>
+                      <CurrencyCell amount={balanceData.accruedInterest} />
                     </div>
                     <Separator className="my-1" />
                     <div className="flex justify-between font-semibold">
                       <span>Total Owed</span>
-                      <span className="font-mono tabular-nums">{formatCurrency(balanceData.totalBalance)}</span>
+                      <CurrencyCell amount={balanceData.totalBalance} />
                     </div>
                   </div>
                 )}

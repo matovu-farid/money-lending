@@ -134,6 +134,47 @@ export async function resolveCreditorRepaymentContext(repaymentId: string): Prom
   return { ...ctx, entityRef }
 }
 
+/**
+ * Fire-and-forget admin notification helper.
+ *
+ * Wraps the repeating pattern at most action call sites:
+ *   - awaits a context resolver (or accepts an already-resolved context),
+ *   - derives `actor` from the session,
+ *   - stamps `timestamp: new Date()`,
+ *   - calls `sendAdminNotification` and swallows any error.
+ *
+ * Callers do not await — this returns void and never throws.
+ */
+export function notifyAdmin(opts: {
+  eventType: NotificationEvent
+  context:
+    | Promise<Partial<NotificationPayload>>
+    | Partial<NotificationPayload>
+  session: { user: { name?: string | null; email: string } }
+  amount: string
+  entityRef?: string
+  notes?: string
+}): void {
+  const { eventType, context, session, amount, entityRef, notes } = opts
+  void Promise.resolve(context)
+    .then((ctx) =>
+      sendAdminNotification(eventType, {
+        actorName: session.user.name ?? "Unknown",
+        actorEmail: session.user.email,
+        timestamp: new Date(),
+        amount,
+        // Allow context to supply entityRef (e.g. resolveLoanContext / resolveCreditorRepaymentContext),
+        // but let an explicit caller-supplied entityRef win (e.g. INV-xxx built at the call site).
+        ...ctx,
+        ...(entityRef ? { entityRef } : {}),
+        ...(notes ? { notes } : {}),
+      } as NotificationPayload)
+    )
+    .catch((error) => {
+      console.error("[Email] notifyAdmin failed:", error)
+    })
+}
+
 export async function sendAdminNotification(
   event: NotificationEvent,
   payload: NotificationPayload

@@ -14,7 +14,9 @@ import type {
 import { creditorSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { invalidateCreditorProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /**
  * Investment fields aren't part of the Creditor row, so callers pass them
@@ -47,9 +49,8 @@ export const creditorCollection = createCollection(
     queryKey: [...queryKeys.creditors.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listCreditorsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listCreditorsAction()).data
+      return coerceDates(rows, ["createdAt", "updatedAt"])
     },
     getKey: (creditor) => creditor.id,
     staleTime: 30_000,
@@ -70,21 +71,14 @@ export const creditorCollection = createCollection(
         depositLocation: meta.investment.depositLocation,
         subLocationId: meta.investment.subLocationId,
       }
-      const result = await createCreditorWithInvestmentAction(input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const result = throwIfActionError(
+        await createCreditorWithInvestmentAction(input),
+      )
       if (meta.onInvestmentCreated && "investmentId" in result && typeof result.investmentId === "string") {
         meta.onInvestmentCreated(result.investmentId)
       }
       // Invalidate query-based collections that depend on creditor data
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
-      qc.invalidateQueries({ queryKey: queryKeys.creditorInvestments.all })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.capital })
-      qc.invalidateQueries({ queryKey: queryKeys.creditors.monthlyDue })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+      invalidateCreditorProjections(getQueryClient())
       emitTableChange("creditors")
       emitTableChange("creditor_investments")
       emitTableChange("transactions")
@@ -96,10 +90,9 @@ export const creditorCollection = createCollection(
       if (changes.name !== undefined) input.name = changes.name
       if (changes.contact !== undefined) input.contact = changes.contact
       if (changes.address !== undefined) input.address = changes.address
-      const result = await updateCreditorAction(original.id, input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const result = throwIfActionError(
+        await updateCreditorAction(original.id, input),
+      )
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.creditors.all })
       emitTableChange("creditors")

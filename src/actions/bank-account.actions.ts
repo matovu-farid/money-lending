@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import { getSessionPermissions } from "@/lib/action-utils"
 import { createBankAccountWithTxid, updateBankAccountWithTxid, listBankAccounts } from "@/services/bank-account.service"
 import type { CreateBankAccountInput, UpdateBankAccountInput } from "@/types"
 
@@ -36,8 +36,7 @@ export const updateBankAccountAction = withAction<UpdateBankAccountInput, any>({
 
     // Deactivation/reactivation requires admin role
     if (input.isActive !== undefined) {
-      const role = getUserRole(session)
-      const perms = await getEffectivePermissions(session.user.id, role)
+      const perms = await getSessionPermissions(session)
       if (!perms.has("settings:update")) {
         return { error: "Only admins can deactivate or reactivate bank accounts" }
       }

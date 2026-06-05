@@ -21,11 +21,12 @@ import {
 import { getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { getErrorTag } from "@/lib/action-utils"
 import {
-  sendAdminNotification,
+  notifyAdmin,
   resolveCreditorContext,
   resolveCreditorRepaymentContext,
 } from "@/lib/email"
 import { shortId } from "@/lib/utils"
+import { validatePositiveAmount } from "@/lib/validators"
 import type {
   CreateCreditorInput,
   CreateCreditorWithInvestmentInput,
@@ -33,6 +34,17 @@ import type {
   AddInvestmentInput,
   RecordCreditorRepaymentInput,
 } from "@/types"
+
+function validateCreditorFields(input: {
+  name?: string
+  contact?: string
+  address?: string
+}): string | null {
+  if (!input.name?.trim()) return "Creditor name is required"
+  if (!input.contact?.trim()) return "Contact is required"
+  if (!input.address?.trim()) return "Address is required"
+  return null
+}
 
 export const listCreditorsAction = withAction({
   permission: "creditor:read",
@@ -57,9 +69,8 @@ export const getSystemCapitalAction = withAction({
 export const createCreditorAction = withAction<CreateCreditorInput, any>({
   permission: "creditor:create",
   action: async (session, input) => {
-    if (!input.name?.trim()) return { error: "Creditor name is required" }
-    if (!input.contact?.trim()) return { error: "Contact is required" }
-    if (!input.address?.trim()) return { error: "Address is required" }
+    const err = validateCreditorFields(input)
+    if (err) return { error: err }
 
     try {
       const data = await Effect.runPromise(createCreditor(input, session.user.id))
@@ -101,12 +112,10 @@ const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInpu
 export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithInvestmentInput, any>({
   permission: "creditor:create",
   action: async (session, input) => {
-    if (!input.name?.trim()) return { error: "Creditor name is required" }
-    if (!input.contact?.trim()) return { error: "Contact is required" }
-    if (!input.address?.trim()) return { error: "Address is required" }
-    if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
-      return { error: "A valid positive amount is required" }
-    }
+    const fieldErr = validateCreditorFields(input)
+    if (fieldErr) return { error: fieldErr }
+    const amountErr = validatePositiveAmount(input.amount)
+    if (amountErr) return { error: amountErr }
     if (!input.investmentDate?.trim() || isNaN(Date.parse(input.investmentDate))) {
       return { error: "A valid investment date is required" }
     }
@@ -128,16 +137,13 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
         subLocationId: input.subLocationId,
       }, session.user.id))
 
-      void resolveCreditorContext(creditor.id).then((ctx) =>
-        sendAdminNotification("creditor.investment.recorded", {
-          actorName: session.user.name ?? "Unknown",
-          actorEmail: session.user.email,
-          timestamp: new Date(),
-          amount: input.amount,
-          entityRef: `INV-${shortId(investment.id).toUpperCase()}`,
-          ...ctx,
-        })
-      )
+      notifyAdmin({
+        eventType: "creditor.investment.recorded",
+        context: resolveCreditorContext(creditor.id),
+        session,
+        amount: input.amount,
+        entityRef: `INV-${shortId(investment.id).toUpperCase()}`,
+      })
 
       revalidatePath("/creditors")
       return { data: creditor, txid, investmentId: investment.id }
@@ -152,9 +158,8 @@ export const addInvestmentAction = withAction<AddInvestmentInput, any>({
   permission: "creditor:create",
   action: async (session, input) => {
     if (!input.creditorId?.trim()) return { error: "Creditor ID is required" }
-    if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
-      return { error: "A valid positive amount is required" }
-    }
+    const amountErr = validatePositiveAmount(input.amount)
+    if (amountErr) return { error: amountErr }
     if (!input.investmentDate?.trim() || isNaN(Date.parse(input.investmentDate))) {
       return { error: "A valid investment date is required" }
     }
@@ -163,16 +168,13 @@ export const addInvestmentAction = withAction<AddInvestmentInput, any>({
       const data = await Effect.runPromise(addInvestment(input, session.user.id))
       revalidatePath("/creditors")
       revalidatePath(`/creditors/${input.creditorId}`)
-      void resolveCreditorContext(input.creditorId).then((ctx) =>
-        sendAdminNotification("creditor.investment.recorded", {
-          actorName: session.user.name ?? "Unknown",
-          actorEmail: session.user.email,
-          timestamp: new Date(),
-          amount: input.amount,
-          entityRef: `INV-${shortId((data as { id: string }).id).toUpperCase()}`,
-          ...ctx,
-        })
-      )
+      notifyAdmin({
+        eventType: "creditor.investment.recorded",
+        context: resolveCreditorContext(input.creditorId),
+        session,
+        amount: input.amount,
+        entityRef: `INV-${shortId((data as { id: string }).id).toUpperCase()}`,
+      })
       return { data }
     } catch {
       return { error: "Internal server error" }
@@ -184,9 +186,8 @@ export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentI
   permission: "creditor:update",
   action: async (session, input) => {
     if (!input.investmentId?.trim()) return { error: "Investment ID is required" }
-    if (!input.amount?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.amount) || Number(input.amount) <= 0) {
-      return { error: "A valid positive amount is required" }
-    }
+    const amountErr = validatePositiveAmount(input.amount)
+    if (amountErr) return { error: amountErr }
     if (!input.repaymentDate?.trim() || isNaN(Date.parse(input.repaymentDate))) {
       return { error: "A valid repayment date is required" }
     }
@@ -194,15 +195,12 @@ export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentI
     try {
       const data = await Effect.runPromise(recordCreditorRepayment(input, session.user.id))
       revalidatePath("/creditors")
-      void resolveCreditorRepaymentContext((data as { id: string }).id).then((ctx) =>
-        sendAdminNotification("creditor.repayment.recorded", {
-          actorName: session.user.name ?? "Unknown",
-          actorEmail: session.user.email,
-          timestamp: new Date(),
-          amount: input.amount,
-          ...ctx,
-        })
-      )
+      notifyAdmin({
+        eventType: "creditor.repayment.recorded",
+        context: resolveCreditorRepaymentContext((data as { id: string }).id),
+        session,
+        amount: input.amount,
+      })
       return { data }
     } catch {
       return { error: "Internal server error" }

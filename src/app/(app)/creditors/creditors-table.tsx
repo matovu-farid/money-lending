@@ -2,7 +2,8 @@
 
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { ButtonLink } from "@/components/ui/button-link"
-import { formatDate, formatCurrency } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 
 type Creditor = {
   id: string
@@ -40,11 +41,7 @@ function getColumns(monthlyDue: Record<string, string>): Column<Creditor>[] {
       key: "monthlyInterestDue",
       header: "Monthly Interest Due",
       cardLabel: "Interest Due",
-      render: (c) => (
-        <span className="font-mono tabular-nums">
-          {formatCurrency(monthlyDue[c.id] ?? "0")}
-        </span>
-      ),
+      render: (c) => <CurrencyCell amount={monthlyDue[c.id] ?? "0"} />,
     },
     {
       key: "createdAt",

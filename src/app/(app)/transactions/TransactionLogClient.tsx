@@ -27,7 +27,8 @@ interface TransactionLogClientProps {
   pageSize: number
 }
 
-import { formatDate, formatCurrency } from "@/lib/utils"
+import { formatDate } from "@/lib/utils"
+import { CurrencyCell } from "@/components/ui/currency-cell"
 
 export function TransactionLogClient({
   transactions,
@@ -102,7 +103,7 @@ export function TransactionLogClient({
       header: "Amount",
       align: "right",
       render: (row) => (
-        <span className="font-mono tabular-nums">{formatCurrency(row.amount)}</span>
+        <CurrencyCell amount={row.amount} />
       ),
     },
     {

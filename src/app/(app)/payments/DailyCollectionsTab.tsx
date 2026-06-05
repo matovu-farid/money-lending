@@ -19,7 +19,7 @@ import { KpiCard } from "@/components/dashboard/kpi-card"
 import { OverdueBadge } from "@/components/watchlist/overdue-badge"
 import { useDailyCollections, useLoansDueToday } from "@/hooks/use-daily-collections"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
+import { formatCurrency, formatNumberWithCommas, formatDate, shortId } from "@/lib/utils"
 import BigNumber from "bignumber.js"
 
 export function DailyCollectionsTab() {
@@ -189,9 +189,9 @@ function DailyCollectionsContent({ selectedDate }: { selectedDate: string }) {
                       LOAN-{shortId(row.loanId).toUpperCase()}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.amount)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.interestPortion)}</TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(row.principalPortion)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.amount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.interestPortion)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCurrency(row.principalPortion)}</TableCell>
                   <TableCell className="font-mono tabular-nums text-muted-foreground">
                     {formatDate(row.paymentDate)}
                   </TableCell>
@@ -246,7 +246,7 @@ function DailyCollectionsContent({ selectedDate }: { selectedDate: string }) {
                       LOAN-{shortId(loan.loanId).toUpperCase()}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">UGX {formatNumberWithCommas(loan.outstandingBalance)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatCurrency(loan.outstandingBalance)}</TableCell>
                   <TableCell>
                     <OverdueBadge daysOverdue={loan.daysOverdue} />
                   </TableCell>

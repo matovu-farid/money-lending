@@ -6,6 +6,7 @@ import { listCreditorRepaymentsAction } from "@/actions/creditor.actions"
 import { creditorRepaymentSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /**
  * Query-polled rows from `creditor_repayments`. Reads only — repayments
@@ -20,9 +21,8 @@ export const creditorRepaymentCollection = createCollection(
     queryKey: [...queryKeys.creditorRepayments.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listCreditorRepaymentsAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listCreditorRepaymentsAction()).data
+      return coerceDates(rows, ["repaymentDate", "createdAt", "updatedAt"])
     },
     getKey: (repayment) => repayment.id,
     staleTime: 30_000,

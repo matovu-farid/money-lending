@@ -14,7 +14,9 @@ import type {
 import type { TransactionRow } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { invalidateLedgerProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /** Extra context for the onInsert handler that isn't part of the synced row. */
 export interface IncomeInsertMetadata {
@@ -29,13 +31,12 @@ export const incomeCollection = createCollection(
     queryKey: [...queryKeys.income.all],
     queryClient: getQueryClient(),
     queryFn: async (): Promise<TransactionRow[]> => {
-      const result = await listIncomeAction()
-      if ("error" in result) throw new Error(result.error)
+      const result = throwIfActionError(await listIncomeAction())
       // Augment the JOIN-projected rows with nullable columns present in the
       // full schema (loanId, depositLocation, subLocationId, journalGroupId).
       // These are null for manual income rows; needed so the row shape matches
       // TransactionRow and optimistic inserts typecheck correctly.
-      return result.data.data.map((row) => ({
+      const rows = result.data.data.map((row) => ({
         ...row,
         category: row.category ?? null,
         loanId: null,
@@ -43,6 +44,7 @@ export const incomeCollection = createCollection(
         subLocationId: null,
         journalGroupId: null,
       }))
+      return coerceDates(rows, ["transactionDate", "createdAt"])
     },
     getKey: (income) => income.id,
     staleTime: 30_000,
@@ -65,36 +67,20 @@ export const incomeCollection = createCollection(
         subLocationId: meta.subLocationId,
         backdateNote: meta.backdateNote,
       }
-      const result = await recordIncomeAction(input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      throwIfActionError(await recordIncomeAction(input))
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.income.all })
       qc.invalidateQueries({ queryKey: queryKeys.income.categories })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.cashflow() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.transactions })
+      invalidateLedgerProjections(qc)
       emitTableChange("transactions")
     },
     onDelete: async ({ transaction }) => {
       const { original } = transaction.mutations[0]
-      const result = await deleteIncomeAction(original.id)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      throwIfActionError(await deleteIncomeAction(original.id))
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.income.all })
       qc.invalidateQueries({ queryKey: queryKeys.income.categories })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.cashflow() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.transactions })
+      invalidateLedgerProjections(qc)
       emitTableChange("transactions")
     },
   })

@@ -17,6 +17,7 @@ import { customerSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /**
  * Metadata routed through `customerCollection.update(id, { metadata }, draft)`.
@@ -39,9 +40,8 @@ export const customerCollection = createCollection(
     queryKey: [...queryKeys.customers.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listCustomersAction()
-      if ("error" in result) throw new Error(result.error)
-      return result.data
+      const rows = throwIfActionError(await listCustomersAction()).data
+      return coerceDates(rows, ["createdAt", "updatedAt"])
     },
     staleTime: 30_000,
     onInsert: async ({ transaction }) => {
@@ -53,10 +53,7 @@ export const customerCollection = createCollection(
         contact: modified.contact,
         address: modified.address,
       }
-      const result = await createCustomerAction(input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const result = throwIfActionError(await createCustomerAction(input))
       emitTableChange("customers")
       return { txid: result.txid }
     },
@@ -72,14 +69,13 @@ export const customerCollection = createCollection(
             "change-status update must include a draft.status change",
           )
         }
-        const result = await changeCustomerStatusAction({
-          customerId: original.id,
-          newStatus,
-          reason: meta.reason,
-        })
-        if ("error" in result) {
-          throw new Error(result.error)
-        }
+        const result = throwIfActionError(
+          await changeCustomerStatusAction({
+            customerId: original.id,
+            newStatus,
+            reason: meta.reason,
+          }),
+        )
         emitTableChange("customers")
         return { txid: result.txid }
       }
@@ -90,10 +86,9 @@ export const customerCollection = createCollection(
       if (changes.nin !== undefined) input.nin = changes.nin
       if (changes.contact !== undefined) input.contact = changes.contact
       if (changes.address !== undefined) input.address = changes.address
-      const result = await updateCustomerAction(original.id, input)
-      if ("error" in result) {
-        throw new Error(result.error)
-      }
+      const result = throwIfActionError(
+        await updateCustomerAction(original.id, input),
+      )
       emitTableChange("customers")
       return { txid: result.txid }
     },

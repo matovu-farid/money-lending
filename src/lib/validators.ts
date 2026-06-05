@@ -49,3 +49,14 @@ export function validatePositiveDecimal(
   }
   return null
 }
+
+// Used by income/expense/creditor actions where the legacy single-line check
+// collapsed both "shape invalid" and "non-positive" into one user-facing
+// message. Tests assert this exact string — keep it stable.
+export function validatePositiveAmount(value: string | undefined | null): string | null {
+  const trimmed = value?.trim()
+  if (!trimmed || !/^\d+(\.\d{1,2})?$/.test(trimmed) || parseFloat(trimmed) <= 0) {
+    return "A valid positive amount is required"
+  }
+  return null
+}

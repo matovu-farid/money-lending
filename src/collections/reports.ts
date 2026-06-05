@@ -21,6 +21,7 @@ import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { boundedSet } from "@/lib/bounded-map"
 import { subscribeToTableChanges } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 // Auto-refresh reports when underlying data tables change via Electric
 subscribeToTableChanges("loans", getQueryClient(), [
@@ -51,8 +52,7 @@ export const portfolioCollection = createCollection(
     queryKey: [...queryKeys.reports.portfolio],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<PortfolioRow>> => {
-      const result = await getPortfolioReportAction()
-      if ("error" in result) throw new Error(result.error)
+      const result = throwIfActionError(await getPortfolioReportAction())
       return (result.data as PortfolioEntry[]).map((entry, i) => ({
         ...entry,
         _key: `portfolio-${i}`,
@@ -85,9 +85,15 @@ export const transactionReportCollection = createCollection(
     queryKey: [...queryKeys.reports.transactions],
     queryClient: getQueryClient(),
     queryFn: async (_ctx): Promise<Array<TransactionReportRow>> => {
-      const result = await getTransactionReportDataAction()
-      if ("error" in result) throw new Error(result.error)
-      return [{ ...(result.data as TransactionReportData), _key: "singleton" }]
+      const result = throwIfActionError(await getTransactionReportDataAction())
+      const data = result.data as TransactionReportData
+      return [
+        {
+          ...data,
+          transactions: coerceDates(data.transactions, ["transactionDate"]),
+          _key: "singleton",
+        },
+      ]
     },
     getKey: (row) => row._key,
     startSync: true,
@@ -108,8 +114,7 @@ function createPnlCollection(period: string) {
       queryKey: [...queryKeys.reports.pnl(period)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<PnlRow>> => {
-        const result = await getPnlReportAction({ period })
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(await getPnlReportAction({ period }))
         return [{ ...(result.data as PnlData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
@@ -140,8 +145,9 @@ function createBalanceSheetCollection(period: string) {
       queryKey: [...queryKeys.reports.balanceSheet(period)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<BalanceSheetRow>> => {
-        const result = await getBalanceSheetReportAction({ period })
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(
+          await getBalanceSheetReportAction({ period }),
+        )
         return [{ ...(result.data as BalanceSheetData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
@@ -171,8 +177,9 @@ function createRetainedEarningsCollection(period: string) {
       queryKey: [...queryKeys.reports.retainedEarnings(period)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<RetainedEarningsRow>> => {
-        const result = await getRetainedEarningsReportAction({ period })
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(
+          await getRetainedEarningsReportAction({ period }),
+        )
         return [{ ...(result.data as RetainedEarningsData), _key: "singleton" }]
       },
       getKey: (row) => row._key,
@@ -202,8 +209,9 @@ function createCashflowCollection(period: string) {
       queryKey: [...queryKeys.reports.cashflow(period)],
       queryClient: getQueryClient(),
       queryFn: async (_ctx): Promise<Array<CashflowRow>> => {
-        const result = await getCashflowReportAction({ period })
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(
+          await getCashflowReportAction({ period }),
+        )
         return [{ ...(result.data as CashflowData), _key: "singleton" }]
       },
       getKey: (row) => row._key,

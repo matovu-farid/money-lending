@@ -13,7 +13,9 @@ import type { CreateLoanInput } from "@/types/loan"
 import { loanRowSchema, type LoanBaseRow } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
+import { invalidateLendingProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
+import { throwIfActionError, coerceDates } from "./_utils"
 
 /**
  * Row shape synced via HTTP polling — mirrors the `loans` DB table with
@@ -48,11 +50,18 @@ export const loanCollection = createCollection(
     queryKey: [...queryKeys.loans.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const result = await listLoansAction()
-      if ("error" in result) throw new Error(result.error)
       // listLoans returns LoanWithCustomer (includes customerName/customerContact);
-      // the schema will coerce and pass through — extra fields are stripped by Zod.
-      return result.data as LoanBaseRow[]
+      // we cast back to LoanBaseRow but keep the enriched fields on the row.
+      const rows = throwIfActionError(await listLoansAction()).data as LoanBaseRow[]
+      return coerceDates(rows, [
+        "startDate",
+        "penaltyWaivedAt",
+        "backdatedFrom",
+        "backdatedAt",
+        "createdAt",
+        "updatedAt",
+        "deletedAt",
+      ])
     },
     staleTime: 30_000,
     onInsert: async ({ transaction }) => {
@@ -61,16 +70,9 @@ export const loanCollection = createCollection(
       if (!meta?.input) {
         throw new Error("Loan inserts must include metadata.input (CreateLoanInput)")
       }
-      const result = await createLoanAction(meta.input)
-      if ("error" in result) throw new Error(result.error)
+      throwIfActionError(await createLoanAction(meta.input))
       // Cross-cutting invalidations for surfaces NOT yet projection-backed.
-      const qc = getQueryClient()
-      qc.invalidateQueries({ queryKey: queryKeys.loanBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.locationBalances.all })
-      qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
-      qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })
+      invalidateLendingProjections(getQueryClient())
       // Fan out to subscribeToTableChanges consumers (dashboard, loan-status-counts, daily-collections, reports, loan-extras location-balances).
       emitTableChange("loans")
       emitTableChange("transactions")
@@ -83,11 +85,12 @@ export const loanCollection = createCollection(
       }
 
       if (meta.intent === "settle") {
-        const result = await settleWithCollateralAction({
-          loanId: original.id,
-          reason: meta.reason,
-        })
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(
+          await settleWithCollateralAction({
+            loanId: original.id,
+            reason: meta.reason,
+          }),
+        )
         const qc = getQueryClient()
         qc.invalidateQueries({ queryKey: queryKeys.loanBalances.all })
         qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
@@ -99,15 +102,15 @@ export const loanCollection = createCollection(
       }
 
       if (meta.intent === "waive-penalty") {
-        const result = await waivePenaltyAction(original.id)
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(await waivePenaltyAction(original.id))
         emitTableChange("loans")
         return { txid: result.txid }
       }
 
       if (meta.intent === "adjust-penalty") {
-        const result = await adjustPenaltyMultiplierAction(original.id, meta.multiplier)
-        if ("error" in result) throw new Error(result.error)
+        const result = throwIfActionError(
+          await adjustPenaltyMultiplierAction(original.id, meta.multiplier),
+        )
         emitTableChange("loans")
         return { txid: result.txid }
       }

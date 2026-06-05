@@ -4,7 +4,7 @@ import { useState, useMemo } from "react"
 import { Clock, Search, X } from "lucide-react"
 import { useLoansWithBalances } from "@/collections/loan-views"
 import { Input } from "@/components/ui/input"
-import { formatNumberWithCommas, shortId } from "@/lib/utils"
+import { formatCurrency, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
 
 interface RecentLoan {
@@ -167,7 +167,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
                       {loan.customerName}&nbsp;&nbsp;·&nbsp;&nbsp;LOAN-{shortId(loan.loanId).toUpperCase()}
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      Balance: UGX {formatNumberWithCommas(loan.principalAmount)}
+                      Balance: {formatCurrency(loan.principalAmount)}
                     </div>
                   </button>
                 </li>

@@ -22,14 +22,28 @@ vi.mock("@/lib/email", () => ({
 vi.mock("@/lib/action-utils", async () => {
   const { auth } = await import("@/lib/auth") as any
   const { headers } = await import("next/headers") as any
+  const getUserRole = vi.fn((session: any) => (session?.user?.role ?? "unassigned"))
+  const getEffectivePermissions = vi.fn().mockResolvedValue(new Set(["income:create", "backdate:beyond-3-days"]))
+  const getSessionPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    return getEffectivePermissions(session?.user?.id, role)
+  })
+  const getSessionRoleAndPermissions = vi.fn(async (session: any) => {
+    const role = getUserRole(session)
+    const perms = await getEffectivePermissions(session?.user?.id, role)
+    return { role, perms }
+  })
   return {
     getSession: vi.fn(async () => {
       const session = await auth.api.getSession({ headers: await headers() })
       return session?.user ? session : null
     }),
-    getUserRole: vi.fn((session: any) => (session?.user?.role ?? "unassigned")),
+    getUserRole,
     checkPermission: vi.fn(async () => null),
-    getEffectivePermissions: vi.fn().mockResolvedValue(new Set(["income:create", "backdate:beyond-3-days"])),
+    getEffectivePermissions,
+    getSessionPermissions,
+    getSessionRoleAndPermissions,
+    validateBackdating: vi.fn(() => null),
     getErrorTag: (error: unknown): string | undefined => {
       if (error == null || typeof error !== "object") return undefined
       if ("_tag" in error && typeof (error as any)._tag === "string") {

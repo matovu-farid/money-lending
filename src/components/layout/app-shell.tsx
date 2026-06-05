@@ -35,7 +35,7 @@ export function AppShell({ children }: AppShellProps) {
       </div>
 
       <BottomTabBar
-        className="flex md:hidden"
+        className="md:hidden"
         onMoreClick={() => setMoreOpen(true)}
       />
       <MoreSheet open={moreOpen} onOpenChange={setMoreOpen} />
