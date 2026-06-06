@@ -11,9 +11,9 @@ import { throwIfActionError, coerceDates } from "./_utils"
 /**
  * Query-polled rows from `creditor_investments`. Reads only — investments
  * are created server-side by `addInvestmentAction` via the
- * `addInvestment` createOptimisticAction (see `creditor-actions.ts`), which
- * also invalidates this collection's query key. No collection-level
- * onInsert/onUpdate/onDelete needed.
+ * `addInvestment` helper (see `creditor-actions.ts`), which also invalidates
+ * this collection's query key. No collection-level onInsert/onUpdate/onDelete
+ * needed.
  */
 export const creditorInvestmentCollection = createCollection(
   queryCollectionOptions({

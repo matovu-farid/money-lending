@@ -1,6 +1,5 @@
 "use client"
 
-import { createOptimisticAction } from "@tanstack/react-db"
 import {
   addInvestmentAction,
   recordCreditorRepaymentAction,
@@ -22,16 +21,17 @@ import { emitTableChange } from "@/lib/table-events"
 import { throwIfActionError } from "./_utils"
 
 /**
- * Intent-based actions for the creditor pages. Investments + repayments now
- * live in their own Electric collections (creditor_investments,
- * creditor_repayments) so the wire-shape rows propagate automatically; what
- * still needs explicit refetch are the server-computed aggregates
- * (systemCapital, monthlyDue, the per-creditor dashboard, the monthly summary)
- * because their interest-accrual values shift the moment a row is inserted.
+ * Intent-based actions for the creditor pages. Investment / repayment rows
+ * are server-computed (interest accrual, ledger-derived balances) so we
+ * cannot synthesize an optimistic shape client-side. These helpers run the
+ * server action, then refetch every dashboard / aggregate / list collection
+ * that the row affects before returning the created id.
  *
- * Per the TanStack DB mutations guide: server writes must be synced back
- * before the mutationFn resolves, otherwise the (empty) optimistic state is
- * dropped and downstream consumers see a flicker. We `await` every refetch.
+ * Earlier versions wrapped this in `createOptimisticAction` with an empty
+ * `onMutate`. That short-circuits inside TanStack DB's `Transaction.commit`
+ * (see `@tanstack/db/src/transactions.ts` — when `mutations.length === 0`
+ * it resolves `isPersisted` without calling `mutationFn`), so the server
+ * action was never invoked and the dialogs only saw the success toast.
  */
 
 async function refetchCreditorAggregates(creditorId: string) {
@@ -59,53 +59,22 @@ async function refetchCreditorAggregates(creditorId: string) {
   })
 }
 
-/**
- * Optional success-side callbacks the dialogs use to capture the
- * server-assigned id and open a POS receipt. Threading them through the
- * input keeps the mutation-fn API surface unchanged while letting the
- * caller react to the persisted row without a second round-trip.
- */
-type AddInvestmentClientInput = AddInvestmentInput & {
-  onInvestmentCreated?: (investmentId: string) => void
+export async function addInvestment(input: AddInvestmentInput): Promise<string> {
+  const result = throwIfActionError(await addInvestmentAction(input))
+  await refetchCreditorAggregates(input.creditorId)
+  emitTableChange("creditor_investments")
+  emitTableChange("transactions")
+  return result.data.id as string
 }
 
-type RecordCreditorRepaymentClientInput = RecordCreditorRepaymentInput & {
-  creditorId: string
-  onRepaymentCreated?: (repaymentId: string) => void
+export async function recordCreditorRepayment(
+  input: RecordCreditorRepaymentInput & { creditorId: string },
+): Promise<string> {
+  const { creditorId, ...rest } = input
+  const result = throwIfActionError(await recordCreditorRepaymentAction(rest))
+  await refetchCreditorAggregates(creditorId)
+  emitTableChange("creditor_repayments")
+  emitTableChange("transactions")
+  return result.data.id as string
 }
-
-export const addInvestment = createOptimisticAction<AddInvestmentClientInput>({
-  onMutate: () => {
-    // No optimistic update — interest-accrual values are server-computed and
-    // we can't synthesize the dashboard's derived fields client-side.
-  },
-  mutationFn: async (input) => {
-    const { onInvestmentCreated, ...rest } = input
-    const result = throwIfActionError(await addInvestmentAction(rest))
-    if (onInvestmentCreated && result.data?.id) {
-      onInvestmentCreated(result.data.id as string)
-    }
-    await refetchCreditorAggregates(input.creditorId)
-    emitTableChange("creditor_investments")
-    emitTableChange("transactions")
-    return result
-  },
-})
-
-export const recordCreditorRepayment = createOptimisticAction<RecordCreditorRepaymentClientInput>({
-  onMutate: () => {
-    // Same reasoning as `addInvestment`: aggregates are server-computed.
-  },
-  mutationFn: async (input) => {
-    const { creditorId, onRepaymentCreated, ...rest } = input
-    const result = throwIfActionError(await recordCreditorRepaymentAction(rest))
-    if (onRepaymentCreated && result.data?.id) {
-      onRepaymentCreated(result.data.id as string)
-    }
-    await refetchCreditorAggregates(creditorId)
-    emitTableChange("creditor_repayments")
-    emitTableChange("transactions")
-    return result
-  },
-})
 

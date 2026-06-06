@@ -11,8 +11,8 @@ import { throwIfActionError, coerceDates } from "./_utils"
 /**
  * Query-polled rows from `creditor_repayments`. Reads only — repayments
  * are recorded server-side by `recordCreditorRepaymentAction` via the
- * `recordCreditorRepayment` createOptimisticAction (see `creditor-actions.ts`),
- * which also invalidates this collection's query key.
+ * `recordCreditorRepayment` helper (see `creditor-actions.ts`), which also
+ * invalidates this collection's query key.
  */
 export const creditorRepaymentCollection = createCollection(
   queryCollectionOptions({

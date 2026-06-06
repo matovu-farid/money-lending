@@ -84,27 +84,22 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     if (!pending) return
     startTransition(async () => {
       try {
-        let createdRepaymentId: string | null = null
-        const tx = recordCreditorRepayment({
+        const createdRepaymentId = await recordCreditorRepayment({
           creditorId,
           investmentId: pending.investmentId,
           amount: pending.amount.trim(),
           repaymentDate: pending.date,
-          onRepaymentCreated: (id) => { createdRepaymentId = id },
         })
-        await tx.isPersisted.promise
         toast.success("Repayment recorded successfully")
         setPending(null)
         setOpen(false)
         resetForm()
 
-        if (createdRepaymentId) {
-          const result = await getTransactionReceiptDataAction({
-            kind: "creditor_repayment",
-            repaymentId: createdRepaymentId,
-          })
-          if ("data" in result) setReceipt(result.data)
-        }
+        const result = await getTransactionReceiptDataAction({
+          kind: "creditor_repayment",
+          repaymentId: createdRepaymentId,
+        })
+        if ("data" in result) setReceipt(result.data)
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to record repayment")
       }

@@ -80,29 +80,24 @@ export function AddInvestmentDialog({ creditorId }: Props) {
     if (!pending) return
     startTransition(async () => {
       try {
-        let createdInvestmentId: string | null = null
-        const tx = addInvestment({
+        const createdInvestmentId = await addInvestment({
           creditorId,
           amount: pending.amount.trim(),
           interestRateMonthly: (Number(pending.interestRate) / 100).toString(),
           investmentDate: pending.date,
           depositLocation: "bank",
           subLocationId: pending.bankAccountId,
-          onInvestmentCreated: (id) => { createdInvestmentId = id },
         })
-        await tx.isPersisted.promise
         toast.success("Investment added successfully")
         setPending(null)
         setOpen(false)
         resetForm()
 
-        if (createdInvestmentId) {
-          const result = await getTransactionReceiptDataAction({
-            kind: "creditor_investment",
-            investmentId: createdInvestmentId,
-          })
-          if ("data" in result) setReceipt(result.data)
-        }
+        const result = await getTransactionReceiptDataAction({
+          kind: "creditor_investment",
+          investmentId: createdInvestmentId,
+        })
+        if ("data" in result) setReceipt(result.data)
       } catch (err: any) {
         toast.error(err?.message ?? "Failed to add investment")
       }
