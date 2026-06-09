@@ -115,7 +115,10 @@ function TermsBlock({ statement }: { statement: LoanStatement }) {
         label="Penalty Threshold"
         value={`${t.penaltyThresholdDays} days overdue`}
       />
-      <Row label="Min Interest Period" value={`${t.minInterestDays} days`} />
+      <Row
+        label="Min Interest Period"
+        value={`${t.minInterestDays} days (first payment only — subsequent payments accrue pro-rata)`}
+      />
       <Row label="Loan Type" value={t.loanType} />
       <Row label="Issuance Fee" value={`UGX ${formatCurrency(t.issuanceFee)}`} />
       {t.backdated && (

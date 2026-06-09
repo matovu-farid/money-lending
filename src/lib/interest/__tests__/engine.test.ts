@@ -240,6 +240,69 @@ describe("allocatePayment", () => {
     expect(result.loanFullyPaid).toBe(false)
   })
 
+  // ── Min-interest-period applies to first payment only ─────────────────
+  //
+  // The business rule is: the minimum cycle of interest is enforced once,
+  // on the first payment of a perpetual loan. Subsequent payments accrue
+  // pro-rata based on actual days since the previous payment. Without
+  // this rule, a borrower paying every 15 days would be charged 30 days
+  // of interest each time — effectively double-billed.
+  it("subsequent payment (paymentNumber=2) after 15 days charges pro-rata, NOT min-period", () => {
+    // First payment was already made and closed cycle 1. Now 15 days later:
+    // interest = 1,000,000 × 0.10 × 15 / 30 = 50,000 (NOT 100,000)
+    const result = allocatePayment({
+      paymentAmount: "100000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 15,
+      minInterestDays: 30,
+      paymentNumber: 2,
+    })
+    expect(result.interestPortion).toBe("50000.00")
+    expect(result.principalPortion).toBe("50000.00")
+    expect(result.principalBalanceAfter).toBe("950000.00")
+  })
+
+  it("third payment (paymentNumber=3) after 7 days charges pro-rata only", () => {
+    // interest = 800,000 × 0.10 × 7 / 30 ≈ 18,666.67
+    const result = allocatePayment({
+      paymentAmount: "100000",
+      principalBalanceBefore: "800000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 7,
+      minInterestDays: 30,
+      paymentNumber: 3,
+    })
+    expect(result.interestPortion).toBe("18666.67")
+  })
+
+  it("first payment (paymentNumber=1) preserves min-period enforcement", () => {
+    // Same 15-day window as the subsequent-payment test, but paymentNumber=1
+    // → minimum 30 days kicks in: interest = 100,000.
+    const result = allocatePayment({
+      paymentAmount: "100000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 15,
+      minInterestDays: 30,
+      paymentNumber: 1,
+    })
+    expect(result.interestPortion).toBe("100000.00")
+  })
+
+  it("subsequent payment past day 30 still charges actual days elapsed", () => {
+    // 45 days at 10%: balance × 0.10 × 45/30 = 1,000,000 × 0.15 = 150,000
+    const result = allocatePayment({
+      paymentAmount: "200000",
+      principalBalanceBefore: "1000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 45,
+      minInterestDays: 30,
+      paymentNumber: 2,
+    })
+    expect(result.interestPortion).toBe("150000.00")
+  })
+
   // Test 6: Custom minInterestDays override — partial payment inside the min period
   // owes the full min-period interest before any principal reduces.
   it("custom minInterestDays of 45 — partial payment after 20 days charges full 45-day interest", () => {

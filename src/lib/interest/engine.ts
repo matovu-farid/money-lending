@@ -453,14 +453,25 @@ export function allocatePayment(params: {
 
   // Default: perpetual logic.
   //
-  // Rule: interest owed = balance × dailyRate × max(daysElapsed, minInterestDays).
-  // The min-interest period applies to all payments, not just payoff — the first
-  // month's interest must be fully paid before any payment reduces principal.
-  // After day `minInterestDays` (typically 30), interest accrues pro-rata.
+  // Rule: minimum-interest-period (typically 30 days) is enforced ONLY on
+  // the FIRST payment. The first payment must cover at least one full
+  // cycle of interest — that's the cost of borrowing, regardless of how
+  // quickly the borrower pays back. Subsequent payments accrue interest
+  // pro-rata based on the actual days since the previous payment.
+  //
+  // Formula:
+  //   first payment:  interest = balance × rate × max(daysElapsed, minInterestDays) / 30
+  //   later payments: interest = balance × rate × daysElapsed                       / 30
+  //
+  // paymentNumber defaults to 1 when not supplied (preserves the original
+  // single-payment semantics that legacy callers — and most unit tests — rely on).
+  const isFirstPayment = !paymentNumber || paymentNumber === 1
+  const effectiveMinDays = isFirstPayment ? minInterestDays : 0
+
   const payment = new BigNumber(paymentAmount)
   const balance = new BigNumber(principalBalanceBefore)
   const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
-  const grossInterest = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays)
+  const grossInterest = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, effectiveMinDays)
   const interestOwed = BigNumber.max(grossInterest.minus(alreadyPaid), 0)
 
   if (payment.isLessThanOrEqualTo(interestOwed)) {

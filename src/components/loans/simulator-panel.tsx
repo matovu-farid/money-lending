@@ -92,6 +92,7 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
       monthlyRateDecimal: effectiveRate,
       daysElapsed: daysElapsedSinceLastPayment,
       minInterestDays: effectiveMinDays,
+      paymentNumber: sortedPayments.length + 1,
     })
 
     const afterInterestPaid = totalInterestPaid.plus(new BigNumber(allocation.interestPortion))
