@@ -1,4 +1,8 @@
-CREATE TYPE "public"."loan_type" AS ENUM('perpetual', 'fixed_rate', 'reducing_balance');--> statement-breakpoint
+DO $$ BEGIN
+  CREATE TYPE "public"."loan_type" AS ENUM('perpetual', 'fixed_rate', 'reducing_balance');
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;--> statement-breakpoint
 ALTER TYPE "public"."loan_status" ADD VALUE 'pending' BEFORE 'active';--> statement-breakpoint
 ALTER TABLE "loans" DROP CONSTRAINT "loans_customer_id_customers_id_fk";
 --> statement-breakpoint
@@ -11,8 +15,8 @@ ALTER TABLE "messages" DROP CONSTRAINT "messages_sender_id_user_id_fk";
 ALTER TABLE "session" ALTER COLUMN "updated_at" SET DEFAULT now();--> statement-breakpoint
 ALTER TABLE "financial_snapshots" ALTER COLUMN "data" SET DATA TYPE jsonb;--> statement-breakpoint
 ALTER TABLE "customers" ADD COLUMN "nin" text NOT NULL;--> statement-breakpoint
-ALTER TABLE "loans" ADD COLUMN "loan_type" "loan_type" DEFAULT 'perpetual' NOT NULL;--> statement-breakpoint
-ALTER TABLE "loans" ADD COLUMN "term_months" integer;--> statement-breakpoint
+ALTER TABLE "loans" ADD COLUMN IF NOT EXISTS "loan_type" "loan_type" DEFAULT 'perpetual' NOT NULL;--> statement-breakpoint
+ALTER TABLE "loans" ADD COLUMN IF NOT EXISTS "term_months" integer;--> statement-breakpoint
 ALTER TABLE "payments" ADD COLUMN "marked_wrong" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "payments" ADD COLUMN "marked_wrong_reason" text;--> statement-breakpoint
 ALTER TABLE "payments" ADD COLUMN "marked_wrong_by" text;--> statement-breakpoint
