@@ -1,68 +1,92 @@
 # Money Lending Management System
 
-A web-based platform for managing a lending business — covering customer loans, investor capital, daily interest calculations, business expenses, and financial reporting.
+A production web platform for running a money-lending business end to end: customer loans with daily reducing-balance interest, investor (creditor) capital tracking, expense and income ledgers, watchlists, and financial reporting (P&L, Balance Sheet).
 
-## Overview
+## What it does
 
-This system enables a lending business to:
+- **Loans.** Register customers, issue loans with daily interest on a reducing balance, and collect repayments with printable receipts.
+- **Investors (creditors).** Track investor capital coming in, interest accrued, and payouts back.
+- **Risk monitoring.** Auto-watchlists for borrowers nearing default, predictive alerts five days before due date.
+- **Expense and income tracking.** Operational ledger with categorization.
+- **Reporting.** Dashboard, P&L statement, Balance Sheet, and PDF / Excel exports.
+- **Approvals workflow.** Sensitive actions (rate changes, fund transfers, large payments) go through a review-then-confirm step before posting.
 
-- Register customers and issue loans with daily interest on a reducing balance
-- Collect repayments and generate printable receipts
-- Track investor (creditor) capital and interest owed
-- Monitor borrower risk with automatic watchlists and due-date alerts
-- Record operational expenses and income
-- Generate financial statements (P&L, Balance Sheet) and export reports
-
-## Key Business Rules
+## Business rules
 
 | Rule | Detail |
-|------|--------|
-| Interest calculation | Daily on reducing balance |
-| Default interest rate | 10% per month (admin-configurable) |
-| Loan term | 30 days default |
-| Payment allocation | Interest deducted first, remainder to principal |
+| --- | --- |
+| Interest calculation | Daily, on reducing balance |
+| Default rate | 10% per month (admin-configurable) |
+| Default loan term | 30 days |
+| Payment allocation | Interest first, remainder to principal |
 | Minimum interest period | 30 days (even if repaid early) |
-| Predictive alerts | 5 days before loan due date |
-| Borrower watchlist | Auto-flagged when fewer than 30 days remain |
+| Predictive alert | 5 days before loan due date |
+| Watchlist | Borrower auto-flagged when fewer than 30 days remain |
 
 ## Roles
 
 | Role | Access |
-|------|--------|
+| --- | --- |
 | Super Admin | Full system access and settings |
 | Admin | Manage loans, customers, creditors, view reports |
 | Loan Officer | Create loans, record payments, view customer data |
 | Viewer | Read-only dashboard and reports |
 
-## Delivery Phases
+## Tech stack
 
-| Phase | Milestone | Hours |
-|-------|-----------|-------|
-| Phase 1 | Core loan operations — issue loans, collect payments, print receipts | 198 |
-| Phase 2 | Monitoring — watchlists, alerts, repayment simulator | 96 |
-| Phase 3 | Creditor management — investor capital & interest tracking | 62 |
-| Phase 4 | Expenses & income tracking | 38 |
-| Phase 5 | Dashboard, P&L, Balance Sheet, PDF/Excel exports | 62 |
-| Phase 6 | QA & launch | 32 |
-| **Total** | | **488** |
+- **Framework.** Next.js 16 (App Router, Turbopack) with React 19 and Tailwind CSS v4.
+- **Database.** Postgres on Neon, schema and migrations with Drizzle ORM.
+- **Sync layer.** TanStack DB collections with ElectricSQL for reactive, real-time UI state.
+- **Auth.** Better Auth with role-based access control.
+- **Money math.** BigNumber.js for exact decimal arithmetic, no floating-point loss.
+- **Emails.** Resend with React Email templates.
+- **Observability.** Sentry on both server and edge.
+- **Testing.** Vitest unit and integration suites, Cypress E2E.
+- **Design system.** Custom "Quantitative Minimalist" system documented in [`DESIGN.md`](./DESIGN.md): monochromatic surfaces, tabular Geist Mono for numbers, spatial separation instead of visible borders.
 
-## Tech Stack
-
-- **Frontend**: Next.js 16 (App Router) + React 19 + Tailwind CSS v4
-- **Backend**: Next.js API Routes (Node.js)
-- **Database**: PostgreSQL
-- **Authentication**: Clerk (roles: Super Admin, Admin, Loan Officer, Viewer)
-- **Scheduled Jobs**: Cron — daily interest calculation
-
-## Getting Started
+## Getting started
 
 ```bash
 pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the app.
+Open [http://localhost:3000](http://localhost:3000).
 
-## Out of Scope
+To run the optional self-hosted Electric stack alongside dev:
 
-Native mobile apps, SMS notifications, mobile money integrations, multi-currency support, offline mode, and automated debt collection.
+```bash
+pnpm dev:stack
+```
+
+## Scripts
+
+| Script | What it does |
+| --- | --- |
+| `pnpm dev` | Run Next.js dev server with Turbopack |
+| `pnpm build` | Production build, runs `drizzle-kit push` after |
+| `pnpm test` | Vitest unit tests |
+| `pnpm test:integration` | Vitest integration suite |
+| `pnpm test:e2e` | Cypress E2E suite |
+| `pnpm validate` | Typecheck plus unit and E2E tests |
+| `pnpm db:studio` | Drizzle Studio for browsing data |
+
+## Delivery phases
+
+| Phase | Milestone | Hours |
+| --- | --- | --- |
+| 1 | Core loan operations: issue loans, collect payments, print receipts | 198 |
+| 2 | Monitoring: watchlists, alerts, repayment simulator | 96 |
+| 3 | Creditor management: investor capital and interest tracking | 62 |
+| 4 | Expenses and income tracking | 38 |
+| 5 | Dashboard, P&L, Balance Sheet, PDF / Excel exports | 62 |
+| 6 | QA and launch | 32 |
+| **Total** | | **488** |
+
+## Status
+
+Active. Phases 1 through 5 are implemented. Currently iterating on mobile responsiveness and printable receipt formatting.
+
+## Out of scope
+
+Native mobile apps, SMS notifications, mobile money integrations, multi-currency, offline mode, and automated debt collection.

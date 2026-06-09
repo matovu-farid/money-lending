@@ -72,11 +72,11 @@ describe("Creditors", () => {
         const beforeAmount = Number(before.replace(/[^\d.-]/g, ""))
         expect(beforeAmount).to.be.at.least(5_000_000)
 
-        cy.contains("button", "Record Repayment").click()
-        cy.get('[id="repay-investment"]').click()
-        cy.get('[role="option"]').first().click()
+        // Per-row Repay button — first (and only) investment row.
+        cy.get('[data-testid="data-row"]').first().contains("button", "Repay").click()
         cy.get('input[name="amount"]').type("1000000")
-        cy.contains("button", "Record Repayment").last().click()
+        cy.contains("button", "Review").click()
+        cy.contains("button", "Record repayment").click()
         cy.contains("Repayment recorded successfully", { timeout: 10000 }).should("be.visible")
 
         cy.get('[data-testid="kpi-card"][data-kpi-label="Outstanding Balance"]')
@@ -116,11 +116,10 @@ describe("Creditors", () => {
     cy.contains("button", "Close").click()
 
     // Record a repayment so the Repayments tab has data.
-    cy.contains("button", "Record Repayment").click()
-    cy.get('[id="repay-investment"]').click()
-    cy.get('[role="option"]').first().click()
+    cy.get('[data-testid="data-row"]').first().contains("button", "Repay").click()
     cy.get('input[name="amount"]').type("500000")
-    cy.contains("button", "Record Repayment").last().click()
+    cy.contains("button", "Review").click()
+    cy.contains("button", "Record repayment").click()
     cy.contains("Repayment recorded successfully", { timeout: 10000 }).should("be.visible")
 
     cy.contains("Repayments").click()

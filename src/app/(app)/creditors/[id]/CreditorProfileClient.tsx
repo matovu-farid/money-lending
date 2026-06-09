@@ -205,11 +205,6 @@ export function CreditorProfileClient({ creditorId }: Props) {
       <div className="space-y-4">
         <div className="flex items-center gap-3">
           <AddInvestmentDialog creditorId={creditorId} />
-          <RecordRepaymentDialog
-            creditorId={creditorId}
-            investments={investments}
-            outstandingBalance={dashboard?.outstandingBalance ?? "0"}
-          />
         </div>
 
         <Tabs defaultValue="investments">
@@ -235,7 +230,7 @@ export function CreditorProfileClient({ creditorId }: Props) {
                       <TableHead className="text-right">Principal Balance</TableHead>
                       <TableHead className="text-right">Interest Accrued</TableHead>
                       <TableHead className="text-right">Total Repaid</TableHead>
-                      <TableHead className="text-right">Receipt</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -248,7 +243,10 @@ export function CreditorProfileClient({ creditorId }: Props) {
                         <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.interestAccrued)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatCurrency(inv.totalRepaid)}</TableCell>
                         <TableCell className="text-right">
-                          <TransactionReceiptButton input={{ kind: "creditor_investment", investmentId: inv.id }} />
+                          <div className="inline-flex items-center justify-end gap-2">
+                            <RecordRepaymentDialog creditorId={creditorId} investment={inv} />
+                            <TransactionReceiptButton input={{ kind: "creditor_investment", investmentId: inv.id }} />
+                          </div>
                         </TableCell>
                       </TableRow>
                     ))}
