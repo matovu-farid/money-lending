@@ -176,6 +176,13 @@
       "when": 1779732651124,
       "tag": "0024_fk_cascade_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1781002551000,
+      "tag": "0025_loan_balances_projection",
+      "breakpoints": true
     }
   ]
 }

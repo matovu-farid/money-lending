@@ -1,18 +1,18 @@
--- drizzle/projections/loan_balances.sql
--- Idempotent. Apply via `pnpm db:projections`.
-
--- 1. Projection table.
+-- Projection table is also declared in src/lib/db/schema/loan-balances.ts and
+-- created by drizzle-kit's schema apply. The IF NOT EXISTS here makes the
+-- migration self-contained — running it on a bare DB (no prior push) still
+-- produces a working projection layer.
 CREATE TABLE IF NOT EXISTS loan_balances (
   loan_id              UUID PRIMARY KEY REFERENCES loans(id) ON DELETE CASCADE,
   outstanding_balance  NUMERIC(15,2) NOT NULL DEFAULT '0',
   unpaid_interest      NUMERIC(15,2) NOT NULL DEFAULT '0',
   last_payment_date    TIMESTAMPTZ,
   updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+);--> statement-breakpoint
 
--- 2. Recompute one loan's projection row from base data.
---    Asset account (Loans Receivable): debit adds, credit subtracts.
---    Revenue account (Interest Earned): credit adds, debit subtracts.
+-- Recompute one loan's projection row from base data.
+-- Asset account (Loans Receivable): debit adds, credit subtracts.
+-- Revenue account (Interest Earned): credit adds, debit subtracts.
 CREATE OR REPLACE FUNCTION refresh_loan_balance(p_loan_id UUID) RETURNS void AS $$
 BEGIN
   IF p_loan_id IS NULL THEN RETURN; END IF;
@@ -38,9 +38,8 @@ BEGIN
     unpaid_interest    = EXCLUDED.unpaid_interest,
     last_payment_date  = EXCLUDED.last_payment_date,
     updated_at         = NOW();
-END $$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql;--> statement-breakpoint
 
--- 3. Trigger on transactions (affects outstanding_balance, unpaid_interest).
 CREATE OR REPLACE FUNCTION on_transactions_change_for_loan_balance() RETURNS TRIGGER AS $$
 BEGIN
   PERFORM refresh_loan_balance(COALESCE(NEW.loan_id, OLD.loan_id));
@@ -48,14 +47,13 @@ BEGIN
     PERFORM refresh_loan_balance(OLD.loan_id);
   END IF;
   RETURN NULL;
-END $$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql;--> statement-breakpoint
 
-DROP TRIGGER IF EXISTS trg_transactions_loan_balance ON transactions;
+DROP TRIGGER IF EXISTS trg_transactions_loan_balance ON transactions;--> statement-breakpoint
 CREATE TRIGGER trg_transactions_loan_balance
 AFTER INSERT OR UPDATE OR DELETE ON transactions
-FOR EACH ROW EXECUTE FUNCTION on_transactions_change_for_loan_balance();
+FOR EACH ROW EXECUTE FUNCTION on_transactions_change_for_loan_balance();--> statement-breakpoint
 
--- 4. Trigger on payments (affects last_payment_date).
 CREATE OR REPLACE FUNCTION on_payments_change_for_loan_balance() RETURNS TRIGGER AS $$
 BEGIN
   PERFORM refresh_loan_balance(COALESCE(NEW.loan_id, OLD.loan_id));
@@ -63,9 +61,9 @@ BEGIN
     PERFORM refresh_loan_balance(OLD.loan_id);
   END IF;
   RETURN NULL;
-END $$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql;--> statement-breakpoint
 
-DROP TRIGGER IF EXISTS trg_payments_loan_balance ON payments;
+DROP TRIGGER IF EXISTS trg_payments_loan_balance ON payments;--> statement-breakpoint
 CREATE TRIGGER trg_payments_loan_balance
 AFTER INSERT OR UPDATE OR DELETE ON payments
 FOR EACH ROW EXECUTE FUNCTION on_payments_change_for_loan_balance();
