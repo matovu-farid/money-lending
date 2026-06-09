@@ -139,12 +139,20 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   const payments: PaymentWithCustomer[] = useMemo(() => {
     return rawPaymentsArr.map((p) => {
       const portion = currentPortions[p.id]
+      // Post-Electric removal: optimistic / server-action rows can arrive
+      // with timestamp columns as ISO strings rather than Date objects.
+      // Normalise here so downstream sorting & date arithmetic doesn't
+      // crash on `.getTime()`.
+      const paymentDate =
+        p.paymentDate instanceof Date ? p.paymentDate : new Date(p.paymentDate as unknown as string)
+      const createdAt =
+        p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt as unknown as string)
       return {
         id: p.id,
         loanId: p.loanId,
         customerId: loan.customerId,
         customerName: customerName ?? "",
-        paymentDate: p.paymentDate,
+        paymentDate,
         amount: p.amount,
         interestPortion: portion?.interestPortion ?? "0",
         principalPortion: portion?.principalPortion ?? "0",
@@ -153,7 +161,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         recordedBy: p.recordedBy,
         recorderName: userNameMap[p.recordedBy] ?? "",
         depositLocation: p.depositLocation,
-        createdAt: p.createdAt,
+        createdAt,
       }
     })
   }, [rawPaymentsArr, currentPortions, userNameMap, loan.customerId, customerName])

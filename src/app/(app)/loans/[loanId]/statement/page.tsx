@@ -56,7 +56,15 @@ export default function LoanStatementPage() {
   const payments = useMemo(
     () =>
       (rawPayments ?? [])
-        .slice()
+        .map((p) => ({
+          ...p,
+          // Defensive coercion — optimistic / server-action rows can arrive
+          // with paymentDate as an ISO string post-Electric removal.
+          paymentDate:
+            p.paymentDate instanceof Date
+              ? p.paymentDate
+              : new Date(p.paymentDate as unknown as string),
+        }))
         .sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime()),
     [rawPayments],
   )
