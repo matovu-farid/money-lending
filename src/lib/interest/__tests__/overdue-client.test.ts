@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import BigNumber from "bignumber.js"
-import { computeDaysOverdue } from "../overdue-client"
+import { computeDaysOverdue, computeUnpaidInterest } from "../overdue-client"
 import { computeLoanOverdueInfo } from "../overdue"
 import { getBaseRate } from "../effective-rate"
 
@@ -257,5 +257,68 @@ describe("computeDaysOverdue — edge cases", () => {
     for (const status of statuses) {
       expect(computeDaysOverdue({ ...baseLoan, status }, "0", "1000000", today)).toBe(0)
     }
+  })
+})
+
+// ─── computeUnpaidInterest — penalty surcharge ──────────────────────────────
+
+const baseLoanForUnpaid = {
+  ...baseLoan,
+  penaltyMultiplier: "0.1000",
+  penaltyWaived: false,
+}
+
+describe("computeUnpaidInterest — penalty surcharge", () => {
+  it("returns base-rate accrual when not yet 60 days overdue (penalty inactive)", () => {
+    // 30 days at 10%/month on 1M = 100,000 — well under the 60-day threshold
+    const today = new Date("2026-01-31")
+    const unpaid = computeUnpaidInterest(baseLoanForUnpaid, "0", "1000000", today)
+    expect(unpaid).toBe("100000")
+  })
+
+  it("matches base-rate calc when penalty is waived even past the threshold", () => {
+    // 90 days at 10%/month — penalty would be active, but waived
+    const today = new Date("2026-04-01")
+    const baseAccrual = computeUnpaidInterest(
+      { ...baseLoanForUnpaid, penaltyWaived: true },
+      "0",
+      "1000000",
+      today,
+    )
+    expect(baseAccrual).toBe("300000") // 1,000,000 × 0.10 × 90 / 30
+  })
+
+  it("adds penalty surcharge for days past the crossover when penalty is active", () => {
+    // 90 days since start, no payments → unpaidAtBase reaches 60-day threshold
+    // around day 60. Days 0-60: base 10%; days 60-90 (30 days): effective 11%.
+    // accruedAtBase     = 1,000,000 × 0.10 × 60 / 30 = 200,000
+    // accruedAtEffective= 1,000,000 × 0.11 × 30 / 30 = 110,000
+    // total accrued     = 310,000  (vs 300,000 without penalty)
+    const today = new Date("2026-04-01")
+    const unpaid = computeUnpaidInterest(baseLoanForUnpaid, "0", "1000000", today)
+    expect(unpaid).toBe("310000")
+  })
+
+  it("pushes the crossover day later when interest has been partially paid", () => {
+    // 200 days since start, 50,000 paid. dailyAtBase = 100,000/30 ≈ 3,333.33
+    // crossover day = 60 + 50,000 / 3,333.33 = 60 + 15 = 75
+    // days at base = 75, days at effective = 125
+    // accruedAtBase      = 1,000,000 × 0.10 × 75 / 30 = 250,000
+    // accruedAtEffective = 1,000,000 × 0.11 × 125 / 30 ≈ 458,333.33
+    // total accrued      ≈ 708,333 — minus 50,000 paid = 658,333
+    const today = new Date("2026-07-20") // 200 days after Jan 1
+    const unpaid = computeUnpaidInterest(baseLoanForUnpaid, "50000", "1000000", today)
+    expect(unpaid).toBe("658333")
+  })
+
+  it("uses interestRateOverride as the base rate when set", () => {
+    // override to 5% — 90 days at 5% on 1M = 150,000 (below threshold-worth)
+    // dailyAtBase = 50,000/30 ≈ 1,666.67; daysOverdueAtBase = 150,000/1,666.67 = 90
+    // penalty active. crossover = 60. accruedAtBase = 1M × 0.05 × 60/30 = 100,000
+    // accruedAtEffective = 1M × 0.055 × 30/30 = 55,000. total = 155,000.
+    const today = new Date("2026-04-01")
+    const overrideLoan = { ...baseLoanForUnpaid, interestRateOverride: "0.05" }
+    const unpaid = computeUnpaidInterest(overrideLoan, "0", "1000000", today)
+    expect(unpaid).toBe("155000")
   })
 })

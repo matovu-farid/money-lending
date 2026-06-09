@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { InfoPopover } from "@/components/ui/info-popover"
 import BigNumber from "bignumber.js"
+import { addMonths, format } from "date-fns"
 import { cn, formatCurrency, shortId } from "@/lib/utils"
 import { calculateSchedule } from "@/lib/interest/engine"
 import { useLoanDetailStore } from "@/lib/stores/loan-detail"
@@ -479,6 +480,12 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                     <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
                       Total Due = Principal Balance + Unpaid Interest
                     </p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      <strong>Penalty included.</strong> If the loan has crossed the
+                      60-day overdue threshold, interest accrued after the threshold
+                      uses the higher penalty rate (base × (1 + penaltyMultiplier)),
+                      so the Unpaid Interest figure already reflects the surcharge.
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       This figure changes daily as interest continues to accrue.
                     </p>
@@ -574,6 +581,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
               <thead className="bg-muted/50 sticky top-0">
                 <tr>
                   <th className="px-3 py-2 text-left">Month</th>
+                  <th className="px-3 py-2 text-left">Due Date</th>
                   <th className="px-3 py-2 text-right">Principal</th>
                   <th className="px-3 py-2 text-right">Interest</th>
                   <th className="px-3 py-2 text-right">Installment</th>
@@ -584,6 +592,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                 {schedule.map((entry) => (
                   <tr key={entry.month} className="border-t">
                     <td className="px-3 py-2">{entry.month}</td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {format(addMonths(new Date(loan.startDate), entry.month), "MMM d, yyyy")}
+                    </td>
                     <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right">{Number(entry.monthlyInterest).toLocaleString()}</td>
                     <td className="px-3 py-2 text-right">{Number(entry.monthlyInstallment).toLocaleString()}</td>

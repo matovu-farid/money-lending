@@ -22,6 +22,7 @@
 
 import BigNumber from "bignumber.js"
 import type { LoanBaseRow } from "@/lib/schemas/collections"
+import { PENALTY_THRESHOLD_DAYS, isPenaltyActive } from "./effective-rate"
 
 BigNumber.config({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
 
@@ -101,8 +102,19 @@ export function computeDaysOverdue(
  * Compute the unpaid-interest amount (`accruedToDate − paid`, clamped at 0)
  * for display in the legacy `LoanListEntry.unpaidInterest` field.
  *
- * Uses the same formula as `computeDaysOverdue` so the Total Due column,
- * the OverdueBadge, and the exported Excel columns all agree.
+ * Penalty handling: when penalty is active (loan >= PENALTY_THRESHOLD_DAYS
+ * overdue and not waived), the accrual is split into two segments — interest
+ * pre-threshold accrues at the base rate, interest post-threshold accrues at
+ * the effective rate (base × (1 + penaltyMultiplier)). This makes the Total
+ * Due figure on the loan detail page reflect the penalty surcharge the
+ * borrower actually owes.
+ *
+ * The crossover day is approximated as `PENALTY_THRESHOLD_DAYS + paid /
+ * dailyAtBase` — i.e. when accumulated unpaid base-rate interest first
+ * exceeded the threshold given the cumulative payments to date. This is an
+ * approximation (it assumes payments were spread evenly through the loan),
+ * but is sufficient for UI display and stays correct in the common cases
+ * (no payments, or all payments late).
  */
 export function computeUnpaidInterest(
   loan: Pick<
@@ -114,6 +126,8 @@ export function computeUnpaidInterest(
     | "interestRateOverride"
     | "minInterestDays"
     | "startDate"
+    | "penaltyMultiplier"
+    | "penaltyWaived"
   >,
   totalInterestPaid: string,
   outstandingBalance: string,
@@ -131,15 +145,43 @@ export function computeUnpaidInterest(
       : (loan.principalAmount ?? "0")
 
   const balanceBN = new BigNumber(currentBalance)
-  const rateBN = new BigNumber(baseRate)
-  if (balanceBN.isZero() || rateBN.isZero()) return "0"
+  const baseBN = new BigNumber(baseRate)
+  if (balanceBN.isZero() || baseBN.isZero()) return "0"
 
   const daysSinceStart = Math.floor(
     (today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
   )
-  // Defer divide-by-30 to the end so 30-day multiples are exact and match
-  // engine.ts:calculateInterest.
-  const totalAccrued = balanceBN.multipliedBy(rateBN).multipliedBy(daysSinceStart).dividedBy(30)
-  const unpaid = BigNumber.max(totalAccrued.minus(new BigNumber(totalInterestPaid)), 0)
+  const paidBN = new BigNumber(totalInterestPaid)
+
+  // First pass: accrual at base rate (used to derive daysOverdue → penalty status).
+  const baseAccrued = balanceBN.multipliedBy(baseBN).multipliedBy(daysSinceStart).dividedBy(30)
+  const unpaidAtBase = BigNumber.max(baseAccrued.minus(paidBN), 0)
+
+  const dailyAtBase = balanceBN.multipliedBy(baseBN).dividedBy(30)
+  const daysOverdueAtBase = dailyAtBase.isZero()
+    ? 0
+    : Math.floor(unpaidAtBase.dividedBy(dailyAtBase).toNumber())
+
+  const penaltyActive = isPenaltyActive(daysOverdueAtBase, loan.penaltyWaived ?? false)
+  if (!penaltyActive) return unpaidAtBase.toFixed(0)
+
+  // Penalty active — split accrual at the crossover day.
+  const crossoverFractional = new BigNumber(PENALTY_THRESHOLD_DAYS).plus(
+    dailyAtBase.isZero() ? new BigNumber(0) : paidBN.dividedBy(dailyAtBase),
+  )
+  const crossoverDay = Math.min(daysSinceStart, Math.floor(crossoverFractional.toNumber()))
+  const daysAtBase = Math.max(0, crossoverDay)
+  const daysAtEffective = Math.max(0, daysSinceStart - daysAtBase)
+
+  const multiplier = new BigNumber(loan.penaltyMultiplier ?? "0.1000")
+  const effectiveRateBN = baseBN.plus(baseBN.multipliedBy(multiplier))
+
+  const accruedAtBase = balanceBN.multipliedBy(baseBN).multipliedBy(daysAtBase).dividedBy(30)
+  const accruedAtEffective = balanceBN
+    .multipliedBy(effectiveRateBN)
+    .multipliedBy(daysAtEffective)
+    .dividedBy(30)
+  const totalAccrued = accruedAtBase.plus(accruedAtEffective)
+  const unpaid = BigNumber.max(totalAccrued.minus(paidBN), 0)
   return unpaid.toFixed(0)
 }
