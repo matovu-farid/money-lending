@@ -1,10 +1,15 @@
 // scripts/db-projections.ts
 // Applies every .sql file in drizzle/projections/ to the database in
 // alphabetical filename order. Idempotent — safe to re-run.
+//
+// Wired into `postbuild` so projection triggers/functions are reapplied on
+// every Vercel deploy alongside `drizzle-kit push`. Uses the `postgres` npm
+// package (already a dep) rather than shelling to `psql`, so it works on
+// Vercel build images where psql is not installed.
 
-import { spawnSync } from "node:child_process"
-import { readdirSync, statSync } from "node:fs"
+import { readFileSync, readdirSync, statSync } from "node:fs"
 import { join } from "node:path"
+import postgres from "postgres"
 
 const DATABASE_URL = process.env.DATABASE_URL
 if (!DATABASE_URL) {
@@ -26,17 +31,23 @@ if (files.length === 0) {
   process.exit(0)
 }
 
-for (const file of files) {
-  const path = join(dir, file)
-  const stats = statSync(path)
-  console.log(`[db:projections] applying ${file} (${stats.size} bytes)`)
-  const result = spawnSync("psql", [DATABASE_URL, "-v", "ON_ERROR_STOP=1", "-f", path], {
-    stdio: "inherit",
-  })
-  if (result.status !== 0) {
-    console.error(`[db:projections] psql exited ${result.status} for ${file}`)
-    process.exit(result.status ?? 1)
+async function main() {
+  const sql = postgres(DATABASE_URL!, { max: 1, onnotice: () => {} })
+  try {
+    for (const file of files) {
+      const path = join(dir, file)
+      const stats = statSync(path)
+      const source = readFileSync(path, "utf8")
+      console.log(`[db:projections] applying ${file} (${stats.size} bytes)`)
+      await sql.unsafe(source)
+    }
+    console.log(`[db:projections] applied ${files.length} file(s)`)
+  } finally {
+    await sql.end({ timeout: 5 })
   }
 }
 
-console.log(`[db:projections] applied ${files.length} file(s)`)
+main().catch((err) => {
+  console.error("[db:projections] failed:", err)
+  process.exit(1)
+})
