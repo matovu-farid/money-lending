@@ -249,7 +249,7 @@ export function TransactionListClient({
     ? [
         { label: "Date", value: formatDate(new Date(pending.date)) },
         { label: "Category", value: pending.categoryName.trim() },
-        { label: "Amount", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        { label: "Amount", value: formatCurrency(pending.amount), emphasis: true },
         {
           label: "Location",
           value:

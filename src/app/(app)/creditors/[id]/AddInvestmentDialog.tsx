@@ -106,7 +106,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
 
   const summaryLines: SummaryLine[] = pending
     ? [
-        { label: "Amount", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        { label: "Amount", value: formatCurrency(pending.amount), emphasis: true },
         { label: "Monthly rate", value: `${pending.interestRate}%` },
         { label: "Date", value: formatDate(pending.date) },
         {

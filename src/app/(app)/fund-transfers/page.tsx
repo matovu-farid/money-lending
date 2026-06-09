@@ -285,7 +285,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
         },
         {
           label: "Amount",
-          value: `UGX ${formatCurrency(pendingTransfer.amount)}`,
+          value: formatCurrency(pendingTransfer.amount),
           emphasis: true,
         },
         ...(pendingTransfer.note?.trim()
@@ -305,7 +305,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
         },
         {
           label: "Amount",
-          value: `UGX ${formatCurrency(pendingInjection.amount)}`,
+          value: formatCurrency(pendingInjection.amount),
           emphasis: true,
         },
         ...(pendingInjection.note?.trim()

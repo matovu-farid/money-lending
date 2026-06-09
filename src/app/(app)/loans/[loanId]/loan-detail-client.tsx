@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -41,8 +41,6 @@ import { PaymentTable } from "./payment-table"
 import { EditPaymentDialog } from "./edit-payment-dialog"
 import { DeletePaymentDialog } from "./delete-payment-dialog"
 import { RateChangeDialog } from "./rate-change-dialog"
-import { LoanStatementDialog } from "./loan-statement-dialog"
-import { buildLoanStatement } from "@/lib/loan-statement"
 
 interface LoanDetailClientProps {
   loanEntry: LoanListEntry
@@ -203,44 +201,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
 
   const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
   const pendingRateRequest = rateChangeList.find((r: RateChangeRequest) => r.status === "pending")
-
-  // Loan-statement dialog ("Show Math" button)
-  const [statementOpen, setStatementOpen] = useState(false)
-  const statement = useMemo(() => {
-    if (!statementOpen) return null
-    return buildLoanStatement({
-      loan: {
-        id: loan.id,
-        principalAmount: loan.principalAmount,
-        interestRate: loan.interestRate,
-        interestRateOverride: loan.interestRateOverride,
-        penaltyMultiplier: loan.penaltyMultiplier,
-        penaltyWaived: loan.penaltyWaived,
-        penaltyWaivedAt: loan.penaltyWaivedAt ?? null,
-        penaltyWaivedBy: loan.penaltyWaivedBy ?? null,
-        minInterestDays: loan.minInterestDays,
-        issuanceFee: loan.issuanceFee,
-        loanType: loan.loanType ?? "perpetual",
-        startDate: loan.startDate,
-        createdAt: loan.createdAt,
-      },
-      payments: payments.map((p) => ({
-        paymentDate: p.paymentDate,
-        amount: p.amount,
-        interestPortion: p.interestPortion,
-        principalPortion: p.principalPortion,
-        recorderName: p.recorderName,
-      })),
-      rateChanges: rateChangeList
-        .filter((r: RateChangeRequest) => r.status === "approved")
-        .map((r: RateChangeRequest) => ({
-          effectiveDate: r.createdAt,
-          fromRate: r.currentRate,
-          toRate: r.requestedRate,
-        })),
-      today: new Date(),
-    })
-  }, [statementOpen, loan, payments, rateChangeList])
 
   // Initialize penalty multiplier on mount and reset on unmount
   useEffect(() => {
@@ -444,14 +404,13 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setStatementOpen(true)}
+          <Link
+            href={`/loans/${loan.id}/statement`}
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
           >
             <Calculator className="h-3.5 w-3.5" />
             Show Math
-          </Button>
+          </Link>
           <Link
             href={`/loans/new?customerId=${loan.customerId}`}
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
@@ -724,15 +683,6 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
           accruedInterest={balanceData.unpaidInterest}
           collateralNature={collateralNature}
           collateralDescription={collateralDescription ?? null}
-        />
-      )}
-      {statement && (
-        <LoanStatementDialog
-          open={statementOpen}
-          onOpenChange={setStatementOpen}
-          statement={statement}
-          customerName={customerName ?? "—"}
-          loanRef={loanRef}
         />
       )}
     </div>

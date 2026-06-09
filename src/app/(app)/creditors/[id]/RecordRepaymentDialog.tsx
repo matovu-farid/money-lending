@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useForm, Controller } from "react-hook-form"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
+import { BigNumber } from "bignumber.js"
 import { recordCreditorRepayment } from "@/collections/creditor-actions"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
@@ -15,62 +16,50 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { MoneyInput } from "@/components/ui/money-input"
 import { InfoPopover } from "@/components/ui/info-popover"
-import { formatCurrency, todayDateString } from "@/lib/utils"
+import { formatCurrency, formatDate, todayDateString } from "@/lib/utils"
 import { CurrencyCell } from "@/components/ui/currency-cell"
 import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
-import type { CreditorInvestment } from "@/types"
+import type { CreditorInvestmentSummary } from "@/types"
 
 interface Props {
   creditorId: string
-  investments: CreditorInvestment[]
-  outstandingBalance: string
+  investment: CreditorInvestmentSummary
 }
 
 interface RepaymentFormValues {
-  investmentId: string
   amount: string
   date: string
 }
 
-export function RecordRepaymentDialog({ creditorId, investments, outstandingBalance }: Props) {
+export function RecordRepaymentDialog({ creditorId, investment }: Props) {
   const [open, setOpen] = useState(false)
   const [isPending, startTransition] = useTransition()
   const [receipt, setReceipt] = useState<TransactionReceiptData | null>(null)
   const [pending, setPending] = useState<RepaymentFormValues | null>(null)
 
+  const investmentOutstanding = new BigNumber(investment.principalBalance)
+    .plus(investment.interestAccrued)
+    .toString()
+
   const {
-    register,
     handleSubmit,
-    setValue,
-    watch,
     control,
     reset,
     formState: { errors },
   } = useForm<RepaymentFormValues>({
     defaultValues: {
-      investmentId: "",
       amount: "",
       date: todayDateString(),
     },
   })
 
-  const watchedInvestmentId = watch("investmentId")
-
   function resetForm() {
     reset({
-      investmentId: "",
       amount: "",
       date: todayDateString(),
     })
@@ -86,7 +75,7 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
       try {
         const createdRepaymentId = await recordCreditorRepayment({
           creditorId,
-          investmentId: pending.investmentId,
+          investmentId: investment.id,
           amount: pending.amount.trim(),
           repaymentDate: pending.date,
         })
@@ -106,26 +95,26 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
     })
   }
 
-  const selectedInvestment = pending
-    ? investments.find((i) => i.id === pending.investmentId)
-    : null
   const summaryLines: SummaryLine[] = pending
     ? [
         {
           label: "Investment",
-          value: selectedInvestment
-            ? `UGX ${formatCurrency(selectedInvestment.amount)} — ${new Date(selectedInvestment.investmentDate).toLocaleDateString("en-UG")}`
-            : "—",
+          value: `${formatCurrency(investment.amount)} — ${formatDate(investment.investmentDate)}`,
         },
-        { label: "Repayment", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
-        { label: "Date", value: new Date(pending.date).toLocaleDateString("en-UG") },
+        { label: "Repayment", value: formatCurrency(pending.amount), emphasis: true },
+        { label: "Date", value: formatDate(pending.date) },
       ]
     : []
 
   return (
     <>
-      <Button variant="default" onClick={() => setOpen(true)}>
-        Record Repayment
+      <Button
+        variant="default"
+        size="sm"
+        onClick={() => setOpen(true)}
+        aria-label="Record repayment for this investment"
+      >
+        Repay
       </Button>
       <DrawerDialog open={open} onOpenChange={(isOpen) => {
         setOpen(isOpen)
@@ -138,49 +127,31 @@ export function RecordRepaymentDialog({ creditorId, investments, outstandingBala
             <InfoPopover>
               <p className="font-semibold text-sm mb-1">Creditor Repayment</p>
               <p className="text-xs text-muted-foreground mb-2">
-                A payment made back to the creditor (investor). This reduces the outstanding balance you owe them. Select which investment this repayment applies to.
+                A payment made back to the creditor (investor) against this specific investment. Reduces the outstanding balance you owe them.
               </p>
             </InfoPopover>
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit(onValidated)} className="space-y-4">
-          <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
-            <span className="text-muted-foreground inline-flex items-center gap-1">
-              Outstanding Balance:
-              <InfoPopover>
-                <p className="font-semibold text-sm mb-1">Outstanding Balance</p>
-                <p className="text-xs text-muted-foreground">
-                  Total amount still owed to this creditor across all their investments, minus any repayments already made.
-                </p>
-              </InfoPopover>
-            </span>
-            <CurrencyCell amount={outstandingBalance} className="font-medium" />
-          </div>
-
-          <div className="space-y-1">
-            <Label htmlFor="repay-investment">Investment</Label>
-            <Select
-              value={watchedInvestmentId}
-              onValueChange={(value) => setValue("investmentId", value ?? "", { shouldValidate: true })}
-            >
-              <SelectTrigger id="repay-investment" className="w-full">
-                <SelectValue placeholder="Select investment" />
-              </SelectTrigger>
-              <SelectContent>
-                {investments.map((inv) => (
-                  <SelectItem key={inv.id} value={inv.id}>
-                    <CurrencyCell amount={inv.amount} />{" — "}<span className="font-mono tabular-nums">{new Date(inv.investmentDate).toLocaleDateString("en-UG")}</span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <input
-              type="hidden"
-              {...register("investmentId", { required: "Please select an investment" })}
-            />
-            {errors.investmentId && (
-              <p className="text-sm text-destructive">{errors.investmentId.message}</p>
-            )}
+          <div className="rounded-lg bg-muted/50 px-3 py-2 text-sm space-y-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground">Investment</span>
+              <span className="font-mono tabular-nums text-right">
+                {formatCurrency(investment.amount)} — {formatDate(investment.investmentDate)}
+              </span>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground inline-flex items-center gap-1">
+                Outstanding
+                <InfoPopover>
+                  <p className="font-semibold text-sm mb-1">Outstanding Balance</p>
+                  <p className="text-xs text-muted-foreground">
+                    Remaining principal plus accrued interest on this investment.
+                  </p>
+                </InfoPopover>
+              </span>
+              <CurrencyCell amount={investmentOutstanding} className="font-medium" />
+            </div>
           </div>
 
           <MoneyInput

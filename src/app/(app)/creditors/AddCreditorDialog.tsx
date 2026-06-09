@@ -136,7 +136,7 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
         { label: "Name", value: pending.name.trim() },
         { label: "Contact", value: pending.contact.trim() },
         { label: "Address", value: pending.address.trim() },
-        { label: "Amount", value: `UGX ${formatCurrency(pending.amount)}`, emphasis: true },
+        { label: "Amount", value: formatCurrency(pending.amount), emphasis: true },
         { label: "Monthly rate", value: `${pending.interestRateMonthly}%` },
         { label: "Date", value: formatDate(pending.investmentDate) },
         {
