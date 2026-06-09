@@ -24,6 +24,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:mark-applied": "tsx scripts/db-mark-migrations-applied.ts",
     "db:verify-triggers": "tsx scripts/db-verify-triggers.ts",
+    "db:backfill-allocations": "tsx scripts/db-backfill-payment-allocations.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "cypress:open": "cypress open",
