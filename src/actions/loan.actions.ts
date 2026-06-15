@@ -1,148 +1,104 @@
-"use server"
+"use server";
 
-import { Effect } from "effect"
-import { withAction } from "@/lib/with-action"
-import { getSession, getUserRole, getErrorTag, getErrorField, getSessionRoleAndPermissions, validateBackdating } from "@/lib/action-utils"
-import { validatePositiveDecimal } from "@/lib/validators"
-import { db } from "@/lib/db"
-import { collateral } from "@/lib/db/schema"
-import { user } from "@/lib/db/schema/auth"
-import { getBaseRate } from "@/lib/interest/effective-rate"
-import { createLoan, listLoans, listLoanBalances } from "@/services/loan.service"
-import { toLoanType, type UserRole, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
-import { revalidatePath } from "next/cache"
-import { notifyAdmin, resolveLoanContext } from "@/lib/email"
-import { loans } from "@/lib/db/schema/loans"
-import { customers } from "@/lib/db/schema/customers"
-import { payments } from "@/lib/db/schema/payments"
-import { eq, and, isNull, asc, desc, inArray, sql } from "drizzle-orm"
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import BigNumber from "bignumber.js"
-import { generateLoansExcel } from "@/services/export/excel.service"
-import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "@/services/ledger-queries.service"
-import { getLocationBalances } from "@/services/report.service"
-import { formatAmount } from "@/lib/interest/engine"
-import { VALID_DEPOSIT_LOCATIONS, VALID_LOAN_TYPES } from "@/lib/constants"
-import { shortId, localDateString } from "@/lib/utils"
+import { Effect } from "effect";
+import { withAction } from "@/lib/with-action";
+import {
+  getSession,
+  getUserRole,
+  getErrorTag,
+  getErrorField,
+  getSessionRoleAndPermissions,
+  validateBackdating,
+} from "@/lib/action-utils";
+import { validatePositiveDecimal } from "@/lib/validators";
+import {
+  createLoan,
+  listLoans,
+  listLoanBalances,
+  getLoanPaymentContext,
+  getLoanCollateral,
+  getLoanReceiptData,
+  resolveUserNames,
+  getCollateralNatures,
+  getCustomerLoansWithOverdue,
+  getLoanStatusCounts,
+  getLoansForExport,
+  listActiveLoansWithOverdue,
+  waivePenalty,
+  adjustPenaltyMultiplier,
+} from "@/services/loan.service";
+import {
+  type UserRole,
+  type CreateLoanInput,
+  type UpdateLoanInput,
+  type DeleteLoanInput,
+} from "@/types";
+import { revalidatePath } from "next/cache";
+import { notifyAdmin, resolveLoanContext } from "@/lib/email";
+import BigNumber from "bignumber.js";
+import { generateLoansExcel } from "@/services/export/excel.service";
+import { getLocationBalances } from "@/services/report.service";
+import { formatAmount } from "@/lib/interest/engine";
+import { VALID_DEPOSIT_LOCATIONS, VALID_LOAN_TYPES } from "@/lib/constants";
 
 export const getLocationBalancesAction = withAction({
   permission: "reports:read",
   effect: () => getLocationBalances(),
-})
+});
 
 export async function getCollateralNaturesAction(): Promise<string[]> {
-  const session = await getSession()
-  if (!session) return []
+  const session = await getSession();
+  if (!session) return [];
 
-  const rows = await db
-    .selectDistinct({ nature: collateral.nature })
-    .from(collateral)
-    .orderBy(collateral.nature)
-
-  return rows.map((r) => r.nature)
+  return getCollateralNatures();
 }
 
 export const getLoanPaymentContextAction = withAction<string, any>({
   permission: "loan:read",
   action: async (_session, loanId) => {
-    const [row] = await db
-      .select({
-        id: loans.id,
-        customerId: loans.customerId,
-        customerName: customers.fullName,
-        startDate: loans.startDate,
-      })
-      .from(loans)
-      .innerJoin(customers, eq(loans.customerId, customers.id))
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
-
-    if (!row) return { error: "Loan not found" }
-
-    return {
-      data: {
-        loanId: row.id,
-        customerId: row.customerId,
-        customerName: row.customerName,
-        loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
-        startDate: localDateString(row.startDate),
-      },
-    }
+    const ctx = await getLoanPaymentContext(loanId);
+    if (!ctx) return { error: "Loan not found" };
+    return { data: ctx };
   },
-})
+});
 
-export const getLoanCollateralAction = withAction<string, { data: { nature: string; description: string | null } | null }>({
+export const getLoanCollateralAction = withAction<
+  string,
+  { data: { nature: string; description: string | null } | null }
+>({
   permission: "loan:read",
   action: async (_session, loanId) => {
-    const [record] = await db.select({
-      nature: collateral.nature,
-      description: collateral.description,
-    }).from(collateral).where(eq(collateral.loanId, loanId))
-
-    return { data: record ?? null }
+    return { data: await getLoanCollateral(loanId) };
   },
-})
+});
 
 export const getLoanReceiptDataAction = withAction<string, any>({
   permission: "loan:read",
   action: async (_session, loanId) => {
-    const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
-    if (!loan) return { error: "Loan not found" }
-
-    const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
-      db.select().from(customers).where(eq(customers.id, loan.customerId)),
-      db.select().from(collateral).where(eq(collateral.loanId, loanId)),
-      db.select().from(user).where(eq(user.id, loan.issuedBy)),
-    ])
-
-    const rate = new BigNumber(loan.interestRateOverride ?? loan.interestRate).multipliedBy(100)
-    const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
-    return {
-      data: {
-        receiptNumber: `LOAN-${shortId(loanId).toUpperCase()}`,
-        date: loan.startDate.toISOString(),
-        customerName: customer?.fullName ?? "\u2014",
-        customerNin: customer?.nin,
-        customerPhone: customer?.contact,
-        loanAmount: isRollover
-          ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
-          : loan.principalAmount,
-        issuanceFee: loan.issuanceFee,
-        interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
-        collateralNature: collateralRecord?.nature ?? "\u2014",
-        disbursementSource: loan.disbursementSource,
-        officerName: issuingUser?.name ?? "Officer",
-        ...(isRollover ? {
-          rolloverAmount: loan.rolloverAmount!,
-          totalNewPrincipal: loan.principalAmount,
-        } : {}),
-      },
-    }
+    const data = await getLoanReceiptData(loanId);
+    if (!data) return { error: "Loan not found" };
+    return { data };
   },
-})
+});
 
 export const listLoansAction = withAction({
   permission: "loan:read",
   effect: () => listLoans(),
-})
+});
 
 export async function getCurrentUserRoleAction(): Promise<UserRole> {
-  const session = await getSession()
-  if (!session) return "unassigned" as UserRole
-  return getUserRole(session)
+  const session = await getSession();
+  if (!session) return "unassigned" as UserRole;
+  return getUserRole(session);
 }
 
 /** Resolve an array of user IDs to a { [id]: name } map. */
-export async function resolveUserNamesAction(userIds: string[]): Promise<Record<string, string>> {
-  const session = await getSession()
-  if (!session || userIds.length === 0) return {}
-  const unique = [...new Set(userIds)]
-  const rows = await db
-    .select({ id: user.id, name: user.name })
-    .from(user)
-    .where(inArray(user.id, unique))
-  const map: Record<string, string> = {}
-  for (const r of rows) map[r.id] = r.name
-  return map
+export async function resolveUserNamesAction(
+  userIds: string[],
+): Promise<Record<string, string>> {
+  const session = await getSession();
+  if (!session) return {};
+  return resolveUserNames(userIds);
 }
 
 // Loan editing is permanently disabled to preserve system integrity.
@@ -150,45 +106,48 @@ export async function resolveUserNamesAction(userIds: string[]): Promise<Record<
 export const updateLoanAction = withAction<UpdateLoanInput, any>({
   permission: "loan:update",
   action: async () => {
-    return { error: "Loan editing is disabled. Issue a new loan instead." }
+    return { error: "Loan editing is disabled. Issue a new loan instead." };
   },
-})
+});
 
 // Loan deletion is permanently disabled to preserve system integrity.
 export const deleteLoanAction = withAction<DeleteLoanInput, any>({
   permission: "loan:update",
   action: async () => {
-    return { error: "Loan deletion is disabled. Loans are permanent records." }
+    return { error: "Loan deletion is disabled. Loans are permanent records." };
   },
-})
+});
 
 // createLoanAction has complex multi-step validation and role-based branching that
 // doesn't fit the wrapper cleanly -- keep inline auth.
 export async function createLoanAction(input: CreateLoanInput) {
-  const session = await getSession()
+  const session = await getSession();
   if (!session) {
-    return { error: "Unauthorized" }
+    return { error: "Unauthorized" };
   }
 
-  const { role, perms } = await getSessionRoleAndPermissions(session)
+  const { role, perms } = await getSessionRoleAndPermissions(session);
   if (!perms.has("loan:create")) {
-    return { error: "Forbidden" }
+    return { error: "Forbidden" };
   }
 
   // Rollover requires loan:rollover permission
   if (input.rollover) {
     if (!perms.has("loan:rollover")) {
-      return { error: "Only supervisors and above can perform loan rollovers" }
+      return { error: "Only supervisors and above can perform loan rollovers" };
     }
   }
 
   if (!input.customerId?.trim()) {
-    return { error: "Customer ID is required" }
+    return { error: "Customer ID is required" };
   }
-  const principalErr = validatePositiveDecimal(input.principalAmount, "Principal")
-  if (principalErr) return { error: principalErr }
+  const principalErr = validatePositiveDecimal(
+    input.principalAmount,
+    "Principal",
+  );
+  if (principalErr) return { error: principalErr };
   if (!input.startDate?.trim()) {
-    return { error: "Start date is required" }
+    return { error: "Start date is required" };
   }
 
   // Backdate validation: timezone-safe future-rejection + backdate-permission
@@ -196,31 +155,40 @@ export async function createLoanAction(input: CreateLoanInput) {
   const backdateErr = validateBackdating(input.startDate, perms, {
     futureErrorMessage: "Start date cannot be in the future",
     noteValue: input.backdateNote,
-    noteErrorMessage: "A note is required when backdating a loan to explain the reason",
-  })
-  if (backdateErr) return { error: backdateErr }
+    noteErrorMessage:
+      "A note is required when backdating a loan to explain the reason",
+  });
+  if (backdateErr) return { error: backdateErr };
   if (!input.collateral?.nature?.trim()) {
-    return { error: "Collateral nature is required" }
+    return { error: "Collateral nature is required" };
   }
-  const isRollover = !!input.rollover
+  const isRollover = !!input.rollover;
   if (isRollover) {
     // Rollovers allow zero issuance fee (already paid on original loan)
-    if (!input.issuanceFee?.trim() || !/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)) {
-      return { error: "Issuance fee must be a valid decimal number" }
+    if (
+      !input.issuanceFee?.trim() ||
+      !/^\d+(\.\d{1,2})?$/.test(input.issuanceFee)
+    ) {
+      return { error: "Issuance fee must be a valid decimal number" };
     }
   } else {
-    const feeErr = validatePositiveDecimal(input.issuanceFee, "Issuance fee")
-    if (feeErr) return { error: feeErr }
+    const feeErr = validatePositiveDecimal(input.issuanceFee, "Issuance fee");
+    if (feeErr) return { error: feeErr };
     if (parseFloat(input.issuanceFee) < 50000) {
-      return { error: "Issuance fee must be at least 50,000 UGX" }
+      return { error: "Issuance fee must be at least 50,000 UGX" };
     }
   }
   if (!input.collateral?.description?.trim()) {
-    return { error: "Collateral description is required" }
+    return { error: "Collateral description is required" };
   }
 
-  if (!input.disbursementSource || !VALID_DEPOSIT_LOCATIONS.includes(input.disbursementSource)) {
-    return { error: "Disbursement source is required (cash, bank, or strong_room)" }
+  if (
+    !input.disbursementSource ||
+    !VALID_DEPOSIT_LOCATIONS.includes(input.disbursementSource)
+  ) {
+    return {
+      error: "Disbursement source is required (cash, bank, or strong_room)",
+    };
   }
 
   // Check sufficient funds at disbursement source (all locations including cash)
@@ -234,19 +202,25 @@ export async function createLoanAction(input: CreateLoanInput) {
   // CHECK constraint or trigger on the Cash category balance would close this gap but
   // requires aggregating across all transaction rows, which is expensive as a constraint.
   // For now, the admin dashboard surfaces negative balances for manual remediation.
-  const freshAmount = new BigNumber(input.principalAmount)
+  const freshAmount = new BigNumber(input.principalAmount);
 
   if (freshAmount.isGreaterThan(0)) {
     try {
-      const balances = await Effect.runPromise(getLocationBalances())
+      const balances = await Effect.runPromise(getLocationBalances());
       // For bank disbursements with a chosen sub-account, validate against that
       // specific account's balance — the aggregate "bank" total can mask an
       // individual account that lacks funds.
       const isBankWithSub =
-        input.disbursementSource === "bank" && !!input.subLocationId
+        input.disbursementSource === "bank" && !!input.subLocationId;
       const available = isBankWithSub
-        ? new BigNumber(balances.bankAccounts?.[input.subLocationId as string] ?? "0")
-        : new BigNumber(balances[input.disbursementSource as "cash" | "bank" | "strong_room"])
+        ? new BigNumber(
+            balances.bankAccounts?.[input.subLocationId as string] ?? "0",
+          )
+        : new BigNumber(
+            balances[
+              input.disbursementSource as "cash" | "bank" | "strong_room"
+            ],
+          );
       if (available.isLessThan(freshAmount)) {
         const loc = isBankWithSub
           ? "the selected bank account"
@@ -254,41 +228,63 @@ export async function createLoanAction(input: CreateLoanInput) {
             ? "Strong Room"
             : input.disbursementSource === "bank"
               ? "Bank"
-              : "Cash on Hand"
-        const isLoanOfficer = !perms.has("fund-transfer:create")
+              : "Cash on Hand";
+        const isLoanOfficer = !perms.has("fund-transfer:create");
         const action = isLoanOfficer
           ? "Ask your supervisor to transfer or inject funds before disbursing."
-          : "Transfer or inject funds first."
-        return { error: `Insufficient funds in ${loc}. Available: ${formatAmount(available)}, required: ${formatAmount(freshAmount)}. ${action}` }
+          : "Transfer or inject funds first.";
+        return {
+          error: `Insufficient funds in ${loc}. Available: ${formatAmount(available)}, required: ${formatAmount(freshAmount)}. ${action}`,
+        };
       }
     } catch {
-      return { error: "Unable to verify fund balances. Please try again." }
+      return { error: "Unable to verify fund balances. Please try again." };
     }
   }
 
   // Loan officers cannot issue more than 4,000,000 UGX
-  const MAX_LOAN_OFFICER_AMOUNT = 4_000_000
-  if (role === "loanOfficer" && new BigNumber(input.principalAmount).isGreaterThan(MAX_LOAN_OFFICER_AMOUNT)) {
-    return { error: `Loan officers cannot issue more than ${formatAmount(new BigNumber(MAX_LOAN_OFFICER_AMOUNT))} UGX. Request a supervisor to issue this loan.` }
+  const MAX_LOAN_OFFICER_AMOUNT = 4_000_000;
+  if (
+    role === "loanOfficer" &&
+    new BigNumber(input.principalAmount).isGreaterThan(MAX_LOAN_OFFICER_AMOUNT)
+  ) {
+    return {
+      error: `Loan officers cannot issue more than ${formatAmount(new BigNumber(MAX_LOAN_OFFICER_AMOUNT))} UGX. Request a supervisor to issue this loan.`,
+    };
   }
 
   // Validate loanType
-  const loanType = input.loanType || "perpetual"
+  const loanType = input.loanType || "perpetual";
   if (!VALID_LOAN_TYPES.includes(loanType as any)) {
-    return { error: "Loan type must be perpetual, fixed_rate, or reducing_balance" }
+    return {
+      error: "Loan type must be perpetual, fixed_rate, or reducing_balance",
+    };
   }
 
   // Validate interestRate if provided
   if (input.interestRate && input.interestRate !== "") {
-    if (!/^\d+(\.\d+)?$/.test(input.interestRate) || parseFloat(input.interestRate) <= 0) {
-      return { error: "Interest rate must be a positive decimal (e.g. 0.10 for 10%/month)" }
+    if (
+      !/^\d+(\.\d+)?$/.test(input.interestRate) ||
+      parseFloat(input.interestRate) <= 0
+    ) {
+      return {
+        error:
+          "Interest rate must be a positive decimal (e.g. 0.10 for 10%/month)",
+      };
     }
   }
 
   // Validate termMonths for term loans
   if (loanType !== "perpetual") {
-    if (!input.termMonths || input.termMonths <= 0 || !Number.isInteger(input.termMonths)) {
-      return { error: "Term months must be a positive integer for fixed rate and reducing balance loans" }
+    if (
+      !input.termMonths ||
+      input.termMonths <= 0 ||
+      !Number.isInteger(input.termMonths)
+    ) {
+      return {
+        error:
+          "Term months must be a positive integer for fixed rate and reducing balance loans",
+      };
     }
   }
 
@@ -299,320 +295,149 @@ export async function createLoanAction(input: CreateLoanInput) {
     loanType,
     // For perpetual loans termMonths is record-only — pass it through if provided.
     termMonths: input.termMonths,
-  }
+  };
 
   if (!perms.has("settings:update")) {
-    loanInput.interestRateOverride = null
-    loanInput.minPeriodOverride = null
+    loanInput.interestRateOverride = null;
+    loanInput.minPeriodOverride = null;
   }
 
   try {
     const data = await Effect.runPromise(
-      createLoan(loanInput, session.user.id)
-    )
-    revalidatePath("/loans")
-    revalidatePath(`/customers/${input.customerId}`)
+      createLoan(loanInput, session.user.id),
+    );
+    revalidatePath("/loans");
+    revalidatePath(`/customers/${input.customerId}`);
     notifyAdmin({
       eventType: "loan.disbursed",
       context: resolveLoanContext(data.id),
       session,
       amount: input.principalAmount,
-    })
-    return { data }
+    });
+    return { data };
   } catch (error) {
     if (getErrorTag(error) === "CustomerNotFound") {
-      return { error: "Customer not found" }
+      return { error: "Customer not found" };
     }
     if (getErrorTag(error) === "IncompleteLoanRequirements") {
-      const missing = getErrorField(error, "missing") as string[] | undefined
+      const missing = getErrorField(error, "missing") as string[] | undefined;
       return {
         error: `Missing fields: ${missing?.join(", ") ?? "unknown"}`,
-      }
+      };
     }
-    return { error: "Internal server error" }
+    return { error: "Internal server error" };
   }
-}
-
-async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
-  // Batch-fetch all payments and ledger aggregates in parallel — all three
-  // queries only depend on loanIds and were previously running sequentially.
-  const loanIds = loanList.map((l) => l.id)
-  const paymentsPromise = loanIds.length > 0
-    ? db
-        .select()
-        .from(payments)
-        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-        .orderBy(asc(payments.paymentDate))
-    : Promise.resolve([])
-  const [allPayments, ledgerBalances, interestEarnedMap] = await Promise.all([
-    paymentsPromise,
-    getLoanBalancesFromLedger(loanIds),
-    getInterestEarnedFromLedger(loanIds),
-  ])
-
-  // Group payments by loanId
-  const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
-  for (const p of allPayments) {
-    const existing = paymentsByLoanId.get(p.loanId) ?? []
-    existing.push(p)
-    paymentsByLoanId.set(p.loanId, existing)
-  }
-
-  return loanList.map((loan) => {
-      let daysOverdue = 0
-      let dailyRate = "0"
-      let unpaidInterest = "0"
-
-      const loanPayments = paymentsByLoanId.get(loan.id) ?? []
-
-      const ledgerBalance = ledgerBalances.get(loan.id)
-      if (ledgerBalance === undefined) {
-        console.warn(`[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
-      }
-      const outstandingBalance = ledgerBalance !== undefined
-        ? ledgerBalance.toFixed(0)
-        : loan.principalAmount
-
-      const lastPayment = loanPayments.at(-1)
-      const lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
-
-      if (loan.status === "active") {
-        const baseRate = getBaseRate(loan)
-        const balanceForCalc = outstandingBalance
-
-        const info = computeLoanOverdueInfo({
-          principalAmount: loan.principalAmount,
-          baseRate,
-          startDate: new Date(loan.startDate),
-          loanType: toLoanType(loan.loanType),
-          termMonths: loan.termMonths,
-          totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
-          paymentCount: loanPayments.length,
-          outstandingBalance: balanceForCalc,
-          penaltyWaived: loan.penaltyWaived,
-          loan,
-        })
-        daysOverdue = info.daysOverdue
-        dailyRate = info.dailyRate
-        unpaidInterest = info.unpaidInterest
-      }
-
-      return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }
-  })
 }
 
 export const getCustomerLoansWithOverdueAction = withAction<string, any>({
   permission: "loan:read",
   action: async (_session, customerId) => {
     try {
-      const customerLoans = await db
-        .select({
-          id: loans.id,
-          customerId: loans.customerId,
-          principalAmount: loans.principalAmount,
-          issuanceFee: loans.issuanceFee,
-          interestRate: loans.interestRate,
-          minInterestDays: loans.minInterestDays,
-          startDate: loans.startDate,
-          status: loans.status,
-          interestRateOverride: loans.interestRateOverride,
-          minPeriodOverride: loans.minPeriodOverride,
-          issuedBy: loans.issuedBy,
-          disbursementSource: loans.disbursementSource,
-          subLocationId: loans.subLocationId,
-          loanType: loans.loanType,
-          termMonths: loans.termMonths,
-          penaltyMultiplier: loans.penaltyMultiplier,
-          penaltyWaived: loans.penaltyWaived,
-          penaltyWaivedBy: loans.penaltyWaivedBy,
-          penaltyWaivedAt: loans.penaltyWaivedAt,
-          rolledOverFrom: loans.rolledOverFrom,
-          rolloverAmount: loans.rolloverAmount,
-          backdatedFrom: loans.backdatedFrom,
-          backdatedBy: loans.backdatedBy,
-          backdatedAt: loans.backdatedAt,
-          backdateNote: loans.backdateNote,
-          createdAt: loans.createdAt,
-          updatedAt: loans.updatedAt,
-          deletedAt: loans.deletedAt,
-          customerName: customers.fullName,
-          customerContact: customers.contact,
-        })
-        .from(loans)
-        .innerJoin(customers, eq(loans.customerId, customers.id))
-        .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
-        .orderBy(desc(loans.createdAt))
-      return { data: await computeOverdue(customerLoans) }
+      return { data: await getCustomerLoansWithOverdue(customerId) };
     } catch {
-      return { error: "Internal server error" }
+      return { error: "Internal server error" };
     }
   },
-})
+});
 
 export const getLoanStatusCountsAction = withAction({
   permission: "loan:read",
   action: async () => {
     try {
-      const rows = await db
-        .select({ status: loans.status, count: sql<number>`count(*)::int` })
-        .from(loans)
-        .where(isNull(loans.deletedAt))
-        .groupBy(loans.status)
-
-      const counts: Record<LoanStatus, number> = {
-        pending: 0,
-        active: 0,
-        fully_paid: 0,
-        settled_with_collateral: 0,
-        rolled_over: 0,
-      }
-      for (const row of rows) {
-        counts[row.status as LoanStatus] = row.count
-      }
-      return { data: counts }
+      return { data: await getLoanStatusCounts() };
     } catch {
-      return { error: "Internal server error" }
+      return { error: "Internal server error" };
     }
   },
-})
+});
 
-export const exportLoansExcelAction = withAction<"all" | "critical" | "at-risk" | "early" | undefined, any>({
+export const exportLoansExcelAction = withAction<
+  "all" | "critical" | "at-risk" | "early" | undefined,
+  any
+>({
   permission: "reports:read",
   action: async (_session, filter) => {
     try {
-      const allLoans = await Effect.runPromise(listLoans())
-      let entries = await computeOverdue(allLoans)
-
-      // Apply filter if specified
-      if (filter && filter !== "all") {
-        entries = entries.filter((entry) => {
-          if (entry.daysOverdue < 0) return false
-          if (filter === "critical") return entry.daysOverdue >= 30
-          if (filter === "at-risk") return entry.daysOverdue >= 25 && entry.daysOverdue < 30
-          if (filter === "early") return entry.daysOverdue >= 0 && entry.daysOverdue < 25
-          return true
-        })
-      }
-
+      const entries = await getLoansForExport(filter);
       if (entries.length === 0) {
-        return { error: "No loans to export" }
+        return { error: "No loans to export" };
       }
 
-      const buffer = await generateLoansExcel(entries)
-      const bytes = new Uint8Array(buffer)
-      let binary = ""
+      const buffer = await generateLoansExcel(entries);
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
       for (let i = 0; i < bytes.length; i++) {
-        binary += String.fromCharCode(bytes[i])
+        binary += String.fromCharCode(bytes[i]);
       }
-      const base64 = btoa(binary)
-      return { data: base64 }
+      const base64 = btoa(binary);
+      return { data: base64 };
     } catch {
-      return { error: "Internal server error" }
+      return { error: "Internal server error" };
     }
   },
-})
+});
 
 export const listActiveLoansWithOverdueAction = withAction({
   permission: "loan:read",
   action: async () => {
     try {
-      const allLoans = await Effect.runPromise(listLoans())
-      const activeLoans = allLoans.filter((l) => l.status === "active")
-      return { data: await computeOverdue(activeLoans) }
+      return { data: await listActiveLoansWithOverdue() };
     } catch {
-      return { error: "Internal server error" }
+      return { error: "Internal server error" };
     }
   },
-})
+});
 
 export const waivePenaltyAction = withAction<string, any>({
   permission: "settings:update",
   forbiddenMessage: "Only admins can waive penalties",
   action: async (session, loanId) => {
     try {
-      const result = await db.transaction(async (tx) => {
-        const [loan] = await tx
-          .select({ id: loans.id })
-          .from(loans)
-          .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      const result = await waivePenalty(loanId, session.user.id);
 
-        if (!loan) return { notFound: true as const }
+      if ("notFound" in result) return { error: "Loan not found" };
 
-        const [updated] = await tx
-          .update(loans)
-          .set({
-            penaltyWaived: true,
-            penaltyWaivedBy: session.user.id,
-            penaltyWaivedAt: new Date(),
-          })
-          .where(eq(loans.id, loanId))
-          .returning()
-
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
-        return { data: updated, txid }
-      })
-
-      if ("notFound" in result) return { error: "Loan not found" }
-
-      revalidatePath("/loans")
-      revalidatePath(`/loans/${loanId}`)
-      return { data: result.data, txid: result.txid }
+      revalidatePath("/loans");
+      revalidatePath(`/loans/${loanId}`);
+      return { data: result.data, txid: result.txid };
     } catch {
-      return { error: "Internal server error" }
+      return { error: "Internal server error" };
     }
   },
-})
+});
 
-export async function adjustPenaltyMultiplierAction(loanId: string, multiplier: string) {
-  return adjustPenaltyMultiplierWrapped({ loanId, multiplier })
+export async function adjustPenaltyMultiplierAction(
+  loanId: string,
+  multiplier: string,
+) {
+  return adjustPenaltyMultiplierWrapped({ loanId, multiplier });
 }
 
-const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: string }, any>({
+const adjustPenaltyMultiplierWrapped = withAction<
+  { loanId: string; multiplier: string },
+  any
+>({
   permission: "settings:update",
   forbiddenMessage: "Only admins can adjust penalty rates",
   action: async (_session, { loanId, multiplier }) => {
-    const value = parseFloat(multiplier)
+    const value = parseFloat(multiplier);
     if (isNaN(value) || value < 0 || value >= 1) {
-      return { error: "Multiplier must be between 0 and 1 (e.g., 0.10 for 10%)" }
+      return {
+        error: "Multiplier must be between 0 and 1 (e.g., 0.10 for 10%)",
+      };
     }
 
     try {
-      const result = await db.transaction(async (tx) => {
-        const [loan] = await tx
-          .select({ id: loans.id })
-          .from(loans)
-          .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
-
-        if (!loan) return { notFound: true as const }
-
-        const [updated] = await tx
-          .update(loans)
-          .set({
-            penaltyMultiplier: value.toFixed(4),
-          })
-          .where(eq(loans.id, loanId))
-          .returning()
-
-        const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
-        )
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
-        return { data: updated, txid }
-      })
-
-      if ("notFound" in result) return { error: "Loan not found" }
-
-      revalidatePath("/loans")
-      revalidatePath(`/loans/${loanId}`)
-      return { data: result.data, txid: result.txid }
+      const result = await adjustPenaltyMultiplier(loanId, value);
+      if ("notFound" in result) return { error: "Loan not found" };
+      revalidatePath("/loans");
+      revalidatePath(`/loans/${loanId}`);
+      return { data: result.data, txid: result.txid };
     } catch {
-      return { error: "Internal server error" }
+      return { error: "Internal server error" };
     }
   },
-})
+});
 
 /**
  * List all loan_balances projection rows for the loanBalanceCollection.
@@ -621,4 +446,4 @@ const adjustPenaltyMultiplierWrapped = withAction<{ loanId: string; multiplier: 
 export const listLoanBalancesAction = withAction({
   permission: "loan:read",
   effect: () => listLoanBalances(),
-})
+});

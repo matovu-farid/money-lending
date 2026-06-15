@@ -5,11 +5,12 @@ import { collateral } from "@/lib/db/schema/collateral"
 import { payments } from "@/lib/db/schema/payments"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import { customers } from "@/lib/db/schema/customers"
+import { user } from "@/lib/db/schema/auth"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { loanBalances } from "@/lib/db/schema/loan-balances"
-import { eq, desc, asc, and, isNull, sql } from "drizzle-orm"
-import { shortId } from "@/lib/utils"
+import { eq, desc, asc, and, isNull, inArray, sql } from "drizzle-orm"
+import { shortId, localDateString } from "@/lib/utils"
 import BigNumber from "bignumber.js"
 import {
   DatabaseError,
@@ -22,10 +23,11 @@ import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { postJournalEntry } from "./transaction.service"
 import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, autoPostInterestEarned, autoPostPrincipalRepayment } from "./auto-post.service"
-import { getPaymentPortionsFromLedger } from "./ledger-queries.service"
-import { allocatePayment } from "@/lib/interest/engine"
+import { getPaymentPortionsFromLedger, getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./ledger-queries.service"
+import { allocatePayment, formatAmount } from "@/lib/interest/engine"
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { daysBetween } from "@/lib/db/utils"
-import type { CreateLoanInput, UpdateLoanInput, DeleteLoanInput, Loan, LoanWithCustomer } from "@/types"
+import { toLoanType, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type Loan, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
 
 const checkCustomerCompleteness = (customer: {
   fullName: string | null
@@ -853,3 +855,322 @@ export const listLoanBalances = (): Effect.Effect<
     try: () => db.select().from(loanBalances),
     catch: (e) => new DatabaseError({ cause: e }),
   })
+
+// ---------------------------------------------------------------------------
+// Read helpers extracted from loan.actions.ts (data access only — no auth).
+// Each mirrors the inline query previously living in the action so the action
+// can be reduced to permission-check + delegate.
+// ---------------------------------------------------------------------------
+
+/** Distinct collateral nature values, alphabetical. */
+export async function getCollateralNatures(): Promise<string[]> {
+  const rows = await db
+    .selectDistinct({ nature: collateral.nature })
+    .from(collateral)
+    .orderBy(collateral.nature)
+  return rows.map((r) => r.nature)
+}
+
+export interface LoanPaymentContext {
+  loanId: string
+  customerId: string
+  customerName: string
+  loanReference: string
+  startDate: string
+}
+
+/** Loan + customer context for the payment-recording screen. null when not found. */
+export async function getLoanPaymentContext(loanId: string): Promise<LoanPaymentContext | null> {
+  const [row] = await db
+    .select({
+      id: loans.id,
+      customerId: loans.customerId,
+      customerName: customers.fullName,
+      startDate: loans.startDate,
+    })
+    .from(loans)
+    .innerJoin(customers, eq(loans.customerId, customers.id))
+    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+
+  if (!row) return null
+
+  return {
+    loanId: row.id,
+    customerId: row.customerId,
+    customerName: row.customerName,
+    loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
+    startDate: localDateString(row.startDate),
+  }
+}
+
+/** Collateral record for a loan, or null. */
+export async function getLoanCollateral(
+  loanId: string
+): Promise<{ nature: string; description: string | null } | null> {
+  const [record] = await db
+    .select({ nature: collateral.nature, description: collateral.description })
+    .from(collateral)
+    .where(eq(collateral.loanId, loanId))
+  return record ?? null
+}
+
+/** Assembled receipt payload for a loan, or null when the loan is not found. */
+export async function getLoanReceiptData(loanId: string): Promise<Record<string, unknown> | null> {
+  const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+  if (!loan) return null
+
+  const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
+    db.select().from(customers).where(eq(customers.id, loan.customerId)),
+    db.select().from(collateral).where(eq(collateral.loanId, loanId)),
+    db.select().from(user).where(eq(user.id, loan.issuedBy)),
+  ])
+
+  const rate = new BigNumber(loan.interestRateOverride ?? loan.interestRate).multipliedBy(100)
+  const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
+  return {
+    receiptNumber: `LOAN-${shortId(loanId).toUpperCase()}`,
+    date: loan.startDate.toISOString(),
+    customerName: customer?.fullName ?? "—",
+    customerNin: customer?.nin,
+    customerPhone: customer?.contact,
+    loanAmount: isRollover
+      ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
+      : loan.principalAmount,
+    issuanceFee: loan.issuanceFee,
+    interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
+    collateralNature: collateralRecord?.nature ?? "—",
+    disbursementSource: loan.disbursementSource,
+    officerName: issuingUser?.name ?? "Officer",
+    ...(isRollover
+      ? { rolloverAmount: loan.rolloverAmount!, totalNewPrincipal: loan.principalAmount }
+      : {}),
+  }
+}
+
+/** Resolve an array of user IDs to a { [id]: name } map. */
+export async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
+  if (userIds.length === 0) return {}
+  const unique = [...new Set(userIds)]
+  const rows = await db
+    .select({ id: user.id, name: user.name })
+    .from(user)
+    .where(inArray(user.id, unique))
+  const map: Record<string, string> = {}
+  for (const r of rows) map[r.id] = r.name
+  return map
+}
+
+/**
+ * Enrich loans with overdue/balance projections from the ledger + payments.
+ * Batch-fetches payments and ledger aggregates in parallel.
+ */
+export async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
+  const loanIds = loanList.map((l) => l.id)
+  const paymentsPromise = loanIds.length > 0
+    ? db
+        .select()
+        .from(payments)
+        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+        .orderBy(asc(payments.paymentDate))
+    : Promise.resolve([])
+  const [allPayments, ledgerBalances, interestEarnedMap] = await Promise.all([
+    paymentsPromise,
+    getLoanBalancesFromLedger(loanIds),
+    getInterestEarnedFromLedger(loanIds),
+  ])
+
+  const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
+  for (const p of allPayments) {
+    const existing = paymentsByLoanId.get(p.loanId) ?? []
+    existing.push(p)
+    paymentsByLoanId.set(p.loanId, existing)
+  }
+
+  return loanList.map((loan) => {
+    let daysOverdue = 0
+    let dailyRate = "0"
+    let unpaidInterest = "0"
+
+    const loanPayments = paymentsByLoanId.get(loan.id) ?? []
+
+    const ledgerBalance = ledgerBalances.get(loan.id)
+    if (ledgerBalance === undefined) {
+      console.warn(`[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+    }
+    const outstandingBalance = ledgerBalance !== undefined
+      ? ledgerBalance.toFixed(0)
+      : loan.principalAmount
+
+    const lastPayment = loanPayments.at(-1)
+    const lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
+
+    if (loan.status === "active") {
+      const baseRate = getBaseRate(loan)
+      const balanceForCalc = outstandingBalance
+
+      const info = computeLoanOverdueInfo({
+        principalAmount: loan.principalAmount,
+        baseRate,
+        startDate: new Date(loan.startDate),
+        loanType: toLoanType(loan.loanType),
+        termMonths: loan.termMonths,
+        totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
+        paymentCount: loanPayments.length,
+        outstandingBalance: balanceForCalc,
+        penaltyWaived: loan.penaltyWaived,
+        loan,
+      })
+      daysOverdue = info.daysOverdue
+      dailyRate = info.dailyRate
+      unpaidInterest = info.unpaidInterest
+    }
+
+    return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }
+  })
+}
+
+/** All non-deleted loans for a customer, enriched with overdue info, newest first. */
+export async function getCustomerLoansWithOverdue(customerId: string): Promise<LoanListEntry[]> {
+  const customerLoans = await db
+    .select({
+      id: loans.id,
+      customerId: loans.customerId,
+      principalAmount: loans.principalAmount,
+      issuanceFee: loans.issuanceFee,
+      interestRate: loans.interestRate,
+      minInterestDays: loans.minInterestDays,
+      startDate: loans.startDate,
+      status: loans.status,
+      interestRateOverride: loans.interestRateOverride,
+      minPeriodOverride: loans.minPeriodOverride,
+      issuedBy: loans.issuedBy,
+      disbursementSource: loans.disbursementSource,
+      subLocationId: loans.subLocationId,
+      loanType: loans.loanType,
+      termMonths: loans.termMonths,
+      penaltyMultiplier: loans.penaltyMultiplier,
+      penaltyWaived: loans.penaltyWaived,
+      penaltyWaivedBy: loans.penaltyWaivedBy,
+      penaltyWaivedAt: loans.penaltyWaivedAt,
+      rolledOverFrom: loans.rolledOverFrom,
+      rolloverAmount: loans.rolloverAmount,
+      backdatedFrom: loans.backdatedFrom,
+      backdatedBy: loans.backdatedBy,
+      backdatedAt: loans.backdatedAt,
+      backdateNote: loans.backdateNote,
+      createdAt: loans.createdAt,
+      updatedAt: loans.updatedAt,
+      deletedAt: loans.deletedAt,
+      customerName: customers.fullName,
+      customerContact: customers.contact,
+    })
+    .from(loans)
+    .innerJoin(customers, eq(loans.customerId, customers.id))
+    .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
+    .orderBy(desc(loans.createdAt))
+  return computeOverdue(customerLoans)
+}
+
+/** Count of non-deleted loans grouped by status. */
+export async function getLoanStatusCounts(): Promise<Record<LoanStatus, number>> {
+  const rows = await db
+    .select({ status: loans.status, count: sql<number>`count(*)::int` })
+    .from(loans)
+    .where(isNull(loans.deletedAt))
+    .groupBy(loans.status)
+
+  const counts: Record<LoanStatus, number> = {
+    pending: 0,
+    active: 0,
+    fully_paid: 0,
+    settled_with_collateral: 0,
+    rolled_over: 0,
+  }
+  for (const row of rows) {
+    counts[row.status as LoanStatus] = row.count
+  }
+  return counts
+}
+
+/** Active loans enriched with overdue info. */
+export async function listActiveLoansWithOverdue(): Promise<LoanListEntry[]> {
+  const allLoans = await Effect.runPromise(listLoans())
+  const activeLoans = allLoans.filter((l) => l.status === "active")
+  return computeOverdue(activeLoans)
+}
+
+export type LoanExportFilter = "all" | "critical" | "at-risk" | "early" | undefined
+
+/** Loan entries for Excel export, with optional overdue-bucket filter applied. */
+export async function getLoansForExport(filter: LoanExportFilter): Promise<LoanListEntry[]> {
+  const allLoans = await Effect.runPromise(listLoans())
+  let entries = await computeOverdue(allLoans)
+
+  if (filter && filter !== "all") {
+    entries = entries.filter((entry) => {
+      if (entry.daysOverdue < 0) return false
+      if (filter === "critical") return entry.daysOverdue >= 30
+      if (filter === "at-risk") return entry.daysOverdue >= 25 && entry.daysOverdue < 30
+      if (filter === "early") return entry.daysOverdue >= 0 && entry.daysOverdue < 25
+      return true
+    })
+  }
+  return entries
+}
+
+/**
+ * Waive penalty interest on a loan. Returns the updated loan + txid, or
+ * { notFound: true } when the loan does not exist / is deleted.
+ */
+export async function waivePenalty(
+  loanId: string,
+  actorId: string
+): Promise<{ data: Loan; txid: number } | { notFound: true }> {
+  return db.transaction(async (tx) => {
+    const [loan] = await tx
+      .select({ id: loans.id })
+      .from(loans)
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+
+    if (!loan) return { notFound: true as const }
+
+    const [updated] = await tx
+      .update(loans)
+      .set({ penaltyWaived: true, penaltyWaivedBy: actorId, penaltyWaivedAt: new Date() })
+      .where(eq(loans.id, loanId))
+      .returning()
+
+    const txidRows = await tx.execute<{ txid: string }>(sql`SELECT pg_current_xact_id()::text as txid`)
+    const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+    return { data: updated as Loan, txid }
+  })
+}
+
+/**
+ * Set the penalty multiplier on a loan. `value` must already be validated
+ * (0 <= value < 1) by the caller. Returns updated loan + txid or notFound.
+ * (Mirrors the original action, which did not record an actor for this change.)
+ */
+export async function adjustPenaltyMultiplier(
+  loanId: string,
+  value: number
+): Promise<{ data: Loan; txid: number } | { notFound: true }> {
+  return db.transaction(async (tx) => {
+    const [loan] = await tx
+      .select({ id: loans.id })
+      .from(loans)
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+
+    if (!loan) return { notFound: true as const }
+
+    const [updated] = await tx
+      .update(loans)
+      .set({ penaltyMultiplier: value.toFixed(4) })
+      .where(eq(loans.id, loanId))
+      .returning()
+
+    const txidRows = await tx.execute<{ txid: string }>(sql`SELECT pg_current_xact_id()::text as txid`)
+    const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+    return { data: updated as Loan, txid }
+  })
+}
