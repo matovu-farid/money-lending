@@ -161,6 +161,15 @@ export async function removeAllowlistEntry(entryId: string, actorId: string): Pr
   clearCaches()
 }
 
+/**
+ * Remove all allowlist entries for a single user. Used when a user is demoted
+ * out of admin/superAdmin so they no longer anchor IP trust.
+ */
+export async function clearAllowlistForUser(userId: string): Promise<void> {
+  await db.delete(adminIpAllowlist).where(eq(adminIpAllowlist.userId, userId))
+  clearCaches()
+}
+
 export async function clearAllowlist(actorId: string): Promise<void> {
   await db.delete(adminIpAllowlist)
   await db.insert(auditLog).values({

@@ -149,7 +149,7 @@ export default function LoansPage() {
     setIsExporting(true)
     try {
       const result = await exportLoansExcelAction(activeFilter)
-      if (result.error) {
+      if ("error" in result) {
         toast.error(result.error)
         return
       }

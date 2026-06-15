@@ -4,7 +4,7 @@ import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { loans } from "@/lib/db/schema/loans"
 import { customers } from "@/lib/db/schema/customers"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-import { eq, desc, count } from "drizzle-orm"
+import { eq, and, isNull, desc, count } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
@@ -16,6 +16,82 @@ export interface RateChangeRequestWithLoan extends RateChangeRequest {
   customerName: string
   loanRef: string
   principalAmount: string
+}
+
+/** The loan rate fields needed to compute its effective (base) rate. */
+export type LoanRateInfo = { interestRate: string; interestRateOverride: string | null }
+
+/** Thrown by {@link createPendingRateChangeRequest} when a pending request already exists. */
+export const DUPLICATE_PENDING_TAG = "DuplicatePending" as const
+
+/**
+ * Loads the rate fields for a non-deleted loan, or `undefined` if not found.
+ */
+export async function getLoanRateForChange(loanId: string): Promise<LoanRateInfo | undefined> {
+  const [loan] = await db
+    .select({ interestRate: loans.interestRate, interestRateOverride: loans.interestRateOverride })
+    .from(loans)
+    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+  return loan
+}
+
+/**
+ * Creates a pending rate-change request inside a transaction that guards against
+ * duplicate pending requests for the same loan (TOCTOU race). Throws
+ * `{ _tag: DUPLICATE_PENDING_TAG }` if one already exists.
+ */
+export async function createPendingRateChangeRequest(params: {
+  loanId: string
+  requestedRate: string
+  currentRate: string
+  requestedBy: string
+  requiredApproverRole: string
+}): Promise<RateChangeRequest> {
+  return db.transaction(async (tx) => {
+    const [existingPending] = await tx
+      .select({ id: rateChangeRequests.id })
+      .from(rateChangeRequests)
+      .where(
+        and(
+          eq(rateChangeRequests.loanId, params.loanId),
+          eq(rateChangeRequests.status, "pending"),
+        ),
+      )
+      .for("update")
+
+    if (existingPending) {
+      throw { _tag: DUPLICATE_PENDING_TAG }
+    }
+
+    const [request] = await tx
+      .insert(rateChangeRequests)
+      .values({
+        loanId: params.loanId,
+        requestedRate: params.requestedRate,
+        currentRate: params.currentRate,
+        requestedBy: params.requestedBy,
+        requiredApproverRole: params.requiredApproverRole,
+        status: "pending",
+      })
+      .returning()
+
+    return request
+  })
+}
+
+/** Loads the approval-routing fields for a request, or `undefined` if not found. */
+export async function getRequestForReview(
+  requestId: string,
+): Promise<{ requiredApproverRole: string; loanId: string; requestedBy: string } | undefined> {
+  const [request] = await db
+    .select({
+      requiredApproverRole: rateChangeRequests.requiredApproverRole,
+      loanId: rateChangeRequests.loanId,
+      requestedBy: rateChangeRequests.requestedBy,
+    })
+    .from(rateChangeRequests)
+    .where(eq(rateChangeRequests.id, requestId))
+  return request
 }
 
 export const createRateChangeRequest = (

@@ -4,7 +4,12 @@ import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
 import { getSession, getErrorTag, getSessionPermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
-import { type Permission, type CreateRateChangeRequestInput, type ReviewRateChangeRequestInput } from "@/types"
+import {
+  type Permission,
+  type CreateRateChangeRequestInput,
+  type ReviewRateChangeRequestInput,
+  type RateChangeRequest,
+} from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import {
   applyRateChangeImmediately,
@@ -13,14 +18,22 @@ import {
   listRequestsForLoan,
   reviewRequest,
   countPendingRequests,
+  getLoanRateForChange,
+  createPendingRateChangeRequest,
+  getRequestForReview,
+  DUPLICATE_PENDING_TAG,
+  type RateChangeRequestWithLoan,
 } from "@/services/rate-change-request.service"
-import { db } from "@/lib/db"
-import { loans } from "@/lib/db/schema/loans"
-import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
-import { eq, and, isNull } from "drizzle-orm"
+
+type RequestRateChangeResult =
+  | { error: string }
+  | { data: { applied: true; message: string } }
+  | { data: { applied: false; request: RateChangeRequest; message: string } }
 
 // This action has complex permission-based branching that doesn't fit withAction cleanly
-export async function requestRateChangeAction(input: CreateRateChangeRequestInput) {
+export async function requestRateChangeAction(
+  input: CreateRateChangeRequestInput,
+): Promise<RequestRateChangeResult> {
   const session = await getSession()
   if (!session) {
     return { error: "Unauthorized" }
@@ -44,10 +57,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
   }
 
   // Look up the loan's current rate (exclude soft-deleted loans)
-  const [loan] = await db
-    .select({ interestRate: loans.interestRate, interestRateOverride: loans.interestRateOverride })
-    .from(loans)
-    .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
+  const loan = await getLoanRateForChange(input.loanId)
 
   if (!loan) {
     return { error: "Loan not found" }
@@ -82,35 +92,12 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
 
   // Check + create inside a transaction to prevent duplicate pending requests (TOCTOU race)
   try {
-    const data = await db.transaction(async (tx) => {
-      const [existingPending] = await tx
-        .select({ id: rateChangeRequests.id })
-        .from(rateChangeRequests)
-        .where(
-          and(
-            eq(rateChangeRequests.loanId, input.loanId),
-            eq(rateChangeRequests.status, "pending")
-          )
-        )
-        .for("update")
-
-      if (existingPending) {
-        throw { _tag: "DuplicatePending" as const }
-      }
-
-      const [request] = await tx
-        .insert(rateChangeRequests)
-        .values({
-          loanId: input.loanId,
-          requestedRate: input.requestedRate,
-          currentRate: effectiveRate,
-          requestedBy: session.user.id,
-          requiredApproverRole: requiredPermission,
-          status: "pending",
-        })
-        .returning()
-
-      return request
+    const data = await createPendingRateChangeRequest({
+      loanId: input.loanId,
+      requestedRate: input.requestedRate,
+      currentRate: effectiveRate,
+      requestedBy: session.user.id,
+      requiredApproverRole: requiredPermission,
     })
 
     revalidatePath("/approvals")
@@ -118,7 +105,7 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
     return { data: { applied: false as const, request: data, message: `Rate change request submitted for approval (requires ${requiredPermission})` } }
   } catch (error) {
     const err = error as Record<string, unknown>
-    if (err?._tag === "DuplicatePending") {
+    if (err?._tag === DUPLICATE_PENDING_TAG) {
       return { error: "A pending rate change request already exists for this loan" }
     }
     if (getErrorTag(error) === "LoanNotFound") {
@@ -128,7 +115,9 @@ export async function requestRateChangeAction(input: CreateRateChangeRequestInpu
   }
 }
 
-export async function listAllRequestsAction() {
+export async function listAllRequestsAction(): Promise<
+  { data: RateChangeRequestWithLoan[] } | { error: string }
+> {
   const session = await getSession()
   if (!session) {
     return { error: "Unauthorized" }
@@ -147,7 +136,10 @@ export async function listAllRequestsAction() {
   }
 }
 
-export const listRequestsForLoanAction = withAction<string, any>({
+export const listRequestsForLoanAction = withAction<
+  string,
+  { data: RateChangeRequest[] } | { error: string }
+>({
   permission: "loan:read",
   action: async (_session, loanId) => {
     if (!loanId?.trim()) {
@@ -164,7 +156,9 @@ export const listRequestsForLoanAction = withAction<string, any>({
 })
 
 // This action has complex permission checking (requiredApproverRole per-request), keep inline auth
-export async function reviewRateChangeRequestAction(input: ReviewRateChangeRequestInput) {
+export async function reviewRateChangeRequestAction(
+  input: ReviewRateChangeRequestInput,
+): Promise<{ data: RateChangeRequest } | { error: string }> {
   const session = await getSession()
   if (!session) {
     return { error: "Unauthorized" }
@@ -184,14 +178,7 @@ export async function reviewRateChangeRequestAction(input: ReviewRateChangeReque
 
   // Fetch the request to check requiredApproverRole
   try {
-    const [request] = await db
-      .select({
-        requiredApproverRole: rateChangeRequests.requiredApproverRole,
-        loanId: rateChangeRequests.loanId,
-        requestedBy: rateChangeRequests.requestedBy,
-      })
-      .from(rateChangeRequests)
-      .where(eq(rateChangeRequests.id, input.requestId))
+    const request = await getRequestForReview(input.requestId)
 
     if (!request) {
       return { error: "Rate change request not found" }
@@ -227,7 +214,7 @@ export const listRateChangeRequestsAction = withAction({
   effect: () => listRateChangeRequests(),
 })
 
-export async function countPendingRequestsAction() {
+export async function countPendingRequestsAction(): Promise<{ data: number } | { error: string }> {
   const session = await getSession()
   if (!session) {
     return { error: "Unauthorized" }

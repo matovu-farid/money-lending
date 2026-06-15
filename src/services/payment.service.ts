@@ -967,3 +967,240 @@ export const listAllPayments = (): Effect.Effect<Payment[], DatabaseError> =>
         .limit(2000),
     catch: (e) => new DatabaseError({ cause: e }),
   })
+
+/** Loads a single non-deleted payment by id (used for ownership checks). */
+export async function getActivePaymentById(paymentId: string): Promise<Payment | undefined> {
+  const [payment] = await db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.id, paymentId), isNull(payments.deletedAt)))
+  return payment
+}
+
+/** Lists a loan's non-deleted, non-wrong payments ordered chronologically. */
+export async function listActivePaymentsByLoan(loanId: string): Promise<Payment[]> {
+  return db
+    .select()
+    .from(payments)
+    .where(and(eq(payments.loanId, loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+    .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+}
+
+/**
+ * Marks a payment as wrong and reverses its ledger impact in a single
+ * transaction. Throws `{ _tag: "PaymentNotFound" | "AlreadyMarkedWrong" }`.
+ */
+export async function markPaymentWrong(
+  paymentId: string,
+  reason: string,
+  actorId: string,
+): Promise<{ updated: Payment; txid: number }> {
+  return db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.id, paymentId), isNull(payments.deletedAt)))
+    if (!payment) throw { _tag: "PaymentNotFound" }
+    if (payment.markedWrong) throw { _tag: "AlreadyMarkedWrong" }
+
+    const [updatedPayment] = await tx
+      .update(payments)
+      .set({
+        markedWrong: true,
+        markedWrongReason: reason.trim(),
+        markedWrongBy: actorId,
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, paymentId))
+      .returning()
+
+    // Derive portions from ledger (not cached columns)
+    const portions = await getPaymentPortionsFromLedger([paymentId], tx)
+    const portion = portions.get(paymentId)
+
+    // Reverse interest journal entry
+    if (portion && new BigNumber(portion.interestPortion).isGreaterThan(0)) {
+      await postJournalEntry(tx, {
+        debitCategory: { name: "Interest Earned", type: "revenue" },
+        creditCategory: { name: "Cash", type: "asset" },
+        amount: portion.interestPortion,
+        referenceType: "payment_reversal",
+        referenceId: paymentId,
+        description: `Reversal - payment ${paymentId} marked wrong: ${reason.trim()}`,
+        transactionDate: new Date(payment.paymentDate),
+        recordedBy: actorId,
+        creditDepositLocation: payment.depositLocation ?? undefined,
+        loanId: payment.loanId,
+      })
+    }
+
+    // Reverse principal journal entry
+    if (portion && new BigNumber(portion.principalPortion).isGreaterThan(0)) {
+      await postJournalEntry(tx, {
+        debitCategory: { name: "Loans Receivable", type: "asset" },
+        creditCategory: { name: "Cash", type: "asset" },
+        amount: portion.principalPortion,
+        referenceType: "payment_reversal",
+        referenceId: paymentId,
+        description: `Reversal - principal repayment ${paymentId} marked wrong: ${reason.trim()}`,
+        transactionDate: new Date(payment.paymentDate),
+        recordedBy: actorId,
+        creditDepositLocation: payment.depositLocation ?? undefined,
+        loanId: payment.loanId,
+      })
+    }
+
+    // Check if loan should revert from fully_paid to active
+    const ledgerBalance = await getLoanBalanceFromLedger(payment.loanId, undefined, tx)
+    const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+    if (loan && loan.status === "fully_paid" && ledgerBalance.isGreaterThan(0)) {
+      await tx
+        .update(loans)
+        .set({ status: "active", updatedAt: new Date() })
+        .where(eq(loans.id, payment.loanId))
+    }
+
+    const txidRows = await tx.execute<{ txid: string }>(
+      sql`SELECT pg_current_xact_id()::text as txid`
+    )
+    const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+    return { updated: updatedPayment, txid }
+  })
+}
+
+/**
+ * Reverses a wrong-marking: clears the flag and re-posts the payment's
+ * interest/principal ledger entries by recomputing the allocation from loan
+ * state. Throws `{ _tag: "PaymentNotFound" | "LoanNotFound" | "NotMarkedWrong" }`.
+ */
+export async function unmarkPaymentWrong(
+  paymentId: string,
+  actorId: string,
+): Promise<{ updated: Payment; txid: number }> {
+  return db.transaction(async (tx) => {
+    const [payment] = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.id, paymentId), isNull(payments.deletedAt)))
+    if (!payment) throw { _tag: "PaymentNotFound" }
+    if (!payment.markedWrong) throw { _tag: "NotMarkedWrong" }
+
+    const [loan] = await tx.select().from(loans).where(eq(loans.id, payment.loanId))
+    if (!loan) throw { _tag: "LoanNotFound" }
+
+    const [updatedPayment] = await tx
+      .update(payments)
+      .set({
+        markedWrong: false,
+        markedWrongReason: null,
+        markedWrongBy: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(payments.id, paymentId))
+      .returning()
+
+    // Recompute allocation from loan state to determine interest/principal portions
+    const baseRate = getBaseRate(loan)
+    const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
+    const loanType = loan.loanType ?? "perpetual"
+
+    // Get all active (non-deleted, non-wrong) payments ordered by date to find position
+    const activePayments = await tx
+      .select()
+      .from(payments)
+      .where(and(eq(payments.loanId, payment.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+      .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+
+    const paymentIndex = activePayments.findIndex((p) => p.id === paymentId)
+    const prevPayment = paymentIndex > 0 ? activePayments[paymentIndex - 1] : null
+    const prevDate = prevPayment ? new Date(prevPayment.paymentDate) : new Date(loan.startDate)
+
+    // Reconstruct principalBalanceBefore by walking prior payments' ledger portions
+    let principalBalanceBefore = loan.principalAmount
+    if (paymentIndex > 0) {
+      const priorPaymentIds = activePayments.slice(0, paymentIndex).map((p) => p.id)
+      const priorPortions = await getPaymentPortionsFromLedger(priorPaymentIds, tx)
+      let runningBalance = new BigNumber(loan.principalAmount)
+      for (const priorId of priorPaymentIds) {
+        const pp = priorPortions.get(priorId)
+        if (pp) runningBalance = runningBalance.minus(new BigNumber(pp.principalPortion))
+      }
+      if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0)
+      principalBalanceBefore = runningBalance.toFixed(0)
+    }
+    const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate))
+
+    // Compute penalty status as of the payment date (not today) to match recordPayment behavior
+    const interestEarnedMap = await getInterestEarnedFromLedger([payment.loanId], tx)
+    const overdueInfo = computeLoanOverdueInfo({
+      principalAmount: loan.principalAmount,
+      baseRate,
+      startDate: new Date(loan.startDate),
+      loanType: toLoanType(loan.loanType),
+      termMonths: loan.termMonths,
+      totalInterestPaid: formatAmount(interestEarnedMap.get(payment.loanId) ?? new BigNumber(0)),
+      paymentCount: activePayments.length,
+      outstandingBalance: principalBalanceBefore,
+      penaltyWaived: loan.penaltyWaived,
+      loan,
+      asOf: new Date(payment.paymentDate),
+    })
+    const monthlyRateDecimal = getEffectiveRate(loan, overdueInfo.penaltyActive)
+    const paymentNumber = paymentIndex + 1
+
+    const allocation = allocatePayment({
+      paymentAmount: payment.amount,
+      principalBalanceBefore,
+      monthlyRateDecimal,
+      daysElapsed,
+      minInterestDays,
+      loanType,
+      originalPrincipal: loan.principalAmount,
+      termMonths: loan.termMonths ?? undefined,
+      paymentNumber,
+    })
+
+    // Re-post interest earned journal entry
+    if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+      await reverseInterestAccrual(tx, {
+        loanId: payment.loanId,
+        paymentDate: payment.paymentDate.toISOString(),
+        actorId,
+      })
+      await autoPostInterestEarned(tx, {
+        amount: allocation.interestPortion,
+        loanId: payment.loanId,
+        paymentId,
+        paymentDate: payment.paymentDate.toISOString(),
+        actorId,
+        depositLocation: payment.depositLocation ?? undefined,
+      })
+    }
+
+    // Re-post principal repayment journal entry
+    if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
+      await autoPostPrincipalRepayment(tx, {
+        amount: allocation.principalPortion,
+        loanId: payment.loanId,
+        paymentId,
+        paymentDate: payment.paymentDate.toISOString(),
+        actorId,
+        depositLocation: payment.depositLocation ?? undefined,
+      })
+    }
+
+    // Check if loan should be marked fully_paid
+    if (allocation.loanFullyPaid && loan.status !== "fully_paid") {
+      await tx
+        .update(loans)
+        .set({ status: "fully_paid", updatedAt: new Date() })
+        .where(eq(loans.id, payment.loanId))
+    }
+
+    const txidRows = await tx.execute<{ txid: string }>(
+      sql`SELECT pg_current_xact_id()::text as txid`
+    )
+    const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
+    return { updated: updatedPayment, txid }
+  })
+}

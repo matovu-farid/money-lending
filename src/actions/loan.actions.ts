@@ -32,8 +32,15 @@ import {
   type CreateLoanInput,
   type UpdateLoanInput,
   type DeleteLoanInput,
+  type Loan,
 } from "@/types";
 import { revalidatePath } from "next/cache";
+
+type LoanPaymentContextData = NonNullable<Awaited<ReturnType<typeof getLoanPaymentContext>>>;
+type LoanReceiptData = NonNullable<Awaited<ReturnType<typeof getLoanReceiptData>>>;
+type CustomerLoansData = Awaited<ReturnType<typeof getCustomerLoansWithOverdue>>;
+/** The success shape shared by penalty mutations (waive / adjust multiplier). */
+type LoanPenaltyResult = { data: Loan; txid: number };
 import { notifyAdmin, resolveLoanContext } from "@/lib/email";
 import BigNumber from "bignumber.js";
 import { generateLoansExcel } from "@/services/export/excel.service";
@@ -53,7 +60,10 @@ export async function getCollateralNaturesAction(): Promise<string[]> {
   return getCollateralNatures();
 }
 
-export const getLoanPaymentContextAction = withAction<string, any>({
+export const getLoanPaymentContextAction = withAction<
+  string,
+  { data: LoanPaymentContextData } | { error: string }
+>({
   permission: "loan:read",
   action: async (_session, loanId) => {
     const ctx = await getLoanPaymentContext(loanId);
@@ -72,7 +82,10 @@ export const getLoanCollateralAction = withAction<
   },
 });
 
-export const getLoanReceiptDataAction = withAction<string, any>({
+export const getLoanReceiptDataAction = withAction<
+  string,
+  { data: LoanReceiptData } | { error: string }
+>({
   permission: "loan:read",
   action: async (_session, loanId) => {
     const data = await getLoanReceiptData(loanId);
@@ -103,7 +116,7 @@ export async function resolveUserNamesAction(
 
 // Loan editing is permanently disabled to preserve system integrity.
 // To change loan terms, issue a new loan (which can roll over the old one).
-export const updateLoanAction = withAction<UpdateLoanInput, any>({
+export const updateLoanAction = withAction<UpdateLoanInput, { error: string }>({
   permission: "loan:update",
   action: async () => {
     return { error: "Loan editing is disabled. Issue a new loan instead." };
@@ -111,7 +124,7 @@ export const updateLoanAction = withAction<UpdateLoanInput, any>({
 });
 
 // Loan deletion is permanently disabled to preserve system integrity.
-export const deleteLoanAction = withAction<DeleteLoanInput, any>({
+export const deleteLoanAction = withAction<DeleteLoanInput, { error: string }>({
   permission: "loan:update",
   action: async () => {
     return { error: "Loan deletion is disabled. Loans are permanent records." };
@@ -255,7 +268,7 @@ export async function createLoanAction(input: CreateLoanInput) {
 
   // Validate loanType
   const loanType = input.loanType || "perpetual";
-  if (!VALID_LOAN_TYPES.includes(loanType as any)) {
+  if (!(VALID_LOAN_TYPES as readonly string[]).includes(loanType)) {
     return {
       error: "Loan type must be perpetual, fixed_rate, or reducing_balance",
     };
@@ -329,7 +342,10 @@ export async function createLoanAction(input: CreateLoanInput) {
   }
 }
 
-export const getCustomerLoansWithOverdueAction = withAction<string, any>({
+export const getCustomerLoansWithOverdueAction = withAction<
+  string,
+  { data: CustomerLoansData } | { error: string }
+>({
   permission: "loan:read",
   action: async (_session, customerId) => {
     try {
@@ -353,7 +369,7 @@ export const getLoanStatusCountsAction = withAction({
 
 export const exportLoansExcelAction = withAction<
   "all" | "critical" | "at-risk" | "early" | undefined,
-  any
+  { data: string } | { error: string }
 >({
   permission: "reports:read",
   action: async (_session, filter) => {
@@ -388,7 +404,10 @@ export const listActiveLoansWithOverdueAction = withAction({
   },
 });
 
-export const waivePenaltyAction = withAction<string, any>({
+export const waivePenaltyAction = withAction<
+  string,
+  LoanPenaltyResult | { error: string }
+>({
   permission: "settings:update",
   forbiddenMessage: "Only admins can waive penalties",
   action: async (session, loanId) => {
@@ -415,7 +434,7 @@ export async function adjustPenaltyMultiplierAction(
 
 const adjustPenaltyMultiplierWrapped = withAction<
   { loanId: string; multiplier: string },
-  any
+  LoanPenaltyResult | { error: string }
 >({
   permission: "settings:update",
   forbiddenMessage: "Only admins can adjust penalty rates",

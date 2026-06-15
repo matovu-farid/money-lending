@@ -21,7 +21,11 @@ const ROLE_ASSIGN_PERMISSION: Record<string, Permission> = {
   superAdmin: "role:assign-super-admin",
 }
 
-export async function assignRole(input: { userId: string; role: UserRole }) {
+type AssignRoleResult = { data: { role: UserRole } } | { error: string }
+
+export async function assignRole(
+  input: { userId: string; role: UserRole },
+): Promise<AssignRoleResult> {
   const session = await getSession()
   if (!session) {
     return { error: "Unauthorized" }
@@ -85,12 +89,8 @@ export async function assignRole(input: { userId: string; role: UserRole }) {
     const isNowAdmin = ADMIN_ROLES.has(targetRole)
     if (wasAdmin && !isNowAdmin) {
       try {
-        const { db } = await import("@/lib/db")
-        const { adminIpAllowlist } = await import("@/lib/db/schema/ip-allowlist")
-        const { eq } = await import("drizzle-orm")
-        await db.delete(adminIpAllowlist).where(eq(adminIpAllowlist.userId, userId))
-        const { clearCaches } = await import("@/lib/ip-allowlist")
-        clearCaches()
+        const { clearAllowlistForUser } = await import("@/services/ip-allowlist.service")
+        await clearAllowlistForUser(userId)
       } catch (err) {
         console.warn("[assignRole] Failed to clear IP allowlist on demotion", err)
       }

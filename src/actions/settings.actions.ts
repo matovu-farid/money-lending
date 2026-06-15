@@ -1,8 +1,7 @@
 "use server"
 
-import { db } from "@/lib/db"
-import { systemSettings } from "@/lib/db/schema/settings"
 import { withAction } from "@/lib/with-action"
+import { getAllSettings, upsertSetting, type SystemSetting } from "@/services/settings.service"
 
 const VALID_SETTING_KEYS = ["default_interest_rate", "default_min_interest_days"] as const
 type SettingKey = (typeof VALID_SETTING_KEYS)[number]
@@ -12,22 +11,24 @@ interface UpdateSettingInput {
   value: string
 }
 
+type GetSettingsResult = { data: SystemSetting[] } | { error: string }
+type UpdateSettingResult = { data: SystemSetting } | { error: string }
+
 export const getSettingsAction = withAction({
   permission: "settings:read",
-  action: async () => {
+  action: async (): Promise<GetSettingsResult> => {
     try {
-      const settings = await db.select().from(systemSettings)
-      return { data: settings }
+      return { data: await getAllSettings() }
     } catch {
       return { error: "Failed to load settings" }
     }
   },
 })
 
-export const updateSettingAction = withAction<UpdateSettingInput, any>({
+export const updateSettingAction = withAction<UpdateSettingInput, UpdateSettingResult>({
   permission: "settings:update",
   forbiddenMessage: "Only Super Admin can edit system settings",
-  action: async (session, input) => {
+  action: async (session, input): Promise<UpdateSettingResult> => {
     if (!VALID_SETTING_KEYS.includes(input.key as SettingKey)) {
       return { error: "Invalid setting key. Must be one of: " + VALID_SETTING_KEYS.join(", ") }
     }
@@ -36,22 +37,11 @@ export const updateSettingAction = withAction<UpdateSettingInput, any>({
     }
 
     try {
-      const [result] = await db
-        .insert(systemSettings)
-        .values({
-          key: input.key,
-          value: input.value,
-          updatedBy: session.user.id,
-        })
-        .onConflictDoUpdate({
-          target: systemSettings.key,
-          set: {
-            value: input.value,
-            updatedBy: session.user.id,
-            updatedAt: new Date(),
-          },
-        })
-        .returning()
+      const result = await upsertSetting({
+        key: input.key,
+        value: input.value,
+        updatedBy: session.user.id,
+      })
       return { data: result }
     } catch {
       return { error: "Failed to update setting" }

@@ -293,12 +293,13 @@ export const createLoan = (
         return { ...loan, collateral: coll }
       })
     },
-    catch: (e: any) => {
+    catch: (e: unknown) => {
       if (e instanceof ValidationError) return e
-      if (e?._tag === "ValidationError") return new ValidationError({ message: e.message, field: e.field })
-      if (e?._tag === "CustomerNotFound") return new CustomerNotFound({ id: e.id })
-      if (e?._tag === "IncompleteLoanRequirements")
-        return new IncompleteLoanRequirements({ missing: e.missing })
+      const err = e as { _tag?: string; message?: string; field?: string; id?: string; missing?: string[] }
+      if (err?._tag === "ValidationError") return new ValidationError({ message: err.message as string, field: err.field })
+      if (err?._tag === "CustomerNotFound") return new CustomerNotFound({ id: err.id as string })
+      if (err?._tag === "IncompleteLoanRequirements")
+        return new IncompleteLoanRequirements({ missing: err.missing as string[] })
       return new DatabaseError({ cause: e })
     },
   }).pipe(
@@ -617,8 +618,9 @@ export const updateLoan = (
         return updatedLoan as Loan
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      const err = e as { _tag?: string; id?: string }
+      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
       return new DatabaseError({ cause: e })
     },
   })
@@ -837,8 +839,9 @@ export const deleteLoan = (
         return existingLoan as Loan
       })
     },
-    catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
+    catch: (e: unknown) => {
+      const err = e as { _tag?: string; id?: string }
+      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
       return new DatabaseError({ cause: e })
     },
   })
@@ -914,8 +917,25 @@ export async function getLoanCollateral(
   return record ?? null
 }
 
+/** Assembled receipt payload for a disbursed loan. */
+export interface LoanReceiptData {
+  receiptNumber: string
+  date: string
+  customerName: string
+  customerNin?: string
+  customerPhone?: string
+  loanAmount: string
+  issuanceFee: string
+  interestRate: string
+  collateralNature: string
+  disbursementSource: string
+  officerName: string
+  rolloverAmount?: string
+  totalNewPrincipal?: string
+}
+
 /** Assembled receipt payload for a loan, or null when the loan is not found. */
-export async function getLoanReceiptData(loanId: string): Promise<Record<string, unknown> | null> {
+export async function getLoanReceiptData(loanId: string): Promise<LoanReceiptData | null> {
   const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
   if (!loan) return null
 
@@ -931,8 +951,8 @@ export async function getLoanReceiptData(loanId: string): Promise<Record<string,
     receiptNumber: `LOAN-${shortId(loanId).toUpperCase()}`,
     date: loan.startDate.toISOString(),
     customerName: customer?.fullName ?? "—",
-    customerNin: customer?.nin,
-    customerPhone: customer?.contact,
+    customerNin: customer?.nin ?? undefined,
+    customerPhone: customer?.contact ?? undefined,
     loanAmount: isRollover
       ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
       : loan.principalAmount,

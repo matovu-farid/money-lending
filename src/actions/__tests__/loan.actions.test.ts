@@ -188,6 +188,9 @@ import { revalidatePath } from "next/cache"
 import { createLoan, listLoans } from "@/services/loan.service"
 import { getLocationBalances } from "@/services/report.service"
 import { CustomerNotFound, IncompleteLoanRequirements } from "@/lib/errors"
+import type { Loan, LoanListEntry } from "@/types"
+import type { LoanPaymentContext, LoanReceiptData } from "@/services/loan.service"
+import type { Equals, Expect } from "@/test-utils/type-assert"
 
 
 import {
@@ -196,7 +199,52 @@ import {
   updateLoanAction,
   deleteLoanAction,
   getLocationBalancesAction,
+  getLoanPaymentContextAction,
+  getLoanReceiptDataAction,
+  getCustomerLoansWithOverdueAction,
+  exportLoansExcelAction,
+  waivePenaltyAction,
+  adjustPenaltyMultiplierAction,
 } from "../loan.actions"
+
+// ---------- Type snapshots (lock the now-explicit return types; no more `any`) ----------
+// (updateLoanAction / deleteLoanAction return a plain `{ error: string }`, locked by
+//  their explicit withAction generic — no snapshot needed.)
+export type LoanActionTypeSnapshots = [
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof getLoanPaymentContextAction>>,
+      { data: LoanPaymentContext } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof getLoanReceiptDataAction>>,
+      { data: LoanReceiptData } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof getCustomerLoansWithOverdueAction>>,
+      { data: LoanListEntry[] } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<Awaited<ReturnType<typeof exportLoansExcelAction>>, { data: string } | { error: string }>
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof waivePenaltyAction>>,
+      { data: Loan; txid: number } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof adjustPenaltyMultiplierAction>>,
+      { data: Loan; txid: number } | { error: string }
+    >
+  >,
+]
 
 const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)

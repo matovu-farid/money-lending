@@ -79,10 +79,18 @@ vi.mock("@/services/payment.service", () => ({
   recordPayment: vi.fn(),
   editPayment: vi.fn(),
   deletePayment: vi.fn(),
+  recordPaymentWithTxid: vi.fn(),
+  editPaymentWithTxid: vi.fn(),
+  deletePaymentWithTxid: vi.fn(),
   listPayments: vi.fn(),
+  listAllPayments: vi.fn(),
   searchActiveLoans: vi.fn(),
   getRecentlyCollectedLoans: vi.fn(),
   getLoanBalanceSummary: vi.fn(),
+  getActivePaymentById: vi.fn(),
+  listActivePaymentsByLoan: vi.fn(),
+  markPaymentWrong: vi.fn(),
+  unmarkPaymentWrong: vi.fn(),
 }))
 
 vi.mock("@/lib/db", () => {

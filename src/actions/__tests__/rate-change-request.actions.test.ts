@@ -50,8 +50,13 @@ vi.mock("@/services/rate-change-request.service", () => ({
   applyRateChangeImmediately: vi.fn(),
   listAllRequests: vi.fn(),
   listRequestsForLoan: vi.fn(),
+  listRateChangeRequests: vi.fn(),
   reviewRequest: vi.fn(),
   countPendingRequests: vi.fn(),
+  getLoanRateForChange: vi.fn(),
+  createPendingRateChangeRequest: vi.fn(),
+  getRequestForReview: vi.fn(),
+  DUPLICATE_PENDING_TAG: "DuplicatePending",
 }))
 
 vi.mock("@/lib/interest/effective-rate", () => ({
@@ -106,42 +111,78 @@ vi.mock("@/lib/ip-allowlist", () => ({
 // ---------- Imports ----------
 
 import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"
-import { revalidatePath } from "next/cache"
 import {
   applyRateChangeImmediately,
   listAllRequests,
   listRequestsForLoan,
   countPendingRequests,
+  getLoanRateForChange,
+  createPendingRateChangeRequest,
+  getRequestForReview,
+  reviewRequest,
+  type RateChangeRequestWithLoan,
 } from "@/services/rate-change-request.service"
 import { getBaseRate } from "@/lib/interest/effective-rate"
-
-// Import the internal mock reference
-import { db } from "@/lib/db"
+import type { RateChangeRequest } from "@/types"
+import type { Equals, Expect } from "@/test-utils/type-assert"
 
 import {
   requestRateChangeAction,
   listAllRequestsAction,
   listRequestsForLoanAction,
+  reviewRateChangeRequestAction,
   countPendingRequestsAction,
 } from "../rate-change-request.actions"
+
+// ---------- Type snapshots (protect the action→service refactor) ----------
+export type RateChangeActionTypeSnapshots = [
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof requestRateChangeAction>>,
+      | { error: string }
+      | { data: { applied: true; message: string } }
+      | { data: { applied: false; request: RateChangeRequest; message: string } }
+    >
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof listAllRequestsAction>>,
+      { data: RateChangeRequestWithLoan[] } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof listRequestsForLoanAction>>,
+      { data: RateChangeRequest[] } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<
+      Awaited<ReturnType<typeof reviewRateChangeRequestAction>>,
+      { data: RateChangeRequest } | { error: string }
+    >
+  >,
+  Expect<
+    Equals<Awaited<ReturnType<typeof countPendingRequestsAction>>, { data: number } | { error: string }>
+  >,
+]
 
 import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)
 const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
-const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockApplyRateChange = vi.mocked(applyRateChangeImmediately)
 const mockListAllRequests = vi.mocked(listAllRequests)
 const mockListRequestsForLoan = vi.mocked(listRequestsForLoan)
 const mockCountPendingRequests = vi.mocked(countPendingRequests)
 const mockGetBaseRate = vi.mocked(getBaseRate)
+const mockGetLoanRateForChange = vi.mocked(getLoanRateForChange)
+const mockCreatePendingRequest = vi.mocked(createPendingRateChangeRequest)
+const mockGetRequestForReview = vi.mocked(getRequestForReview)
+const mockReviewRequest = vi.mocked(reviewRequest)
 
-// Helper to get the chained where mock
-function getMockWhere() {
-  // db.select().from().where is the chain
-  const fromResult = (db.select() as any).from()
-  return vi.mocked(fromResult.where)
-}
+const asRequest = (partial: Partial<RateChangeRequest>): RateChangeRequest =>
+  partial as unknown as RateChangeRequest
 
 // ---------- Tests ----------
 
@@ -191,6 +232,136 @@ describe("Rate Change Request Actions", () => {
       mockGetUserRole.mockReturnValue("admin")
       const result = await requestRateChangeAction({ ...validInput, requestedRate: "1.5" } as any)
       expect(result).toEqual({ error: "Rate must be a decimal between 0 and 1 (e.g., 0.10 for 10%)" })
+    })
+
+    it("returns error when the loan is not found", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockGetLoanRateForChange.mockResolvedValue(undefined)
+      const result = await requestRateChangeAction(validInput as any)
+      expect(result).toEqual({ error: "Loan not found" })
+    })
+
+    it("returns error when requested rate equals the current rate", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockGetLoanRateForChange.mockResolvedValue({ interestRate: "0.12", interestRateOverride: null })
+      mockGetBaseRate.mockReturnValue("0.12")
+      const result = await requestRateChangeAction(validInput as any)
+      expect(result).toEqual({ error: "Requested rate is the same as the current rate" })
+    })
+
+    it("applies immediately when rate is >= 10% (no approval needed)", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockGetLoanRateForChange.mockResolvedValue({ interestRate: "0.10", interestRateOverride: null })
+      mockGetBaseRate.mockReturnValue("0.10")
+      mockApplyRateChange.mockReturnValue(Effect.succeed(undefined))
+      const result = await requestRateChangeAction(validInput as any) // 0.12 >= 0.10
+      expect(result).toEqual({ data: { applied: true, message: "Rate changed immediately" } })
+    })
+
+    it("creates a pending request when approval is required and user lacks permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("loanOfficer")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
+      mockGetLoanRateForChange.mockResolvedValue({ interestRate: "0.20", interestRateOverride: null })
+      mockGetBaseRate.mockReturnValue("0.20")
+      const request = asRequest({ id: "r1" })
+      mockCreatePendingRequest.mockResolvedValue(request)
+      const result = await requestRateChangeAction({ loanId: "l1", requestedRate: "0.09" } as any)
+      expect(result).toMatchObject({ data: { applied: false, request } })
+    })
+
+    it("returns error when a pending request already exists", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("loanOfficer")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
+      mockGetLoanRateForChange.mockResolvedValue({ interestRate: "0.20", interestRateOverride: null })
+      mockGetBaseRate.mockReturnValue("0.20")
+      mockCreatePendingRequest.mockRejectedValue({ _tag: "DuplicatePending" })
+      const result = await requestRateChangeAction({ loanId: "l1", requestedRate: "0.09" } as any)
+      expect(result).toEqual({ error: "A pending rate change request already exists for this loan" })
+    })
+  })
+
+  // ===== reviewRateChangeRequestAction =====
+  describe("reviewRateChangeRequestAction", () => {
+    const validReview = { requestId: "r1", action: "approved" as const }
+
+    it("returns error when not authenticated", async () => {
+      mockGetSession.mockResolvedValue(null)
+      const result = await reviewRateChangeRequestAction(validReview)
+      expect(result).toEqual({ error: "Unauthorized" })
+    })
+
+    it("returns Forbidden without approve-standard permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("loanOfficer")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
+      const result = await reviewRateChangeRequestAction(validReview)
+      expect(result).toEqual({ error: "Forbidden" })
+    })
+
+    it("returns error for missing request ID", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      const result = await reviewRateChangeRequestAction({ ...validReview, requestId: "" })
+      expect(result).toEqual({ error: "Request ID is required" })
+    })
+
+    it("returns error for invalid action", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      const result = await reviewRateChangeRequestAction({ ...validReview, action: "maybe" as never })
+      expect(result).toEqual({ error: "Action must be 'approved' or 'rejected'" })
+    })
+
+    it("returns error when the request is not found", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockGetRequestForReview.mockResolvedValue(undefined)
+      const result = await reviewRateChangeRequestAction(validReview)
+      expect(result).toEqual({ error: "Rate change request not found" })
+    })
+
+    it("prevents self-approval", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockGetRequestForReview.mockResolvedValue({
+        requiredApproverRole: "rate-change:approve-standard",
+        loanId: "l1",
+        requestedBy: fakeSession.user.id,
+      })
+      const result = await reviewRateChangeRequestAction(validReview)
+      expect(result).toEqual({ error: "You cannot review your own rate change request" })
+    })
+
+    it("returns error when reviewer lacks the required approver permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("supervisor")
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["rate-change:approve-standard"]))
+      mockGetRequestForReview.mockResolvedValue({
+        requiredApproverRole: "rate-change:approve-low",
+        loanId: "l1",
+        requestedBy: "someone-else",
+      })
+      const result = await reviewRateChangeRequestAction(validReview)
+      expect(result).toMatchObject({ error: expect.stringContaining("do not have permission") })
+    })
+
+    it("reviews the request on success", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockGetRequestForReview.mockResolvedValue({
+        requiredApproverRole: "rate-change:approve-standard",
+        loanId: "l1",
+        requestedBy: "someone-else",
+      })
+      const reviewed = asRequest({ id: "r1", status: "approved" })
+      mockReviewRequest.mockReturnValue(Effect.succeed(reviewed))
+      const result = await reviewRateChangeRequestAction(validReview)
+      expect(result).toEqual({ data: reviewed })
     })
   })
 

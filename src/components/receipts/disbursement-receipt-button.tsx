@@ -7,22 +7,7 @@ import { Button } from "@/components/ui/button"
 import { PosReceiptModal } from "./pos-receipt-modal"
 import { PosReceiptDisbursement } from "./pos-receipt-disbursement"
 import { getLoanReceiptDataAction } from "@/actions/loan.actions"
-
-interface DisbursementReceiptData {
-  receiptNumber: string
-  date: string
-  customerName: string
-  customerNin?: string
-  customerPhone?: string
-  loanAmount: string
-  issuanceFee: string
-  interestRate: string
-  collateralNature: string
-  disbursementSource: string
-  officerName: string
-  rolloverAmount?: string
-  totalNewPrincipal?: string
-}
+import type { LoanReceiptData as DisbursementReceiptData } from "@/services/loan.service"
 
 interface DisbursementReceiptButtonProps {
   loanId: string
