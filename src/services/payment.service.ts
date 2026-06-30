@@ -516,7 +516,6 @@ export const editPaymentWithTxid = (
         // 3. Recompute allocation with new amount/date
         // BUG-8 fix: compute overdue info to get effective rate (with penalty if applicable),
         // consistent with recordPayment which uses getEffectiveRate via overdueInfo.
-        const baseRate = getBaseRate(loan);
         const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
         const loanType = loan.loanType ?? "perpetual";
 
@@ -574,33 +573,11 @@ export const editPaymentWithTxid = (
           principalBalanceBefore = runningBalance.toFixed(0);
         }
 
-        // Compute overdue info to get effective rate (with penalty if applicable)
-        const [editBalanceMap, editInterestMap] = await Promise.all([
-          getLoanBalancesFromLedger([payment.loanId], undefined, tx),
-          getInterestEarnedFromLedger([payment.loanId], tx),
-        ]);
-        const editLedgerBalance =
-          editBalanceMap.get(payment.loanId) ?? new BigNumber(0);
-        const editOutstandingBalance = editBalanceMap.has(payment.loanId)
-          ? editLedgerBalance.toFixed(0)
-          : loan.principalAmount;
+        const overdueInfo = await computeSingleLoanBalanceData(
+          loan.id,
+          new Date(),
+        );
 
-        const overdueInfo = computeLoanOverdueInfo({
-          principalAmount: loan.principalAmount,
-          baseRate,
-          startDate: new Date(loan.startDate),
-          loanType: toLoanType(loan.loanType),
-          termMonths: loan.termMonths,
-          totalInterestPaid: formatAmount(
-            editInterestMap.get(payment.loanId) ?? new BigNumber(0),
-          ),
-          paymentCount: activePayments.filter((p) => p.id !== input.paymentId)
-            .length,
-          outstandingBalance: editOutstandingBalance,
-          penaltyWaived: loan.penaltyWaived,
-          loan,
-          lastPaymentDate: await getLastPaymentDate(loan),
-        });
         const monthlyRateDecimal = getEffectiveRate(
           loan,
           overdueInfo.penaltyActive,

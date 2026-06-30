@@ -42,6 +42,7 @@ import {
   getPaymentPortionsFromLedger,
 } from "./ledger-queries.service";
 import { getLastPaymentDate } from "./payment.service";
+import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -723,27 +724,10 @@ export const accrueInterestForLoans = (
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)));
 
       const loanIds = activeLoans.map((l) => l.id);
-      const [
-        ledgerBalances,
-        interestEarnedBatch,
-        paymentCountRows,
-        allPaymentRows,
-      ] = await Promise.all([
-        getLoanBalancesFromLedger(loanIds),
+      const balanceData = await computeLoanBalanceData(loanIds, new Date());
+      const [interestEarnedBatch, allPaymentRows] = await Promise.all([
         getInterestEarnedFromLedger(loanIds),
-        loanIds.length > 0
-          ? db
-              .select({ loanId: payments.loanId, cnt: count() })
-              .from(payments)
-              .where(
-                and(
-                  inArray(payments.loanId, loanIds),
-                  isNull(payments.deletedAt),
-                  eq(payments.markedWrong, false),
-                ),
-              )
-              .groupBy(payments.loanId)
-          : Promise.resolve([]),
+
         // Fetch all active payments for segmented interest calculation (BUG-11)
         loanIds.length > 0
           ? db
@@ -763,9 +747,6 @@ export const accrueInterestForLoans = (
               .orderBy(asc(payments.paymentDate))
           : Promise.resolve([]),
       ]);
-      const paymentCountMap = new Map(
-        paymentCountRows.map((r) => [r.loanId, r.cnt]),
-      );
 
       // Batch-fetch principal portions from ledger for segmented interest (BUG-11)
       const allPaymentIds = allPaymentRows.map((p) => p.id);
@@ -796,27 +777,8 @@ export const accrueInterestForLoans = (
 
       for (const loan of activeLoans) {
         const baseRate = getBaseRate(loan);
-        const outstandingBalanceBN = ledgerBalances.get(loan.id);
-        const outstandingBalance =
-          outstandingBalanceBN && outstandingBalanceBN.isGreaterThan(0)
-            ? formatAmount(outstandingBalanceBN)
-            : loan.principalAmount;
-        const totalInterestPaid = formatAmount(
-          interestEarnedBatch.get(loan.id) ?? new BigNumber(0),
-        );
-        const overdueInfo = computeLoanOverdueInfo({
-          principalAmount: loan.principalAmount,
-          baseRate,
-          startDate: new Date(loan.startDate),
-          loanType: toLoanType(loan.loanType),
-          termMonths: loan.termMonths,
-          totalInterestPaid,
-          paymentCount: paymentCountMap.get(loan.id) ?? 0,
-          outstandingBalance,
-          penaltyWaived: loan.penaltyWaived,
-          loan,
-          lastPaymentDate: await getLastPaymentDate(loan),
-        });
+
+        const overdueInfo = balanceData.get(loan.id)!;
         const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive);
 
         // BUG-11 fix: compute interest segment-by-segment using the actual balance
