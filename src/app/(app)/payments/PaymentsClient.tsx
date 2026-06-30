@@ -1,67 +1,82 @@
-"use client"
+"use client";
 
-import { useMemo, useState, useTransition } from "react"
-import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
-import { useLiveQuery, eq, ilike, gte, lte } from "@tanstack/react-db"
-import { paymentCollection } from "@/collections/payments"
-import { loanCollection } from "@/collections/loans"
-import { useLoansWithBalances } from "@/collections/loan-views"
-import { getPaymentPortionsCollection, getUserNameMapCollection } from "@/collections/loan-extras"
-import BigNumber from "bignumber.js"
-import { toast } from "sonner"
-import { AlertTriangle, Download, MoreHorizontal } from "lucide-react"
-import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button"
-import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { DatePicker } from "@/components/ui/date-picker"
-import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
-import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useLiveQuery, eq, ilike, gte, lte } from "@tanstack/react-db";
+import { paymentCollection } from "@/collections/payments";
+import { loanCollection } from "@/collections/loans";
+import { useLoansWithBalances } from "@/collections/loan-views";
+import {
+  getPaymentPortionsCollection,
+  getUserNameMapCollection,
+} from "@/collections/loan-extras";
+import BigNumber from "bignumber.js";
+import { toast } from "sonner";
+import { AlertTriangle, Download, MoreHorizontal } from "lucide-react";
+import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  DrawerDialog,
+  DrawerDialogContent,
+} from "@/components/ui/drawer-dialog";
 import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog"
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { InfoPopover } from "@/components/ui/info-popover"
-import { PageHeader } from "@/components/ui/page-header"
-import { CurrencyCell } from "@/components/ui/currency-cell"
-import { useSession } from "@/lib/auth-client"
-import { formatDate, shortId } from "@/lib/utils"
-import type { PaymentWithCustomer } from "@/types"
-import { usePermissions } from "@/hooks/use-permissions"
-import { usePaymentsPageStore } from "@/lib/stores/payments-page"
-import { useUrlFilters } from "@/hooks/use-url-filters"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DailyCollectionsTab } from "./DailyCollectionsTab"
-import { QuickRecordDialog } from "./QuickRecordDialog"
-import { FilterPanel } from "@/components/ui/filter-panel"
-import { downloadBlob } from "@/lib/download"
+} from "@/components/ui/dropdown-menu";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { PageHeader } from "@/components/ui/page-header";
+import { CurrencyCell } from "@/components/ui/currency-cell";
+import { useSession } from "@/lib/auth-client";
+import { formatDate, shortId } from "@/lib/utils";
+import type { PaymentWithCustomer } from "@/types";
+import { usePermissions } from "@/hooks/use-permissions";
+import { usePaymentsPageStore } from "@/lib/stores/payments-page";
+import { useUrlFilters } from "@/hooks/use-url-filters";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { DailyCollectionsTab } from "./DailyCollectionsTab";
+import { QuickRecordDialog } from "./QuickRecordDialog";
+import { FilterPanel } from "@/components/ui/filter-panel";
+import { downloadBlob } from "@/lib/download";
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
-  const headers = ["Date", "Customer", "Amount", "Interest", "Principal", "Principal Balance"]
+  const headers = [
+    "Date",
+    "Customer",
+    "Amount",
+    "Interest",
+    "Principal",
+    "Principal Balance",
+  ];
   const csvLines = [
     headers.join(","),
-    ...rows.map((r) => [
-      `"${formatDate(r.paymentDate)}"`,
-      `"${r.customerName}"`,
-      r.amount,
-      r.interestPortion,
-      r.principalPortion,
-      r.principalBalanceAfter,
-    ].join(","))
-  ]
-  const blob = new Blob([csvLines.join("\n")], { type: "text/csv" })
-  downloadBlob(blob, `payments-${new Date().toISOString().slice(0, 10)}.csv`)
+    ...rows.map((r) =>
+      [
+        `"${formatDate(r.paymentDate)}"`,
+        `"${r.customerName}"`,
+        r.amount,
+        r.interestPortion,
+        r.principalPortion,
+        r.principalBalanceAfter,
+      ].join(","),
+    ),
+  ];
+  const blob = new Blob([csvLines.join("\n")], { type: "text/csv" });
+  downloadBlob(blob, `payments-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 function LoadingSkeleton() {
@@ -70,19 +85,24 @@ function LoadingSkeleton() {
       <div className="h-8 w-48 rounded bg-muted-foreground/10 animate-pulse" />
       <div className="space-y-3">
         {[1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="h-12 rounded-md bg-muted-foreground/10 animate-pulse" />
+          <div
+            key={i}
+            className="h-12 rounded-md bg-muted-foreground/10 animate-pulse"
+          />
         ))}
       </div>
     </div>
-  )
+  );
 }
 
 export function PaymentsClient() {
-  const { has } = usePermissions()
-  const isAdmin = has("payment:edit-any")
-  const isSupervisor = has("payment:edit-any")
+  const { has } = usePermissions();
+  const isAdmin = has("payment:edit-any");
+  const isSupervisor = has("payment:edit-any");
 
-  return <PaymentsContent has={has} isAdmin={isAdmin} isSupervisor={isSupervisor} />
+  return (
+    <PaymentsContent has={has} isAdmin={isAdmin} isSupervisor={isSupervisor} />
+  );
 }
 
 function PaymentsContent({
@@ -90,75 +110,101 @@ function PaymentsContent({
   isAdmin,
   isSupervisor,
 }: {
-  has: ReturnType<typeof usePermissions>["has"]
-  isAdmin: boolean
-  isSupervisor: boolean
+  has: ReturnType<typeof usePermissions>["has"];
+  isAdmin: boolean;
+  isSupervisor: boolean;
 }) {
-  const router = useRouter()
-  const searchParams = useSearchParams()
-  const { data: session } = useSession()
-  const [isEditPending, setIsEditPending] = useState(false)
-  const [isMarkWrongPending, startMarkWrongTransition] = useTransition()
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const [isEditPending, setIsEditPending] = useState(false);
+  const [isMarkWrongPending, startMarkWrongTransition] = useTransition();
 
-  const activeTab = (searchParams.get("tab") as "list" | "daily") ?? "list"
+  const activeTab = (searchParams.get("tab") as "list" | "daily") ?? "list";
 
   function handleTabChange(tab: string) {
-    const params = new URLSearchParams(searchParams.toString())
-    params.set("tab", tab)
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tab);
     if (tab === "daily") {
-      params.delete("page")
-      params.delete("customerName")
-      params.delete("dateFrom")
-      params.delete("dateTo")
-      params.delete("amountMin")
-      params.delete("amountMax")
+      params.delete("page");
+      params.delete("customerName");
+      params.delete("dateFrom");
+      params.delete("dateTo");
+      params.delete("amountMin");
+      params.delete("amountMax");
     }
     if (tab === "list") {
-      params.delete("date")
+      params.delete("date");
     }
-    router.push(`/payments?${params.toString()}`)
+    router.push(`/payments?${params.toString()}`);
   }
 
   const {
-    quickRecordOpen, openQuickRecord, closeQuickRecord,
-    editOpen, editTarget: selectedPayment, editAmount, editDate, editReason,
-    openEdit: openEditSheet, closeEdit, setEditAmount, setEditDate, setEditReason,
-    markWrongOpen, markWrongTarget, markWrongReason,
-    openMarkWrong: openMarkWrongDialog, closeMarkWrong, setMarkWrongReason,
-  } = usePaymentsPageStore()
+    quickRecordOpen,
+    openQuickRecord,
+    closeQuickRecord,
+    editOpen,
+    editTarget: selectedPayment,
+    editAmount,
+    editDate,
+    editReason,
+    openEdit: openEditSheet,
+    closeEdit,
+    setEditAmount,
+    setEditDate,
+    setEditReason,
+    markWrongOpen,
+    markWrongTarget,
+    markWrongReason,
+    openMarkWrong: openMarkWrongDialog,
+    closeMarkWrong,
+    setMarkWrongReason,
+  } = usePaymentsPageStore();
 
-  const { filters, page, setFilter, clearFilters, setPage, hasFilters, activeFilterCount } =
-    useUrlFilters({
-      basePath: "/payments",
-      defaults: { customerName: "", dateFrom: "", dateTo: "", amountMin: "", amountMax: "" },
-    })
-  const { customerName, dateFrom, dateTo, amountMin, amountMax } = filters
+  const {
+    filters,
+    page,
+    setFilter,
+    clearFilters,
+    setPage,
+    hasFilters,
+    activeFilterCount,
+  } = useUrlFilters({
+    basePath: "/payments",
+    defaults: {
+      customerName: "",
+      dateFrom: "",
+      dateTo: "",
+      amountMin: "",
+      amountMax: "",
+    },
+  });
+  const { customerName, dateFrom, dateTo, amountMin, amountMax } = filters;
 
   // Edit and markWrong — collection-based update and server action respectively
 
-
-  const pageSize = 25
+  const pageSize = 25;
 
   // Unfiltered payments + loans — needed to compute the running principal
   // balance per loan accurately. Filtering these out would corrupt the
   // balanceAfterMap for the filtered subset.
   const { data: rawPayments, isLoading: paymentsLoading } = useLiveQuery((q) =>
-    q.from({ p: paymentCollection }).select(({ p }) => p)
-  )
+    q.from({ p: paymentCollection }).select(({ p }) => p),
+  );
   const { data: allLoansRaw, isLoading: loansRawLoading } = useLiveQuery((q) =>
-    q.from({ l: loanCollection }).select(({ l }) => l)
-  )
+    q.from({ l: loanCollection }).select(({ l }) => l),
+  );
   // Projected loans — provides customerName + other enriched fields
-  const { data: allLoans, isLoading: loansLoading } = useLoansWithBalances()
+  const { data: allLoans, isLoading: loansLoading } = useLoansWithBalances();
 
   // Build a map of loanId → { customerName, customerId } from projected data
   const loanInfoMap = useMemo(() => {
-    const m = new Map<string, { customerName: string; customerId: string }>()
+    const m = new Map<string, { customerName: string; customerId: string }>();
     for (const l of allLoans ?? []) {
-      m.set(l.id, { customerName: l.customerName, customerId: l.customerId })
+      m.set(l.id, { customerName: l.customerName, customerId: l.customerId });
     }
-    return m
-  }, [allLoans])
+    return m;
+  }, [allLoans]);
 
   // Display query: JOINs paymentCollection + loanCollection and pushes the
   // date filters into the differential dataflow. customerName filtering is
@@ -166,22 +212,22 @@ function PaymentsContent({
   const dateFromTime = useMemo(
     () => (dateFrom ? new Date(dateFrom).getTime() : null),
     [dateFrom],
-  )
+  );
   const dateToTime = useMemo(
     () => (dateTo ? new Date(dateTo).getTime() : null),
     [dateTo],
-  )
+  );
 
   const { data: joinedRows } = useLiveQuery(
     (q) => {
       let qb = q
         .from({ p: paymentCollection })
-        .join({ l: loanCollection }, ({ p, l }) => eq(p.loanId, l.id), "inner")
+        .join({ l: loanCollection }, ({ p, l }) => eq(p.loanId, l.id), "inner");
       if (dateFromTime !== null) {
-        qb = qb.where(({ p }) => gte(p.paymentDate, new Date(dateFromTime)))
+        qb = qb.where(({ p }) => gte(p.paymentDate, new Date(dateFromTime)));
       }
       if (dateToTime !== null) {
-        qb = qb.where(({ p }) => lte(p.paymentDate, new Date(dateToTime)))
+        qb = qb.where(({ p }) => lte(p.paymentDate, new Date(dateToTime)));
       }
       return qb.select(({ p, l }) => ({
         id: p.id,
@@ -192,101 +238,109 @@ function PaymentsContent({
         depositLocation: p.depositLocation,
         createdAt: p.createdAt,
         customerId: l.customerId,
-      }))
+      }));
     },
     [dateFromTime, dateToTime],
-  )
+  );
 
   // Merge projected customerName into joined rows, then apply customerName filter in JS
   const filteredJoinedRows = useMemo(() => {
     const rows = (joinedRows ?? []).map((r) => {
-      const info = loanInfoMap.get(r.loanId)
+      const info = loanInfoMap.get(r.loanId);
       return {
         ...r,
         customerId: info?.customerId ?? r.customerId,
         customerName: info?.customerName ?? "Unknown",
-      }
-    })
-    if (!customerName) return rows
-    const term = customerName.toLowerCase()
-    return rows.filter((r) => r.customerName.toLowerCase().includes(term))
-  }, [joinedRows, loanInfoMap, customerName])
+      };
+    });
+    if (!customerName) return rows;
+    const term = customerName.toLowerCase();
+    return rows.filter((r) => r.customerName.toLowerCase().includes(term));
+  }, [joinedRows, loanInfoMap, customerName]);
 
-  const isInitialLoading = (paymentsLoading && !rawPayments) || (loansRawLoading && !allLoansRaw)
+  const isInitialLoading =
+    (paymentsLoading && !rawPayments) || (loansRawLoading && !allLoansRaw);
 
   // Resolve recordedBy → display name via the user-name-map collection
   const uniqueRecorderIdsKey = useMemo(
-    () => [...new Set((rawPayments ?? []).map((p) => p.recordedBy))].sort().join(","),
-    [rawPayments]
-  )
+    () =>
+      [...new Set((rawPayments ?? []).map((p) => p.recordedBy))]
+        .sort()
+        .join(","),
+    [rawPayments],
+  );
   const uniqueRecorderIds = useMemo(
     () => (uniqueRecorderIdsKey ? uniqueRecorderIdsKey.split(",") : []),
-    [uniqueRecorderIdsKey]
-  )
+    [uniqueRecorderIdsKey],
+  );
   const userNameMapColl = useMemo(
     () => getUserNameMapCollection(uniqueRecorderIds),
-    [uniqueRecorderIds]
-  )
+    [uniqueRecorderIds],
+  );
   const { data: userNameMapRows } = useLiveQuery(
     (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
-    [userNameMapColl]
-  )
-  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
+    [userNameMapColl],
+  );
+  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {};
 
   // Fetch interest/principal portions for the entire payment set in one go.
   // The server action is keyed only by paymentIds, so we pass a sentinel loanId.
   const allPaymentIdsKey = useMemo(
-    () => (rawPayments ?? []).map((p) => p.id).sort().join(","),
-    [rawPayments]
-  )
+    () =>
+      (rawPayments ?? [])
+        .map((p) => p.id)
+        .sort()
+        .join(","),
+    [rawPayments],
+  );
   const allPaymentIds = useMemo(
     () => (allPaymentIdsKey ? allPaymentIdsKey.split(",") : []),
-    [allPaymentIdsKey]
-  )
+    [allPaymentIdsKey],
+  );
   const portionsColl = useMemo(
     () => getPaymentPortionsCollection("__all__", allPaymentIds),
-    [allPaymentIds]
-  )
+    [allPaymentIds],
+  );
   const { data: portionsRows } = useLiveQuery(
     (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
-    [portionsColl]
-  )
-  const portionsMap = portionsRows?.[0]?.portions ?? {}
+    [portionsColl],
+  );
+  const portionsMap = portionsRows?.[0]?.portions ?? {};
 
   // Running principal balance per payment, computed across the FULL set of
   // payments per loan (filters can hide earlier payments — using filtered
   // data here would understate the balance for survivors).
   const balanceAfterMap = useMemo(() => {
-    const loanPrincipal = new Map<string, string>()
+    const loanPrincipal = new Map<string, string>();
     for (const l of allLoansRaw ?? []) {
-      loanPrincipal.set(l.id, l.principalAmount)
+      loanPrincipal.set(l.id, l.principalAmount);
     }
-    const byLoan = new Map<string, typeof rawPayments>()
+    const byLoan = new Map<string, typeof rawPayments>();
     for (const p of rawPayments ?? []) {
-      const list = byLoan.get(p.loanId) ?? []
-      list.push(p)
-      byLoan.set(p.loanId, list)
+      const list = byLoan.get(p.loanId) ?? [];
+      list.push(p);
+      byLoan.set(p.loanId, list);
     }
-    const map: Record<string, string> = {}
+    const map: Record<string, string> = {};
     for (const [loanId, plist] of byLoan) {
-      const principal = loanPrincipal.get(loanId)
-      if (!principal) continue
+      const principal = loanPrincipal.get(loanId);
+      if (!principal) continue;
       const sorted = [...plist].sort((a, b) => {
-        const da = a.paymentDate.getTime()
-        const db = b.paymentDate.getTime()
-        if (da !== db) return da - db
-        return a.createdAt.getTime() - b.createdAt.getTime()
-      })
-      let bal = new BigNumber(principal)
+        const da = new Date(a.paymentDate).getTime();
+        const db = new Date(b.paymentDate).getTime();
+        if (da !== db) return da - db;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+      let bal = new BigNumber(principal);
       for (const p of sorted) {
-        const portion = portionsMap[p.id]?.principalPortion ?? "0"
-        bal = bal.minus(new BigNumber(portion))
-        if (bal.isLessThan(0)) bal = new BigNumber(0)
-        map[p.id] = bal.toFixed(0)
+        const portion = portionsMap[p.id]?.principalPortion ?? "0";
+        bal = bal.minus(new BigNumber(portion));
+        if (bal.isLessThan(0)) bal = new BigNumber(0);
+        map[p.id] = bal.toFixed(0);
       }
     }
-    return map
-  }, [rawPayments, allLoansRaw, portionsMap])
+    return map;
+  }, [rawPayments, allLoansRaw, portionsMap]);
 
   // Project the filtered + joined rows into the PaymentWithCustomer shape the
   // rest of the page consumes. customerName + dates are already filtered by
@@ -294,7 +348,7 @@ function PaymentsContent({
   const allFilteredPayments: PaymentWithCustomer[] = useMemo(
     () =>
       (filteredJoinedRows ?? []).map((p) => {
-        const portion = portionsMap[p.id]
+        const portion = portionsMap[p.id];
         return {
           id: p.id,
           loanId: p.loanId,
@@ -310,52 +364,54 @@ function PaymentsContent({
           recorderName: userNameMap[p.recordedBy] ?? "",
           depositLocation: p.depositLocation,
           createdAt: p.createdAt,
-        }
+        };
       }),
     [filteredJoinedRows, portionsMap, userNameMap, balanceAfterMap],
-  )
+  );
 
   // Amount filter stays in JS — `amount` is a numeric string and TanStack DB's
   // gt/lt would do lexicographic compare ("9" > "100"). Pagination follows.
   const filtered = useMemo(() => {
-    let result = allFilteredPayments
+    let result = allFilteredPayments;
     if (amountMin) {
-      const min = parseFloat(amountMin)
-      if (!isNaN(min)) result = result.filter((p) => parseFloat(p.amount) >= min)
+      const min = parseFloat(amountMin);
+      if (!isNaN(min))
+        result = result.filter((p) => parseFloat(p.amount) >= min);
     }
     if (amountMax) {
-      const max = parseFloat(amountMax)
-      if (!isNaN(max)) result = result.filter((p) => parseFloat(p.amount) <= max)
+      const max = parseFloat(amountMax);
+      if (!isNaN(max))
+        result = result.filter((p) => parseFloat(p.amount) <= max);
     }
-    return result
-  }, [allFilteredPayments, amountMin, amountMax])
+    return result;
+  }, [allFilteredPayments, amountMin, amountMax]);
 
-  const total = filtered.length
-  const rows = filtered.slice((page - 1) * pageSize, page * pageSize)
+  const total = filtered.length;
+  const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   function handleEditSubmit() {
-    if (!selectedPayment) return
+    if (!selectedPayment) return;
     try {
-      setIsEditPending(true)
+      setIsEditPending(true);
       paymentCollection.update(
         selectedPayment.id,
         { metadata: { intent: "edit", reason: editReason } },
         (draft) => {
-          if (editAmount) draft.amount = editAmount
-          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00")
+          if (editAmount) draft.amount = editAmount;
+          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00");
         },
-      )
-      toast.success("Payment updated")
-      closeEdit()
+      );
+      toast.success("Payment updated");
+      closeEdit();
     } catch {
-      toast.error("Failed to update payment")
+      toast.error("Failed to update payment");
     } finally {
-      setIsEditPending(false)
+      setIsEditPending(false);
     }
   }
 
   function handleMarkWrongSubmit() {
-    if (!markWrongTarget) return
+    if (!markWrongTarget) return;
     startMarkWrongTransition(async () => {
       try {
         // Routes through paymentCollection.onUpdate → markPaymentWrongAction
@@ -365,24 +421,29 @@ function PaymentsContent({
           markWrongTarget.id,
           { metadata: { intent: "mark-wrong", reason: markWrongReason } },
           (draft) => {
-            const d = draft as typeof draft & { markedWrong: boolean; markedWrongReason: string | null }
-            d.markedWrong = true
-            d.markedWrongReason = markWrongReason
+            const d = draft as typeof draft & {
+              markedWrong: boolean;
+              markedWrongReason: string | null;
+            };
+            d.markedWrong = true;
+            d.markedWrongReason = markWrongReason;
           },
-        )
-        toast.success("Payment marked as wrong")
-        closeMarkWrong()
+        );
+        toast.success("Payment marked as wrong");
+        closeMarkWrong();
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to mark payment as wrong")
+        toast.error(
+          e instanceof Error ? e.message : "Failed to mark payment as wrong",
+        );
       }
-    })
+    });
   }
 
-  const start = (page - 1) * pageSize + 1
-  const end = Math.min(page * pageSize, total)
+  const start = (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, total);
 
   if (isInitialLoading) {
-    return <LoadingSkeleton />
+    return <LoadingSkeleton />;
   }
 
   const paymentColumns: Column<PaymentWithCustomer>[] = [
@@ -403,9 +464,13 @@ function PaymentsContent({
     {
       key: "paymentDate",
       header: "Date",
-      render: (row) => <span className="font-mono tabular-nums">{formatDate(row.paymentDate)}</span>,
+      render: (row) => (
+        <span className="font-mono tabular-nums">
+          {formatDate(row.paymentDate)}
+        </span>
+      ),
     },
-{
+    {
       key: "amount",
       header: "Amount",
       align: "right",
@@ -419,10 +484,12 @@ function PaymentsContent({
           <InfoPopover>
             <p className="font-semibold text-sm mb-1">Interest Portion</p>
             <p className="text-xs text-muted-foreground mb-2">
-              The part of this payment that covers accrued interest. Interest is always deducted first before any principal reduction.
+              The part of this payment that covers accrued interest. Interest is
+              always deducted first before any principal reduction.
             </p>
             <p className="text-xs font-mono bg-muted rounded px-2 py-1">
-              Interest Owed = Balance &times; (Rate &divide; 30) &times; Days Since Last Payment
+              Interest Owed = Balance &times; (Rate &divide; 30) &times; Days
+              Since Last Payment
             </p>
           </InfoPopover>
         </span>
@@ -438,7 +505,8 @@ function PaymentsContent({
           <InfoPopover>
             <p className="font-semibold text-sm mb-1">Principal Portion</p>
             <p className="text-xs text-muted-foreground mb-2">
-              The part of this payment that reduces the outstanding loan balance. Only applied after all accrued interest is covered.
+              The part of this payment that reduces the outstanding loan
+              balance. Only applied after all accrued interest is covered.
             </p>
             <p className="text-xs font-mono bg-muted rounded px-2 py-1">
               Principal Portion = Payment Amount &minus; Interest Portion
@@ -457,7 +525,8 @@ function PaymentsContent({
           <InfoPopover>
             <p className="font-semibold text-sm mb-1">Principal Balance</p>
             <p className="text-xs text-muted-foreground">
-              The remaining principal balance on the loan after this payment was applied. When this reaches zero, the loan is fully paid.
+              The remaining principal balance on the loan after this payment was
+              applied. When this reaches zero, the loan is fully paid.
             </p>
           </InfoPopover>
         </span>
@@ -486,43 +555,45 @@ function PaymentsContent({
         />
       ),
     },
-    ...((isAdmin || isSupervisor) ? [{
-      key: "actions",
-      header: "",
-      hideInCard: false,
-      render: (row: PaymentWithCustomer) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="Payment actions"
-            className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
-          >
-            <MoreHorizontal className="h-4 w-4" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {isAdmin && (
-              <DropdownMenuItem onClick={() => openEditSheet(row)}>
-                Edit
-              </DropdownMenuItem>
-            )}
-            {isSupervisor && (
-              <DropdownMenuItem onClick={() => openMarkWrongDialog(row)}>
-                <AlertTriangle className="h-4 w-4 mr-2 text-amber-500" />
-                Mark as Wrong
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ),
-    } satisfies Column<PaymentWithCustomer>] : []),
-  ]
+    ...(isAdmin || isSupervisor
+      ? [
+          {
+            key: "actions",
+            header: "",
+            hideInCard: false,
+            render: (row: PaymentWithCustomer) => (
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  aria-label="Payment actions"
+                  className="flex h-8 w-8 min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0 items-center justify-center rounded-md hover:bg-muted transition-colors"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {isAdmin && (
+                    <DropdownMenuItem onClick={() => openEditSheet(row)}>
+                      Edit
+                    </DropdownMenuItem>
+                  )}
+                  {isSupervisor && (
+                    <DropdownMenuItem onClick={() => openMarkWrongDialog(row)}>
+                      <AlertTriangle className="h-4 w-4 mr-2 text-amber-500" />
+                      Mark as Wrong
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ),
+          } satisfies Column<PaymentWithCustomer>,
+        ]
+      : []),
+  ];
 
   return (
     <div className="space-y-4">
       {/* Page header */}
       <PageHeader title="Payments" subtitle="Payment history and collections">
-        <Button onClick={openQuickRecord}>
-          Record Payment
-        </Button>
+        <Button onClick={openQuickRecord}>Record Payment</Button>
         {activeTab === "list" && (
           <Button
             variant="outline"
@@ -542,144 +613,159 @@ function PaymentsContent({
         </TabsList>
 
         <TabsContent value="list">
-
-      {/* Filter bar */}
-      <FilterPanel label="Filters" activeCount={activeFilterCount}>
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <Label className="text-sm">Search by customer name...</Label>
-            <Input
-              placeholder="Search by customer name..."
-              value={customerName}
-              onChange={(e) => setFilter("customerName", e.target.value)}
-              className="w-[220px]"
-            />
-          </div>
-          <div>
-            <Label className="text-sm">From</Label>
-            <DatePicker
-              size="sm"
-              className="w-[160px]"
-              value={dateFrom}
-              onChange={(value) => setFilter("dateFrom", value)}
-              max={dateTo || undefined}
-              placeholder="From"
-            />
-          </div>
-          <div>
-            <Label className="text-sm">To</Label>
-            <DatePicker
-              size="sm"
-              className="w-[160px]"
-              value={dateTo}
-              onChange={(value) => setFilter("dateTo", value)}
-              min={dateFrom || undefined}
-              placeholder="To"
-            />
-          </div>
-          <div>
-            <Label className="text-sm">Min amount</Label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              className="w-[120px]"
-              value={amountMin}
-              onChange={(e) => setFilter("amountMin", e.target.value)}
-              placeholder="0"
-            />
-          </div>
-          <div>
-            <Label className="text-sm">Max amount</Label>
-            <Input
-              type="text"
-              inputMode="numeric"
-              className="w-[120px]"
-              value={amountMax}
-              onChange={(e) => setFilter("amountMax", e.target.value)}
-              placeholder="Any"
-            />
-          </div>
-          {hasFilters && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-              onClick={clearFilters}
-            >
-              Clear filters
-            </Button>
-          )}
-        </div>
-      </FilterPanel>
-
-      {/* Content */}
-      {total === 0 ? (
-        hasFilters ? (
-          <div className="py-16 flex flex-col items-center text-center">
-            <p className="text-lg font-medium">No payments match your filters</p>
-            <p className="text-muted-foreground mt-2">
-              Try adjusting the date range, amount range, or customer name search.
-            </p>
-            <Button variant="outline" className="mt-4" onClick={clearFilters}>
-              Clear filters
-            </Button>
-          </div>
-        ) : (
-          <div className="py-16 flex flex-col items-center text-center">
-            <p className="text-lg font-medium">No payments recorded</p>
-            <p className="text-muted-foreground mt-2">
-              Payments appear here once loans are active and payments are collected.
-            </p>
-          </div>
-        )
-      ) : (
-        <div className="transition-opacity">
-          <ResponsiveTable
-            columns={paymentColumns}
-            rows={rows}
-            getRowKey={(row) => row.id}
-            getRowProps={() => ({ "data-testid": "data-row" })}
-          />
-
-          {/* Pagination */}
-          {total > pageSize && (
-            <div className="flex items-center justify-between pt-4">
-              <p className="text-sm text-muted-foreground">
-                Showing <span className="font-mono tabular-nums">{start}&ndash;{end}</span> of <span className="font-mono tabular-nums">{total}</span> payments
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
+          {/* Filter bar */}
+          <FilterPanel label="Filters" activeCount={activeFilterCount}>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <Label className="text-sm">Search by customer name...</Label>
+                <Input
+                  placeholder="Search by customer name..."
+                  value={customerName}
+                  onChange={(e) => setFilter("customerName", e.target.value)}
+                  className="w-[220px]"
+                />
+              </div>
+              <div>
+                <Label className="text-sm">From</Label>
+                <DatePicker
                   size="sm"
-                  disabled={page === 1}
-                  onClick={() => setPage(page - 1)}
+                  className="w-[160px]"
+                  value={dateFrom}
+                  onChange={(value) => setFilter("dateFrom", value)}
+                  max={dateTo || undefined}
+                  placeholder="From"
+                />
+              </div>
+              <div>
+                <Label className="text-sm">To</Label>
+                <DatePicker
+                  size="sm"
+                  className="w-[160px]"
+                  value={dateTo}
+                  onChange={(value) => setFilter("dateTo", value)}
+                  min={dateFrom || undefined}
+                  placeholder="To"
+                />
+              </div>
+              <div>
+                <Label className="text-sm">Min amount</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  className="w-[120px]"
+                  value={amountMin}
+                  onChange={(e) => setFilter("amountMin", e.target.value)}
+                  placeholder="0"
+                />
+              </div>
+              <div>
+                <Label className="text-sm">Max amount</Label>
+                <Input
+                  type="text"
+                  inputMode="numeric"
+                  className="w-[120px]"
+                  value={amountMax}
+                  onChange={(e) => setFilter("amountMax", e.target.value)}
+                  placeholder="Any"
+                />
+              </div>
+              {hasFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-muted-foreground"
+                  onClick={clearFilters}
                 >
-                  Previous
+                  Clear filters
                 </Button>
+              )}
+            </div>
+          </FilterPanel>
+
+          {/* Content */}
+          {total === 0 ? (
+            hasFilters ? (
+              <div className="py-16 flex flex-col items-center text-center">
+                <p className="text-lg font-medium">
+                  No payments match your filters
+                </p>
+                <p className="text-muted-foreground mt-2">
+                  Try adjusting the date range, amount range, or customer name
+                  search.
+                </p>
                 <Button
                   variant="outline"
-                  size="sm"
-                  disabled={page * pageSize >= total}
-                  onClick={() => setPage(page + 1)}
+                  className="mt-4"
+                  onClick={clearFilters}
                 >
-                  Next
+                  Clear filters
                 </Button>
               </div>
+            ) : (
+              <div className="py-16 flex flex-col items-center text-center">
+                <p className="text-lg font-medium">No payments recorded</p>
+                <p className="text-muted-foreground mt-2">
+                  Payments appear here once loans are active and payments are
+                  collected.
+                </p>
+              </div>
+            )
+          ) : (
+            <div className="transition-opacity">
+              <ResponsiveTable
+                columns={paymentColumns}
+                rows={rows}
+                getRowKey={(row) => row.id}
+                getRowProps={() => ({ "data-testid": "data-row" })}
+              />
+
+              {/* Pagination */}
+              {total > pageSize && (
+                <div className="flex items-center justify-between pt-4">
+                  <p className="text-sm text-muted-foreground">
+                    Showing{" "}
+                    <span className="font-mono tabular-nums">
+                      {start}&ndash;{end}
+                    </span>{" "}
+                    of <span className="font-mono tabular-nums">{total}</span>{" "}
+                    payments
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page === 1}
+                      onClick={() => setPage(page - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={page * pageSize >= total}
+                      onClick={() => setPage(page + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
-        </div>
-      )}
-
         </TabsContent>
 
         <TabsContent value="daily">
           <DailyCollectionsTab />
         </TabsContent>
-
       </Tabs>
 
       {/* Edit Payment Sheet */}
-      <DrawerDialog open={editOpen} onOpenChange={(v) => { if (!v) closeEdit() }}>
+      <DrawerDialog
+        open={editOpen}
+        onOpenChange={(v) => {
+          if (!v) closeEdit();
+        }}
+      >
         <DrawerDialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>Edit Payment</DialogTitle>
@@ -733,25 +819,37 @@ function PaymentsContent({
       </DrawerDialog>
 
       {/* Mark as Wrong Dialog */}
-      <DrawerDialog open={markWrongOpen} onOpenChange={(v) => { if (!v) closeMarkWrong() }}>
+      <DrawerDialog
+        open={markWrongOpen}
+        onOpenChange={(v) => {
+          if (!v) closeMarkWrong();
+        }}
+      >
         <DrawerDialogContent>
           <DialogHeader>
             <DialogTitle>
               <span className="inline-flex items-center gap-1.5">
                 Mark payment as wrong?
                 <InfoPopover>
-                  <p className="font-semibold text-sm mb-1">Mark as Wrong vs Delete</p>
+                  <p className="font-semibold text-sm mb-1">
+                    Mark as Wrong vs Delete
+                  </p>
                   <p className="text-xs text-muted-foreground mb-2">
-                    <strong>Mark as Wrong</strong> reverses this payment&apos;s ledger entries and flags it for review, but keeps the record visible for audit purposes. The loan balance is recalculated as if this payment never happened.
+                    <strong>Mark as Wrong</strong> reverses this payment&apos;s
+                    ledger entries and flags it for review, but keeps the record
+                    visible for audit purposes. The loan balance is recalculated
+                    as if this payment never happened.
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    <strong>Delete</strong> (Admin only) permanently removes the payment record entirely.
+                    <strong>Delete</strong> (Admin only) permanently removes the
+                    payment record entirely.
                   </p>
                 </InfoPopover>
               </span>
             </DialogTitle>
             <DialogDescription>
-              This reverses the payment&apos;s effect on the loan balance and flags it for review. The record is kept for audit purposes.
+              This reverses the payment&apos;s effect on the loan balance and
+              flags it for review. The record is kept for audit purposes.
             </DialogDescription>
           </DialogHeader>
           {markWrongTarget && (
@@ -759,7 +857,9 @@ function PaymentsContent({
               <CardContent className="p-3 text-sm space-y-1">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Customer</span>
-                  <span className="font-medium">{markWrongTarget.customerName}</span>
+                  <span className="font-medium">
+                    {markWrongTarget.customerName}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Amount</span>
@@ -798,7 +898,10 @@ function PaymentsContent({
       </DrawerDialog>
 
       {/* Quick Record Payment Dialog */}
-      <QuickRecordDialog open={quickRecordOpen} onOpenChange={(v) => v ? openQuickRecord() : closeQuickRecord()} />
+      <QuickRecordDialog
+        open={quickRecordOpen}
+        onOpenChange={(v) => (v ? openQuickRecord() : closeQuickRecord())}
+      />
     </div>
-  )
+  );
 }
