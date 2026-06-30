@@ -1,72 +1,104 @@
-import { Effect } from "effect"
-import { db } from "@/lib/db"
-import { loans } from "@/lib/db/schema/loans"
-import { collateral } from "@/lib/db/schema/collateral"
-import { payments } from "@/lib/db/schema/payments"
-import { getBaseRate } from "@/lib/interest/effective-rate"
-import { customers } from "@/lib/db/schema/customers"
-import { user } from "@/lib/db/schema/auth"
-import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { loanBalances } from "@/lib/db/schema/loan-balances"
-import { eq, desc, asc, and, isNull, inArray, sql } from "drizzle-orm"
-import { shortId, localDateString } from "@/lib/utils"
-import BigNumber from "bignumber.js"
+import { Effect } from "effect";
+import { db } from "@/lib/db";
+import { loans } from "@/lib/db/schema/loans";
+import { collateral } from "@/lib/db/schema/collateral";
+import { payments } from "@/lib/db/schema/payments";
+import { getBaseRate } from "@/lib/interest/effective-rate";
+import { customers } from "@/lib/db/schema/customers";
+import { user } from "@/lib/db/schema/auth";
+import { transactions } from "@/lib/db/schema/transactions";
+import { transactionCategories } from "@/lib/db/schema/transaction-categories";
+import { eq, desc, asc, and, isNull, inArray, sql } from "drizzle-orm";
+import { shortId, localDateString } from "@/lib/utils";
+import BigNumber from "bignumber.js";
 import {
   DatabaseError,
   CustomerNotFound,
   LoanNotFound,
   IncompleteLoanRequirements,
   ValidationError,
-} from "@/lib/errors"
-import { isUniqueConstraintError } from "@/lib/db-errors"
-import { writeAuditLog } from "./audit.service"
-import { postJournalEntry } from "./transaction.service"
-import { autoPostPrincipalDisbursement, autoPostRolloverPrincipalTransfer, autoPostInterestEarned, autoPostPrincipalRepayment } from "./auto-post.service"
-import { getPaymentPortionsFromLedger, getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./ledger-queries.service"
-import { allocatePayment, formatAmount } from "@/lib/interest/engine"
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
-import { daysBetween } from "@/lib/db/utils"
-import { toLoanType, type CreateLoanInput, type UpdateLoanInput, type DeleteLoanInput, type Loan, type LoanWithCustomer, type LoanListEntry, type LoanStatus } from "@/types"
+} from "@/lib/errors";
+import { isUniqueConstraintError } from "@/lib/db-errors";
+import { writeAuditLog } from "./audit.service";
+import { postJournalEntry } from "./transaction.service";
+import {
+  autoPostPrincipalDisbursement,
+  autoPostRolloverPrincipalTransfer,
+  autoPostInterestEarned,
+  autoPostPrincipalRepayment,
+} from "./auto-post.service";
+import {
+  getPaymentPortionsFromLedger,
+  getLoanBalancesFromLedger,
+  getInterestEarnedFromLedger,
+} from "./ledger-queries.service";
+import { allocatePayment, formatAmount } from "@/lib/interest/engine";
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
+import { daysBetween } from "@/lib/db/utils";
+import {
+  toLoanType,
+  type CreateLoanInput,
+  type UpdateLoanInput,
+  type DeleteLoanInput,
+  type Loan,
+  type LoanWithCustomer,
+  type LoanListEntry,
+  type LoanStatus,
+} from "@/types";
+import { getLastPaymentDate } from "./payment.service";
+import {
+  computeAllLoansBalanceData,
+  computeLoanBalanceData,
+  computeLoanBalanceDataArray,
+  computeSingleLoanBalanceData,
+} from "@/lib/interest/loanBalanceData";
 
 const checkCustomerCompleteness = (customer: {
-  fullName: string | null
-  contact: string | null
-  address: string | null
+  fullName: string | null;
+  contact: string | null;
+  address: string | null;
 }): string[] => {
-  const missing: string[] = []
-  if (!customer.fullName?.trim()) missing.push("fullName")
-  if (!customer.contact?.trim()) missing.push("contact")
-  if (!customer.address?.trim()) missing.push("address")
-  return missing
-}
+  const missing: string[] = [];
+  if (!customer.fullName?.trim()) missing.push("fullName");
+  if (!customer.contact?.trim()) missing.push("contact");
+  if (!customer.address?.trim()) missing.push("address");
+  return missing;
+};
 
 export const createLoan = (
   input: CreateLoanInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<
-  Loan & { collateral: { id: string; nature: string; description: string | null } },
-  CustomerNotFound | IncompleteLoanRequirements | ValidationError | DatabaseError
+  Loan & {
+    collateral: { id: string; nature: string; description: string | null };
+  },
+  | CustomerNotFound
+  | IncompleteLoanRequirements
+  | ValidationError
+  | DatabaseError
 > =>
   Effect.tryPromise({
     try: async () => {
       const [customer] = await db
         .select()
         .from(customers)
-        .where(eq(customers.id, input.customerId))
+        .where(eq(customers.id, input.customerId));
 
-      if (!customer) throw { _tag: "CustomerNotFound", id: input.customerId }
+      if (!customer) throw { _tag: "CustomerNotFound", id: input.customerId };
 
       if (customer.status === "blacklisted") {
-        throw new ValidationError({ message: "This customer is blacklisted and cannot receive new loans.", field: "customerId" })
+        throw new ValidationError({
+          message: "This customer is blacklisted and cannot receive new loans.",
+          field: "customerId",
+        });
       }
 
-      const missingFields = checkCustomerCompleteness(customer)
+      const missingFields = checkCustomerCompleteness(customer);
       if (missingFields.length > 0) {
-        throw { _tag: "IncompleteLoanRequirements", missing: missingFields }
+        throw { _tag: "IncompleteLoanRequirements", missing: missingFields };
       }
 
-      const startDate = new Date(input.startDate)
+      const startDate = new Date(input.startDate);
 
       return await db.transaction(async (tx) => {
         // Single active loan constraint — checked inside the transaction with
@@ -78,71 +110,75 @@ export const createLoan = (
             and(
               eq(loans.customerId, input.customerId),
               eq(loans.status, "active"),
-              isNull(loans.deletedAt)
-            )
+              isNull(loans.deletedAt),
+            ),
           )
-          .for('update')
+          .for("update");
 
         if (existingActiveLoan && !input.rollover) {
           throw new ValidationError({
-            message: "Customer already has an active loan. Use rollover to create a new loan.",
+            message:
+              "Customer already has an active loan. Use rollover to create a new loan.",
             field: "customerId",
-          })
+          });
         }
 
         if (input.rollover && !existingActiveLoan) {
           throw new ValidationError({
             message: "Rollover specified but customer has no active loan.",
             field: "customerId",
-          })
+          });
         }
 
-        if (input.rollover && existingActiveLoan && input.rollover.fromLoanId !== existingActiveLoan.id) {
+        if (
+          input.rollover &&
+          existingActiveLoan &&
+          input.rollover.fromLoanId !== existingActiveLoan.id
+        ) {
           throw new ValidationError({
             message: "Rollover loan ID does not match customer's active loan.",
             field: "customerId",
-          })
+          });
         }
 
         const loanValues = {
-            ...(input.id ? { id: input.id } : {}),
-            customerId: input.customerId,
-            principalAmount: input.rollover
-              ? new BigNumber(input.principalAmount)
-                  .plus(new BigNumber(input.rollover.carriedPrincipal))
-                  .plus(new BigNumber(input.rollover.carriedInterest))
-                  .toFixed(0)
-              : input.principalAmount,
-            issuanceFee: input.issuanceFee,
-            interestRate: input.interestRate,
-            minInterestDays: input.minInterestDays,
-            startDate,
-            status: "active" as const,
-            interestRateOverride: input.interestRateOverride ?? null,
-            minPeriodOverride: input.minPeriodOverride ?? null,
-            issuedBy: actorId,
-            disbursementSource: input.disbursementSource,
-            subLocationId: input.subLocationId ?? null,
-            loanType: input.loanType ?? "perpetual",
-            termMonths: input.termMonths ?? null,
-            rolledOverFrom: input.rollover?.fromLoanId ?? null,
-            rolloverAmount: input.rollover
-              ? new BigNumber(input.rollover.carriedPrincipal)
-                  .plus(new BigNumber(input.rollover.carriedInterest))
-                  .toFixed(0)
-              : null,
-            ...(input.backdateNote ? {
-              backdatedFrom: new Date(),
-              backdatedBy: actorId,
-              backdatedAt: new Date(),
-              backdateNote: input.backdateNote,
-            } : {}),
-          }
+          ...(input.id ? { id: input.id } : {}),
+          customerId: input.customerId,
+          principalAmount: input.rollover
+            ? new BigNumber(input.principalAmount)
+                .plus(new BigNumber(input.rollover.carriedPrincipal))
+                .plus(new BigNumber(input.rollover.carriedInterest))
+                .toFixed(0)
+            : input.principalAmount,
+          issuanceFee: input.issuanceFee,
+          interestRate: input.interestRate,
+          minInterestDays: input.minInterestDays,
+          startDate,
+          status: "active" as const,
+          interestRateOverride: input.interestRateOverride ?? null,
+          minPeriodOverride: input.minPeriodOverride ?? null,
+          issuedBy: actorId,
+          disbursementSource: input.disbursementSource,
+          subLocationId: input.subLocationId ?? null,
+          loanType: input.loanType ?? "perpetual",
+          termMonths: input.termMonths ?? null,
+          rolledOverFrom: input.rollover?.fromLoanId ?? null,
+          rolloverAmount: input.rollover
+            ? new BigNumber(input.rollover.carriedPrincipal)
+                .plus(new BigNumber(input.rollover.carriedInterest))
+                .toFixed(0)
+            : null,
+          ...(input.backdateNote
+            ? {
+                backdatedFrom: new Date(),
+                backdatedBy: actorId,
+                backdatedAt: new Date(),
+                backdateNote: input.backdateNote,
+              }
+            : {}),
+        };
 
-        const [loan] = await tx
-          .insert(loans)
-          .values(loanValues)
-          .returning()
+        const [loan] = await tx.insert(loans).values(loanValues).returning();
 
         const [coll] = await tx
           .insert(collateral)
@@ -151,7 +187,7 @@ export const createLoan = (
             nature: input.collateral.nature,
             description: input.collateral.description,
           })
-          .returning()
+          .returning();
 
         // Handle rollover: close old loan
         if (input.rollover && existingActiveLoan) {
@@ -167,7 +203,7 @@ export const createLoan = (
               transactionDate: startDate,
               recordedBy: actorId,
               loanId: loan.id,
-            })
+            });
           }
 
           // Transfer carried principal from old loan to new loan on the ledger
@@ -178,14 +214,14 @@ export const createLoan = (
               oldLoanId: existingActiveLoan.id,
               transactionDate: startDate,
               actorId,
-            })
+            });
           }
 
           // Close old loan
           await tx
             .update(loans)
             .set({ status: "rolled_over", updatedAt: new Date() })
-            .where(eq(loans.id, existingActiveLoan.id))
+            .where(eq(loans.id, existingActiveLoan.id));
 
           // Audit log for old loan
           await writeAuditLog(tx, {
@@ -200,7 +236,7 @@ export const createLoan = (
               carriedPrincipal: input.rollover.carriedPrincipal,
               carriedInterest: input.rollover.carriedInterest,
             },
-          })
+          });
         }
 
         await writeAuditLog(tx, {
@@ -220,7 +256,7 @@ export const createLoan = (
                 .toFixed(0),
             }),
           },
-        })
+        });
 
         // Auto-post issuance fee as income transaction (skip if zero)
         if (new BigNumber(input.issuanceFee).isGreaterThan(0)) {
@@ -236,14 +272,14 @@ export const createLoan = (
             debitDepositLocation: input.disbursementSource,
             debitSubLocationId: input.subLocationId,
             loanId: loan.id,
-          })
+          });
         }
 
         // Auto-post principal disbursement as balance_sheet debit
         // Only disburse the fresh cash amount — carried amounts are book transfers, not cash movements
         const freshDisbursementAmount = input.rollover
-          ? input.principalAmount  // fresh cash only (excludes carriedPrincipal + carriedInterest)
-          : loan.principalAmount
+          ? input.principalAmount // fresh cash only (excludes carriedPrincipal + carriedInterest)
+          : loan.principalAmount;
 
         // Validate funds are available at the chosen source / sub-location before
         // posting the disbursement. For "bank" with a sub-location, scope the
@@ -252,32 +288,42 @@ export const createLoan = (
           const balanceConds = [
             eq(transactionCategories.name, "Cash"),
             eq(transactions.depositLocation, input.disbursementSource),
-          ]
+          ];
           if (input.disbursementSource === "bank" && input.subLocationId) {
-            balanceConds.push(eq(transactions.subLocationId, input.subLocationId))
+            balanceConds.push(
+              eq(transactions.subLocationId, input.subLocationId),
+            );
           }
           const [balanceRow] = await tx
             .select({
               total: sql<string>`COALESCE(SUM(CASE WHEN ${transactions.type} = 'debit' THEN ${transactions.amount} ELSE -${transactions.amount} END), '0')`,
             })
             .from(transactions)
-            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
-            .where(and(...balanceConds))
+            .innerJoin(
+              transactionCategories,
+              eq(transactions.categoryId, transactionCategories.id),
+            )
+            .where(and(...balanceConds));
 
           // The just-posted issuance fee debit already increased this source's
           // balance, so subtract it back out to compare against pre-fee funds.
-          const issuanceFeeAtSource = new BigNumber(input.issuanceFee)
-          const available = new BigNumber(balanceRow?.total ?? "0").minus(issuanceFeeAtSource)
+          const issuanceFeeAtSource = new BigNumber(input.issuanceFee);
+          const available = new BigNumber(balanceRow?.total ?? "0").minus(
+            issuanceFeeAtSource,
+          );
 
           if (available.isLessThan(freshDisbursementAmount)) {
             const where =
               input.disbursementSource === "bank" && input.subLocationId
                 ? "this bank account"
-                : `the ${input.disbursementSource.replace("_", " ")} source`
+                : `the ${input.disbursementSource.replace("_", " ")} source`;
             throw new ValidationError({
               message: `Insufficient funds at ${where} to disburse this loan.`,
-              field: input.disbursementSource === "bank" && input.subLocationId ? "subLocationId" : "disbursementSource",
-            })
+              field:
+                input.disbursementSource === "bank" && input.subLocationId
+                  ? "subLocationId"
+                  : "disbursementSource",
+            });
           }
         }
 
@@ -288,38 +334,60 @@ export const createLoan = (
           actorId,
           depositLocation: input.disbursementSource,
           subLocationId: input.subLocationId,
-        })
+        });
 
-        return { ...loan, collateral: coll }
-      })
+        return { ...loan, collateral: coll };
+      });
     },
     catch: (e: unknown) => {
-      if (e instanceof ValidationError) return e
-      const err = e as { _tag?: string; message?: string; field?: string; id?: string; missing?: string[] }
-      if (err?._tag === "ValidationError") return new ValidationError({ message: err.message as string, field: err.field })
-      if (err?._tag === "CustomerNotFound") return new CustomerNotFound({ id: err.id as string })
+      if (e instanceof ValidationError) return e;
+      const err = e as {
+        _tag?: string;
+        message?: string;
+        field?: string;
+        id?: string;
+        missing?: string[];
+      };
+      if (err?._tag === "ValidationError")
+        return new ValidationError({
+          message: err.message as string,
+          field: err.field,
+        });
+      if (err?._tag === "CustomerNotFound")
+        return new CustomerNotFound({ id: err.id as string });
       if (err?._tag === "IncompleteLoanRequirements")
-        return new IncompleteLoanRequirements({ missing: err.missing as string[] })
-      return new DatabaseError({ cause: e })
+        return new IncompleteLoanRequirements({
+          missing: err.missing as string[],
+        });
+      return new DatabaseError({ cause: e });
     },
   }).pipe(
     Effect.catchIf(
-      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
-      () => createLoan({ ...input, id: undefined }, actorId)
-    )
-  )
+      (e) =>
+        e._tag === "DatabaseError" &&
+        !!input.id &&
+        isUniqueConstraintError(e.cause),
+      () => createLoan({ ...input, id: undefined }, actorId),
+    ),
+  );
 
 export const getLoan = (
-  id: string
+  id: string,
 ): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
-    try: () => db.select().from(loans).where(and(eq(loans.id, id), isNull(loans.deletedAt))),
+    try: () =>
+      db
+        .select()
+        .from(loans)
+        .where(and(eq(loans.id, id), isNull(loans.deletedAt))),
     catch: (e) => new DatabaseError({ cause: e }),
   }).pipe(
     Effect.flatMap((rows) =>
-      rows[0] ? Effect.succeed(rows[0] as Loan) : Effect.fail(new LoanNotFound({ id }))
-    )
-  )
+      rows[0]
+        ? Effect.succeed(rows[0] as Loan)
+        : Effect.fail(new LoanNotFound({ id })),
+    ),
+  );
 
 export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
   Effect.tryPromise({
@@ -361,46 +429,46 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
         .innerJoin(customers, eq(loans.customerId, customers.id))
         .where(isNull(loans.deletedAt))
         .orderBy(desc(loans.createdAt))
-        .limit(500)
-      return rows
+        .limit(500);
+      return rows;
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 export const updateLoan = (
   input: UpdateLoanInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [existingLoan] = await db
         .select()
         .from(loans)
-        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
+        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)));
 
-      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId };
 
       const setObj: Partial<typeof loans.$inferInsert> & { updatedAt: Date } = {
         updatedAt: new Date(),
-      }
+      };
       if (input.principalAmount !== undefined) {
-        setObj.principalAmount = input.principalAmount
+        setObj.principalAmount = input.principalAmount;
       }
       if (input.interestRate !== undefined) {
-        setObj.interestRate = input.interestRate
+        setObj.interestRate = input.interestRate;
       }
       if (input.startDate !== undefined) {
-        setObj.startDate = new Date(input.startDate)
+        setObj.startDate = new Date(input.startDate);
       }
       if (input.issuanceFee !== undefined) {
-        setObj.issuanceFee = input.issuanceFee
+        setObj.issuanceFee = input.issuanceFee;
       }
       return await db.transaction(async (tx) => {
         const [updatedLoan] = await tx
           .update(loans)
           .set(setObj)
           .where(eq(loans.id, input.loanId))
-          .returning()
+          .returning();
 
         await writeAuditLog(tx, {
           actorId,
@@ -409,9 +477,12 @@ export const updateLoan = (
           entityId: input.loanId,
           beforeValue: existingLoan,
           afterValue: { ...setObj, reason: input.reason },
-        })
+        });
 
-        if (input.issuanceFee !== undefined && input.issuanceFee !== existingLoan.issuanceFee) {
+        if (
+          input.issuanceFee !== undefined &&
+          input.issuanceFee !== existingLoan.issuanceFee
+        ) {
           // Find the old fee credit to get the journalGroupId and amount
           const [oldFeeTx] = await tx
             .select({
@@ -423,15 +494,18 @@ export const updateLoan = (
               journalGroupId: transactions.journalGroupId,
             })
             .from(transactions)
-            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+            .innerJoin(
+              transactionCategories,
+              eq(transactions.categoryId, transactionCategories.id),
+            )
             .where(
               and(
                 eq(transactions.referenceType, "loan"),
                 eq(transactions.referenceId, input.loanId),
                 eq(transactions.type, "credit"),
-                eq(transactionCategories.name, "Issuance Fees")
-              )
-            )
+                eq(transactionCategories.name, "Issuance Fees"),
+              ),
+            );
 
           if (oldFeeTx) {
             // Reverse old fee pair
@@ -447,7 +521,7 @@ export const updateLoan = (
               creditDepositLocation: oldFeeTx.depositLocation ?? undefined,
               creditSubLocationId: oldFeeTx.subLocationId ?? undefined,
               loanId: input.loanId,
-            })
+            });
           }
 
           // Post new fee pair (if non-zero)
@@ -464,12 +538,15 @@ export const updateLoan = (
               debitDepositLocation: existingLoan.disbursementSource,
               debitSubLocationId: existingLoan.subLocationId ?? undefined,
               loanId: input.loanId,
-            })
+            });
           }
         }
 
         // If principal changed, reverse old disbursement and post new one
-        if (input.principalAmount !== undefined && input.principalAmount !== existingLoan.principalAmount) {
+        if (
+          input.principalAmount !== undefined &&
+          input.principalAmount !== existingLoan.principalAmount
+        ) {
           const [oldDisbursement] = await tx
             .select()
             .from(transactions)
@@ -477,11 +554,11 @@ export const updateLoan = (
               and(
                 sql`${transactions.referenceType} IN ('loan', 'loan_repost')`,
                 eq(transactions.referenceId, input.loanId),
-                eq(transactions.type, "debit")
-              )
+                eq(transactions.type, "debit"),
+              ),
             )
             .orderBy(desc(transactions.createdAt))
-            .limit(1)
+            .limit(1);
 
           if (oldDisbursement) {
             await postJournalEntry(tx, {
@@ -493,10 +570,15 @@ export const updateLoan = (
               description: `Reversal - principal updated for loan ${shortId(input.loanId).toUpperCase()}`,
               transactionDate: oldDisbursement.transactionDate,
               recordedBy: actorId,
-              debitDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
-              debitSubLocationId: oldDisbursement.subLocationId ?? existingLoan.subLocationId ?? undefined,
+              debitDepositLocation:
+                oldDisbursement.depositLocation ??
+                existingLoan.disbursementSource,
+              debitSubLocationId:
+                oldDisbursement.subLocationId ??
+                existingLoan.subLocationId ??
+                undefined,
               loanId: input.loanId,
-            })
+            });
 
             await postJournalEntry(tx, {
               debitCategory: { name: "Loans Receivable", type: "asset" },
@@ -507,28 +589,42 @@ export const updateLoan = (
               description: `Principal disbursed - loan ${shortId(input.loanId).toUpperCase()} (updated)`,
               transactionDate: oldDisbursement.transactionDate,
               recordedBy: actorId,
-              creditDepositLocation: oldDisbursement.depositLocation ?? existingLoan.disbursementSource,
-              creditSubLocationId: oldDisbursement.subLocationId ?? existingLoan.subLocationId ?? undefined,
+              creditDepositLocation:
+                oldDisbursement.depositLocation ??
+                existingLoan.disbursementSource,
+              creditSubLocationId:
+                oldDisbursement.subLocationId ??
+                existingLoan.subLocationId ??
+                undefined,
               loanId: input.loanId,
-            })
+            });
           }
 
           // Recalculate all existing payments: reverse old journals, repost with new allocation
           const activePayments = await tx
             .select()
             .from(payments)
-            .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-            .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+            .where(
+              and(
+                eq(payments.loanId, input.loanId),
+                isNull(payments.deletedAt),
+                eq(payments.markedWrong, false),
+              ),
+            )
+            .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
 
           if (activePayments.length > 0) {
             // Fetch all payment portions from ledger
-            const paymentIds = activePayments.map((p) => p.id)
-            const oldPortions = await getPaymentPortionsFromLedger(paymentIds, tx)
+            const paymentIds = activePayments.map((p) => p.id);
+            const oldPortions = await getPaymentPortionsFromLedger(
+              paymentIds,
+              tx,
+            );
 
             // Reverse all payment journals
             for (const p of activePayments) {
-              const portion = oldPortions.get(p.id)
-              if (!portion) continue
+              const portion = oldPortions.get(p.id);
+              if (!portion) continue;
 
               if (new BigNumber(portion.interestPortion).isGreaterThan(0)) {
                 await postJournalEntry(tx, {
@@ -543,7 +639,7 @@ export const updateLoan = (
                   creditDepositLocation: p.depositLocation ?? undefined,
                   creditSubLocationId: p.subLocationId ?? undefined,
                   loanId: input.loanId,
-                })
+                });
               }
 
               if (new BigNumber(portion.principalPortion).isGreaterThan(0)) {
@@ -559,22 +655,27 @@ export const updateLoan = (
                   creditDepositLocation: p.depositLocation ?? undefined,
                   creditSubLocationId: p.subLocationId ?? undefined,
                   loanId: input.loanId,
-                })
+                });
               }
             }
 
             // Repost with new allocations based on updated principal
-            const loanType = updatedLoan.loanType ?? "perpetual"
-            const monthlyRateDecimal = getBaseRate(updatedLoan)
-            const minInterestDays = updatedLoan.minPeriodOverride ?? updatedLoan.minInterestDays
-            let runningBalance = new BigNumber(input.principalAmount)
+            const loanType = updatedLoan.loanType ?? "perpetual";
+            const monthlyRateDecimal = getBaseRate(updatedLoan);
+            const minInterestDays =
+              updatedLoan.minPeriodOverride ?? updatedLoan.minInterestDays;
+            let runningBalance = new BigNumber(input.principalAmount);
 
             for (let i = 0; i < activePayments.length; i++) {
-              const p = activePayments[i]
-              const prevDate = i === 0
-                ? new Date(updatedLoan.startDate)
-                : new Date(activePayments[i - 1].paymentDate)
-              const daysElapsed = daysBetween(prevDate, new Date(p.paymentDate))
+              const p = activePayments[i];
+              const prevDate =
+                i === 0
+                  ? new Date(updatedLoan.startDate)
+                  : new Date(activePayments[i - 1].paymentDate);
+              const daysElapsed = daysBetween(
+                prevDate,
+                new Date(p.paymentDate),
+              );
 
               const allocation = allocatePayment({
                 paymentAmount: p.amount,
@@ -586,7 +687,7 @@ export const updateLoan = (
                 originalPrincipal: input.principalAmount,
                 termMonths: updatedLoan.termMonths ?? undefined,
                 paymentNumber: i + 1,
-              })
+              });
 
               if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
                 await autoPostInterestEarned(tx, {
@@ -596,7 +697,7 @@ export const updateLoan = (
                   paymentDate: p.paymentDate.toISOString(),
                   actorId,
                   depositLocation: p.depositLocation ?? undefined,
-                })
+                });
               }
 
               if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
@@ -607,38 +708,41 @@ export const updateLoan = (
                   paymentDate: p.paymentDate.toISOString(),
                   actorId,
                   depositLocation: p.depositLocation ?? undefined,
-                })
+                });
               }
 
-              runningBalance = runningBalance.minus(new BigNumber(allocation.principalPortion))
+              runningBalance = runningBalance.minus(
+                new BigNumber(allocation.principalPortion),
+              );
             }
           }
         }
 
-        return updatedLoan as Loan
-      })
+        return updatedLoan as Loan;
+      });
     },
     catch: (e: unknown) => {
-      const err = e as { _tag?: string; id?: string }
-      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
-      return new DatabaseError({ cause: e })
+      const err = e as { _tag?: string; id?: string };
+      if (err?._tag === "LoanNotFound")
+        return new LoanNotFound({ id: err.id as string });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 export const deleteLoan = (
   input: DeleteLoanInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [existingLoan] = await db
         .select()
         .from(loans)
-        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
+        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)));
 
-      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId };
 
-      const now = new Date()
+      const now = new Date();
 
       return await db.transaction(async (tx) => {
         await writeAuditLog(tx, {
@@ -648,18 +752,27 @@ export const deleteLoan = (
           entityId: input.loanId,
           beforeValue: existingLoan,
           afterValue: { reason: input.reason },
-        })
+        });
 
         // Collect active payments BEFORE soft-deleting them
         const activePaymentIds = await tx
           .select()
           .from(payments)
-          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+          .where(
+            and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)),
+          );
 
         await tx
           .update(payments)
-          .set({ deletedAt: now, deletedBy: actorId, deleteReason: input.reason, updatedAt: now })
-          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)))
+          .set({
+            deletedAt: now,
+            deletedBy: actorId,
+            deleteReason: input.reason,
+            updatedAt: now,
+          })
+          .where(
+            and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt)),
+          );
 
         // Reverse issuance fee transaction (credit type distinguishes it from disbursement debit)
         const [feeTx] = await tx
@@ -669,9 +782,9 @@ export const deleteLoan = (
             and(
               eq(transactions.referenceType, "loan"),
               eq(transactions.referenceId, input.loanId),
-              eq(transactions.type, "credit")
-            )
-          )
+              eq(transactions.type, "credit"),
+            ),
+          );
 
         if (feeTx) {
           await postJournalEntry(tx, {
@@ -686,7 +799,7 @@ export const deleteLoan = (
             creditDepositLocation: feeTx.depositLocation ?? undefined,
             creditSubLocationId: feeTx.subLocationId ?? undefined,
             loanId: input.loanId,
-          })
+          });
         }
 
         // Reverse principal disbursement.
@@ -701,17 +814,20 @@ export const deleteLoan = (
             subLocationId: transactions.subLocationId,
           })
           .from(transactions)
-          .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+          .innerJoin(
+            transactionCategories,
+            eq(transactions.categoryId, transactionCategories.id),
+          )
           .where(
             and(
               sql`${transactions.referenceType} IN ('loan', 'loan_repost')`,
               eq(transactions.referenceId, input.loanId),
               eq(transactions.type, "debit"),
-              eq(transactionCategories.name, "Loans Receivable")
-            )
+              eq(transactionCategories.name, "Loans Receivable"),
+            ),
           )
           .orderBy(desc(transactions.createdAt))
-          .limit(1)
+          .limit(1);
 
         if (disbursementTx) {
           await postJournalEntry(tx, {
@@ -726,19 +842,23 @@ export const deleteLoan = (
             debitDepositLocation: disbursementTx.depositLocation ?? undefined,
             debitSubLocationId: disbursementTx.subLocationId ?? undefined,
             loanId: input.loanId,
-          })
+          });
         }
 
         // Reverse interest/principal transactions for payments that were active at deletion time
         // (already-deleted payments had their journals reversed when they were individually deleted)
-        const loanPayments = activePaymentIds
-        const paymentPortions = loanPayments.length > 0
-          ? await getPaymentPortionsFromLedger(loanPayments.map((p) => p.id), tx)
-          : new Map()
+        const loanPayments = activePaymentIds;
+        const paymentPortions =
+          loanPayments.length > 0
+            ? await getPaymentPortionsFromLedger(
+                loanPayments.map((p) => p.id),
+                tx,
+              )
+            : new Map();
 
         for (const p of loanPayments) {
-          const portion = paymentPortions.get(p.id)
-          if (!portion) continue
+          const portion = paymentPortions.get(p.id);
+          if (!portion) continue;
 
           if (new BigNumber(portion.interestPortion).isGreaterThan(0)) {
             await postJournalEntry(tx, {
@@ -753,40 +873,46 @@ export const deleteLoan = (
               creditDepositLocation: p.depositLocation ?? undefined,
               creditSubLocationId: p.subLocationId ?? undefined,
               loanId: input.loanId,
-            })
+            });
           }
 
-            if (new BigNumber(portion.principalPortion).isGreaterThan(0)) {
-              await postJournalEntry(tx, {
-                debitCategory: { name: "Loans Receivable", type: "asset" },
-                creditCategory: { name: "Cash", type: "asset" },
-                amount: portion.principalPortion,
-                referenceType: "payment_reversal",
-                referenceId: p.id,
-                description: `Reversal - principal repayment for loan ${shortId(input.loanId).toUpperCase()} deleted: ${input.reason}`,
-                transactionDate: new Date(p.paymentDate),
-                recordedBy: actorId,
-                creditDepositLocation: p.depositLocation ?? undefined,
-                creditSubLocationId: p.subLocationId ?? undefined,
-                loanId: input.loanId,
-              })
-            }
+          if (new BigNumber(portion.principalPortion).isGreaterThan(0)) {
+            await postJournalEntry(tx, {
+              debitCategory: { name: "Loans Receivable", type: "asset" },
+              creditCategory: { name: "Cash", type: "asset" },
+              amount: portion.principalPortion,
+              referenceType: "payment_reversal",
+              referenceId: p.id,
+              description: `Reversal - principal repayment for loan ${shortId(input.loanId).toUpperCase()} deleted: ${input.reason}`,
+              transactionDate: new Date(p.paymentDate),
+              recordedBy: actorId,
+              creditDepositLocation: p.depositLocation ?? undefined,
+              creditSubLocationId: p.subLocationId ?? undefined,
+              loanId: input.loanId,
+            });
+          }
         }
 
         // Reverse rollover ledger entries (carried principal + carried interest debits on Loans Receivable)
         if (existingLoan.rolledOverFrom) {
           const rolloverDebits = await tx
-            .select({ amount: transactions.amount, transactionDate: transactions.transactionDate })
+            .select({
+              amount: transactions.amount,
+              transactionDate: transactions.transactionDate,
+            })
             .from(transactions)
-            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+            .innerJoin(
+              transactionCategories,
+              eq(transactions.categoryId, transactionCategories.id),
+            )
             .where(
               and(
                 eq(transactions.referenceType, "rollover"),
                 eq(transactions.loanId, input.loanId),
                 eq(transactions.type, "debit"),
-                eq(transactionCategories.name, "Loans Receivable")
-              )
-            )
+                eq(transactionCategories.name, "Loans Receivable"),
+              ),
+            );
 
           for (const entry of rolloverDebits) {
             await postJournalEntry(tx, {
@@ -799,22 +925,28 @@ export const deleteLoan = (
               transactionDate: entry.transactionDate,
               recordedBy: actorId,
               loanId: input.loanId,
-            })
+            });
           }
 
           // Also reverse the Interest Earned credit posted for carried interest
           const rolloverInterestCredits = await tx
-            .select({ amount: transactions.amount, transactionDate: transactions.transactionDate })
+            .select({
+              amount: transactions.amount,
+              transactionDate: transactions.transactionDate,
+            })
             .from(transactions)
-            .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+            .innerJoin(
+              transactionCategories,
+              eq(transactions.categoryId, transactionCategories.id),
+            )
             .where(
               and(
                 eq(transactions.referenceType, "rollover"),
                 eq(transactions.loanId, input.loanId),
                 eq(transactions.type, "credit"),
-                eq(transactionCategories.name, "Interest Earned")
-              )
-            )
+                eq(transactionCategories.name, "Interest Earned"),
+              ),
+            );
 
           for (const entry of rolloverInterestCredits) {
             await postJournalEntry(tx, {
@@ -827,37 +959,37 @@ export const deleteLoan = (
               transactionDate: entry.transactionDate,
               recordedBy: actorId,
               loanId: input.loanId,
-            })
+            });
           }
         }
 
         await tx
           .update(loans)
           .set({ deletedAt: now, updatedAt: now })
-          .where(eq(loans.id, input.loanId))
+          .where(eq(loans.id, input.loanId));
 
-        return existingLoan as Loan
-      })
+        return existingLoan as Loan;
+      });
     },
     catch: (e: unknown) => {
-      const err = e as { _tag?: string; id?: string }
-      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
-      return new DatabaseError({ cause: e })
+      const err = e as { _tag?: string; id?: string };
+      if (err?._tag === "LoanNotFound")
+        return new LoanNotFound({ id: err.id as string });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * List all loan_balances projection rows. Used by the query-backed
  * loanBalanceCollection after migrating from Electric.
  */
-export const listLoanBalances = (): Effect.Effect<
-  (typeof loanBalances.$inferSelect)[],
-  DatabaseError
-> =>
+export const listLoanBalances = () =>
   Effect.tryPromise({
-    try: () => db.select().from(loanBalances),
+    try: async () => {
+      return await computeAllLoansBalanceData();
+    },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 // ---------------------------------------------------------------------------
 // Read helpers extracted from loan.actions.ts (data access only — no auth).
@@ -870,20 +1002,22 @@ export async function getCollateralNatures(): Promise<string[]> {
   const rows = await db
     .selectDistinct({ nature: collateral.nature })
     .from(collateral)
-    .orderBy(collateral.nature)
-  return rows.map((r) => r.nature)
+    .orderBy(collateral.nature);
+  return rows.map((r) => r.nature);
 }
 
 export interface LoanPaymentContext {
-  loanId: string
-  customerId: string
-  customerName: string
-  loanReference: string
-  startDate: string
+  loanId: string;
+  customerId: string;
+  customerName: string;
+  loanReference: string;
+  startDate: string;
 }
 
 /** Loan + customer context for the payment-recording screen. null when not found. */
-export async function getLoanPaymentContext(loanId: string): Promise<LoanPaymentContext | null> {
+export async function getLoanPaymentContext(
+  loanId: string,
+): Promise<LoanPaymentContext | null> {
   const [row] = await db
     .select({
       id: loans.id,
@@ -893,9 +1027,9 @@ export async function getLoanPaymentContext(loanId: string): Promise<LoanPayment
     })
     .from(loans)
     .innerJoin(customers, eq(loans.customerId, customers.id))
-    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
 
-  if (!row) return null
+  if (!row) return null;
 
   return {
     loanId: row.id,
@@ -903,50 +1037,59 @@ export async function getLoanPaymentContext(loanId: string): Promise<LoanPayment
     customerName: row.customerName,
     loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
     startDate: localDateString(row.startDate),
-  }
+  };
 }
 
 /** Collateral record for a loan, or null. */
 export async function getLoanCollateral(
-  loanId: string
+  loanId: string,
 ): Promise<{ nature: string; description: string | null } | null> {
   const [record] = await db
     .select({ nature: collateral.nature, description: collateral.description })
     .from(collateral)
-    .where(eq(collateral.loanId, loanId))
-  return record ?? null
+    .where(eq(collateral.loanId, loanId));
+  return record ?? null;
 }
 
 /** Assembled receipt payload for a disbursed loan. */
 export interface LoanReceiptData {
-  receiptNumber: string
-  date: string
-  customerName: string
-  customerNin?: string
-  customerPhone?: string
-  loanAmount: string
-  issuanceFee: string
-  interestRate: string
-  collateralNature: string
-  disbursementSource: string
-  officerName: string
-  rolloverAmount?: string
-  totalNewPrincipal?: string
+  receiptNumber: string;
+  date: string;
+  customerName: string;
+  customerNin?: string;
+  customerPhone?: string;
+  loanAmount: string;
+  issuanceFee: string;
+  interestRate: string;
+  collateralNature: string;
+  disbursementSource: string;
+  officerName: string;
+  rolloverAmount?: string;
+  totalNewPrincipal?: string;
 }
 
 /** Assembled receipt payload for a loan, or null when the loan is not found. */
-export async function getLoanReceiptData(loanId: string): Promise<LoanReceiptData | null> {
-  const [loan] = await db.select().from(loans).where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
-  if (!loan) return null
+export async function getLoanReceiptData(
+  loanId: string,
+): Promise<LoanReceiptData | null> {
+  const [loan] = await db
+    .select()
+    .from(loans)
+    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
+  if (!loan) return null;
 
   const [[customer], [collateralRecord], [issuingUser]] = await Promise.all([
     db.select().from(customers).where(eq(customers.id, loan.customerId)),
     db.select().from(collateral).where(eq(collateral.loanId, loanId)),
     db.select().from(user).where(eq(user.id, loan.issuedBy)),
-  ])
+  ]);
 
-  const rate = new BigNumber(loan.interestRateOverride ?? loan.interestRate).multipliedBy(100)
-  const isRollover = !!loan.rolloverAmount && new BigNumber(loan.rolloverAmount).isGreaterThan(0)
+  const rate = new BigNumber(
+    loan.interestRateOverride ?? loan.interestRate,
+  ).multipliedBy(100);
+  const isRollover =
+    !!loan.rolloverAmount &&
+    new BigNumber(loan.rolloverAmount).isGreaterThan(0);
   return {
     receiptNumber: `LOAN-${shortId(loanId).toUpperCase()}`,
     date: loan.startDate.toISOString(),
@@ -954,7 +1097,9 @@ export async function getLoanReceiptData(loanId: string): Promise<LoanReceiptDat
     customerNin: customer?.nin ?? undefined,
     customerPhone: customer?.contact ?? undefined,
     loanAmount: isRollover
-      ? new BigNumber(loan.principalAmount).minus(new BigNumber(loan.rolloverAmount!)).toFixed(0)
+      ? new BigNumber(loan.principalAmount)
+          .minus(new BigNumber(loan.rolloverAmount!))
+          .toFixed(0)
       : loan.principalAmount,
     issuanceFee: loan.issuanceFee,
     interestRate: `${rate.toFixed(rate.mod(1).isZero() ? 0 : 1)}%`,
@@ -962,95 +1107,112 @@ export async function getLoanReceiptData(loanId: string): Promise<LoanReceiptDat
     disbursementSource: loan.disbursementSource,
     officerName: issuingUser?.name ?? "Officer",
     ...(isRollover
-      ? { rolloverAmount: loan.rolloverAmount!, totalNewPrincipal: loan.principalAmount }
+      ? {
+          rolloverAmount: loan.rolloverAmount!,
+          totalNewPrincipal: loan.principalAmount,
+        }
       : {}),
-  }
+  };
 }
 
 /** Resolve an array of user IDs to a { [id]: name } map. */
-export async function resolveUserNames(userIds: string[]): Promise<Record<string, string>> {
-  if (userIds.length === 0) return {}
-  const unique = [...new Set(userIds)]
+export async function resolveUserNames(
+  userIds: string[],
+): Promise<Record<string, string>> {
+  if (userIds.length === 0) return {};
+  const unique = [...new Set(userIds)];
   const rows = await db
     .select({ id: user.id, name: user.name })
     .from(user)
-    .where(inArray(user.id, unique))
-  const map: Record<string, string> = {}
-  for (const r of rows) map[r.id] = r.name
-  return map
+    .where(inArray(user.id, unique));
+  const map: Record<string, string> = {};
+  for (const r of rows) map[r.id] = r.name;
+  return map;
 }
 
 /**
  * Enrich loans with overdue/balance projections from the ledger + payments.
  * Batch-fetches payments and ledger aggregates in parallel.
  */
-export async function computeOverdue(loanList: LoanWithCustomer[]): Promise<LoanListEntry[]> {
-  const loanIds = loanList.map((l) => l.id)
-  const paymentsPromise = loanIds.length > 0
-    ? db
-        .select()
-        .from(payments)
-        .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-        .orderBy(asc(payments.paymentDate))
-    : Promise.resolve([])
+export async function computeOverdue(
+  loanList: LoanWithCustomer[],
+): Promise<LoanListEntry[]> {
+  const loanIds = loanList.map((l) => l.id);
+  const paymentsPromise =
+    loanIds.length > 0
+      ? db
+          .select()
+          .from(payments)
+          .where(
+            and(
+              inArray(payments.loanId, loanIds),
+              isNull(payments.deletedAt),
+              eq(payments.markedWrong, false),
+            ),
+          )
+          .orderBy(asc(payments.paymentDate))
+      : Promise.resolve([]);
   const [allPayments, ledgerBalances, interestEarnedMap] = await Promise.all([
     paymentsPromise,
     getLoanBalancesFromLedger(loanIds),
     getInterestEarnedFromLedger(loanIds),
-  ])
+  ]);
 
-  const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>()
+  const paymentsByLoanId = new Map<string, (typeof allPayments)[number][]>();
   for (const p of allPayments) {
-    const existing = paymentsByLoanId.get(p.loanId) ?? []
-    existing.push(p)
-    paymentsByLoanId.set(p.loanId, existing)
+    const existing = paymentsByLoanId.get(p.loanId) ?? [];
+    existing.push(p);
+    paymentsByLoanId.set(p.loanId, existing);
   }
-
+  const balanceInfo = await computeLoanBalanceData(loanIds, new Date());
+  // const info = await computeSingleLoanBalanceData(loan.id, new Date())
   return loanList.map((loan) => {
-    let daysOverdue = 0
-    let dailyRate = "0"
-    let unpaidInterest = "0"
+    let daysOverdue = 0;
+    let dailyRate = "0";
+    let unpaidInterest = "0";
 
-    const loanPayments = paymentsByLoanId.get(loan.id) ?? []
+    const loanPayments = paymentsByLoanId.get(loan.id) ?? [];
 
-    const ledgerBalance = ledgerBalances.get(loan.id)
+    const ledgerBalance = ledgerBalances.get(loan.id);
     if (ledgerBalance === undefined) {
-      console.warn(`[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+      console.warn(
+        `[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
+      );
     }
-    const outstandingBalance = ledgerBalance !== undefined
-      ? ledgerBalance.toFixed(0)
-      : loan.principalAmount
+    const outstandingBalance =
+      ledgerBalance !== undefined
+        ? ledgerBalance.toFixed(0)
+        : loan.principalAmount;
 
-    const lastPayment = loanPayments.at(-1)
-    const lastPaymentDate: Date | null = lastPayment ? lastPayment.paymentDate : null
+    const lastPayment = loanPayments.at(-1);
+    const lastPaymentDate: Date | null = lastPayment
+      ? lastPayment.paymentDate
+      : null;
 
     if (loan.status === "active") {
-      const baseRate = getBaseRate(loan)
-      const balanceForCalc = outstandingBalance
-
-      const info = computeLoanOverdueInfo({
-        principalAmount: loan.principalAmount,
-        baseRate,
-        startDate: new Date(loan.startDate),
-        loanType: toLoanType(loan.loanType),
-        termMonths: loan.termMonths,
-        totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
-        paymentCount: loanPayments.length,
-        outstandingBalance: balanceForCalc,
-        penaltyWaived: loan.penaltyWaived,
-        loan,
-      })
-      daysOverdue = info.daysOverdue
-      dailyRate = info.dailyRate
-      unpaidInterest = info.unpaidInterest
+      const info = balanceInfo.get(loan.id);
+      if (info) {
+        daysOverdue = info.daysOverdue;
+        dailyRate = info.dailyRate;
+        unpaidInterest = info.unpaidInterest;
+      }
     }
 
-    return { ...loan, daysOverdue, outstandingBalance, dailyRate, lastPaymentDate, unpaidInterest }
-  })
+    return {
+      ...loan,
+      daysOverdue,
+      outstandingBalance,
+      dailyRate,
+      lastPaymentDate,
+      unpaidInterest,
+    };
+  });
 }
 
 /** All non-deleted loans for a customer, enriched with overdue info, newest first. */
-export async function getCustomerLoansWithOverdue(customerId: string): Promise<LoanListEntry[]> {
+export async function getCustomerLoansWithOverdue(
+  customerId: string,
+): Promise<LoanListEntry[]> {
   const customerLoans = await db
     .select({
       id: loans.id,
@@ -1087,17 +1249,19 @@ export async function getCustomerLoansWithOverdue(customerId: string): Promise<L
     .from(loans)
     .innerJoin(customers, eq(loans.customerId, customers.id))
     .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
-    .orderBy(desc(loans.createdAt))
-  return computeOverdue(customerLoans)
+    .orderBy(desc(loans.createdAt));
+  return computeOverdue(customerLoans);
 }
 
 /** Count of non-deleted loans grouped by status. */
-export async function getLoanStatusCounts(): Promise<Record<LoanStatus, number>> {
+export async function getLoanStatusCounts(): Promise<
+  Record<LoanStatus, number>
+> {
   const rows = await db
     .select({ status: loans.status, count: sql<number>`count(*)::int` })
     .from(loans)
     .where(isNull(loans.deletedAt))
-    .groupBy(loans.status)
+    .groupBy(loans.status);
 
   const counts: Record<LoanStatus, number> = {
     pending: 0,
@@ -1105,37 +1269,46 @@ export async function getLoanStatusCounts(): Promise<Record<LoanStatus, number>>
     fully_paid: 0,
     settled_with_collateral: 0,
     rolled_over: 0,
-  }
+  };
   for (const row of rows) {
-    counts[row.status as LoanStatus] = row.count
+    counts[row.status as LoanStatus] = row.count;
   }
-  return counts
+  return counts;
 }
 
 /** Active loans enriched with overdue info. */
 export async function listActiveLoansWithOverdue(): Promise<LoanListEntry[]> {
-  const allLoans = await Effect.runPromise(listLoans())
-  const activeLoans = allLoans.filter((l) => l.status === "active")
-  return computeOverdue(activeLoans)
+  const allLoans = await Effect.runPromise(listLoans());
+  const activeLoans = allLoans.filter((l) => l.status === "active");
+  return computeOverdue(activeLoans);
 }
 
-export type LoanExportFilter = "all" | "critical" | "at-risk" | "early" | undefined
+export type LoanExportFilter =
+  | "all"
+  | "critical"
+  | "at-risk"
+  | "early"
+  | undefined;
 
 /** Loan entries for Excel export, with optional overdue-bucket filter applied. */
-export async function getLoansForExport(filter: LoanExportFilter): Promise<LoanListEntry[]> {
-  const allLoans = await Effect.runPromise(listLoans())
-  let entries = await computeOverdue(allLoans)
+export async function getLoansForExport(
+  filter: LoanExportFilter,
+): Promise<LoanListEntry[]> {
+  const allLoans = await Effect.runPromise(listLoans());
+  let entries = await computeOverdue(allLoans);
 
   if (filter && filter !== "all") {
     entries = entries.filter((entry) => {
-      if (entry.daysOverdue < 0) return false
-      if (filter === "critical") return entry.daysOverdue >= 30
-      if (filter === "at-risk") return entry.daysOverdue >= 25 && entry.daysOverdue < 30
-      if (filter === "early") return entry.daysOverdue >= 0 && entry.daysOverdue < 25
-      return true
-    })
+      if (entry.daysOverdue < 0) return false;
+      if (filter === "critical") return entry.daysOverdue >= 30;
+      if (filter === "at-risk")
+        return entry.daysOverdue >= 25 && entry.daysOverdue < 30;
+      if (filter === "early")
+        return entry.daysOverdue >= 0 && entry.daysOverdue < 25;
+      return true;
+    });
   }
-  return entries
+  return entries;
 }
 
 /**
@@ -1144,26 +1317,34 @@ export async function getLoansForExport(filter: LoanExportFilter): Promise<LoanL
  */
 export async function waivePenalty(
   loanId: string,
-  actorId: string
+  actorId: string,
 ): Promise<{ data: Loan; txid: number } | { notFound: true }> {
   return db.transaction(async (tx) => {
     const [loan] = await tx
       .select({ id: loans.id })
       .from(loans)
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
 
-    if (!loan) return { notFound: true as const }
+    if (!loan) return { notFound: true as const };
 
     const [updated] = await tx
       .update(loans)
-      .set({ penaltyWaived: true, penaltyWaivedBy: actorId, penaltyWaivedAt: new Date() })
+      .set({
+        penaltyWaived: true,
+        penaltyWaivedBy: actorId,
+        penaltyWaivedAt: new Date(),
+      })
       .where(eq(loans.id, loanId))
-      .returning()
+      .returning();
 
-    const txidRows = await tx.execute<{ txid: string }>(sql`SELECT pg_current_xact_id()::text as txid`)
-    const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
-    return { data: updated as Loan, txid }
-  })
+    const txidRows = await tx.execute<{ txid: string }>(
+      sql`SELECT pg_current_xact_id()::text as txid`,
+    );
+    const txid = Number(
+      (txidRows as unknown as Array<{ txid: string }>)[0].txid,
+    );
+    return { data: updated as Loan, txid };
+  });
 }
 
 /**
@@ -1173,24 +1354,28 @@ export async function waivePenalty(
  */
 export async function adjustPenaltyMultiplier(
   loanId: string,
-  value: number
+  value: number,
 ): Promise<{ data: Loan; txid: number } | { notFound: true }> {
   return db.transaction(async (tx) => {
     const [loan] = await tx
       .select({ id: loans.id })
       .from(loans)
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
 
-    if (!loan) return { notFound: true as const }
+    if (!loan) return { notFound: true as const };
 
     const [updated] = await tx
       .update(loans)
       .set({ penaltyMultiplier: value.toFixed(4) })
       .where(eq(loans.id, loanId))
-      .returning()
+      .returning();
 
-    const txidRows = await tx.execute<{ txid: string }>(sql`SELECT pg_current_xact_id()::text as txid`)
-    const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid)
-    return { data: updated as Loan, txid }
-  })
+    const txidRows = await tx.execute<{ txid: string }>(
+      sql`SELECT pg_current_xact_id()::text as txid`,
+    );
+    const txid = Number(
+      (txidRows as unknown as Array<{ txid: string }>)[0].txid,
+    );
+    return { data: updated as Loan, txid };
+  });
 }

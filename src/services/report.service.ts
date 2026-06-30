@@ -24,6 +24,8 @@ import BigNumber from "bignumber.js"
 import { getLoanBalancesFromLedger, getInterestEarnedFromLedger } from "./ledger-queries.service"
 import { periodBoundsUTC, asOfDateUTC } from "@/lib/date-utils"
 import { toLoanType, type PnlData, type BalanceSheetData, type PortfolioEntry, type RetainedEarningsData, type CashflowData, type CashflowMonth } from "@/types"
+import { getLastPaymentDate } from "./payment.service"
+import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData"
 
 export const getPnlData = (
   period: string
@@ -473,18 +475,7 @@ export const getPortfolioData = (): Effect.Effect<
       const loanIds = activeLoans.map((l) => l.loan.id)
       const ledgerBalances = await getLoanBalancesFromLedger(loanIds)
 
-      // Batch-fetch interest earned from ledger
-      const interestEarnedMap = await getInterestEarnedFromLedger(loanIds)
 
-      // Batch-fetch payment counts per loan
-      const paymentCountRows = loanIds.length > 0
-        ? await db
-            .select({ loanId: payments.loanId, count: count() })
-            .from(payments)
-            .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-            .groupBy(payments.loanId)
-        : []
-      const paymentCountMap = new Map(paymentCountRows.map((r) => [r.loanId, Number(r.count)]))
 
       for (const { loan, customerName } of activeLoans) {
 
@@ -496,22 +487,8 @@ export const getPortfolioData = (): Effect.Effect<
         const outstandingBalance = ledgerBalance
           ?? new BigNumber(loan.principalAmount)
 
-        const baseRate = getBaseRate(loan)
-        const loanType = toLoanType(loan.loanType)
-
-        // Use computeLoanOverdueInfo for consistent overdue calculation
-        const info = computeLoanOverdueInfo({
-          principalAmount: loan.principalAmount,
-          baseRate,
-          startDate: new Date(loan.startDate),
-          loanType,
-          termMonths: loan.termMonths,
-          totalInterestPaid: formatAmount(interestEarnedMap.get(loan.id) ?? new BigNumber(0)),
-          paymentCount: paymentCountMap.get(loan.id) ?? 0,
-          outstandingBalance: formatAmount(outstandingBalance),
-          penaltyWaived: loan.penaltyWaived,
-          loan,
-        })
+  
+        const info = await computeSingleLoanBalanceData(loan.id, new Date())
 
         results.push({
           loanId: loan.id,

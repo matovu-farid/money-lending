@@ -1,12 +1,10 @@
-"use server"
+"use server";
 
-import { withAction } from "@/lib/with-action"
-import { checkPermission } from "@/lib/action-utils"
-import type { TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
-import { buildReceipt, type ReceiptInput } from "@/services/receipt.service"
-import type { Permission } from "@/types"
-
-export type { ReceiptInput }
+import { withAction } from "@/lib/with-action";
+import { checkPermission } from "@/lib/action-utils";
+import type { TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction";
+import { buildReceipt, type ReceiptInput } from "@/services/receipt.service";
+import type { Permission } from "@/types";
 
 /**
  * Per-kind permission gate. Mirrors the entity-level access policy:
@@ -21,7 +19,7 @@ const KIND_PERMISSIONS = {
   creditor_repayment: "creditor:read",
   fund_transfer: "fund-transfer:read",
   collateral_settlement: "loan:read",
-} as const satisfies Record<ReceiptInput["kind"], string>
+} as const satisfies Record<ReceiptInput["kind"], string>;
 
 /**
  * Returns normalized receipt data for any money-movement event.
@@ -40,12 +38,12 @@ export const getTransactionReceiptDataAction = withAction<
 >({
   permission: "loan:read",
   action: async (session, input) => {
-    const required = KIND_PERMISSIONS[input.kind] as Permission
-    const forbidden = await checkPermission(session, required)
-    if (forbidden) return { error: forbidden }
+    const required = KIND_PERMISSIONS[input.kind] as Permission;
+    const forbidden = await checkPermission(session, required);
+    if (forbidden) return { error: forbidden };
 
-    const result = await buildReceipt(input)
-    if ("error" in result) return { error: result.error }
-    return { data: result }
+    const result = await buildReceipt(input);
+    if ("error" in result) return { error: result.error };
+    return { data: result };
   },
-})
+});

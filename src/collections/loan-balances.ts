@@ -1,14 +1,14 @@
-"use client"
+"use client";
 
-import { createCollection, BasicIndex } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
-import { listLoanBalancesAction } from "@/actions/loan.actions"
-import { type LoanBalanceRow } from "@/lib/schemas/collections"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
-import { throwIfActionError, coerceDates } from "./_utils"
+import { createCollection, BasicIndex } from "@tanstack/react-db";
+import { queryCollectionOptions } from "@/lib/collection-options";
+import { listLoanBalancesAction } from "@/actions/loan.actions";
+import { type LoanBalanceRow } from "@/lib/schemas/collections";
+import { getQueryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
+import { throwIfActionError } from "./_utils";
 
-export type { LoanBalanceRow }
+export type { LoanBalanceRow };
 
 /**
  * Read-only query collection over the `loan_balances` projection table.
@@ -19,7 +19,7 @@ export type { LoanBalanceRow }
  * respective onInsert/onUpdate/onDelete handlers via `queryKeys.loanBalances.all`.
  */
 export const loanBalanceCollection = createCollection(
-  queryCollectionOptions<LoanBalanceRow>({
+  queryCollectionOptions({
     id: "loan_balances",
     getKey: (row) => row.loanId,
     autoIndex: "eager",
@@ -27,9 +27,9 @@ export const loanBalanceCollection = createCollection(
     queryKey: [...queryKeys.loanBalances.all],
     queryClient: getQueryClient(),
     queryFn: async () => {
-      const rows = throwIfActionError(await listLoanBalancesAction()).data
-      return coerceDates(rows, ["lastPaymentDate", "updatedAt"])
+      const rows = throwIfActionError(await listLoanBalancesAction()).data;
+      return rows;
     },
     staleTime: 30_000,
   }),
-)
+);

@@ -1,12 +1,12 @@
-import { Effect } from "effect"
-import { randomUUID } from "crypto"
-import { db } from "@/lib/db"
-import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { loans } from "@/lib/db/schema/loans"
-import { payments } from "@/lib/db/schema/payments"
-import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
-import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
+import { Effect } from "effect";
+import { randomUUID } from "crypto";
+import { db } from "@/lib/db";
+import { transactions } from "@/lib/db/schema/transactions";
+import { transactionCategories } from "@/lib/db/schema/transaction-categories";
+import { loans } from "@/lib/db/schema/loans";
+import { payments } from "@/lib/db/schema/payments";
+import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
+import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
 import {
   eq,
   and,
@@ -18,54 +18,57 @@ import {
   inArray,
   isNull,
   sql,
-} from "drizzle-orm"
-import BigNumber from "bignumber.js"
+} from "drizzle-orm";
+import BigNumber from "bignumber.js";
+import { DatabaseError, TransactionNotFound } from "@/lib/errors";
+import { isUniqueConstraintError } from "@/lib/db-errors";
+import { writeAuditLog } from "./audit.service";
 import {
-  DatabaseError,
-  TransactionNotFound,
-} from "@/lib/errors"
-import { isUniqueConstraintError } from "@/lib/db-errors"
-import { writeAuditLog } from "./audit.service"
-import { calculateInterest, formatAmount, computeSegmentedInterest } from "@/lib/interest/engine"
-import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate"
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
+  calculateInterest,
+  formatAmount,
+  computeSegmentedInterest,
+} from "@/lib/interest/engine";
+import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate";
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
 import {
   toLoanType,
   type CreateTransactionInput,
   type TransactionLogFilters,
-} from "@/types"
+} from "@/types";
 import {
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
   getCreditorBalancesFromLedger,
   getPaymentPortionsFromLedger,
-} from "./ledger-queries.service"
+} from "./ledger-queries.service";
+import { getLastPaymentDate } from "./payment.service";
 
-type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense"
+type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
 // Module-level cache of resolved category IDs. Categories are seeded at install
 // and their IDs never change, so it's safe to memoise lookups for the lifetime
 // of the server process. Without this every postJournalEntry call did a SELECT
 // (often two) per journal entry, which dominated transaction latency on
 // hot paths like loan disbursement and capital injection.
-const categoryIdCache = new Map<string, string>()
-const categoryCacheKey = (name: string, type: CategoryType) => `${type}:${name}`
+const categoryIdCache = new Map<string, string>();
+const categoryCacheKey = (name: string, type: CategoryType) =>
+  `${type}:${name}`;
 
 /** Test-only: reset the in-memory category ID cache between test cases. */
 export function __resetCategoryCacheForTests(): void {
-  categoryIdCache.clear()
+  categoryIdCache.clear();
 }
 
 async function getOrCreateCategory(
   tx: DrizzleTransaction,
   name: string,
-  type: CategoryType
+  type: CategoryType,
 ): Promise<string> {
-  const key = categoryCacheKey(name, type)
-  const cached = categoryIdCache.get(key)
-  if (cached) return cached
+  const key = categoryCacheKey(name, type);
+  const cached = categoryIdCache.get(key);
+  if (cached) return cached;
 
   const [existing] = await tx
     .select()
@@ -73,23 +76,23 @@ async function getOrCreateCategory(
     .where(
       and(
         eq(transactionCategories.name, name),
-        eq(transactionCategories.type, type)
-      )
-    )
+        eq(transactionCategories.type, type),
+      ),
+    );
   if (existing) {
-    categoryIdCache.set(key, existing.id)
-    return existing.id
+    categoryIdCache.set(key, existing.id);
+    return existing.id;
   }
 
   const [created] = await tx
     .insert(transactionCategories)
     .values({ name, type, isDefault: true })
     .onConflictDoNothing()
-    .returning()
+    .returning();
 
   if (created) {
-    categoryIdCache.set(key, created.id)
-    return created.id
+    categoryIdCache.set(key, created.id);
+    return created.id;
   }
 
   // Re-fetch if conflict occurred (concurrent insert)
@@ -99,37 +102,45 @@ async function getOrCreateCategory(
     .where(
       and(
         eq(transactionCategories.name, name),
-        eq(transactionCategories.type, type)
-      )
-    )
-  categoryIdCache.set(key, refetched.id)
-  return refetched.id
+        eq(transactionCategories.type, type),
+      ),
+    );
+  categoryIdCache.set(key, refetched.id);
+  return refetched.id;
 }
 
 export async function postJournalEntry(
   tx: DrizzleTransaction,
   params: {
-    debitCategory: { name: string; type: CategoryType }
-    creditCategory: { name: string; type: CategoryType }
-    amount: string
-    referenceType: string
-    referenceId: string
-    description: string
-    transactionDate: Date
-    recordedBy: string
-    debitDepositLocation?: "cash" | "bank" | "strong_room"
-    creditDepositLocation?: "cash" | "bank" | "strong_room"
-    debitSubLocationId?: string
-    creditSubLocationId?: string
-    loanId?: string
-  }
+    debitCategory: { name: string; type: CategoryType };
+    creditCategory: { name: string; type: CategoryType };
+    amount: string;
+    referenceType: string;
+    referenceId: string;
+    description: string;
+    transactionDate: Date;
+    recordedBy: string;
+    debitDepositLocation?: "cash" | "bank" | "strong_room";
+    creditDepositLocation?: "cash" | "bank" | "strong_room";
+    debitSubLocationId?: string;
+    creditSubLocationId?: string;
+    loanId?: string;
+  },
 ): Promise<string> {
-  const journalGroupId = randomUUID()
+  const journalGroupId = randomUUID();
 
   const [debitCategoryId, creditCategoryId] = await Promise.all([
-    getOrCreateCategory(tx, params.debitCategory.name, params.debitCategory.type),
-    getOrCreateCategory(tx, params.creditCategory.name, params.creditCategory.type),
-  ])
+    getOrCreateCategory(
+      tx,
+      params.debitCategory.name,
+      params.debitCategory.type,
+    ),
+    getOrCreateCategory(
+      tx,
+      params.creditCategory.name,
+      params.creditCategory.type,
+    ),
+  ]);
 
   // Single multi-row insert — saves a round-trip vs. two sequential inserts
   await tx.insert(transactions).values([
@@ -161,146 +172,188 @@ export async function postJournalEntry(
       subLocationId: params.creditSubLocationId ?? null,
       journalGroupId,
     },
-  ])
+  ]);
 
-  return journalGroupId
+  return journalGroupId;
 }
 
 export const recordExpense = (
   input: CreateTransactionInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<typeof transactions.$inferSelect, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
-        const groupId = randomUUID()
+        const groupId = randomUUID();
         // Sentinel categoryId keeps the accounting-type semantics ('expense')
         // for the P&L; the user-typed label lives on transactions.category.
-        const expenseCategoryId = await getOrCreateCategory(tx, "User Expense", "expense")
+        const expenseCategoryId = await getOrCreateCategory(
+          tx,
+          "User Expense",
+          "expense",
+        );
         const [debitTx] = await tx
           .insert(transactions)
           .values({
             ...(input.id ? { id: input.id } : {}),
-            type: "debit", amount: input.amount, categoryId: expenseCategoryId,
+            type: "debit",
+            amount: input.amount,
+            categoryId: expenseCategoryId,
             category: input.categoryName.trim(),
-            description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
-            recordedBy: actorId, journalGroupId: groupId,
+            description: input.notes ?? null,
+            transactionDate: new Date(input.transactionDate),
+            recordedBy: actorId,
+            journalGroupId: groupId,
           })
-          .returning()
+          .returning();
 
-        const cashCategoryId = await getOrCreateCategory(tx, "Cash", "asset")
+        const cashCategoryId = await getOrCreateCategory(tx, "Cash", "asset");
         await tx.insert(transactions).values({
-          type: "credit", amount: input.amount, categoryId: cashCategoryId,
-          description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
-          recordedBy: actorId, depositLocation: input.location, subLocationId: input.subLocationId ?? null, journalGroupId: groupId,
-        })
+          type: "credit",
+          amount: input.amount,
+          categoryId: cashCategoryId,
+          description: input.notes ?? null,
+          transactionDate: new Date(input.transactionDate),
+          recordedBy: actorId,
+          depositLocation: input.location,
+          subLocationId: input.subLocationId ?? null,
+          journalGroupId: groupId,
+        });
 
-        await writeAuditLog(tx, { actorId, action: "transaction.create", entityType: "transaction", entityId: debitTx.id, beforeValue: null, afterValue: debitTx })
-        return debitTx
-      })
+        await writeAuditLog(tx, {
+          actorId,
+          action: "transaction.create",
+          entityType: "transaction",
+          entityId: debitTx.id,
+          beforeValue: null,
+          afterValue: debitTx,
+        });
+        return debitTx;
+      });
     },
     catch: (e) => new DatabaseError({ cause: e }),
   }).pipe(
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),
-      () => recordExpense({ ...input, id: undefined }, actorId)
-    )
-  )
+      () => recordExpense({ ...input, id: undefined }, actorId),
+    ),
+  );
 
 export const recordIncome = (
   input: CreateTransactionInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<typeof transactions.$inferSelect, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
-        const groupId = randomUUID()
-        const cashCategoryId = await getOrCreateCategory(tx, "Cash", "asset")
+        const groupId = randomUUID();
+        const cashCategoryId = await getOrCreateCategory(tx, "Cash", "asset");
 
         await tx.insert(transactions).values({
-          type: "debit", amount: input.amount, categoryId: cashCategoryId,
-          description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
-          recordedBy: actorId, depositLocation: input.location, subLocationId: input.subLocationId ?? null, journalGroupId: groupId,
-        })
+          type: "debit",
+          amount: input.amount,
+          categoryId: cashCategoryId,
+          description: input.notes ?? null,
+          transactionDate: new Date(input.transactionDate),
+          recordedBy: actorId,
+          depositLocation: input.location,
+          subLocationId: input.subLocationId ?? null,
+          journalGroupId: groupId,
+        });
 
         // Sentinel categoryId for accounting-type semantics ('revenue'); the
         // user-typed label lives on transactions.category.
-        const revenueCategoryId = await getOrCreateCategory(tx, "User Revenue", "revenue")
+        const revenueCategoryId = await getOrCreateCategory(
+          tx,
+          "User Revenue",
+          "revenue",
+        );
         const [creditTx] = await tx
           .insert(transactions)
           .values({
             ...(input.id ? { id: input.id } : {}),
-            type: "credit", amount: input.amount, categoryId: revenueCategoryId,
+            type: "credit",
+            amount: input.amount,
+            categoryId: revenueCategoryId,
             category: input.categoryName.trim(),
-            description: input.notes ?? null, transactionDate: new Date(input.transactionDate),
-            recordedBy: actorId, journalGroupId: groupId,
+            description: input.notes ?? null,
+            transactionDate: new Date(input.transactionDate),
+            recordedBy: actorId,
+            journalGroupId: groupId,
           })
-          .returning()
+          .returning();
 
-        await writeAuditLog(tx, { actorId, action: "transaction.create", entityType: "transaction", entityId: creditTx.id, beforeValue: null, afterValue: creditTx })
-        return creditTx
-      })
+        await writeAuditLog(tx, {
+          actorId,
+          action: "transaction.create",
+          entityType: "transaction",
+          entityId: creditTx.id,
+          beforeValue: null,
+          afterValue: creditTx,
+        });
+        return creditTx;
+      });
     },
     catch: (e) => new DatabaseError({ cause: e }),
   }).pipe(
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),
-      () => recordIncome({ ...input, id: undefined }, actorId)
-    )
-  )
+      () => recordIncome({ ...input, id: undefined }, actorId),
+    ),
+  );
 
 export const listTransactions = (
   filters: TransactionLogFilters,
   page: number,
-  pageSize: number
+  pageSize: number,
 ): Effect.Effect<
   {
     data: {
-      id: string
-      type: "credit" | "debit"
-      amount: string
-      categoryId: string
+      id: string;
+      type: "credit" | "debit";
+      amount: string;
+      categoryId: string;
       /** Display label: user-typed `category` text or chart-of-accounts name. */
-      category: string
-      referenceType: string | null
-      referenceId: string | null
-      description: string | null
-      transactionDate: Date
-      recordedBy: string
-      createdAt: Date
-    }[]
-    total: number
+      category: string;
+      referenceType: string | null;
+      referenceId: string | null;
+      description: string | null;
+      transactionDate: Date;
+      recordedBy: string;
+      createdAt: Date;
+    }[];
+    total: number;
   },
   DatabaseError
 > =>
   Effect.tryPromise({
     try: async () => {
-      const conditions = []
+      const conditions = [];
 
       if (filters.type) {
-        conditions.push(eq(transactions.type, filters.type))
+        conditions.push(eq(transactions.type, filters.type));
       }
       if (filters.categoryId) {
-        conditions.push(eq(transactions.categoryId, filters.categoryId))
+        conditions.push(eq(transactions.categoryId, filters.categoryId));
       }
       if (filters.dateFrom) {
         conditions.push(
-          gte(transactions.transactionDate, new Date(filters.dateFrom))
-        )
+          gte(transactions.transactionDate, new Date(filters.dateFrom)),
+        );
       }
       if (filters.dateTo) {
         conditions.push(
-          lte(transactions.transactionDate, new Date(filters.dateTo))
-        )
+          lte(transactions.transactionDate, new Date(filters.dateTo)),
+        );
       }
       if (filters.manualOnly) {
-        conditions.push(isNull(transactions.referenceType))
+        conditions.push(isNull(transactions.referenceType));
       }
 
       const whereClause =
-        conditions.length > 0 ? and(...conditions) : undefined
+        conditions.length > 0 ? and(...conditions) : undefined;
 
-      const offset = (page - 1) * pageSize
+      const offset = (page - 1) * pageSize;
 
       const [rows, totalResult] = await Promise.all([
         db
@@ -322,10 +375,13 @@ export const listTransactions = (
           .from(transactions)
           .innerJoin(
             transactionCategories,
-            eq(transactions.categoryId, transactionCategories.id)
+            eq(transactions.categoryId, transactionCategories.id),
           )
           .where(whereClause)
-          .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt))
+          .orderBy(
+            desc(transactions.transactionDate),
+            desc(transactions.createdAt),
+          )
           .limit(pageSize)
           .offset(offset),
         db
@@ -333,76 +389,91 @@ export const listTransactions = (
           .from(transactions)
           .innerJoin(
             transactionCategories,
-            eq(transactions.categoryId, transactionCategories.id)
+            eq(transactions.categoryId, transactionCategories.id),
           )
           .where(whereClause),
-      ])
+      ]);
 
-      const total = Number(totalResult[0]?.count ?? 0)
+      const total = Number(totalResult[0]?.count ?? 0);
 
-      return { data: rows, total }
+      return { data: rows, total };
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 export const getTransactionById = (
-  id: string
-): Effect.Effect<typeof transactions.$inferSelect, DatabaseError | TransactionNotFound> =>
+  id: string,
+): Effect.Effect<
+  typeof transactions.$inferSelect,
+  DatabaseError | TransactionNotFound
+> =>
   Effect.tryPromise({
     try: async () => {
       const [transaction] = await db
         .select()
         .from(transactions)
-        .where(eq(transactions.id, id))
+        .where(eq(transactions.id, id));
 
-      if (!transaction) throw { _tag: "TransactionNotFound", id }
+      if (!transaction) throw { _tag: "TransactionNotFound", id };
 
-      return transaction
+      return transaction;
     },
     catch: (e: any) => {
       if (e?._tag === "TransactionNotFound")
-        return new TransactionNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+        return new TransactionNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 export const deleteTransaction = (
   id: string,
   actorId: string,
-  actorRole?: string
+  actorRole?: string,
 ): Effect.Effect<void, DatabaseError | TransactionNotFound> =>
   Effect.tryPromise({
     try: async () => {
       const [transaction] = await db
         .select()
         .from(transactions)
-        .where(eq(transactions.id, id))
+        .where(eq(transactions.id, id));
 
-      if (!transaction) throw { _tag: "TransactionNotFound", id }
+      if (!transaction) throw { _tag: "TransactionNotFound", id };
 
       const systemReferenceTypes = [
-        "payment", "payment_reversal",
-        "creditor_repayment", "creditor_investment",
-        "loan", "loan_reversal", "loan_repost",
-        "rollover", "collateral_settlement", "fund_transfer",
+        "payment",
+        "payment_reversal",
+        "creditor_repayment",
+        "creditor_investment",
+        "loan",
+        "loan_reversal",
+        "loan_repost",
+        "rollover",
+        "collateral_settlement",
+        "fund_transfer",
         "interest_accrual",
-      ]
-      if (transaction.referenceType && systemReferenceTypes.includes(transaction.referenceType)) {
-        throw { _tag: "TransactionNotFound", id }
+      ];
+      if (
+        transaction.referenceType &&
+        systemReferenceTypes.includes(transaction.referenceType)
+      ) {
+        throw { _tag: "TransactionNotFound", id };
       }
 
-      const isAdminOrAbove = actorRole === "admin" || actorRole === "superAdmin"
+      const isAdminOrAbove =
+        actorRole === "admin" || actorRole === "superAdmin";
       if (transaction.recordedBy !== actorId && !isAdminOrAbove) {
-        throw { _tag: "TransactionNotFound", id }
+        throw { _tag: "TransactionNotFound", id };
       }
 
       await db.transaction(async (tx) => {
         // Delete both sides of the journal pair if it has a journalGroupId
         if (transaction.journalGroupId) {
-          await tx.delete(transactions).where(eq(transactions.journalGroupId, transaction.journalGroupId))
+          await tx
+            .delete(transactions)
+            .where(eq(transactions.journalGroupId, transaction.journalGroupId));
         } else {
           // Legacy single-entry row
-          await tx.delete(transactions).where(eq(transactions.id, id))
+          await tx.delete(transactions).where(eq(transactions.id, id));
         }
 
         await writeAuditLog(tx, {
@@ -412,20 +483,20 @@ export const deleteTransaction = (
           entityId: id,
           beforeValue: transaction,
           afterValue: null,
-        })
-      })
+        });
+      });
     },
     catch: (e: any) => {
       if (e?._tag === "TransactionNotFound")
-        return new TransactionNotFound({ id: e.id })
-      return new DatabaseError({ cause: e })
+        return new TransactionNotFound({ id: e.id });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 // ── Interest Accrual Functions ─────────────────────────────────────────
 
 function accrualDaysBetween(from: Date, to: Date): number {
-  return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24))
+  return Math.floor((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 /**
@@ -436,10 +507,10 @@ function accrualDaysBetween(from: Date, to: Date): number {
 export async function reverseInterestAccrual(
   tx: DrizzleTransaction,
   params: {
-    loanId: string
-    paymentDate: string
-    actorId: string
-  }
+    loanId: string;
+    paymentDate: string;
+    actorId: string;
+  },
 ): Promise<void> {
   const [receivableCat] = await tx
     .select()
@@ -447,11 +518,11 @@ export async function reverseInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Receivable"),
-        eq(transactionCategories.type, "revenue")
-      )
-    )
+        eq(transactionCategories.type, "revenue"),
+      ),
+    );
 
-  if (!receivableCat) return
+  if (!receivableCat) return;
 
   const [earnedCat] = await tx
     .select()
@@ -459,37 +530,40 @@ export async function reverseInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Earned"),
-        eq(transactionCategories.type, "revenue")
-      )
-    )
+        eq(transactionCategories.type, "revenue"),
+      ),
+    );
 
-  if (!earnedCat) return
+  if (!earnedCat) return;
 
   const accrualRows = await tx
     .select({ amount: transactions.amount, type: transactions.type })
     .from(transactions)
     .where(
       and(
-        inArray(transactions.referenceType, ["interest_accrual", "penalty_interest_accrual"]),
+        inArray(transactions.referenceType, [
+          "interest_accrual",
+          "penalty_interest_accrual",
+        ]),
         eq(transactions.referenceId, params.loanId),
-        eq(transactions.categoryId, receivableCat.id)
-      )
-    )
+        eq(transactions.categoryId, receivableCat.id),
+      ),
+    );
 
-  let netAccrual = new BigNumber(0)
+  let netAccrual = new BigNumber(0);
   for (const row of accrualRows) {
     if (row.type === "debit") {
-      netAccrual = netAccrual.plus(row.amount)
+      netAccrual = netAccrual.plus(row.amount);
     } else {
-      netAccrual = netAccrual.minus(row.amount)
+      netAccrual = netAccrual.minus(row.amount);
     }
   }
 
-  if (netAccrual.isLessThanOrEqualTo(0)) return
+  if (netAccrual.isLessThanOrEqualTo(0)) return;
 
-  const reversalAmount = formatAmount(netAccrual)
-  const now = new Date(params.paymentDate)
-  const journalGroupId = randomUUID()
+  const reversalAmount = formatAmount(netAccrual);
+  const now = new Date(params.paymentDate);
+  const journalGroupId = randomUUID();
 
   await tx.insert(transactions).values({
     type: "credit",
@@ -501,7 +575,7 @@ export async function reverseInterestAccrual(
     transactionDate: now,
     recordedBy: params.actorId,
     journalGroupId,
-  })
+  });
 
   await tx.insert(transactions).values({
     type: "debit",
@@ -513,7 +587,7 @@ export async function reverseInterestAccrual(
     transactionDate: now,
     recordedBy: params.actorId,
     journalGroupId,
-  })
+  });
 }
 
 /**
@@ -523,10 +597,10 @@ export async function reverseInterestAccrual(
 export async function reverseCreditorInterestAccrual(
   tx: DrizzleTransaction,
   params: {
-    investmentId: string
-    repaymentDate: string
-    actorId: string
-  }
+    investmentId: string;
+    repaymentDate: string;
+    actorId: string;
+  },
 ): Promise<void> {
   const [payableCat] = await tx
     .select()
@@ -534,11 +608,11 @@ export async function reverseCreditorInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Payable"),
-        eq(transactionCategories.type, "expense")
-      )
-    )
+        eq(transactionCategories.type, "expense"),
+      ),
+    );
 
-  if (!payableCat) return
+  if (!payableCat) return;
 
   const [expenseCat] = await tx
     .select()
@@ -546,11 +620,11 @@ export async function reverseCreditorInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Payments"),
-        eq(transactionCategories.type, "expense")
-      )
-    )
+        eq(transactionCategories.type, "expense"),
+      ),
+    );
 
-  if (!expenseCat) return
+  if (!expenseCat) return;
 
   const accrualRows = await tx
     .select({ amount: transactions.amount, type: transactions.type })
@@ -559,24 +633,24 @@ export async function reverseCreditorInterestAccrual(
       and(
         eq(transactions.referenceType, "interest_accrual"),
         eq(transactions.referenceId, params.investmentId),
-        eq(transactions.categoryId, payableCat.id)
-      )
-    )
+        eq(transactions.categoryId, payableCat.id),
+      ),
+    );
 
-  let netAccrual = new BigNumber(0)
+  let netAccrual = new BigNumber(0);
   for (const row of accrualRows) {
     if (row.type === "credit") {
-      netAccrual = netAccrual.plus(row.amount)
+      netAccrual = netAccrual.plus(row.amount);
     } else {
-      netAccrual = netAccrual.minus(row.amount)
+      netAccrual = netAccrual.minus(row.amount);
     }
   }
 
-  if (netAccrual.isLessThanOrEqualTo(0)) return
+  if (netAccrual.isLessThanOrEqualTo(0)) return;
 
-  const reversalAmount = formatAmount(netAccrual)
-  const now = new Date(params.repaymentDate)
-  const journalGroupId = randomUUID()
+  const reversalAmount = formatAmount(netAccrual);
+  const now = new Date(params.repaymentDate);
+  const journalGroupId = randomUUID();
 
   await tx.insert(transactions).values({
     type: "debit",
@@ -588,7 +662,7 @@ export async function reverseCreditorInterestAccrual(
     transactionDate: now,
     recordedBy: params.actorId,
     journalGroupId,
-  })
+  });
 
   await tx.insert(transactions).values({
     type: "credit",
@@ -600,7 +674,7 @@ export async function reverseCreditorInterestAccrual(
     transactionDate: now,
     recordedBy: params.actorId,
     journalGroupId,
-  })
+  });
 }
 
 /**
@@ -609,77 +683,127 @@ export async function reverseCreditorInterestAccrual(
  * Posts: DR Interest Receivable / CR Interest Earned
  */
 export const accrueInterestForLoans = (
-  asOfDate: Date = new Date()
-): Effect.Effect<{ loansProcessed: number; entriesPosted: number }, DatabaseError> =>
+  asOfDate: Date = new Date(),
+): Effect.Effect<
+  { loansProcessed: number; entriesPosted: number },
+  DatabaseError
+> =>
   Effect.tryPromise({
     try: async () => {
       const [receivableCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Receivable"), eq(transactionCategories.type, "revenue")))
+        .where(
+          and(
+            eq(transactionCategories.name, "Interest Receivable"),
+            eq(transactionCategories.type, "revenue"),
+          ),
+        );
 
       const [earnedCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Earned"), eq(transactionCategories.type, "revenue")))
+        .where(
+          and(
+            eq(transactionCategories.name, "Interest Earned"),
+            eq(transactionCategories.type, "revenue"),
+          ),
+        );
 
       if (!receivableCat || !earnedCat) {
-        console.warn("[accrueInterestForLoans] Required categories not found — skipping")
-        return { loansProcessed: 0, entriesPosted: 0 }
+        console.warn(
+          "[accrueInterestForLoans] Required categories not found — skipping",
+        );
+        return { loansProcessed: 0, entriesPosted: 0 };
       }
 
       const activeLoans = await db
         .select()
         .from(loans)
-        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
+        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)));
 
-      const loanIds = activeLoans.map((l) => l.id)
-      const [ledgerBalances, interestEarnedBatch, paymentCountRows, allPaymentRows] = await Promise.all([
+      const loanIds = activeLoans.map((l) => l.id);
+      const [
+        ledgerBalances,
+        interestEarnedBatch,
+        paymentCountRows,
+        allPaymentRows,
+      ] = await Promise.all([
         getLoanBalancesFromLedger(loanIds),
         getInterestEarnedFromLedger(loanIds),
         loanIds.length > 0
-          ? db.select({ loanId: payments.loanId, cnt: count() })
+          ? db
+              .select({ loanId: payments.loanId, cnt: count() })
               .from(payments)
-              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+              .where(
+                and(
+                  inArray(payments.loanId, loanIds),
+                  isNull(payments.deletedAt),
+                  eq(payments.markedWrong, false),
+                ),
+              )
               .groupBy(payments.loanId)
           : Promise.resolve([]),
         // Fetch all active payments for segmented interest calculation (BUG-11)
         loanIds.length > 0
-          ? db.select({ id: payments.id, loanId: payments.loanId, paymentDate: payments.paymentDate })
+          ? db
+              .select({
+                id: payments.id,
+                loanId: payments.loanId,
+                paymentDate: payments.paymentDate,
+              })
               .from(payments)
-              .where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
+              .where(
+                and(
+                  inArray(payments.loanId, loanIds),
+                  isNull(payments.deletedAt),
+                  eq(payments.markedWrong, false),
+                ),
+              )
               .orderBy(asc(payments.paymentDate))
           : Promise.resolve([]),
-      ])
-      const paymentCountMap = new Map(paymentCountRows.map((r) => [r.loanId, r.cnt]))
+      ]);
+      const paymentCountMap = new Map(
+        paymentCountRows.map((r) => [r.loanId, r.cnt]),
+      );
 
       // Batch-fetch principal portions from ledger for segmented interest (BUG-11)
-      const allPaymentIds = allPaymentRows.map((p) => p.id)
-      const allPortions = allPaymentIds.length > 0
-        ? await getPaymentPortionsFromLedger(allPaymentIds)
-        : new Map<string, { interestPortion: string; principalPortion: string }>()
+      const allPaymentIds = allPaymentRows.map((p) => p.id);
+      const allPortions =
+        allPaymentIds.length > 0
+          ? await getPaymentPortionsFromLedger(allPaymentIds)
+          : new Map<
+              string,
+              { interestPortion: string; principalPortion: string }
+            >();
 
       // Group payments by loan with their principal portions
-      const paymentsByLoan = new Map<string, { date: Date; principalPortion: string }[]>()
+      const paymentsByLoan = new Map<
+        string,
+        { date: Date; principalPortion: string }[]
+      >();
       for (const p of allPaymentRows) {
-        const portion = allPortions.get(p.id)
-        const principalPortion = portion?.principalPortion ?? "0"
+        const portion = allPortions.get(p.id);
+        const principalPortion = portion?.principalPortion ?? "0";
         if (new BigNumber(principalPortion).isGreaterThan(0)) {
-          const existing = paymentsByLoan.get(p.loanId) ?? []
-          existing.push({ date: new Date(p.paymentDate), principalPortion })
-          paymentsByLoan.set(p.loanId, existing)
+          const existing = paymentsByLoan.get(p.loanId) ?? [];
+          existing.push({ date: new Date(p.paymentDate), principalPortion });
+          paymentsByLoan.set(p.loanId, existing);
         }
       }
 
-      let entriesPosted = 0
+      let entriesPosted = 0;
 
       for (const loan of activeLoans) {
-        const baseRate = getBaseRate(loan)
-        const outstandingBalanceBN = ledgerBalances.get(loan.id)
-        const outstandingBalance = outstandingBalanceBN && outstandingBalanceBN.isGreaterThan(0)
-          ? formatAmount(outstandingBalanceBN)
-          : loan.principalAmount
-        const totalInterestPaid = formatAmount(interestEarnedBatch.get(loan.id) ?? new BigNumber(0))
+        const baseRate = getBaseRate(loan);
+        const outstandingBalanceBN = ledgerBalances.get(loan.id);
+        const outstandingBalance =
+          outstandingBalanceBN && outstandingBalanceBN.isGreaterThan(0)
+            ? formatAmount(outstandingBalanceBN)
+            : loan.principalAmount;
+        const totalInterestPaid = formatAmount(
+          interestEarnedBatch.get(loan.id) ?? new BigNumber(0),
+        );
         const overdueInfo = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
           baseRate,
@@ -691,30 +815,32 @@ export const accrueInterestForLoans = (
           outstandingBalance,
           penaltyWaived: loan.penaltyWaived,
           loan,
-        })
-        const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive)
+          lastPaymentDate: await getLastPaymentDate(loan),
+        });
+        const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive);
 
         // BUG-11 fix: compute interest segment-by-segment using the actual balance
         // during each period, instead of applying current balance to all past periods.
-        const loanPayments = paymentsByLoan.get(loan.id) ?? []
+        const loanPayments = paymentsByLoan.get(loan.id) ?? [];
         const totalInterestAccrued = computeSegmentedInterest({
           principalAmount: loan.principalAmount,
           monthlyRateDecimal: effectiveRate,
           startDate: new Date(loan.startDate),
           asOfDate,
           principalPayments: loanPayments,
-        })
+        });
 
         // Net Interest Earned from ledger = cash interest + accruals - reversals
-        const totalInterestEarned = interestEarnedBatch.get(loan.id) ?? new BigNumber(0)
+        const totalInterestEarned =
+          interestEarnedBatch.get(loan.id) ?? new BigNumber(0);
 
-        const target = totalInterestAccrued.minus(totalInterestEarned)
+        const target = totalInterestAccrued.minus(totalInterestEarned);
 
         if (target.isGreaterThan(0)) {
           // When penalty is active, split into base interest + penalty interest
           // so the ledger transparently shows the penalty portion
-          let baseAmount: BigNumber
-          let penaltyAmount: BigNumber
+          let baseAmount: BigNumber;
+          let penaltyAmount: BigNumber;
 
           if (overdueInfo.penaltyActive) {
             const totalAtBaseRate = computeSegmentedInterest({
@@ -723,66 +849,86 @@ export const accrueInterestForLoans = (
               startDate: new Date(loan.startDate),
               asOfDate,
               principalPayments: loanPayments,
-            })
-            const baseTarget = totalAtBaseRate.minus(totalInterestEarned)
-            baseAmount = BigNumber.max(baseTarget, 0)
-            penaltyAmount = target.minus(baseAmount)
+            });
+            const baseTarget = totalAtBaseRate.minus(totalInterestEarned);
+            baseAmount = BigNumber.max(baseTarget, 0);
+            penaltyAmount = target.minus(baseAmount);
             // If base is fully covered, all new accrual is penalty
-            if (penaltyAmount.isLessThan(0)) penaltyAmount = new BigNumber(0)
+            if (penaltyAmount.isLessThan(0)) penaltyAmount = new BigNumber(0);
           } else {
-            baseAmount = target
-            penaltyAmount = new BigNumber(0)
+            baseAmount = target;
+            penaltyAmount = new BigNumber(0);
           }
 
           await db.transaction(async (tx) => {
             // Post base interest accrual
             if (baseAmount.isGreaterThan(0)) {
-              const amount = formatAmount(baseAmount)
-              const journalGroupId = randomUUID()
+              const amount = formatAmount(baseAmount);
+              const journalGroupId = randomUUID();
               await tx.insert(transactions).values({
-                type: "debit", amount, categoryId: receivableCat.id,
-                referenceType: "interest_accrual", referenceId: loan.id,
+                type: "debit",
+                amount,
+                categoryId: receivableCat.id,
+                referenceType: "interest_accrual",
+                referenceId: loan.id,
                 description: `Interest accrual - loan ${loan.id}`,
-                transactionDate: asOfDate, recordedBy: "system",
-                journalGroupId, loanId: loan.id,
-              })
+                transactionDate: asOfDate,
+                recordedBy: "system",
+                journalGroupId,
+                loanId: loan.id,
+              });
               await tx.insert(transactions).values({
-                type: "credit", amount, categoryId: earnedCat.id,
-                referenceType: "interest_accrual", referenceId: loan.id,
+                type: "credit",
+                amount,
+                categoryId: earnedCat.id,
+                referenceType: "interest_accrual",
+                referenceId: loan.id,
                 description: `Interest accrual - loan ${loan.id}`,
-                transactionDate: asOfDate, recordedBy: "system",
-                journalGroupId, loanId: loan.id,
-              })
+                transactionDate: asOfDate,
+                recordedBy: "system",
+                journalGroupId,
+                loanId: loan.id,
+              });
             }
 
             // Post penalty interest as a separate, labeled entry
             if (penaltyAmount.isGreaterThan(0)) {
-              const amount = formatAmount(penaltyAmount)
-              const journalGroupId = randomUUID()
+              const amount = formatAmount(penaltyAmount);
+              const journalGroupId = randomUUID();
               await tx.insert(transactions).values({
-                type: "debit", amount, categoryId: receivableCat.id,
-                referenceType: "penalty_interest_accrual", referenceId: loan.id,
+                type: "debit",
+                amount,
+                categoryId: receivableCat.id,
+                referenceType: "penalty_interest_accrual",
+                referenceId: loan.id,
                 description: `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`,
-                transactionDate: asOfDate, recordedBy: "system",
-                journalGroupId, loanId: loan.id,
-              })
+                transactionDate: asOfDate,
+                recordedBy: "system",
+                journalGroupId,
+                loanId: loan.id,
+              });
               await tx.insert(transactions).values({
-                type: "credit", amount, categoryId: earnedCat.id,
-                referenceType: "penalty_interest_accrual", referenceId: loan.id,
+                type: "credit",
+                amount,
+                categoryId: earnedCat.id,
+                referenceType: "penalty_interest_accrual",
+                referenceId: loan.id,
                 description: `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`,
-                transactionDate: asOfDate, recordedBy: "system",
-                journalGroupId, loanId: loan.id,
-              })
+                transactionDate: asOfDate,
+                recordedBy: "system",
+                journalGroupId,
+                loanId: loan.id,
+              });
             }
-          })
-          entriesPosted++
+          });
+          entriesPosted++;
         }
       }
 
-      return { loansProcessed: activeLoans.length, entriesPosted }
+      return { loansProcessed: activeLoans.length, entriesPosted };
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 /**
  * Accrues interest for all active creditor investments as of `asOfDate`.
@@ -790,102 +936,139 @@ export const accrueInterestForLoans = (
  * Posts: DR Interest Expense / CR Interest Payable
  */
 export const accrueInterestForCreditors = (
-  asOfDate: Date = new Date()
-): Effect.Effect<{ investmentsProcessed: number; entriesPosted: number }, DatabaseError> =>
+  asOfDate: Date = new Date(),
+): Effect.Effect<
+  { investmentsProcessed: number; entriesPosted: number },
+  DatabaseError
+> =>
   Effect.tryPromise({
     try: async () => {
       const [payableCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Payable"), eq(transactionCategories.type, "expense")))
+        .where(
+          and(
+            eq(transactionCategories.name, "Interest Payable"),
+            eq(transactionCategories.type, "expense"),
+          ),
+        );
 
       const [expenseCat] = await db
         .select()
         .from(transactionCategories)
-        .where(and(eq(transactionCategories.name, "Interest Payments"), eq(transactionCategories.type, "expense")))
+        .where(
+          and(
+            eq(transactionCategories.name, "Interest Payments"),
+            eq(transactionCategories.type, "expense"),
+          ),
+        );
 
       if (!payableCat || !expenseCat) {
-        console.warn("[accrueInterestForCreditors] Required categories not found — skipping")
-        return { investmentsProcessed: 0, entriesPosted: 0 }
+        console.warn(
+          "[accrueInterestForCreditors] Required categories not found — skipping",
+        );
+        return { investmentsProcessed: 0, entriesPosted: 0 };
       }
 
-      const allInvestments = await db.select().from(creditorInvestments)
+      const allInvestments = await db.select().from(creditorInvestments);
 
       // Use ledger to determine active investments and their balances
-      const investmentIds = allInvestments.map((inv) => inv.id)
-      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds)
+      const investmentIds = allInvestments.map((inv) => inv.id);
+      const ledgerBalances = await getCreditorBalancesFromLedger(investmentIds);
 
       const activeInvestments = allInvestments.filter((inv) => {
-        const ledgerBal = ledgerBalances.get(inv.id)
-        return ledgerBal ? ledgerBal.isGreaterThan(0) : true
-      })
+        const ledgerBal = ledgerBalances.get(inv.id);
+        return ledgerBal ? ledgerBal.isGreaterThan(0) : true;
+      });
 
-      let entriesPosted = 0
+      let entriesPosted = 0;
 
       for (const investment of activeInvestments) {
         const repaymentsList = await db
           .select()
           .from(creditorRepayments)
           .where(eq(creditorRepayments.investmentId, investment.id))
-          .orderBy(asc(creditorRepayments.repaymentDate), asc(creditorRepayments.createdAt))
+          .orderBy(
+            asc(creditorRepayments.repaymentDate),
+            asc(creditorRepayments.createdAt),
+          );
 
-        const prevDate = repaymentsList.length === 0
-          ? new Date(investment.investmentDate)
-          : new Date(repaymentsList[repaymentsList.length - 1].repaymentDate)
+        const prevDate =
+          repaymentsList.length === 0
+            ? new Date(investment.investmentDate)
+            : new Date(repaymentsList[repaymentsList.length - 1].repaymentDate);
 
-        const principalBalance = ledgerBalances.get(investment.id) ?? (() => {
-          console.warn(`[accrueInterestForCreditors] No ledger entries for investment ${investment.id}, using amount as fallback`)
-          return new BigNumber(investment.amount)
-        })()
-        const daysElapsed = accrualDaysBetween(prevDate, asOfDate)
+        const principalBalance =
+          ledgerBalances.get(investment.id) ??
+          (() => {
+            console.warn(
+              `[accrueInterestForCreditors] No ledger entries for investment ${investment.id}, using amount as fallback`,
+            );
+            return new BigNumber(investment.amount);
+          })();
+        const daysElapsed = accrualDaysBetween(prevDate, asOfDate);
         const interestSinceLastRepayment = calculateInterest(
-          formatAmount(principalBalance), investment.interestRateMonthly, daysElapsed, 0
-        )
+          formatAmount(principalBalance),
+          investment.interestRateMonthly,
+          daysElapsed,
+          0,
+        );
 
         const existingAccrualRows = await db
           .select({ amount: transactions.amount, type: transactions.type })
           .from(transactions)
-          .where(and(
-            eq(transactions.referenceType, "interest_accrual"),
-            eq(transactions.referenceId, investment.id),
-            eq(transactions.categoryId, payableCat.id)
-          ))
+          .where(
+            and(
+              eq(transactions.referenceType, "interest_accrual"),
+              eq(transactions.referenceId, investment.id),
+              eq(transactions.categoryId, payableCat.id),
+            ),
+          );
 
-        let netExistingAccrual = new BigNumber(0)
+        let netExistingAccrual = new BigNumber(0);
         for (const row of existingAccrualRows) {
-          if (row.type === "credit") netExistingAccrual = netExistingAccrual.plus(row.amount)
-          else netExistingAccrual = netExistingAccrual.minus(row.amount)
+          if (row.type === "credit")
+            netExistingAccrual = netExistingAccrual.plus(row.amount);
+          else netExistingAccrual = netExistingAccrual.minus(row.amount);
         }
 
-        const target = interestSinceLastRepayment.minus(netExistingAccrual)
+        const target = interestSinceLastRepayment.minus(netExistingAccrual);
 
         if (target.isGreaterThan(0)) {
-          const amount = formatAmount(target)
+          const amount = formatAmount(target);
           await db.transaction(async (tx) => {
-            const journalGroupId = randomUUID()
+            const journalGroupId = randomUUID();
             await tx.insert(transactions).values({
-              type: "debit", amount, categoryId: expenseCat.id,
-              referenceType: "interest_accrual", referenceId: investment.id,
+              type: "debit",
+              amount,
+              categoryId: expenseCat.id,
+              referenceType: "interest_accrual",
+              referenceId: investment.id,
               description: `Interest accrual - investment ${investment.id}`,
-              transactionDate: asOfDate, recordedBy: "system",
+              transactionDate: asOfDate,
+              recordedBy: "system",
               journalGroupId,
-            })
+            });
             await tx.insert(transactions).values({
-              type: "credit", amount, categoryId: payableCat.id,
-              referenceType: "interest_accrual", referenceId: investment.id,
+              type: "credit",
+              amount,
+              categoryId: payableCat.id,
+              referenceType: "interest_accrual",
+              referenceId: investment.id,
               description: `Interest accrual - investment ${investment.id}`,
-              transactionDate: asOfDate, recordedBy: "system",
+              transactionDate: asOfDate,
+              recordedBy: "system",
               journalGroupId,
-            })
-          })
-          entriesPosted++
+            });
+          });
+          entriesPosted++;
         }
       }
 
-      return { investmentsProcessed: activeInvestments.length, entriesPosted }
+      return { investmentsProcessed: activeInvestments.length, entriesPosted };
     },
     catch: (e) => new DatabaseError({ cause: e }),
-  })
+  });
 
 // Re-export split modules for backward compatibility
 export {
@@ -898,7 +1081,7 @@ export {
   getCreditorRepaymentPortionsFromLedger,
   getCreditorTotalInvestedFromLedger,
   getCreditorTotalRepaidFromLedger,
-} from "./ledger-queries.service"
+} from "./ledger-queries.service";
 
 export {
   autoPostInterestEarned,
@@ -912,4 +1095,4 @@ export {
   autoPostRateChangeAdjustment,
   autoPostFundTransfer,
   autoPostCapitalInjection,
-} from "./auto-post.service"
+} from "./auto-post.service";

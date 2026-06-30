@@ -139,6 +139,23 @@ export function calculateDaysOverdue(
   return unpaidInterest.dividedBy(rate)
 }
 
+export function calculateDaysOverdueFromInterestAccrued(
+  interestAccrued: string | BigNumber,
+  currentDailyRate: string | BigNumber
+): BigNumber {
+  const unpaidInterest = new BigNumber(interestAccrued)
+  if (unpaidInterest.isLessThanOrEqualTo(0)) {
+    return new BigNumber(0)
+  }
+
+  const rate = new BigNumber(currentDailyRate)
+  if (rate.isZero()) {
+    return new BigNumber(0)
+  }
+
+  return unpaidInterest.dividedBy(rate)
+}
+
 /**
  * Computes total accrued interest by walking payment history segment by segment.
  * Each segment uses the actual outstanding balance during that period.

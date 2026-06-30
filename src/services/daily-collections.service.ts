@@ -10,6 +10,7 @@ import BigNumber from "bignumber.js"
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue"
 import { getPaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { toLoanType, type DailyCollectionsSummary, type DailyCollectionRow, type LoanDueToday } from "@/types"
+import { getLastPaymentDate } from "./payment.service"
 
 export const getDailyCollections = (
   date: string
@@ -131,6 +132,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
         const outstandingBalance = ledgerBalance !== undefined
           ? ledgerBalance.toFixed(0)
           : loan.principalAmount
+                   
         const info = computeLoanOverdueInfo({
           principalAmount: loan.principalAmount,
           baseRate,
@@ -142,6 +144,7 @@ export const getLoansDueToday = (): Effect.Effect<LoanDueToday[], DatabaseError>
           outstandingBalance,
           penaltyWaived: loan.penaltyWaived,
           loan,
+          lastPaymentDate: await getLastPaymentDate(loan)
         })
         const daysOverdue = info.daysOverdue
 

@@ -1,81 +1,95 @@
-"use client"
+"use client";
 
-import { useEffect, useMemo, useState } from "react"
-import Link from "next/link"
-import { toast } from "sonner"
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { toast } from "sonner";
 import {
   ArrowLeft,
   Banknote,
   ShieldAlert,
   PlusCircle,
   Calculator,
-} from "lucide-react"
-import { paymentCollection } from "@/collections/payments"
-import { currentUserRoleCollection, getLoanCollateralCollection, getUserNameMapCollection, getPaymentPortionsCollection } from "@/collections/loan-extras"
-import { loanBalanceCollection } from "@/collections/loan-balances"
-import { rateChangeRequestCollection } from "@/collections/rate-change-requests"
-import { loanCollection } from "@/collections/loans"
-import { isPenaltyActive } from "@/lib/interest/effective-rate"
-import { generateClientId } from "@/lib/client-id"
-import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db"
-import type { UserRole, RateChangeRequest, LoanListEntry, PaymentWithCustomer } from "@/types"
-import { usePermissions } from "@/hooks/use-permissions"
-import type { Loan, PaymentPortionsMap } from "@/types"
-import { CopyButton } from "@/components/ui/copy-button"
-import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog"
-import { SimulatorPanel } from "@/components/loans/simulator-panel"
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
-import { InfoPopover } from "@/components/ui/info-popover"
-import BigNumber from "bignumber.js"
-import { addMonths, format } from "date-fns"
-import { cn, formatCurrency, shortId } from "@/lib/utils"
-import { calculateSchedule } from "@/lib/interest/engine"
-import { useLoanDetailStore } from "@/lib/stores/loan-detail"
-import { loanStatusVariant, loanStatusLabel } from "@/lib/status"
-import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button"
-import { Breadcrumb } from "@/components/ui/breadcrumb"
-import { OverdueBadge } from "@/components/watchlist/overdue-badge"
-import { LoanInfoCards } from "./loan-info-cards"
-import { PaymentTable } from "./payment-table"
-import { EditPaymentDialog } from "./edit-payment-dialog"
-import { DeletePaymentDialog } from "./delete-payment-dialog"
-import { RateChangeDialog } from "./rate-change-dialog"
-import { LoanStatementDialog } from "./loan-statement-dialog"
-import { buildLoanStatement } from "@/lib/loan-statement"
+} from "lucide-react";
+import { paymentCollection } from "@/collections/payments";
+import {
+  currentUserRoleCollection,
+  getLoanCollateralCollection,
+  getUserNameMapCollection,
+  getPaymentPortionsCollection,
+} from "@/collections/loan-extras";
+import { loanBalanceCollection } from "@/collections/loan-balances";
+import { rateChangeRequestCollection } from "@/collections/rate-change-requests";
+import { loanCollection } from "@/collections/loans";
+import { isPenaltyActive } from "@/lib/interest/effective-rate";
+import { generateClientId } from "@/lib/client-id";
+import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db";
+import type {
+  UserRole,
+  RateChangeRequest,
+  LoanListEntry,
+  PaymentWithCustomer,
+} from "@/types";
+import { usePermissions } from "@/hooks/use-permissions";
+import type { Loan, PaymentPortionsMap } from "@/types";
+import { CopyButton } from "@/components/ui/copy-button";
+import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog";
+import { SimulatorPanel } from "@/components/loans/simulator-panel";
+import { Badge } from "@/components/ui/badge";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { InfoPopover } from "@/components/ui/info-popover";
+import BigNumber from "bignumber.js";
+import { addMonths, format } from "date-fns";
+import { cn, formatCurrency, shortId } from "@/lib/utils";
+import { calculateSchedule } from "@/lib/interest/engine";
+import { useLoanDetailStore } from "@/lib/stores/loan-detail";
+import { loanStatusVariant, loanStatusLabel } from "@/lib/status";
+import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button";
+import { Breadcrumb } from "@/components/ui/breadcrumb";
+import { OverdueBadge } from "@/components/watchlist/overdue-badge";
+import { LoanInfoCards } from "./loan-info-cards";
+import { PaymentTable } from "./payment-table";
+import { EditPaymentDialog } from "./edit-payment-dialog";
+import { DeletePaymentDialog } from "./delete-payment-dialog";
+import { RateChangeDialog } from "./rate-change-dialog";
+import { LoanStatementDialog } from "./loan-statement-dialog";
+import { buildLoanStatement } from "@/lib/loan-statement";
 
 interface LoanDetailClientProps {
-  loanEntry: LoanListEntry
-  customerName: string | null
+  loanEntry: LoanListEntry;
+  customerName: string | null;
 }
 
-export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientProps) {
+export function LoanDetailClient({
+  loanEntry,
+  customerName,
+}: LoanDetailClientProps) {
   // LoanListEntry extends Loan, so we can use it directly as a Loan
-  const loan: Loan = loanEntry
-  const daysOverdue = loanEntry.daysOverdue
-  const ledgerBalance: string | null = loanEntry.outstandingBalance
+  const loan: Loan = loanEntry;
+  const daysOverdue = loanEntry.daysOverdue;
+  const ledgerBalance: string | null = loanEntry.outstandingBalance;
 
-  const { has } = usePermissions()
-  const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived)
+  const { has } = usePermissions();
+  const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived);
 
   // Fetch userRole via collection
   const { data: userRoleRows } = useLiveQuery((q) =>
-    q.from({ r: currentUserRoleCollection }).select(({ r }) => r)
-  )
-  const userRole: UserRole = userRoleRows?.[0]?.role ?? ("unassigned" as UserRole)
+    q.from({ r: currentUserRoleCollection }).select(({ r }) => r),
+  );
+  const userRole: UserRole =
+    userRoleRows?.[0]?.role ?? ("unassigned" as UserRole);
 
   // Fetch collateral via collection. Use the non-suspending variant so the
   // page renders immediately on navigation — collateral data is only needed
   // by the Settle Collateral dialog, which is closed by default. Suspending
   // here was making post-issuance navigation wait on a server round-trip.
-  const collateralColl = getLoanCollateralCollection(loan.id)
+  const collateralColl = getLoanCollateralCollection(loan.id);
   const { data: collateralRows } = useLiveQuery(
     (q) => q.from({ c: collateralColl }).select(({ c }) => c),
-    [loan.id]
-  )
-  const collateralData = collateralRows?.[0] ?? null
-  const collateralNature = collateralData?.nature
-  const collateralDescription = collateralData?.description ?? null
+    [loan.id],
+  );
+  const collateralData = collateralRows?.[0] ?? null;
+  const collateralNature = collateralData?.nature;
+  const collateralDescription = collateralData?.description ?? null;
 
   // Use TanStack DB collection for payments — live, reactive, cached.
   // The Electric shape provides raw `payments` rows (no customerName/portions);
@@ -87,52 +101,60 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // syncs every row (including deleted ones), but ledger reversals make them
   // misleading to display, so they must be invisible everywhere in the UI.
   const { data: rawPayments } = useLiveQuery(
-    (q) => q.from({ p: paymentCollection }).where(({ p }) => and(eq(p.loanId, loan.id), isNull(p.deletedAt))),
-    [loan.id]
-  )
-  const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : []
+    (q) =>
+      q
+        .from({ p: paymentCollection })
+        .where(({ p }) => and(eq(p.loanId, loan.id), isNull(p.deletedAt))),
+    [loan.id],
+  );
+  const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : [];
 
   // Resolve recordedBy user IDs to names.
   // Memoize on the joined-id signature so the array identity only changes
   // when the actual set of ids changes (sorted for order-stability).
   const uniqueUserIdsKey = useMemo(
-    () => [...new Set(rawPaymentsArr.map((p) => p.recordedBy))].sort().join(","),
-    [rawPaymentsArr]
-  )
+    () =>
+      [...new Set(rawPaymentsArr.map((p) => p.recordedBy))].sort().join(","),
+    [rawPaymentsArr],
+  );
   const uniqueUserIds = useMemo(
     () => (uniqueUserIdsKey ? uniqueUserIdsKey.split(",") : []),
-    [uniqueUserIdsKey]
-  )
+    [uniqueUserIdsKey],
+  );
   const userNameMapColl = useMemo(
     () => getUserNameMapCollection(uniqueUserIds),
-    [uniqueUserIds]
-  )
+    [uniqueUserIds],
+  );
   const { data: userNameMapRows } = useLiveQuery(
     (q) => q.from({ u: userNameMapColl }).select(({ u }) => u),
-    [userNameMapColl]
-  )
-  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {}
+    [userNameMapColl],
+  );
+  const userNameMap: Record<string, string> = userNameMapRows?.[0]?.map ?? {};
 
   // Client-side query for payment portions — refreshes when payments change.
   // Memoize the id list and collection on the joined-id signature so the
   // ShapeStream isn't torn down on every render.
   const activePaymentIdsKey = useMemo(
-    () => rawPaymentsArr.map((p) => p.id).sort().join(","),
-    [rawPaymentsArr]
-  )
+    () =>
+      rawPaymentsArr
+        .map((p) => p.id)
+        .sort()
+        .join(","),
+    [rawPaymentsArr],
+  );
   const activePaymentIds = useMemo(
     () => (activePaymentIdsKey ? activePaymentIdsKey.split(",") : []),
-    [activePaymentIdsKey]
-  )
+    [activePaymentIdsKey],
+  );
   const portionsColl = useMemo(
     () => getPaymentPortionsCollection(loan.id, activePaymentIds),
-    [loan.id, activePaymentIds]
-  )
+    [loan.id, activePaymentIds],
+  );
   const { data: portionsRows } = useLiveQuery(
     (q) => q.from({ pp: portionsColl }).select(({ pp }) => pp),
-    [portionsColl]
-  )
-  const currentPortions: PaymentPortionsMap = portionsRows?.[0]?.portions ?? {}
+    [portionsColl],
+  );
+  const currentPortions: PaymentPortionsMap = portionsRows?.[0]?.portions ?? {};
 
   // Project the raw Electric rows into the PaymentWithCustomer shape that the
   // downstream components (PaymentTable, SimulatorPanel, store dialogs) type
@@ -140,15 +162,19 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
   // computed from `currentPortions` and the running balance map below.
   const payments: PaymentWithCustomer[] = useMemo(() => {
     return rawPaymentsArr.map((p) => {
-      const portion = currentPortions[p.id]
+      const portion = currentPortions[p.id];
       // Post-Electric removal: optimistic / server-action rows can arrive
       // with timestamp columns as ISO strings rather than Date objects.
       // Normalise here so downstream sorting & date arithmetic doesn't
       // crash on `.getTime()`.
       const paymentDate =
-        p.paymentDate instanceof Date ? p.paymentDate : new Date(p.paymentDate as unknown as string)
+        p.paymentDate instanceof Date
+          ? p.paymentDate
+          : new Date(p.paymentDate as unknown as string);
       const createdAt =
-        p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt as unknown as string)
+        p.createdAt instanceof Date
+          ? p.createdAt
+          : new Date(p.createdAt as unknown as string);
       return {
         id: p.id,
         loanId: p.loanId,
@@ -164,58 +190,90 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         recorderName: userNameMap[p.recordedBy] ?? "",
         depositLocation: p.depositLocation,
         createdAt,
-      }
-    })
-  }, [rawPaymentsArr, currentPortions, userNameMap, loan.customerId, customerName])
+      };
+    });
+  }, [
+    rawPaymentsArr,
+    currentPortions,
+    userNameMap,
+    loan.customerId,
+    customerName,
+  ]);
 
   const {
-    editingPayment, editAmount, editDate, editReason,
-    openPaymentEdit, closePaymentEdit, setEditAmount, setEditDate, setEditReason,
-    deletingPayment, deleteReason,
-    openPaymentDelete, closePaymentDelete, setDeleteReason,
-    settlingCollateral, openSettleCollateral, closeSettleCollateral,
-    requestingRateChange, newRate,
-    openRateChange, closeRateChange, setNewRate,
-    adjustingPenalty, penaltyMultiplierInput,
-    openPenaltyAdjust, closePenaltyAdjust, setPenaltyMultiplierInput,
+    editingPayment,
+    editAmount,
+    editDate,
+    editReason,
+    openPaymentEdit,
+    closePaymentEdit,
+    setEditAmount,
+    setEditDate,
+    setEditReason,
+    deletingPayment,
+    deleteReason,
+    openPaymentDelete,
+    closePaymentDelete,
+    setDeleteReason,
+    settlingCollateral,
+    openSettleCollateral,
+    closeSettleCollateral,
+    requestingRateChange,
+    newRate,
+    openRateChange,
+    closeRateChange,
+    setNewRate,
+    adjustingPenalty,
+    penaltyMultiplierInput,
+    openPenaltyAdjust,
+    closePenaltyAdjust,
+    setPenaltyMultiplierInput,
     reset,
-  } = useLoanDetailStore()
+  } = useLoanDetailStore();
 
   // Edit/delete are now synchronous collection ops — no pending state needed.
   // Penalty waive/adjust are also collection-routed (TanStack DB renders the
   // optimistic row instantly; failures roll back automatically), so we drop
   // the useTransition pending flags for them too.
-  const isEditPending = false
-  const isDeletePending = false
-  const isRateChangePending = false
-  const isWaivingPenalty = false
-  const isAdjustingPenalty = false
+  const isEditPending = false;
+  const isDeletePending = false;
+  const isRateChangePending = false;
+  const isWaivingPenalty = false;
+  const isAdjustingPenalty = false;
 
   // Fetch rate change requests for this loan from collection
   const { data: rateChangeRequests = [] } = useLiveQuery(
-    (q) => q.from({ r: rateChangeRequestCollection }).where(({ r }) => eq(r.loanId, loan.id)),
-    [loan.id]
-  )
+    (q) =>
+      q
+        .from({ r: rateChangeRequestCollection })
+        .where(({ r }) => eq(r.loanId, loan.id)),
+    [loan.id],
+  );
 
   // Balance collection — Electric-synced projection table. The page already has
   // a fallback outstanding balance from the loan list entry (loanEntry.outstandingBalance),
   // so the only consumers that strictly need this data — SimulatorPanel and
   // SettleCollateralDialog — can wait for it without blocking initial render.
   const { data: balanceRows } = useLiveQuery(
-    (q) => q.from({ b: loanBalanceCollection }).where(({ b }) => eq(b.loanId, loan.id)),
-    [loan.id]
-  )
-  const balanceData = balanceRows?.[0] ?? null
+    (q) =>
+      q
+        .from({ b: loanBalanceCollection })
+        .where(({ b }) => eq(b.loanId, loan.id)),
+    [loan.id],
+  );
+  const balanceData = balanceRows?.[0] ?? null;
 
- 
-
-  const rateChangeList = Array.isArray(rateChangeRequests) ? rateChangeRequests : []
-  const pendingRateRequest = rateChangeList.find((r: RateChangeRequest) => r.status === "pending")
+  const rateChangeList = Array.isArray(rateChangeRequests)
+    ? rateChangeRequests
+    : [];
+  const pendingRateRequest = rateChangeList.find(
+    (r: RateChangeRequest) => r.status === "pending",
+  );
 
   // Show Math dialog — built lazily so opening is instant.
-  const [statementOpen, setStatementOpen] = useState(false)
+  const [statementOpen, setStatementOpen] = useState(false);
   const statement = useMemo(() => {
-    if (!statementOpen) return null
+    if (!statementOpen) return null;
     return buildLoanStatement({
       loan: {
         id: loan.id,
@@ -247,92 +305,106 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
           toRate: r.requestedRate,
         })),
       today: new Date(),
-    })
-  }, [statementOpen, loan, payments, rateChangeList])
+    });
+  }, [statementOpen, loan, payments, rateChangeList]);
 
   // Initialize penalty multiplier on mount and reset on unmount
   useEffect(() => {
-    setPenaltyMultiplierInput((Number(loan.penaltyMultiplier) * 100).toFixed(0))
-    return () => reset()
-  }, [loan.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    setPenaltyMultiplierInput(
+      (Number(loan.penaltyMultiplier) * 100).toFixed(0),
+    );
+    return () => reset();
+  }, [loan.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-
-  const activePayments = [...payments]
-    .sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime())
+  const activePayments = [...payments].sort(
+    (a, b) => a.paymentDate.getTime() - b.paymentDate.getTime(),
+  );
   // Use ledger-derived balance from server; fall back to principalAmount
-  const outstandingBalance = ledgerBalance ?? loan.principalAmount
+  const outstandingBalance = ledgerBalance ?? loan.principalAmount;
 
-  const principalNum = parseFloat(loan.principalAmount)
-  const balanceNum = parseFloat(outstandingBalance)
-  const unpaidInterestNum = parseFloat(loanEntry.unpaidInterest ?? "0")
-  const totalDue = balanceNum + unpaidInterestNum
-  const totalPaid = Math.max(0, principalNum - balanceNum)
-  const repaymentPercent = principalNum > 0 ? Math.min(100, Math.max(0, Math.round((totalPaid / principalNum) * 100))) : 0
+  const principalNum = parseFloat(loan.principalAmount);
+  const balanceNum = parseFloat(outstandingBalance);
+  const unpaidInterestNum = parseFloat(loanEntry.unpaidInterest ?? "0");
+  const totalDue = balanceNum + unpaidInterestNum;
+  const totalPaid = Math.max(0, principalNum - balanceNum);
+  const repaymentPercent =
+    principalNum > 0
+      ? Math.min(100, Math.max(0, Math.round((totalPaid / principalNum) * 100)))
+      : 0;
 
   const schedule = useMemo(
-    () => loan.termMonths && loan.loanType && loan.loanType !== "perpetual"
-      ? calculateSchedule(
-          loan.principalAmount,
-          loan.interestRateOverride ?? loan.interestRate,
-          loan.termMonths,
-          loan.loanType as "fixed_rate" | "reducing_balance"
-        ).entries
-      : [],
-    [loan.principalAmount, loan.interestRateOverride, loan.interestRate, loan.termMonths, loan.loanType]
-  )
+    () =>
+      loan.termMonths && loan.loanType && loan.loanType !== "perpetual"
+        ? calculateSchedule(
+            loan.principalAmount,
+            loan.interestRateOverride ?? loan.interestRate,
+            loan.termMonths,
+            loan.loanType as "fixed_rate" | "reducing_balance",
+          ).entries
+        : [],
+    [
+      loan.principalAmount,
+      loan.interestRateOverride,
+      loan.interestRate,
+      loan.termMonths,
+      loan.loanType,
+    ],
+  );
 
   // Compute running balance per payment for the "Balance" column
   const runningBalanceMap = useMemo(() => {
-    const map: Record<string, string> = {}
-    let balance = new BigNumber(loan.principalAmount)
+    const map: Record<string, string> = {};
+    let balance = new BigNumber(loan.principalAmount);
     // Use non-deleted payments sorted by date
-    const sorted = payments
-      .sort((a, b) => a.paymentDate.getTime() - b.paymentDate.getTime() || a.createdAt.getTime() - b.createdAt.getTime())
+    const sorted = payments.sort(
+      (a, b) =>
+        a.paymentDate.getTime() - b.paymentDate.getTime() ||
+        a.createdAt.getTime() - b.createdAt.getTime(),
+    );
     for (const p of sorted) {
-      const principal = currentPortions[p.id]?.principalPortion ?? "0"
-      balance = balance.minus(new BigNumber(principal))
-      if (balance.isLessThan(0)) balance = new BigNumber(0)
-      map[p.id] = balance.toFixed(0)
+      const principal = currentPortions[p.id]?.principalPortion ?? "0";
+      balance = balance.minus(new BigNumber(principal));
+      if (balance.isLessThan(0)) balance = new BigNumber(0);
+      map[p.id] = balance.toFixed(0);
     }
-    return map
-  }, [payments, currentPortions, loan.principalAmount])
-
+    return map;
+  }, [payments, currentPortions, loan.principalAmount]);
 
   function handleEditSubmit() {
-    if (!editingPayment) return
+    if (!editingPayment) return;
     try {
       paymentCollection.update(
         editingPayment.id,
         { metadata: { intent: "edit", reason: editReason.trim() } },
         (draft) => {
-          if (editAmount.trim()) draft.amount = editAmount.trim()
-          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00")
+          if (editAmount.trim()) draft.amount = editAmount.trim();
+          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00");
         },
-      )
-      toast.success("Payment updated")
-      closePaymentEdit()
+      );
+      toast.success("Payment updated");
+      closePaymentEdit();
     } catch {
-      toast.error("Failed to update payment")
+      toast.error("Failed to update payment");
     }
   }
 
   function handleDeleteSubmit() {
-    if (!deletingPayment) return
+    if (!deletingPayment) return;
     try {
       paymentCollection.delete(deletingPayment.id, {
         metadata: { reason: deleteReason.trim() },
-      })
-      toast.success("Payment deleted")
-      closePaymentDelete()
+      });
+      toast.success("Payment deleted");
+      closePaymentDelete();
     } catch {
-      toast.error("Failed to delete payment")
+      toast.error("Failed to delete payment");
     }
   }
 
   function handleRateChangeSubmit() {
-    const rateDecimal = (parseFloat(newRate) / 100).toFixed(4)
-    const id = generateClientId()
-    const now = new Date()
+    const rateDecimal = (parseFloat(newRate) / 100).toFixed(4);
+    const id = generateClientId();
+    const now = new Date();
 
     const optimistic: RateChangeRequest = {
       id,
@@ -346,14 +418,14 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       reviewNote: null,
       createdAt: now,
       reviewedAt: null,
-    }
+    };
 
     try {
-      rateChangeRequestCollection.insert(optimistic)
-      toast.success("Rate change request submitted")
-      closeRateChange()
+      rateChangeRequestCollection.insert(optimistic);
+      toast.success("Rate change request submitted");
+      closeRateChange();
     } catch {
-      toast.error("Failed to submit rate change request")
+      toast.error("Failed to submit rate change request");
     }
   }
 
@@ -363,34 +435,38 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         loan.id,
         { metadata: { intent: "waive-penalty" } },
         (draft) => {
-          draft.penaltyWaived = true
-          draft.penaltyWaivedAt = new Date()
+          draft.penaltyWaived = true;
+          draft.penaltyWaivedAt = new Date();
         },
-      )
-      toast.success("Penalty waived")
+      );
+      toast.success("Penalty waived");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to waive penalty")
+      toast.error(
+        err instanceof Error ? err.message : "Failed to waive penalty",
+      );
     }
   }
 
   function handleAdjustPenaltySave() {
     try {
-      const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4)
+      const decimal = (parseFloat(penaltyMultiplierInput) / 100).toFixed(4);
       loanCollection.update(
         loan.id,
         { metadata: { intent: "adjust-penalty", multiplier: decimal } },
         (draft) => {
-          draft.penaltyMultiplier = decimal
+          draft.penaltyMultiplier = decimal;
         },
-      )
-      toast.success("Penalty rate adjusted")
-      closePenaltyAdjust()
+      );
+      toast.success("Penalty rate adjusted");
+      closePenaltyAdjust();
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to adjust penalty")
+      toast.error(
+        err instanceof Error ? err.message : "Failed to adjust penalty",
+      );
     }
   }
 
-  const loanRef = `LOAN-${shortId(loan.id).toUpperCase()}`
+  const loanRef = `LOAN-${shortId(loan.id).toUpperCase()}`;
 
   return (
     <div className="p-4 md:p-6 lg:p-8 space-y-8 max-w-6xl mx-auto">
@@ -422,30 +498,52 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                   {customerName}
                 </Link>
               )}
-              <Badge variant={loanStatusVariant(loan.status)}>{loanStatusLabel(loan.status)}</Badge>
+              <Badge variant={loanStatusVariant(loan.status)}>
+                {loanStatusLabel(loan.status)}
+              </Badge>
               {penaltyActive && (
                 <Badge variant="destructive" className="text-xs">
                   Penalty Active
                 </Badge>
               )}
               {loan.penaltyWaived && !penaltyActive && (
-                <Badge variant="outline" className="text-xs border-amber-500 text-amber-600">
+                <Badge
+                  variant="outline"
+                  className="text-xs border-amber-500 text-amber-600"
+                >
                   Penalty Waived
                 </Badge>
               )}
               <InfoPopover>
                 <p className="font-semibold text-sm mb-1">Loan Status</p>
                 <div className="text-xs text-muted-foreground space-y-1.5">
-                  <p><strong>Pending</strong> — Loan created but not yet disbursed. No interest accrues.</p>
-                  <p><strong>Active</strong> — Money has been given to the borrower. Interest accrues daily.</p>
-                  <p><strong>Fully Paid</strong> — Outstanding balance has reached zero. No further payments needed.</p>
-                  <p><strong>Settled (Collateral)</strong> — Loan closed by seizing the borrower&apos;s collateral.</p>
-                  <p><strong>Rolled Over</strong> — Outstanding balance was rolled into a new loan.</p>
+                  <p>
+                    <strong>Pending</strong> — Loan created but not yet
+                    disbursed. No interest accrues.
+                  </p>
+                  <p>
+                    <strong>Active</strong> — Money has been given to the
+                    borrower. Interest accrues daily.
+                  </p>
+                  <p>
+                    <strong>Fully Paid</strong> — Outstanding balance has
+                    reached zero. No further payments needed.
+                  </p>
+                  <p>
+                    <strong>Settled (Collateral)</strong> — Loan closed by
+                    seizing the borrower&apos;s collateral.
+                  </p>
+                  <p>
+                    <strong>Rolled Over</strong> — Outstanding balance was
+                    rolled into a new loan.
+                  </p>
                 </div>
               </InfoPopover>
             </div>
             <span className="flex items-center gap-0.5 mt-0.5">
-              <p className="text-xs text-muted-foreground font-mono">{loanRef}</p>
+              <p className="text-xs text-muted-foreground font-mono">
+                {loanRef}
+              </p>
               <CopyButton value={loanRef} />
             </span>
           </div>
@@ -509,12 +607,17 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
                   Principal Balance
                   <InfoPopover>
-                    <p className="font-semibold text-sm mb-1">Principal Balance</p>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      The remaining principal the borrower still owes. This decreases only when a payment exceeds the accrued interest — the excess reduces the principal.
+                    <p className="font-semibold text-sm mb-1">
+                      Principal Balance
                     </p>
                     <p className="text-xs text-muted-foreground mb-2">
-                      Different from the total amount owed, which also includes unpaid interest.
+                      The remaining principal the borrower still owes. This
+                      decreases only when a payment exceeds the accrued interest
+                      — the excess reduces the principal.
+                    </p>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      Different from the total amount owed, which also includes
+                      unpaid interest.
                     </p>
                     <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
                       Payment → Interest first, then Principal
@@ -531,17 +634,19 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                   <InfoPopover>
                     <p className="font-semibold text-sm mb-1">Total Due</p>
                     <p className="text-xs text-muted-foreground mb-2">
-                      The total amount the borrower must pay right now to fully settle the loan.
+                      The total amount the borrower must pay right now to fully
+                      settle the loan.
                     </p>
                     <p className="text-xs font-semibold mb-1">Formula</p>
                     <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
                       Total Due = Principal Balance + Unpaid Interest
                     </p>
                     <p className="text-xs text-muted-foreground mb-2">
-                      <strong>Penalty included.</strong> If the loan has crossed the
-                      60-day overdue threshold, interest accrued after the threshold
-                      uses the higher penalty rate (base × (1 + penaltyMultiplier)),
-                      so the Unpaid Interest figure already reflects the surcharge.
+                      <strong>Penalty included.</strong> If the loan has crossed
+                      the 60-day overdue threshold, interest accrued after the
+                      threshold uses the higher penalty rate (base × (1 +
+                      penaltyMultiplier)), so the Unpaid Interest figure already
+                      reflects the surcharge.
                     </p>
                     <p className="text-xs text-muted-foreground">
                       This figure changes daily as interest continues to accrue.
@@ -552,14 +657,20 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                   {formatCurrency(totalDue.toString())}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1 font-mono">
-                  Unpaid interest: {formatCurrency(unpaidInterestNum.toString())}
+                  Unpaid interest:{" "}
+                  {formatCurrency(unpaidInterestNum.toString())}
                 </p>
                 {daysOverdue > 0 && (
                   <div className="mt-2 flex items-center gap-1.5">
-                    <span className="text-xs text-muted-foreground">Days overdue:</span>
+                    <span className="text-xs text-muted-foreground">
+                      Days overdue:
+                    </span>
                     <OverdueBadge daysOverdue={daysOverdue} />
                     {penaltyActive && (
-                      <Badge variant="destructive" className="rounded-full text-[10px] px-1.5">
+                      <Badge
+                        variant="destructive"
+                        className="rounded-full text-[10px] px-1.5"
+                      >
                         Penalty
                       </Badge>
                     )}
@@ -574,7 +685,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                       </p>
                       {penaltyActive && (
                         <p className="text-xs text-muted-foreground">
-                          A penalty rate is active because unpaid interest has gone past the threshold. The effective rate is higher until the borrower catches up.
+                          A penalty rate is active because unpaid interest has
+                          gone past the threshold. The effective rate is higher
+                          until the borrower catches up.
                         </p>
                       )}
                     </InfoPopover>
@@ -586,7 +699,10 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
             <div className="space-y-1.5 max-w-md">
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>{repaymentPercent}% repaid</span>
-                <span>{formatCurrency(totalPaid)} of {formatCurrency(loan.principalAmount)}</span>
+                <span>
+                  {formatCurrency(totalPaid)} of{" "}
+                  {formatCurrency(loan.principalAmount)}
+                </span>
               </div>
               <div className="h-2 rounded-full bg-muted overflow-hidden">
                 <div
@@ -596,7 +712,7 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                       ? "bg-green-500"
                       : repaymentPercent >= 50
                         ? "bg-primary"
-                        : "bg-primary/70"
+                        : "bg-primary/70",
                   )}
                   style={{ width: `${repaymentPercent}%` }}
                 />
@@ -624,12 +740,18 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
           <h3 className="font-semibold mb-3 text-sm uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1">
             Amortization Schedule
             <InfoPopover>
-              <p className="font-semibold text-sm mb-1">Amortization Schedule</p>
+              <p className="font-semibold text-sm mb-1">
+                Amortization Schedule
+              </p>
               <p className="text-xs text-muted-foreground mb-2">
-                A projected breakdown of each monthly payment showing how much goes to interest vs principal. Actual payments may differ if payments are made early, late, or in different amounts.
+                A projected breakdown of each monthly payment showing how much
+                goes to interest vs principal. Actual payments may differ if
+                payments are made early, late, or in different amounts.
               </p>
               <p className="text-xs text-muted-foreground">
-                For <strong>Fixed Rate</strong> loans, interest is the same each month. For <strong>Reducing Balance</strong> loans, interest decreases as the principal is paid down.
+                For <strong>Fixed Rate</strong> loans, interest is the same each
+                month. For <strong>Reducing Balance</strong> loans, interest
+                decreases as the principal is paid down.
               </p>
             </InfoPopover>
           </h3>
@@ -650,12 +772,23 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
                   <tr key={entry.month} className="border-t">
                     <td className="px-3 py-2">{entry.month}</td>
                     <td className="px-3 py-2 text-muted-foreground">
-                      {format(addMonths(new Date(loan.startDate), entry.month), "MMM d, yyyy")}
+                      {format(
+                        addMonths(new Date(loan.startDate), entry.month),
+                        "MMM d, yyyy",
+                      )}
                     </td>
-                    <td className="px-3 py-2 text-right">{Number(entry.monthlyPrincipal).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInterest).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.monthlyInstallment).toLocaleString()}</td>
-                    <td className="px-3 py-2 text-right">{Number(entry.balanceAfter).toLocaleString()}</td>
+                    <td className="px-3 py-2 text-right">
+                      {Number(entry.monthlyPrincipal).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {Number(entry.monthlyInterest).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {Number(entry.monthlyInstallment).toLocaleString()}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {Number(entry.balanceAfter).toLocaleString()}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -685,9 +818,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
           loan={loan}
           payments={payments}
           ledgerBalance={balanceData?.outstandingBalance ?? ledgerBalance}
-          totalInterestPaid={Object.values(currentPortions).reduce(
-            (sum, p) => sum.plus(p.interestPortion), new BigNumber(0)
-          ).toFixed(0)}
+          totalInterestPaid={Object.values(currentPortions)
+            .reduce((sum, p) => sum.plus(p.interestPortion), new BigNumber(0))
+            .toFixed(0)}
         />
       )}
 
@@ -726,7 +859,9 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
       {balanceData && collateralNature && (
         <SettleCollateralDialog
           open={settlingCollateral}
-          onOpenChange={(v) => { if (!v) closeSettleCollateral() }}
+          onOpenChange={(v) => {
+            if (!v) closeSettleCollateral();
+          }}
           loanId={loan.id}
           outstandingPrincipal={balanceData.outstandingBalance}
           accruedInterest={balanceData.unpaidInterest}
@@ -744,5 +879,5 @@ export function LoanDetailClient({ loanEntry, customerName }: LoanDetailClientPr
         />
       )}
     </div>
-  )
+  );
 }
