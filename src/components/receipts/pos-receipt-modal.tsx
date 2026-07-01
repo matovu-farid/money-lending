@@ -162,7 +162,7 @@ export function PosReceiptModal({
 
           img {
             display: block;
-            width: 80mm;
+            width: 100%; 
             height: auto;
           }
         </style>
