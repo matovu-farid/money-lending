@@ -437,12 +437,10 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
         </Link>
       </PageHeader>
 
-      {/* @ts-expect-error -- Accordion value type mismatch with radix/shadcn generics */}
       <Accordion
-        type="single"
         collapsible
-        defaultValue={editing ? "basic-info" : undefined}
-        value={editing ? "basic-info" : undefined}
+        defaultValue={editing ? ["basic-info"] : undefined}
+        value={editing ? ["basic-info"] : undefined}
       >
         <AccordionItem value="basic-info" className="border rounded-lg px-4">
           <div className="flex items-center justify-between">

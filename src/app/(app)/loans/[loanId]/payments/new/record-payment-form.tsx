@@ -38,7 +38,6 @@ import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment
 import type { ReceiptPaymentData, DepositLocation } from "@/types";
 import type { RecordPaymentInput } from "@/types/payment";
 import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants";
-import { computeReceiptAllocation } from "@/lib/receipt-allocation";
 import { allocateLoanPayment } from "@/lib/interest/engine";
 import { endOfDay } from "date-fns";
 
