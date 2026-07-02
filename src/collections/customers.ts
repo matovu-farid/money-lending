@@ -83,7 +83,7 @@ export const customerCollection = createCollection(
       // Regular profile update path
       const input: UpdateCustomerInput = {};
       if (changes.fullName !== undefined) input.fullName = changes.fullName;
-      if (changes.id !== undefined) input.id = changes.nin;
+      if (changes.id !== undefined) input.nin = changes.nin;
       if (changes.contact !== undefined) input.contact = changes.contact;
       if (changes.address !== undefined) input.address = changes.address;
       const result = throwIfActionError(

@@ -3,13 +3,11 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import {
-  allocatePayment,
   calculateDaysOverdue,
   calculateDailyRate,
   calculateInterest,
   formatAmount,
 } from "@/lib/interest";
-import type { PaymentAllocation } from "@/lib/interest";
 import BigNumber from "bignumber.js";
 import type { Loan, PaymentWithCustomer } from "@/types";
 import { formatCurrency } from "@/lib/utils";
@@ -28,7 +26,7 @@ interface SimulatorPanelProps {
 }
 
 interface SimulatorResult {
-  allocation: PaymentAllocation;
+  allocation: Awaited<ReturnType<typeof allocateLoanPayment>>;
   currentDaysOverdue: string;
   afterDaysOverdue: string;
   currentOutstanding: string;

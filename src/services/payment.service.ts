@@ -109,13 +109,7 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
   return { outstandingPrincipal, accruedInterest, totalBalance, loanType };
 }
 
-export const recordPayment = (
-  input: RecordPaymentInput,
-  actorId: string,
-): Effect.Effect<
-  Payment & { allocation: ReturnType<typeof allocatePayment> },
-  LoanNotFound | ValidationError | DatabaseError
-> =>
+export const recordPayment = (input: RecordPaymentInput, actorId: string) =>
   Effect.map(recordPaymentWithTxid(input, actorId), ({ payment }) => payment);
 
 /**
