@@ -32,7 +32,10 @@ import { db } from "../src/lib/db";
 import { loans } from "../src/lib/db/schema/loans";
 import { payments } from "../src/lib/db/schema/payments";
 import { user } from "../src/lib/db/schema/auth";
-import { allocatePayment } from "../src/lib/interest/engine";
+import {
+  allocateLoanPayment,
+  allocatePayment,
+} from "../src/lib/interest/engine";
 import { getPaymentPortionsFromLedger } from "../src/services/ledger-queries.service";
 import { postJournalEntry } from "../src/services/transaction.service";
 import { daysBetween } from "../src/lib/db/utils";
@@ -106,9 +109,6 @@ async function main() {
 
     if (loanPayments.length < 2) continue;
 
-    const monthlyRate = loan.interestRateOverride ?? loan.interestRate;
-    const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
-
     const portionsMap = await getPaymentPortionsFromLedger(
       loanPayments.map((p) => p.id),
     );
@@ -122,14 +122,10 @@ async function main() {
       const paymentNumber = i + 1;
       const daysElapsed = daysBetween(prevDate, p.paymentDate);
 
-      const corrected = allocatePayment({
+      const corrected = await allocateLoanPayment({
         paymentAmount: p.amount,
-        outstandingBalance: runningBalance.toFixed(2),
-        monthlyRateDecimal: monthlyRate,
-        daysElapsed,
-        minInterestDays,
-        loanType: "perpetual",
-        paymentNumber,
+        loanId: p.loanId,
+        asOf: p.paymentDate,
       });
 
       const original = portionsMap.get(p.id) ?? {
