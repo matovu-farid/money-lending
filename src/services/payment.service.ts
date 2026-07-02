@@ -26,15 +26,8 @@ import {
 } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
-import {
-  allocateLoanPayment,
-  allocatePayment,
-  formatAmount,
-} from "@/lib/interest/engine";
-import {
-  computeLoanOverdueInfo,
-  computePerpetualOverdueInfo,
-} from "@/lib/interest/overdue";
+import { allocateLoanPayment, formatAmount } from "@/lib/interest/engine";
+import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
 import {
   postJournalEntry,
   reverseInterestAccrual,
@@ -45,7 +38,6 @@ import {
 } from "./auto-post.service";
 import {
   getLoanBalanceFromLedger,
-  getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
   getPaymentPortionsFromLedger,
 } from "./ledger-queries.service";
@@ -64,7 +56,7 @@ import {
   type RecentlyCollectedLoan,
 } from "@/types";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
-import { endOfDay, startOfDay } from "date-fns";
+import { endOfDay } from "date-fns";
 import { allocateLoanPaymentServerSide } from "@/lib/interest/engine-server";
 
 export async function getLastPaymentDate(loan: {
