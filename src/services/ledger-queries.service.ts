@@ -1,16 +1,10 @@
-import { db } from "@/lib/db"
-import { transactions } from "@/lib/db/schema/transactions"
-import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
-import {
-  eq,
-  and,
-  or,
-  lte,
-  sql,
-  inArray,
-} from "drizzle-orm"
-import BigNumber from "bignumber.js"
+import { db } from "@/lib/db";
+import { transactions } from "@/lib/db/schema/transactions";
+import { transactionCategories } from "@/lib/db/schema/transaction-categories";
+import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
+import { eq, and, or, lte, sql, inArray, isNull } from "drizzle-orm";
+import BigNumber from "bignumber.js";
+import { loans } from "@/lib/db/schema";
 
 /**
  * Derive per-loan outstanding principal from the ledger.
@@ -20,7 +14,7 @@ import BigNumber from "bignumber.js"
 export async function getLoanBalancesFromLedger(
   loanIds: string[],
   asOf?: Date,
-  queryDb: Pick<typeof db, "select"> = db
+  queryDb: Pick<typeof db, "select"> = db,
 ): Promise<Map<string, BigNumber>> {
   if (loanIds.length === 0) return new Map();
 
@@ -41,8 +35,9 @@ export async function getLoanBalancesFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
+
     .where(and(...conditions))
     .groupBy(transactions.loanId, transactions.type);
 
@@ -54,7 +49,7 @@ export async function getLoanBalancesFromLedger(
     // Asset: DR adds, CR subtracts
     balances.set(
       row.loanId,
-      row.txType === "debit" ? current.plus(amount) : current.minus(amount)
+      row.txType === "debit" ? current.plus(amount) : current.minus(amount),
     );
   }
   return balances;
@@ -66,10 +61,20 @@ export async function getLoanBalancesFromLedger(
 export async function getLoanBalanceFromLedger(
   loanId: string,
   asOf?: Date,
-  queryDb?: Pick<typeof db, "select">
+  queryDb?: Pick<typeof db, "select">,
 ): Promise<BigNumber> {
   const balances = await getLoanBalancesFromLedger([loanId], asOf, queryDb);
   return balances.get(loanId) ?? new BigNumber(0);
+}
+
+export async function getSingleInterestEarnedFromLedger(
+  loanId: string,
+  queryDb: Pick<typeof db, "select"> = db,
+) {
+  return (
+    (await getInterestEarnedFromLedger([loanId], queryDb)).get(loanId) ??
+    new BigNumber(0)
+  );
 }
 
 /**
@@ -79,7 +84,7 @@ export async function getLoanBalanceFromLedger(
  */
 export async function getInterestEarnedFromLedger(
   loanIds: string[],
-  queryDb: Pick<typeof db, "select"> = db
+  queryDb: Pick<typeof db, "select"> = db,
 ): Promise<Map<string, BigNumber>> {
   if (loanIds.length === 0) return new Map();
 
@@ -92,13 +97,14 @@ export async function getInterestEarnedFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .where(
       and(
         eq(transactionCategories.name, "Interest Earned"),
-        inArray(transactions.loanId, loanIds)
-      )
+        inArray(transactions.loanId, loanIds),
+        // isNull(transactions.),
+      ),
     )
     .groupBy(transactions.loanId, transactions.type);
 
@@ -110,7 +116,7 @@ export async function getInterestEarnedFromLedger(
     // Revenue: CR adds, DR subtracts
     balances.set(
       row.loanId,
-      row.txType === "credit" ? current.plus(amount) : current.minus(amount)
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount),
     );
   }
   return balances;
@@ -122,7 +128,7 @@ export async function getInterestEarnedFromLedger(
  * Liability account: CR adds, DR subtracts.
  */
 export async function getInterestPayableFromLedger(
-  investmentIds: string[]
+  investmentIds: string[],
 ): Promise<Map<string, BigNumber>> {
   if (investmentIds.length === 0) return new Map();
 
@@ -135,13 +141,13 @@ export async function getInterestPayableFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .where(
       and(
         eq(transactionCategories.name, "Interest Payable"),
-        inArray(transactions.referenceId, investmentIds)
-      )
+        inArray(transactions.referenceId, investmentIds),
+      ),
     )
     .groupBy(transactions.referenceId, transactions.type);
 
@@ -153,7 +159,7 @@ export async function getInterestPayableFromLedger(
     // Liability: CR adds, DR subtracts
     balances.set(
       row.referenceId,
-      row.txType === "credit" ? current.plus(amount) : current.minus(amount)
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount),
     );
   }
   return balances;
@@ -169,7 +175,7 @@ export async function getInterestPayableFromLedger(
  */
 export async function getCreditorBalancesFromLedger(
   investmentIds: string[],
-  queryDb: Pick<typeof db, "select"> = db
+  queryDb: Pick<typeof db, "select"> = db,
 ): Promise<Map<string, BigNumber>> {
   if (investmentIds.length === 0) return new Map();
 
@@ -189,14 +195,14 @@ export async function getCreditorBalancesFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .leftJoin(
       creditorRepayments,
       and(
         eq(transactions.referenceType, "creditor_repayment"),
-        eq(transactions.referenceId, repaymentIdText)
-      )
+        eq(transactions.referenceId, repaymentIdText),
+      ),
     )
     .where(
       and(
@@ -204,14 +210,14 @@ export async function getCreditorBalancesFromLedger(
         or(
           and(
             eq(transactions.referenceType, "creditor_investment"),
-            inArray(transactions.referenceId, investmentIds)
+            inArray(transactions.referenceId, investmentIds),
           ),
           and(
             eq(transactions.referenceType, "creditor_repayment"),
-            inArray(repaymentInvestmentIdText, investmentIds)
-          )
-        )
-      )
+            inArray(repaymentInvestmentIdText, investmentIds),
+          ),
+        ),
+      ),
     )
     .groupBy(effectiveInvestmentId, transactions.type);
 
@@ -223,7 +229,7 @@ export async function getCreditorBalancesFromLedger(
     // Liability: CR adds, DR subtracts
     balances.set(
       row.investmentId,
-      row.txType === "credit" ? current.plus(amount) : current.minus(amount)
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount),
     );
   }
   return balances;
@@ -238,7 +244,7 @@ export async function getCreditorBalancesFromLedger(
  */
 export async function getPaymentPortionsFromLedger(
   paymentIds: string[],
-  queryDb: Pick<typeof db, "select"> = db
+  queryDb: Pick<typeof db, "select"> = db,
 ): Promise<Map<string, { interestPortion: string; principalPortion: string }>> {
   if (paymentIds.length === 0) return new Map();
 
@@ -252,40 +258,58 @@ export async function getPaymentPortionsFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .where(
       and(
         inArray(transactions.referenceId, paymentIds),
         inArray(transactions.referenceType, ["payment", "payment_reversal"]),
-        inArray(transactionCategories.name, ["Interest Earned", "Loans Receivable"])
-      )
+        inArray(transactionCategories.name, [
+          "Interest Earned",
+          "Loans Receivable",
+        ]),
+      ),
     )
-    .groupBy(transactions.referenceId, transactionCategories.name, transactions.type);
+    .groupBy(
+      transactions.referenceId,
+      transactionCategories.name,
+      transactions.type,
+    );
 
-  const portionMap = new Map<string, { interest: BigNumber; principal: BigNumber }>();
+  const portionMap = new Map<
+    string,
+    { interest: BigNumber; principal: BigNumber }
+  >();
 
   for (const row of rows) {
     if (!row.referenceId) continue;
-    const current = portionMap.get(row.referenceId) ?? { interest: new BigNumber(0), principal: new BigNumber(0) };
+    const current = portionMap.get(row.referenceId) ?? {
+      interest: new BigNumber(0),
+      principal: new BigNumber(0),
+    };
     const amount = new BigNumber(row.total);
 
     if (row.categoryName === "Interest Earned") {
       // Revenue account: CR adds, DR subtracts
-      current.interest = row.txType === "credit"
-        ? current.interest.plus(amount)
-        : current.interest.minus(amount);
+      current.interest =
+        row.txType === "credit"
+          ? current.interest.plus(amount)
+          : current.interest.minus(amount);
     } else if (row.categoryName === "Loans Receivable") {
       // Asset account: CR adds to principal portion (principal repaid)
-      current.principal = row.txType === "credit"
-        ? current.principal.plus(amount)
-        : current.principal.minus(amount);
+      current.principal =
+        row.txType === "credit"
+          ? current.principal.plus(amount)
+          : current.principal.minus(amount);
     }
 
     portionMap.set(row.referenceId, current);
   }
 
-  const result = new Map<string, { interestPortion: string; principalPortion: string }>();
+  const result = new Map<
+    string,
+    { interestPortion: string; principalPortion: string }
+  >();
   for (const [paymentId, portions] of portionMap) {
     result.set(paymentId, {
       interestPortion: portions.interest.toFixed(2),
@@ -296,7 +320,7 @@ export async function getPaymentPortionsFromLedger(
 }
 
 export async function getCreditorRepaymentPortionsFromLedger(
-  repaymentIds: string[]
+  repaymentIds: string[],
 ): Promise<Map<string, { interestPortion: string; principalPortion: string }>> {
   if (repaymentIds.length === 0) return new Map();
 
@@ -310,40 +334,58 @@ export async function getCreditorRepaymentPortionsFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .where(
       and(
         inArray(transactions.referenceId, repaymentIds),
         eq(transactions.referenceType, "creditor_repayment"),
-        inArray(transactionCategories.name, ["Interest Payments", "Creditor Investment"])
-      )
+        inArray(transactionCategories.name, [
+          "Interest Payments",
+          "Creditor Investment",
+        ]),
+      ),
     )
-    .groupBy(transactions.referenceId, transactionCategories.name, transactions.type);
+    .groupBy(
+      transactions.referenceId,
+      transactionCategories.name,
+      transactions.type,
+    );
 
-  const portionMap = new Map<string, { interest: BigNumber; principal: BigNumber }>();
+  const portionMap = new Map<
+    string,
+    { interest: BigNumber; principal: BigNumber }
+  >();
 
   for (const row of rows) {
     if (!row.referenceId) continue;
-    const current = portionMap.get(row.referenceId) ?? { interest: new BigNumber(0), principal: new BigNumber(0) };
+    const current = portionMap.get(row.referenceId) ?? {
+      interest: new BigNumber(0),
+      principal: new BigNumber(0),
+    };
     const amount = new BigNumber(row.total);
 
     if (row.categoryName === "Interest Payments") {
       // Expense account: DR adds, CR subtracts
-      current.interest = row.txType === "debit"
-        ? current.interest.plus(amount)
-        : current.interest.minus(amount);
+      current.interest =
+        row.txType === "debit"
+          ? current.interest.plus(amount)
+          : current.interest.minus(amount);
     } else if (row.categoryName === "Creditor Investment") {
       // Liability account: DR adds (decrease = principal repaid), CR subtracts
-      current.principal = row.txType === "debit"
-        ? current.principal.plus(amount)
-        : current.principal.minus(amount);
+      current.principal =
+        row.txType === "debit"
+          ? current.principal.plus(amount)
+          : current.principal.minus(amount);
     }
 
     portionMap.set(row.referenceId, current);
   }
 
-  const result = new Map<string, { interestPortion: string; principalPortion: string }>();
+  const result = new Map<
+    string,
+    { interestPortion: string; principalPortion: string }
+  >();
   for (const [repaymentId, portions] of portionMap) {
     result.set(repaymentId, {
       interestPortion: portions.interest.toFixed(2),
@@ -359,7 +401,7 @@ export async function getCreditorRepaymentPortionsFromLedger(
  * Returns the gross total invested (not net of repayments).
  */
 export async function getCreditorTotalInvestedFromLedger(
-  investmentIds: string[]
+  investmentIds: string[],
 ): Promise<BigNumber> {
   if (investmentIds.length === 0) return new BigNumber(0);
 
@@ -371,14 +413,14 @@ export async function getCreditorTotalInvestedFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .where(
       and(
         eq(transactionCategories.name, "Creditor Investment"),
         eq(transactions.referenceType, "creditor_investment"),
-        inArray(transactions.referenceId, investmentIds)
-      )
+        inArray(transactions.referenceId, investmentIds),
+      ),
     )
     .groupBy(transactions.type);
 
@@ -400,7 +442,7 @@ export async function getCreditorTotalInvestedFromLedger(
  * creditor_repayments to filter by the investmentIds those repayments belong to.
  */
 export async function getCreditorTotalRepaidFromLedger(
-  investmentIds: string[]
+  investmentIds: string[],
 ): Promise<BigNumber> {
   if (investmentIds.length === 0) return new BigNumber(0);
 
@@ -418,18 +460,21 @@ export async function getCreditorTotalRepaidFromLedger(
     .from(transactions)
     .innerJoin(
       transactionCategories,
-      eq(transactions.categoryId, transactionCategories.id)
+      eq(transactions.categoryId, transactionCategories.id),
     )
     .innerJoin(
       creditorRepayments,
-      eq(transactions.referenceId, repaymentIdText)
+      eq(transactions.referenceId, repaymentIdText),
     )
     .where(
       and(
         eq(transactions.referenceType, "creditor_repayment"),
         inArray(repaymentInvestmentIdText, investmentIds),
-        inArray(transactionCategories.name, ["Creditor Investment", "Interest Payments"])
-      )
+        inArray(transactionCategories.name, [
+          "Creditor Investment",
+          "Interest Payments",
+        ]),
+      ),
     )
     .groupBy(transactions.type, transactionCategories.name);
 
@@ -439,10 +484,86 @@ export async function getCreditorTotalRepaidFromLedger(
     if (row.categoryName === "Creditor Investment" && row.txType === "debit") {
       // Liability DR = principal repaid
       total = total.plus(amount);
-    } else if (row.categoryName === "Interest Payments" && row.txType === "debit") {
+    } else if (
+      row.categoryName === "Interest Payments" &&
+      row.txType === "debit"
+    ) {
       // Expense DR = interest paid
       total = total.plus(amount);
     }
   }
   return total;
+}
+/**
+ * Derive per-loan remaining principal from the ledger.
+ * Queries "Loans Receivable" entries grouped by loanId.
+ *
+ * Loans Receivable is an Asset:
+ *   - Debit  = principal increases (loan issued or payment reversed)
+ *   - Credit = principal decreases (principal repaid)
+ */
+export async function getRemainingPrincipalFromLedger(
+  loanIds: string[],
+  asOf?: Date,
+  queryDb: Pick<typeof db, "select"> = db,
+): Promise<Map<string, BigNumber>> {
+  if (loanIds.length === 0) return new Map();
+
+  const conditions = [
+    eq(transactionCategories.name, "Loans Receivable"),
+    inArray(transactions.loanId, loanIds),
+  ];
+
+  if (asOf) {
+    conditions.push(lte(transactions.transactionDate, asOf));
+  }
+
+  const rows = await queryDb
+    .select({
+      loanId: transactions.loanId,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id),
+    )
+    .where(and(...conditions))
+    .groupBy(transactions.loanId, transactions.type);
+
+  const balances = new Map<string, BigNumber>();
+
+  for (const row of rows) {
+    if (!row.loanId) continue;
+
+    const current = balances.get(row.loanId) ?? new BigNumber(0);
+    const amount = new BigNumber(row.total);
+
+    balances.set(
+      row.loanId,
+      row.txType === "debit"
+        ? current.plus(amount) // Asset increases
+        : current.minus(amount), // Asset decreases
+    );
+  }
+
+  return balances;
+}
+
+/**
+ * Derive a single loan's remaining principal from the ledger.
+ */
+export async function getRemainingPrincipalForLoanFromLedger(
+  loanId: string,
+  asOf?: Date,
+  queryDb?: Pick<typeof db, "select">,
+): Promise<BigNumber> {
+  const balances = await getRemainingPrincipalFromLedger(
+    [loanId],
+    asOf,
+    queryDb,
+  );
+
+  return balances.get(loanId) ?? new BigNumber(0);
 }

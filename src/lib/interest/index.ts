@@ -8,7 +8,6 @@ export {
   allocatePayment,
   allocateFixedRatePayment,
   allocateReducingBalancePayment,
-} from "./engine"
-export type { PaymentAllocation, ScheduleResult } from "./engine"
-export { computeLoanOverdueInfo } from "./overdue"
-export type { LoanOverdueInfo } from "./overdue"
+} from "./engine";
+export type { PaymentAllocation, ScheduleResult } from "./engine";
+export { computeLoanOverdueInfo } from "./overdue";

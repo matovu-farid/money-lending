@@ -40,7 +40,9 @@ const { createSelectSchema } = factory
 
 // --- Electric-synced row schemas (wire shapes) ---------------------------
 
+
 export const paymentSchema = createSelectSchema(payments)
+
 export type PaymentRow = typeof paymentSchema._zod.output
 
 export const customerSchema = createSelectSchema(customers)

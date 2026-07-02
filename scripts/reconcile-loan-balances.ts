@@ -57,7 +57,7 @@ async function main() {
       drift++;
       continue;
     }
-    const actualBalance = new BigNumber(proj.outstandingBalance);
+    const actualBalance = new BigNumber(proj.totalBalanceOwed);
     const actualInterest = new BigNumber(proj.unpaidInterest);
     if (!actualBalance.isEqualTo(expectedBalance)) {
       console.error(

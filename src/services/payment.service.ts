@@ -26,7 +26,11 @@ import {
 } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
-import { allocatePayment, formatAmount } from "@/lib/interest/engine";
+import {
+  allocateLoanPayment,
+  allocatePayment,
+  formatAmount,
+} from "@/lib/interest/engine";
 import {
   computeLoanOverdueInfo,
   computePerpetualOverdueInfo,
@@ -60,6 +64,8 @@ import {
   type RecentlyCollectedLoan,
 } from "@/types";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
+import { endOfDay, startOfDay } from "date-fns";
+import { allocateLoanPaymentServerSide } from "@/lib/interest/engine-server";
 
 export async function getLastPaymentDate(loan: {
   id: string;
@@ -93,7 +99,7 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
 
   const info = await computeSingleLoanBalanceData(loan.id, new Date());
 
-  const outstandingPrincipal = info?.outstandingBalance;
+  const outstandingPrincipal = info?.totalBalanceOwed;
 
   const accruedInterest = info?.unpaidInterest;
   const totalBalance = new BigNumber(outstandingPrincipal)
@@ -123,7 +129,9 @@ export const recordPaymentWithTxid = (
   actorId: string,
 ): Effect.Effect<
   {
-    payment: Payment & { allocation: ReturnType<typeof allocatePayment> };
+    payment: Payment & {
+      allocation: Awaited<ReturnType<typeof allocateLoanPaymentServerSide>>;
+    };
     txid: number;
   },
   LoanNotFound | ValidationError | DatabaseError
@@ -168,8 +176,11 @@ export const recordPaymentWithTxid = (
             field: "paymentDate",
           };
         }
-
-        const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
+        const allocation = await allocateLoanPaymentServerSide({
+          loanId: loan.id,
+          asOf: endOfDay(new Date(input.paymentDate)),
+          paymentAmount: input.amount,
+        });
 
         const activePayments = await tx
           .select()
@@ -183,72 +194,17 @@ export const recordPaymentWithTxid = (
           )
           .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
           .for("update");
-        const newPaymentDate = new Date(input.paymentDate);
-        const overdueInfo = await computeSingleLoanBalanceData(
-          loan.id,
-          newPaymentDate,
-        );
-        const prevDate = overdueInfo.lastPaymentDate;
-        const principalBalanceBefore = overdueInfo.outstandingBalance;
+
+        const principalBalanceBefore = allocation.principalBalanceBefore;
         const monthlyRateDecimal = getEffectiveRate(
           loan,
-          overdueInfo.penaltyActive,
+          allocation.penaltyActive,
         );
-
-        // prevDate is the boundary of the *previous* interest period — the
-        // latest prior payment whose date is strictly before this one, falling
-        // back to startDate when none exists. Using strictly-less-than (rather
-        // than "the immediately previous payment in sorted order") makes
-        // same-day payments share the same period boundary, which is what
-        // lets the dedup logic below treat them as peers in one window.
-
-        // daysBetween(prevDate, newPaymentDate);
-
-        const daysElapsed = overdueInfo.daysOverdue;
-
         const loanType = loan.loanType ?? "perpetual";
         const paymentNumber = activePayments.length + 1;
 
-        // Find interest already collected by payments in the same period so we
-        // don't double-charge when multiple payments land within one interest window.
-        // This applies to ALL loan types — perpetual (30-day min), fixed_rate, and
-        // reducing_balance (monthly period). If interest is already paid, subsequent
-        // payments go directly to principal, rewarding borrowers who pay more often.
-        let interestAlreadyPaidInPeriod = "0";
-        {
-          // Current period is (prevDate, newPaymentDate]: strict > on the
-          // lower bound excludes the previous-period boundary payment, and
-          // <= on the upper bound keeps same-day peers in the dedup set.
-          const paymentsSincePrevDate = activePayments.filter(
-            (p) =>
-              new Date(p.paymentDate) > prevDate &&
-              new Date(p.paymentDate) <= newPaymentDate,
-          );
-          if (paymentsSincePrevDate.length > 0) {
-            const portionsMap = await getPaymentPortionsFromLedger(
-              paymentsSincePrevDate.map((p) => p.id),
-              tx,
-            );
-            let sum = new BigNumber(0);
-            for (const [, portions] of portionsMap) {
-              sum = sum.plus(portions.interestPortion);
-            }
-            interestAlreadyPaidInPeriod = sum.toFixed(2);
-          }
-        }
-
-        const allocation = allocatePayment({
-          paymentAmount: input.amount,
-          principalBalanceBefore,
-          monthlyRateDecimal,
-          daysElapsed,
-          minInterestDays,
-          loanType,
-          originalPrincipal: loan.principalAmount,
-          termMonths: loan.termMonths ?? undefined,
-          paymentNumber,
-          interestAlreadyPaidInPeriod,
-        });
+        const principalPortion = allocation.principalPortion;
+        const interestPortion = allocation.interestPortion;
 
         // M2: Reject overpayments that exceed total owed
         let totalOwed: BigNumber;
@@ -274,7 +230,7 @@ export const recordPaymentWithTxid = (
           );
         } else {
           // Perpetual: interest + principal (existing logic)
-          totalOwed = new BigNumber(allocation.interestPortion).plus(
+          totalOwed = new BigNumber(interestPortion).plus(
             new BigNumber(principalBalanceBefore),
           );
         }
@@ -308,7 +264,7 @@ export const recordPaymentWithTxid = (
           afterValue: newPayment,
         });
 
-        if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
+        if (new BigNumber(interestPortion).isGreaterThan(0)) {
           // Reverse any outstanding interest accrual before posting cash-basis interest
           await reverseInterestAccrual(tx, {
             loanId: input.loanId,
@@ -316,7 +272,7 @@ export const recordPaymentWithTxid = (
             actorId,
           });
           await autoPostInterestEarned(tx, {
-            amount: allocation.interestPortion,
+            amount: interestPortion,
             loanId: input.loanId,
             paymentId: newPayment.id,
             paymentDate: input.paymentDate,
@@ -326,9 +282,9 @@ export const recordPaymentWithTxid = (
           });
         }
 
-        if (new BigNumber(allocation.principalPortion).isGreaterThan(0)) {
+        if (new BigNumber(principalPortion).isGreaterThan(0)) {
           await autoPostPrincipalRepayment(tx, {
-            amount: allocation.principalPortion,
+            amount: principalPortion,
             loanId: input.loanId,
             paymentId: newPayment.id,
             paymentDate: input.paymentDate,
@@ -607,18 +563,10 @@ export const editPaymentWithTxid = (
             interestAlreadyPaidInPeriod = sum.toFixed(2);
           }
         }
-
-        const allocation = allocatePayment({
+        const allocation = await allocateLoanPayment({
           paymentAmount: newAmount,
-          principalBalanceBefore,
-          monthlyRateDecimal,
-          daysElapsed,
-          minInterestDays,
-          loanType,
-          originalPrincipal: loan.principalAmount,
-          termMonths: loan.termMonths ?? undefined,
-          paymentNumber,
-          interestAlreadyPaidInPeriod,
+          loanId: loan.id,
+          asOf: payment.paymentDate,
         });
 
         // M2: Reject overpayments that exceed total owed
@@ -1115,7 +1063,7 @@ export const getRecentlyCollectedLoans = (
         ORDER BY sub.payment_date DESC
         LIMIT ${limit}
       `);
-      return Array.from(rows).map((row: any) => ({
+      return Array.from(rows).map((row) => ({
         loanId: row.loan_id as string,
         customerName: row.customer_name as string,
         paymentDate: new Date(row.payment_date as string),
@@ -1361,7 +1309,7 @@ export async function unmarkPaymentWrong(
         interestEarnedMap.get(payment.loanId) ?? new BigNumber(0),
       ),
       paymentCount: activePayments.length,
-      outstandingBalance: principalBalanceBefore,
+      totalBalanceOwed: principalBalanceBefore,
       penaltyWaived: loan.penaltyWaived,
       loan,
       asOf: new Date(payment.paymentDate),
@@ -1373,18 +1321,22 @@ export async function unmarkPaymentWrong(
     );
     const paymentNumber = paymentIndex + 1;
 
-    const allocation = allocatePayment({
+    // const allocation = allocatePayment({
+    //   paymentAmount: payment.amount,
+    //   outstandingBalance: principalBalanceBefore,
+    //   monthlyRateDecimal,
+    //   daysElapsed,
+    //   minInterestDays,
+    //   loanType,
+    //   principalAmount: loan.principalAmount,
+    //   termMonths: loan.termMonths ?? undefined,
+    //   paymentNumber,
+    // });
+    const allocation = await allocateLoanPayment({
       paymentAmount: payment.amount,
-      principalBalanceBefore,
-      monthlyRateDecimal,
-      daysElapsed,
-      minInterestDays,
-      loanType,
-      originalPrincipal: loan.principalAmount,
-      termMonths: loan.termMonths ?? undefined,
-      paymentNumber,
+      loanId: loan.id,
+      asOf: payment.paymentDate,
     });
-
     // Re-post interest earned journal entry
     if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
       await reverseInterestAccrual(tx, {

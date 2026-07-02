@@ -817,7 +817,7 @@ export function LoanDetailClient({
         <SimulatorPanel
           loan={loan}
           payments={payments}
-          ledgerBalance={balanceData?.outstandingBalance ?? ledgerBalance}
+          ledgerBalance={balanceData?.totalBalanceOwed ?? ledgerBalance}
           totalInterestPaid={Object.values(currentPortions)
             .reduce((sum, p) => sum.plus(p.interestPortion), new BigNumber(0))
             .toFixed(0)}
@@ -863,7 +863,7 @@ export function LoanDetailClient({
             if (!v) closeSettleCollateral();
           }}
           loanId={loan.id}
-          outstandingPrincipal={balanceData.outstandingBalance}
+          outstandingPrincipal={balanceData.totalBalanceOwed}
           accruedInterest={balanceData.unpaidInterest}
           collateralNature={collateralNature}
           collateralDescription={collateralDescription ?? null}

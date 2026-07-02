@@ -5,10 +5,10 @@
 // place to register global handlers for unhandled errors / unhandled promise
 // rejections. We gate everything on `NODE_ENV === "production"` to avoid
 // noisy dev/CI traffic (per project policy in AGENTS.md).
-import * as Sentry from "@sentry/nextjs"
+import * as Sentry from "@sentry/nextjs";
 
-const DSN = process.env.NEXT_PUBLIC_SENTRY_DSN
-const ENABLED = process.env.NODE_ENV === "production" && !!DSN
+const DSN = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const ENABLED = process.env.NODE_ENV === "production" && !!DSN;
 
 if (ENABLED) {
   Sentry.init({
@@ -32,31 +32,31 @@ if (ENABLED) {
     // Strip query strings and Authorization headers from any breadcrumb URLs.
     beforeBreadcrumb(breadcrumb) {
       if (breadcrumb.category === "fetch" || breadcrumb.category === "xhr") {
-        const data = breadcrumb.data as Record<string, unknown> | undefined
+        const data = breadcrumb.data as Record<string, unknown> | undefined;
         if (data && typeof data.url === "string") {
           try {
-            const u = new URL(data.url, "http://localhost")
+            const u = new URL(data.url, "http://localhost");
             // Drop the query string in case it carries IDs/PII.
-            data.url = `${u.origin === "http://localhost" ? "" : u.origin}${u.pathname}`
+            data.url = `${u.origin === "http://localhost" ? "" : u.origin}${u.pathname}`;
           } catch {
             // ignore malformed URLs
           }
         }
       }
-      return breadcrumb
+      return breadcrumb;
     },
 
     // Last-line defence: scrub anything that looks like financial PII before
     // we ship the event to Sentry.
     beforeSend(event) {
-      return scrubEvent(event)
+      return scrubEvent(event);
     },
-  })
+  });
 }
 
 // Required for the Next.js App Router so Sentry can correctly time
 // client-side navigations as transactions.
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
 
 // ---------------------------------------------------------------------------
 // Shared scrubber (kept inline so this file has no internal-module imports —
@@ -64,7 +64,7 @@ export const onRouterTransitionStart = Sentry.captureRouterTransitionStart
 // ---------------------------------------------------------------------------
 
 const PII_KEYS = new Set([
-  "nin",
+  "id",
   "national_id",
   "nationalId",
   "phone",
@@ -85,34 +85,35 @@ const PII_KEYS = new Set([
   "principalAmount",
   "investmentAmount",
   "outstandingBalance",
-])
+]);
 
 function scrubValue(value: unknown): unknown {
-  if (value === null || value === undefined) return value
-  if (Array.isArray(value)) return value.map(scrubValue)
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(scrubValue);
   if (typeof value === "object") {
-    const out: Record<string, unknown> = {}
+    const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = PII_KEYS.has(k.toLowerCase()) ? "[redacted]" : scrubValue(v)
+      out[k] = PII_KEYS.has(k.toLowerCase()) ? "[redacted]" : scrubValue(v);
     }
-    return out
+    return out;
   }
-  return value
+  return value;
 }
 
-function scrubEvent<T extends { request?: unknown; extra?: unknown; contexts?: unknown }>(
-  event: T,
-): T {
+function scrubEvent<
+  T extends { request?: unknown; extra?: unknown; contexts?: unknown },
+>(event: T): T {
   if (event.request && typeof event.request === "object") {
-    const req = event.request as Record<string, unknown>
+    const req = event.request as Record<string, unknown>;
     // Drop request bodies entirely — they can contain loan amounts, NINs, etc.
-    if ("data" in req) delete req.data
-    if ("cookies" in req) delete req.cookies
+    if ("data" in req) delete req.data;
+    if ("cookies" in req) delete req.cookies;
     if ("headers" in req && typeof req.headers === "object") {
-      req.headers = scrubValue(req.headers)
+      req.headers = scrubValue(req.headers);
     }
   }
-  if (event.extra) event.extra = scrubValue(event.extra) as typeof event.extra
-  if (event.contexts) event.contexts = scrubValue(event.contexts) as typeof event.contexts
-  return event
+  if (event.extra) event.extra = scrubValue(event.extra) as typeof event.extra;
+  if (event.contexts)
+    event.contexts = scrubValue(event.contexts) as typeof event.contexts;
+  return event;
 }

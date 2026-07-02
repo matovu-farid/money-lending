@@ -14,13 +14,21 @@ import { Banknote, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
 import type { Loan, CustomerStatus, PaymentPortionsMap } from "@/types";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { CustomerFormFields, type CustomerFormValues } from "@/components/customers/customer-form-fields";
+import {
+  CustomerFormFields,
+  type CustomerFormValues,
+} from "@/components/customers/customer-form-fields";
 import {
   Select,
   SelectContent,
@@ -48,8 +56,18 @@ import {
 } from "@/components/ui/table";
 import { InfoPopover } from "@/components/ui/info-popover";
 import { PageHeader } from "@/components/ui/page-header";
-import { cn, formatDate, formatCurrency, formatRate, shortId } from "@/lib/utils";
-import { customerStatusLabel, loanStatusVariant, loanStatusLabel } from "@/lib/status";
+import {
+  cn,
+  formatDate,
+  formatCurrency,
+  formatRate,
+  shortId,
+} from "@/lib/utils";
+import {
+  customerStatusLabel,
+  loanStatusVariant,
+  loanStatusLabel,
+} from "@/lib/status";
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
 import { DisbursementReceiptButton } from "@/components/receipts/disbursement-receipt-button";
@@ -60,8 +78,13 @@ interface LoanWithOverdue {
   daysOverdue: number;
 }
 
-
-function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; customerName: string }) {
+function CustomerLoanCard({
+  item,
+  customerName,
+}: {
+  item: LoanWithOverdue;
+  customerName: string;
+}) {
   const [expanded, setExpanded] = useState(false);
   // Filter out soft-deleted payments at the data layer: the Electric shape
   // syncs them too, but their ledger journals are reversed, so showing them
@@ -71,143 +94,154 @@ function CustomerLoanCard({ item, customerName }: { item: LoanWithOverdue; custo
       q
         .from({ p: paymentCollection })
         .where(({ p }) => and(eq(p.loanId, item.loan.id), isNull(p.deletedAt))),
-    [item.loan.id]
+    [item.loan.id],
   );
   const payments = Array.isArray(rawPayments) ? rawPayments : [];
 
   const activePaymentIds = payments.map((p) => p.id);
-  const portionsColl = expanded ? getPaymentPortionsCollection(item.loan.id, activePaymentIds) : null;
+  const portionsColl = expanded
+    ? getPaymentPortionsCollection(item.loan.id, activePaymentIds)
+    : null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const loadingPayments = false
-  const { data: portionsRows } = useLiveQuery(((q: any) =>
-    portionsColl
-      ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
-      : undefined
-  ) as any, [activePaymentIds.join(","), expanded]);
+  const loadingPayments = false;
+  const { data: portionsRows } = useLiveQuery(
+    ((q: any) =>
+      portionsColl
+        ? q.from({ pp: portionsColl }).select(({ pp }: any) => pp)
+        : undefined) as any,
+    [activePaymentIds.join(","), expanded],
+  );
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const portionsData: PaymentPortionsMap = (portionsRows as any)?.[0]?.portions ?? {};
+  const portionsData: PaymentPortionsMap =
+    (portionsRows as any)?.[0]?.portions ?? {};
 
   return (
     <>
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Link
-                href={`/loans/${item.loan.id}`}
-                className="text-sm font-mono text-muted-foreground underline underline-offset-4 hover:text-foreground"
-              >
-                LOAN-{shortId(item.loan.id).toUpperCase()}
-              </Link>
-              <Badge variant={loanStatusVariant(item.loan.status)}>
-                {loanStatusLabel(item.loan.status)}
-              </Badge>
-              <LoanTypeBadge loanType={item.loan.loanType} />
-              {item.loan.status === "active" &&
-                item.daysOverdue > 0 && (
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Link
+                  href={`/loans/${item.loan.id}`}
+                  className="text-sm font-mono text-muted-foreground underline underline-offset-4 hover:text-foreground"
+                >
+                  LOAN-{shortId(item.loan.id).toUpperCase()}
+                </Link>
+                <Badge variant={loanStatusVariant(item.loan.status)}>
+                  {loanStatusLabel(item.loan.status)}
+                </Badge>
+                <LoanTypeBadge loanType={item.loan.loanType} />
+                {item.loan.status === "active" && item.daysOverdue > 0 && (
                   <OverdueBadge daysOverdue={item.daysOverdue} />
                 )}
+              </div>
+              <p className="text-xs text-muted-foreground font-mono">
+                Issued {formatDate(item.loan.startDate)}
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground font-mono">
-              Issued {formatDate(item.loan.startDate)}
+            <div className="flex items-center gap-1">
+              <DisbursementReceiptButton loanId={item.loan.id} />
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setExpanded((prev) => !prev)}
+                aria-label={expanded ? "Collapse" : "Expand"}
+              >
+                {expanded ? (
+                  <ChevronUp className="h-4 w-4" />
+                ) : (
+                  <ChevronDown className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-1">
+            <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums">
+              {formatCurrency(item.loan.principalAmount)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              <span className="font-mono tabular-nums">
+                {formatRate(getBaseRate(item.loan))}
+              </span>{" "}
+              per month
             </p>
           </div>
-          <div className="flex items-center gap-1">
-            <DisbursementReceiptButton loanId={item.loan.id} />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setExpanded((prev) => !prev)}
-              aria-label={expanded ? "Collapse" : "Expand"}
-            >
-              {expanded ? (
-                <ChevronUp className="h-4 w-4" />
-              ) : (
-                <ChevronDown className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-1">
-          <p className="text-2xl font-semibold font-mono tracking-tight tabular-nums">
-            {formatCurrency(item.loan.principalAmount)}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-mono tabular-nums">
-              {formatRate(getBaseRate(item.loan))}
-            </span>{" "}
-            per month
-          </p>
-        </div>
 
-        {expanded && (
-          <div className="mt-4">
-            {loadingPayments ? (
-              <p className="text-sm text-muted-foreground">
-                Loading payments...
-              </p>
-            ) : payments.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No payments recorded.
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                      <TableHead className="text-right">Interest</TableHead>
-                      <TableHead className="text-right">Principal</TableHead>
-                      <TableHead className="w-10"></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {payments.map((payment) => (
-                      <TableRow
-                        key={payment.id}
-                        data-testid="data-row"
-                      >
-                        <TableCell>
-                          {formatDate(payment.paymentDate)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatCurrency(payment.amount)}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatCurrency(portionsData?.[payment.id]?.interestPortion ?? "0.00")}
-                        </TableCell>
-                        <TableCell className="text-right font-mono tabular-nums">
-                          {formatCurrency(portionsData?.[payment.id]?.principalPortion ?? "0.00")}
-                        </TableCell>
-                        <TableCell>
-                          <PaymentReceiptButton
-                            data={{
-                              paymentDate: payment.paymentDate,
-                              customerName,
-                              loanReference: `LOAN-${shortId(item.loan.id).toUpperCase()}`,
-                              amountPaid: payment.amount,
-                              interestPortion: portionsData?.[payment.id]?.interestPortion ?? "0.00",
-                              principalPortion: portionsData?.[payment.id]?.principalPortion ?? "0.00",
-                              balanceAfter: "0.00",
-                              depositLocation: payment.depositLocation,
-                              officerName: "Officer",
-                            }}
-                          />
-                        </TableCell>
+          {expanded && (
+            <div className="mt-4">
+              {loadingPayments ? (
+                <p className="text-sm text-muted-foreground">
+                  Loading payments...
+                </p>
+              ) : payments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No payments recorded.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead className="text-right">Interest</TableHead>
+                        <TableHead className="text-right">Principal</TableHead>
+                        <TableHead className="w-10"></TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+                    </TableHeader>
+                    <TableBody>
+                      {payments.map((payment) => (
+                        <TableRow key={payment.id} data-testid="data-row">
+                          <TableCell>
+                            {formatDate(payment.paymentDate)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            {formatCurrency(payment.amount)}
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            {formatCurrency(
+                              portionsData?.[payment.id]?.interestPortion ??
+                                "0.00",
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono tabular-nums">
+                            {formatCurrency(
+                              portionsData?.[payment.id]?.principalPortion ??
+                                "0.00",
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <PaymentReceiptButton
+                              data={{
+                                paymentDate: payment.paymentDate,
+                                customerName,
+                                loanReference: `LOAN-${shortId(item.loan.id).toUpperCase()}`,
+                                amountPaid: payment.amount,
+                                interestPortion:
+                                  portionsData?.[payment.id]?.interestPortion ??
+                                  "0.00",
+                                principalPortion:
+                                  portionsData?.[payment.id]
+                                    ?.principalPortion ?? "0.00",
+                                balanceAfter: "0.00",
+                                depositLocation: payment.depositLocation,
+                                officerName: "Officer",
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </>
   );
 }
@@ -227,7 +261,10 @@ function LoadingSkeleton() {
         <div className="h-5 w-36 rounded bg-muted-foreground/10 animate-pulse" />
         <div className="space-y-2">
           {[1, 2, 3, 4].map((i) => (
-            <div key={i} className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse" />
+            <div
+              key={i}
+              className="h-4 w-32 rounded bg-muted-foreground/10 animate-pulse"
+            />
           ))}
         </div>
       </div>
@@ -236,7 +273,7 @@ function LoadingSkeleton() {
         <div className="h-9 w-[200px] rounded-md bg-muted-foreground/10 animate-pulse" />
       </div>
     </div>
-  )
+  );
 }
 
 function CustomerProfileContent({ customerId }: { customerId: string }) {
@@ -244,8 +281,9 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
 
   // Read customer from customerCollection
   const { data: customersData, isLoading: customerLoading } = useLiveQuery(
-    (q) => q.from({ c: customerCollection }).where(({ c }) => eq(c.id, customerId)),
-    [customerId]
+    (q) =>
+      q.from({ c: customerCollection }).where(({ c }) => eq(c.id, customerId)),
+    [customerId],
   );
   const customer = customersData?.[0] ?? null;
   const notFound = !customerLoading && customersData !== undefined && !customer;
@@ -276,7 +314,6 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
 
   const activeLoan = loanItems.find((item) => item.loan.status === "active");
 
-
   function handleEditStart() {
     if (!customer) return;
     reset({
@@ -298,7 +335,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
       try {
         customerCollection.update(customerId, (draft) => {
           draft.fullName = data.fullName.trim();
-          draft.nin = data.nin.trim();
+          draft.id = data.nin.trim();
           draft.contact = data.contact.trim();
           draft.address = data.address.trim();
         });
@@ -401,7 +438,12 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
       </PageHeader>
 
       {/* @ts-expect-error -- Accordion value type mismatch with radix/shadcn generics */}
-      <Accordion type="single" collapsible defaultValue={editing ? "basic-info" : undefined} value={editing ? "basic-info" : undefined}>
+      <Accordion
+        type="single"
+        collapsible
+        defaultValue={editing ? "basic-info" : undefined}
+        value={editing ? "basic-info" : undefined}
+      >
         <AccordionItem value="basic-info" className="border rounded-lg px-4">
           <div className="flex items-center justify-between">
             <AccordionTrigger className="flex-1 text-base font-semibold">
@@ -422,7 +464,10 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
           </div>
           <AccordionContent>
             {editing ? (
-              <form onSubmit={handleSubmit(onEditSubmit)} className="space-y-4 pt-2">
+              <form
+                onSubmit={handleSubmit(onEditSubmit)}
+                className="space-y-4 pt-2"
+              >
                 <CustomerFormFields
                   register={register}
                   setValue={setValue}
@@ -459,7 +504,9 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
                   <dd className="font-medium">{customer.fullName}</dd>
                 </div>
                 <div>
-                  <dt className="text-muted-foreground">NIN (National ID Number)</dt>
+                  <dt className="text-muted-foreground">
+                    NIN (National ID Number)
+                  </dt>
                   <dd className="font-medium">{customer.nin}</dd>
                 </div>
                 <div>
@@ -483,22 +530,30 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
             <InfoPopover>
               <p className="font-semibold text-sm mb-1">Customer Status</p>
               <div className="text-xs text-muted-foreground space-y-1.5">
-                <p><strong>Active</strong> — Customer can receive new loans and make payments.</p>
-                <p><strong>Blacklisted</strong> — Customer is blocked from receiving new loans. Existing active loans continue to accrue interest and accept payments.</p>
-
+                <p>
+                  <strong>Active</strong> — Customer can receive new loans and
+                  make payments.
+                </p>
+                <p>
+                  <strong>Blacklisted</strong> — Customer is blocked from
+                  receiving new loans. Existing active loans continue to accrue
+                  interest and accept payments.
+                </p>
               </div>
             </InfoPopover>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          <Select value={customer.status ?? "active"} onValueChange={handleStatusSelect}>
+          <Select
+            value={customer.status ?? "active"}
+            onValueChange={handleStatusSelect}
+          >
             <SelectTrigger className="w-[200px]">
               <SelectValue>{customerStatusLabel(customer.status)}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="blacklisted">Blacklisted</SelectItem>
-
             </SelectContent>
           </Select>
         </CardContent>
@@ -578,7 +633,11 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
           </p>
         ) : (
           loanItems.map((item) => (
-            <CustomerLoanCard key={item.loan.id} item={item} customerName={customer.fullName} />
+            <CustomerLoanCard
+              key={item.loan.id}
+              item={item}
+              customerName={customer.fullName}
+            />
           ))
         )}
       </div>

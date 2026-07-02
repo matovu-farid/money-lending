@@ -47,7 +47,7 @@ export function useLoansWithBalances(): {
         return {
           ...joined.loan,
           daysOverdue: joined.bal?.daysOverdue || 0,
-          outstandingBalance: joined.bal?.outstandingBalance || "0",
+          outstandingBalance: joined.bal?.totalBalanceOwed || "0",
           dailyRate: joined.bal?.dailyRate || "0",
           lastPaymentDate: joined.bal?.lastPaymentDate || joined.loan.startDate,
           unpaidInterest: joined.bal?.unpaidInterest || "0",
@@ -93,7 +93,7 @@ export function useLoanWithBalance(loanId: string): {
         return {
           ...joined.loan,
           daysOverdue: joined.bal?.daysOverdue || 0,
-          outstandingBalance: joined.bal?.outstandingBalance || "0",
+          outstandingBalance: joined.bal?.totalBalanceOwed || "0",
           dailyRate: joined.bal?.dailyRate || "0",
           lastPaymentDate: joined.bal?.lastPaymentDate || joined.loan.startDate,
           unpaidInterest: joined.bal?.unpaidInterest || "0",
@@ -143,7 +143,7 @@ export function useLoansForCustomer(customerId: string): {
         return {
           ...joined.loan,
           daysOverdue: joined.bal?.daysOverdue || 0,
-          outstandingBalance: joined.bal?.outstandingBalance || "0",
+          outstandingBalance: joined.bal?.totalBalanceOwed || "0",
           dailyRate: joined.bal?.dailyRate || "0",
           lastPaymentDate: joined.bal?.lastPaymentDate || joined.loan.startDate,
           unpaidInterest: joined.bal?.unpaidInterest || "0",

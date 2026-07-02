@@ -3,13 +3,23 @@ import { db } from "@/lib/db";
 import { loans } from "@/lib/db/schema/loans";
 import { payments } from "@/lib/db/schema/payments";
 import { eq, and, isNull, asc, inArray } from "drizzle-orm";
-import { shouldResetPenaltyWaiver } from "@/lib/interest/overdue";
 import {
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
 } from "@/services/ledger-queries.service";
 import { captureServerError } from "@/lib/sentry";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
+/**
+ * Determine whether a loan's penalty waiver should be reset.
+ * The waiver should only be reset when the borrower is fully current
+ * (0 days overdue), not merely below the 60-day penalty threshold.
+ */
+export function shouldResetPenaltyWaiver(
+  daysOverdue: number,
+  penaltyWaived: boolean,
+): boolean {
+  return daysOverdue === 0 && penaltyWaived;
+}
 
 export async function GET(request: NextRequest) {
   // Fail-closed: reject if CRON_SECRET is not configured

@@ -1,7 +1,12 @@
-import BigNumber from "bignumber.js"
-import type { LoanType, ScheduleEntry } from "@/types"
+import BigNumber from "bignumber.js";
+import type { LoanType, ScheduleEntry } from "@/types";
+import { computeSingleLoanBalanceData } from "./loanBalanceData";
+import { allocateLoanPaymentServerSide } from "./engine-server";
 
-BigNumber.config({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
+BigNumber.config({
+  DECIMAL_PLACES: 10,
+  ROUNDING_MODE: BigNumber.ROUND_HALF_UP,
+});
 
 /**
  * Calculates the daily rate from a monthly rate decimal.
@@ -19,7 +24,7 @@ BigNumber.config({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
  * factor cancels out of the ratio).
  */
 export function calculateDailyRate(monthlyRateDecimal: string): BigNumber {
-  return new BigNumber(monthlyRateDecimal).dividedBy(30)
+  return new BigNumber(monthlyRateDecimal).dividedBy(30);
 }
 
 /**
@@ -45,12 +50,15 @@ export function calculateInterest(
   outstandingBalance: string,
   monthlyRateDecimal: string,
   daysElapsed: number,
-  minInterestDays: number = 0
+  minInterestDays: number = 0,
 ): BigNumber {
-  const balance = new BigNumber(outstandingBalance)
-  const monthlyRate = new BigNumber(monthlyRateDecimal)
-  const effectiveDays = new BigNumber(Math.max(daysElapsed, minInterestDays))
-  return balance.multipliedBy(monthlyRate).multipliedBy(effectiveDays).dividedBy(30)
+  const balance = new BigNumber(outstandingBalance);
+  const monthlyRate = new BigNumber(monthlyRateDecimal);
+  const effectiveDays = new BigNumber(Math.max(daysElapsed, minInterestDays));
+  return balance
+    .multipliedBy(monthlyRate)
+    .multipliedBy(effectiveDays)
+    .dividedBy(30);
 }
 
 /**
@@ -65,40 +73,48 @@ export function calculateLoanSummary(
   monthlyRateDecimal: string,
   minInterestDays?: number,
   loanType?: LoanType,
-  termMonths?: number
+  termMonths?: number,
 ): {
-  dailyInterest: string
-  totalInterestAtMinPeriod: string
-  totalOwedAtMinPeriod: string
-  minInterestDays: number
-  schedule?: ScheduleEntry[]
-  totalInterest?: string
-  totalOwed?: string
-  monthlyInstallment?: string
+  dailyInterest: string;
+  totalInterestAtMinPeriod: string;
+  totalOwedAtMinPeriod: string;
+  minInterestDays: number;
+  schedule?: ScheduleEntry[];
+  totalInterest?: string;
+  totalOwed?: string;
+  monthlyInstallment?: string;
 } {
-  const effectiveMinDays = minInterestDays ?? 30
-  const principal = new BigNumber(principalAmount)
-  const monthlyRate = new BigNumber(monthlyRateDecimal)
+  const effectiveMinDays = minInterestDays ?? 30;
+  const principal = new BigNumber(principalAmount);
+  const monthlyRate = new BigNumber(monthlyRateDecimal);
   // Daily interest is kept as a display figure (principal × monthlyRate / 30).
   // Total interest for the min period defers the divide-by-30 so a 30-day
   // total is exact: balance × monthlyRate × N / 30.
-  const dailyInterest = principal.multipliedBy(monthlyRate).dividedBy(30)
+  const dailyInterest = principal.multipliedBy(monthlyRate).dividedBy(30);
   const totalInterestAtMinPeriod = principal
     .multipliedBy(monthlyRate)
     .multipliedBy(effectiveMinDays)
-    .dividedBy(30)
-  const totalOwedAtMinPeriod = principal.plus(totalInterestAtMinPeriod)
+    .dividedBy(30);
+  const totalOwedAtMinPeriod = principal.plus(totalInterestAtMinPeriod);
 
   const base = {
     dailyInterest: formatAmount(dailyInterest),
     totalInterestAtMinPeriod: formatAmount(totalInterestAtMinPeriod),
     totalOwedAtMinPeriod: formatAmount(totalOwedAtMinPeriod),
     minInterestDays: effectiveMinDays,
-  }
+  };
 
-  if ((loanType === "fixed_rate" || loanType === "reducing_balance") && termMonths) {
-    const { entries, totalInterest } = calculateSchedule(principalAmount, monthlyRateDecimal, termMonths, loanType)
-    const totalOwed = principal.plus(totalInterest)
+  if (
+    (loanType === "fixed_rate" || loanType === "reducing_balance") &&
+    termMonths
+  ) {
+    const { entries, totalInterest } = calculateSchedule(
+      principalAmount,
+      monthlyRateDecimal,
+      termMonths,
+      loanType,
+    );
+    const totalOwed = principal.plus(totalInterest);
 
     return {
       ...base,
@@ -106,10 +122,10 @@ export function calculateLoanSummary(
       totalInterest: formatAmount(totalInterest),
       totalOwed: formatAmount(totalOwed),
       monthlyInstallment: entries[0].monthlyInstallment,
-    }
+    };
   }
 
-  return base
+  return base;
 }
 
 /**
@@ -121,39 +137,39 @@ export function calculateLoanSummary(
 export function calculateDaysOverdue(
   totalInterestAccrued: string | BigNumber,
   totalInterestPaid: string | BigNumber,
-  currentDailyRate: string | BigNumber
+  currentDailyRate: string | BigNumber,
 ): BigNumber {
   const unpaidInterest = new BigNumber(totalInterestAccrued).minus(
-    new BigNumber(totalInterestPaid)
-  )
+    new BigNumber(totalInterestPaid),
+  );
 
   if (unpaidInterest.isLessThanOrEqualTo(0)) {
-    return new BigNumber(0)
+    return new BigNumber(0);
   }
 
-  const rate = new BigNumber(currentDailyRate)
+  const rate = new BigNumber(currentDailyRate);
   if (rate.isZero()) {
-    return new BigNumber(0)
+    return new BigNumber(0);
   }
 
-  return unpaidInterest.dividedBy(rate)
+  return unpaidInterest.dividedBy(rate);
 }
 
 export function calculateDaysOverdueFromInterestAccrued(
   interestAccrued: string | BigNumber,
-  currentDailyRate: string | BigNumber
+  currentDailyRate: string | BigNumber,
 ): BigNumber {
-  const unpaidInterest = new BigNumber(interestAccrued)
+  const unpaidInterest = new BigNumber(interestAccrued);
   if (unpaidInterest.isLessThanOrEqualTo(0)) {
-    return new BigNumber(0)
+    return new BigNumber(0);
   }
 
-  const rate = new BigNumber(currentDailyRate)
+  const rate = new BigNumber(currentDailyRate);
   if (rate.isZero()) {
-    return new BigNumber(0)
+    return new BigNumber(0);
   }
 
-  return unpaidInterest.dividedBy(rate)
+  return unpaidInterest.dividedBy(rate);
 }
 
 /**
@@ -165,44 +181,60 @@ export function calculateDaysOverdueFromInterestAccrued(
  * Pure function — no DB calls.
  */
 export function computeSegmentedInterest(params: {
-  principalAmount: string
-  monthlyRateDecimal: string
-  startDate: Date
-  asOfDate: Date
+  principalAmount: string;
+  monthlyRateDecimal: string;
+  startDate: Date;
+  asOfDate: Date;
   /** Principal-reducing payments in chronological order */
-  principalPayments: { date: Date; principalPortion: string }[]
+  principalPayments: { date: Date; principalPortion: string }[];
 }): BigNumber {
-  const { principalAmount, monthlyRateDecimal, startDate, asOfDate, principalPayments } = params
-  const monthlyRate = new BigNumber(monthlyRateDecimal)
-  let balance = new BigNumber(principalAmount)
-  let totalInterest = new BigNumber(0)
-  let segmentStart = startDate
+  const {
+    principalAmount,
+    monthlyRateDecimal,
+    startDate,
+    asOfDate,
+    principalPayments,
+  } = params;
+  const monthlyRate = new BigNumber(monthlyRateDecimal);
+  let balance = new BigNumber(principalAmount);
+  let totalInterest = new BigNumber(0);
+  let segmentStart = startDate;
 
   // Walk each payment that reduced principal. Each segment uses
   // balance × monthlyRate × days / 30 with the divide deferred to the end
   // — exact for 30-day segments, no worse than dailyRate-precomputation
   // for other lengths.
   for (const payment of principalPayments) {
-    if (payment.date > asOfDate) break
-    const days = Math.floor((payment.date.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24))
+    if (payment.date > asOfDate) break;
+    const days = Math.floor(
+      (payment.date.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24),
+    );
     if (days > 0) {
       totalInterest = totalInterest.plus(
-        balance.multipliedBy(monthlyRate).multipliedBy(days).dividedBy(30)
-      )
+        balance.multipliedBy(monthlyRate).multipliedBy(days).dividedBy(30),
+      );
     }
-    balance = BigNumber.max(balance.minus(new BigNumber(payment.principalPortion)), 0)
-    segmentStart = payment.date
+    balance = BigNumber.max(
+      balance.minus(new BigNumber(payment.principalPortion)),
+      0,
+    );
+    segmentStart = payment.date;
   }
 
   // Final segment: from last payment (or start) to asOfDate
-  const remainingDays = Math.floor((asOfDate.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24))
+  const remainingDays = Math.floor(
+    (asOfDate.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24),
+  );
   if (remainingDays > 0) {
     totalInterest = totalInterest.plus(
-      balance.multipliedBy(monthlyRate).multipliedBy(remainingDays).dividedBy(30)
-    )
+      balance
+        .multipliedBy(monthlyRate)
+        .multipliedBy(remainingDays)
+        .dividedBy(30),
+    );
   }
 
-  return totalInterest
+  return totalInterest;
 }
 
 /**
@@ -217,13 +249,16 @@ export function computeSegmentedInterest(params: {
  * financial display.
  */
 export function formatAmount(amount: BigNumber): string {
-  return amount.toFixed(2, BigNumber.ROUND_HALF_EVEN)
+  return amount.toFixed(2, BigNumber.ROUND_HALF_EVEN);
 }
 
 /** Compute outstanding balance = principal + one period of interest */
-function computeOutstanding(principalAfter: string | BigNumber, monthlyRateDecimal: string): string {
-  const p = new BigNumber(principalAfter)
-  return formatAmount(p.plus(p.multipliedBy(monthlyRateDecimal)))
+function computeOutstanding(
+  principalAfter: string | BigNumber,
+  monthlyRateDecimal: string,
+): string {
+  const p = new BigNumber(principalAfter);
+  return formatAmount(p.plus(p.multipliedBy(monthlyRateDecimal)));
 }
 
 /**
@@ -231,14 +266,14 @@ function computeOutstanding(principalAfter: string | BigNumber, monthlyRateDecim
  * All monetary fields are NUMERIC(15,2) strings.
  */
 export type PaymentAllocation = {
-  interestPortion: string
-  principalPortion: string
-  principalBalanceBefore: string
-  principalBalanceAfter: string
+  interestPortion: string;
+  principalPortion: string;
+  principalBalanceBefore: string;
+  principalBalanceAfter: string;
   /** Principal balance + one period of interest (total owed at next payment) */
-  outstandingBalanceAfter: string
-  loanFullyPaid: boolean
-}
+  outstandingBalanceAfter: string;
+  loanFullyPaid: boolean;
+};
 
 /**
  * Generates an amortization schedule for fixed_rate or reducing_balance loans.
@@ -251,8 +286,8 @@ export type PaymentAllocation = {
  * Result from calculateSchedule: the per-month rows plus a full-precision total.
  */
 export interface ScheduleResult {
-  entries: ScheduleEntry[]
-  totalInterest: BigNumber
+  entries: ScheduleEntry[];
+  totalInterest: BigNumber;
 }
 
 /**
@@ -269,28 +304,28 @@ export function calculateSchedule(
   principalAmount: string,
   monthlyRateDecimal: string,
   termMonths: number,
-  loanType: "fixed_rate" | "reducing_balance"
+  loanType: "fixed_rate" | "reducing_balance",
 ): ScheduleResult {
-  const principal = new BigNumber(principalAmount)
-  const rate = new BigNumber(monthlyRateDecimal)
-  const monthlyPrincipal = principal.dividedBy(termMonths)
+  const principal = new BigNumber(principalAmount);
+  const rate = new BigNumber(monthlyRateDecimal);
+  const monthlyPrincipal = principal.dividedBy(termMonths);
 
-  const entries: ScheduleEntry[] = []
-  let balance = principal
-  let totalInterest = new BigNumber(0)
+  const entries: ScheduleEntry[] = [];
+  let balance = principal;
+  let totalInterest = new BigNumber(0);
 
   for (let month = 1; month <= termMonths; month++) {
     // Last month absorbs rounding remainder
-    const thisPrincipal = month === termMonths ? balance : monthlyPrincipal
+    const thisPrincipal = month === termMonths ? balance : monthlyPrincipal;
 
     const interest =
       loanType === "fixed_rate"
         ? principal.multipliedBy(rate)
-        : balance.multipliedBy(rate)
+        : balance.multipliedBy(rate);
 
-    totalInterest = totalInterest.plus(interest)
-    const installment = thisPrincipal.plus(interest)
-    balance = balance.minus(thisPrincipal)
+    totalInterest = totalInterest.plus(interest);
+    const installment = thisPrincipal.plus(interest);
+    balance = balance.minus(thisPrincipal);
 
     entries.push({
       month,
@@ -298,10 +333,10 @@ export function calculateSchedule(
       monthlyInterest: formatAmount(interest),
       monthlyInstallment: formatAmount(installment),
       balanceAfter: formatAmount(balance),
-    })
+    });
   }
 
-  return { entries, totalInterest }
+  return { entries, totalInterest };
 }
 
 /**
@@ -312,35 +347,51 @@ export function calculateSchedule(
  * Interest-first: payment covers interest first, remainder to principal.
  */
 export function allocateFixedRatePayment(params: {
-  paymentAmount: string
-  principalBalanceBefore: string
-  originalPrincipal: string
-  monthlyRateDecimal: string
-  termMonths: number
-  paymentNumber: number
+  paymentAmount: string;
+  principalBalanceBefore: string;
+  originalPrincipal: string;
+  monthlyRateDecimal: string;
+  termMonths: number;
+  paymentNumber: number;
   /** Interest already collected from earlier payments within the same monthly period */
-  interestAlreadyPaidInPeriod?: string
+  interestAlreadyPaidInPeriod?: string;
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, originalPrincipal, monthlyRateDecimal, termMonths, paymentNumber, interestAlreadyPaidInPeriod } = params
-  const payment = new BigNumber(paymentAmount)
-  const balance = new BigNumber(principalBalanceBefore)
-  const monthlyInterest = new BigNumber(originalPrincipal).multipliedBy(new BigNumber(monthlyRateDecimal))
-  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
+  const {
+    paymentAmount,
+    principalBalanceBefore,
+    originalPrincipal,
+    monthlyRateDecimal,
+    termMonths,
+    paymentNumber,
+    interestAlreadyPaidInPeriod,
+  } = params;
+  const payment = new BigNumber(paymentAmount);
+  const balance = new BigNumber(principalBalanceBefore);
+  const monthlyInterest = new BigNumber(originalPrincipal).multipliedBy(
+    new BigNumber(monthlyRateDecimal),
+  );
+  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0");
 
   // Clamp remaining months to at least 1 (handles paymentNumber > termMonths from partial payments)
-  const remainingMonths = Math.max(termMonths - paymentNumber + 1, 1)
+  const remainingMonths = Math.max(termMonths - paymentNumber + 1, 1);
 
   // Early payoff threshold: payment exceeds current month interest + remaining principal
   // This means the borrower intends to close the loan, so charge all remaining term interest
-  const earlyPayoffThreshold = BigNumber.max(monthlyInterest.minus(alreadyPaid), 0).plus(balance)
+  const earlyPayoffThreshold = BigNumber.max(
+    monthlyInterest.minus(alreadyPaid),
+    0,
+  ).plus(balance);
 
-  let interestOwed: BigNumber
+  let interestOwed: BigNumber;
   if (payment.isGreaterThanOrEqualTo(earlyPayoffThreshold)) {
     // Early payoff: charge all remaining term interest minus what's already paid this period
-    interestOwed = BigNumber.max(monthlyInterest.multipliedBy(remainingMonths).minus(alreadyPaid), 0)
+    interestOwed = BigNumber.max(
+      monthlyInterest.multipliedBy(remainingMonths).minus(alreadyPaid),
+      0,
+    );
   } else {
     // Normal payment: charge one month of interest minus what's already paid this period
-    interestOwed = BigNumber.max(monthlyInterest.minus(alreadyPaid), 0)
+    interestOwed = BigNumber.max(monthlyInterest.minus(alreadyPaid), 0);
   }
 
   // Interest-first allocation
@@ -352,20 +403,26 @@ export function allocateFixedRatePayment(params: {
       principalBalanceAfter: formatAmount(balance),
       outstandingBalanceAfter: computeOutstanding(balance, monthlyRateDecimal),
       loanFullyPaid: false,
-    }
+    };
   }
 
-  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance)
-  const principalBalanceAfter = BigNumber.max(balance.minus(principalPortion), 0)
+  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance);
+  const principalBalanceAfter = BigNumber.max(
+    balance.minus(principalPortion),
+    0,
+  );
 
   return {
     interestPortion: formatAmount(interestOwed),
     principalPortion: formatAmount(principalPortion),
     principalBalanceBefore,
     principalBalanceAfter: formatAmount(principalBalanceAfter),
-    outstandingBalanceAfter: computeOutstanding(principalBalanceAfter, monthlyRateDecimal),
+    outstandingBalanceAfter: computeOutstanding(
+      principalBalanceAfter,
+      monthlyRateDecimal,
+    ),
     loanFullyPaid: principalBalanceAfter.isZero(),
-  }
+  };
 }
 
 /**
@@ -376,19 +433,27 @@ export function allocateFixedRatePayment(params: {
  * Interest-first: payment covers interest first, remainder to principal.
  */
 export function allocateReducingBalancePayment(params: {
-  paymentAmount: string
-  principalBalanceBefore: string
-  originalPrincipal: string
-  monthlyRateDecimal: string
-  termMonths: number
+  paymentAmount: string;
+  principalBalanceBefore: string;
+  originalPrincipal: string;
+  monthlyRateDecimal: string;
+  termMonths: number;
   /** Interest already collected from earlier payments within the same monthly period */
-  interestAlreadyPaidInPeriod?: string
+  interestAlreadyPaidInPeriod?: string;
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, interestAlreadyPaidInPeriod } = params
-  const payment = new BigNumber(paymentAmount)
-  const balance = new BigNumber(principalBalanceBefore)
-  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
-  const interestOwed = BigNumber.max(balance.multipliedBy(new BigNumber(monthlyRateDecimal)).minus(alreadyPaid), 0)
+  const {
+    paymentAmount,
+    principalBalanceBefore,
+    monthlyRateDecimal,
+    interestAlreadyPaidInPeriod,
+  } = params;
+  const payment = new BigNumber(paymentAmount);
+  const balance = new BigNumber(principalBalanceBefore);
+  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0");
+  const interestOwed = BigNumber.max(
+    balance.multipliedBy(new BigNumber(monthlyRateDecimal)).minus(alreadyPaid),
+    0,
+  );
 
   // Interest-first allocation
   if (payment.isLessThanOrEqualTo(interestOwed)) {
@@ -399,20 +464,26 @@ export function allocateReducingBalancePayment(params: {
       principalBalanceAfter: formatAmount(balance),
       outstandingBalanceAfter: computeOutstanding(balance, monthlyRateDecimal),
       loanFullyPaid: false,
-    }
+    };
   }
 
-  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance)
-  const principalBalanceAfter = BigNumber.max(balance.minus(principalPortion), 0)
+  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance);
+  const principalBalanceAfter = BigNumber.max(
+    balance.minus(principalPortion),
+    0,
+  );
 
   return {
     interestPortion: formatAmount(interestOwed),
     principalPortion: formatAmount(principalPortion),
     principalBalanceBefore,
     principalBalanceAfter: formatAmount(principalBalanceAfter),
-    outstandingBalanceAfter: computeOutstanding(principalBalanceAfter, monthlyRateDecimal),
+    outstandingBalanceAfter: computeOutstanding(
+      principalBalanceAfter,
+      monthlyRateDecimal,
+    ),
     loanFullyPaid: principalBalanceAfter.isZero(),
-  }
+  };
 }
 
 /**
@@ -429,22 +500,38 @@ export function allocateReducingBalancePayment(params: {
  * LOAN-10: Minimum period enforced via calculateInterest (minInterestDays).
  */
 export function allocatePayment(params: {
-  paymentAmount: string
-  principalBalanceBefore: string
-  monthlyRateDecimal: string
-  daysElapsed: number
-  minInterestDays: number
-  loanType?: LoanType
-  originalPrincipal?: string
-  termMonths?: number
-  paymentNumber?: number
+  paymentAmount: string;
+  principalBalanceBefore: string;
+  monthlyRateDecimal: string;
+  daysElapsed: number;
+  minInterestDays: number;
+  loanType?: LoanType;
+  originalPrincipal?: string;
+  termMonths?: number;
+  paymentNumber?: number;
   /** Interest already collected from earlier payments within the same min-interest period */
-  interestAlreadyPaidInPeriod?: string
+  interestAlreadyPaidInPeriod?: string;
 }): PaymentAllocation {
-  const { paymentAmount, principalBalanceBefore, monthlyRateDecimal, daysElapsed, minInterestDays, loanType, originalPrincipal, termMonths, paymentNumber, interestAlreadyPaidInPeriod } = params
+  const {
+    paymentAmount,
+    principalBalanceBefore,
+    monthlyRateDecimal,
+    daysElapsed,
+    minInterestDays,
+    loanType,
+    originalPrincipal,
+    termMonths,
+    paymentNumber,
+    interestAlreadyPaidInPeriod,
+  } = params;
 
   // Dispatch to fixed_rate strategy
-  if (loanType === "fixed_rate" && originalPrincipal && termMonths && paymentNumber) {
+  if (
+    loanType === "fixed_rate" &&
+    originalPrincipal &&
+    termMonths &&
+    paymentNumber
+  ) {
     return allocateFixedRatePayment({
       paymentAmount,
       principalBalanceBefore,
@@ -453,7 +540,7 @@ export function allocatePayment(params: {
       termMonths,
       paymentNumber,
       interestAlreadyPaidInPeriod,
-    })
+    });
   }
 
   // Dispatch to reducing_balance strategy
@@ -465,7 +552,7 @@ export function allocatePayment(params: {
       monthlyRateDecimal,
       termMonths,
       interestAlreadyPaidInPeriod,
-    })
+    });
   }
 
   // Default: perpetual logic.
@@ -482,14 +569,19 @@ export function allocatePayment(params: {
   //
   // paymentNumber defaults to 1 when not supplied (preserves the original
   // single-payment semantics that legacy callers — and most unit tests — rely on).
-  const isFirstPayment = !paymentNumber || paymentNumber === 1
-  const effectiveMinDays = isFirstPayment ? minInterestDays : 0
+  const isFirstPayment = !paymentNumber || paymentNumber === 1;
+  const effectiveMinDays = isFirstPayment ? minInterestDays : 0;
 
-  const payment = new BigNumber(paymentAmount)
-  const balance = new BigNumber(principalBalanceBefore)
-  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0")
-  const grossInterest = calculateInterest(principalBalanceBefore, monthlyRateDecimal, daysElapsed, effectiveMinDays)
-  const interestOwed = BigNumber.max(grossInterest.minus(alreadyPaid), 0)
+  const payment = new BigNumber(paymentAmount);
+  const balance = new BigNumber(principalBalanceBefore);
+  const alreadyPaid = new BigNumber(interestAlreadyPaidInPeriod ?? "0");
+  const grossInterest = calculateInterest(
+    principalBalanceBefore,
+    monthlyRateDecimal,
+    daysElapsed,
+    effectiveMinDays,
+  );
+  const interestOwed = BigNumber.max(grossInterest.minus(alreadyPaid), 0);
 
   if (payment.isLessThanOrEqualTo(interestOwed)) {
     return {
@@ -497,20 +589,31 @@ export function allocatePayment(params: {
       principalPortion: "0.00",
       principalBalanceBefore,
       principalBalanceAfter: principalBalanceBefore,
-      outstandingBalanceAfter: computeOutstanding(principalBalanceBefore, monthlyRateDecimal),
+      outstandingBalanceAfter: computeOutstanding(
+        principalBalanceBefore,
+        monthlyRateDecimal,
+      ),
       loanFullyPaid: false,
-    }
+    };
   }
 
-  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance)
-  const principalBalanceAfter = BigNumber.max(balance.minus(principalPortion), 0)
+  const principalPortion = BigNumber.min(payment.minus(interestOwed), balance);
+  const principalBalanceAfter = BigNumber.max(
+    balance.minus(principalPortion),
+    0,
+  );
 
   return {
     interestPortion: formatAmount(interestOwed),
     principalPortion: formatAmount(principalPortion),
     principalBalanceBefore,
     principalBalanceAfter: formatAmount(principalBalanceAfter),
-    outstandingBalanceAfter: computeOutstanding(principalBalanceAfter, monthlyRateDecimal),
+    outstandingBalanceAfter: computeOutstanding(
+      principalBalanceAfter,
+      monthlyRateDecimal,
+    ),
     loanFullyPaid: principalBalanceAfter.isZero(),
-  }
+  };
 }
+
+export const allocateLoanPayment = allocateLoanPaymentServerSide;

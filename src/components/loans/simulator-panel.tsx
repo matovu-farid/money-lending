@@ -1,107 +1,104 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useForm } from "react-hook-form"
+import { useState } from "react";
+import { useForm } from "react-hook-form";
 import {
   allocatePayment,
   calculateDaysOverdue,
   calculateDailyRate,
   calculateInterest,
   formatAmount,
-} from "@/lib/interest"
-import type { PaymentAllocation } from "@/lib/interest"
-import BigNumber from "bignumber.js"
-import type { Loan, PaymentWithCustomer } from "@/types"
-import { formatCurrency } from "@/lib/utils"
-import { Card, CardContent } from "@/components/ui/card"
-import { MoneyInput } from "@/components/ui/money-input"
-import { Button } from "@/components/ui/button"
-import { InfoPopover } from "@/components/ui/info-popover"
+} from "@/lib/interest";
+import type { PaymentAllocation } from "@/lib/interest";
+import BigNumber from "bignumber.js";
+import type { Loan, PaymentWithCustomer } from "@/types";
+import { formatCurrency } from "@/lib/utils";
+import { Card, CardContent } from "@/components/ui/card";
+import { MoneyInput } from "@/components/ui/money-input";
+import { Button } from "@/components/ui/button";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { allocateLoanPayment } from "@/lib/interest/engine";
+import { endOfDay } from "date-fns";
 
 interface SimulatorPanelProps {
-  loan: Loan
-  payments: PaymentWithCustomer[]
-  ledgerBalance: string | null
-  totalInterestPaid?: string
+  loan: Loan;
+  payments: PaymentWithCustomer[];
+  ledgerBalance: string | null;
+  totalInterestPaid?: string;
 }
 
 interface SimulatorResult {
-  allocation: PaymentAllocation
-  currentDaysOverdue: string
-  afterDaysOverdue: string
-  currentOutstanding: string
-  currentUnpaidInterest: string
-  afterUnpaidInterest: string
+  allocation: PaymentAllocation;
+  currentDaysOverdue: string;
+  afterDaysOverdue: string;
+  currentOutstanding: string;
+  currentUnpaidInterest: string;
+  afterUnpaidInterest: string;
 }
 
-export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPaid: totalInterestPaidProp }: SimulatorPanelProps) {
+export function SimulatorPanel({
+  loan,
+  payments,
+  ledgerBalance,
+  totalInterestPaid: totalInterestPaidProp,
+}: SimulatorPanelProps) {
   const { control, watch } = useForm<{ amount: string }>({
     defaultValues: { amount: "" },
-  })
-  const amount = watch("amount")
-  const [result, setResult] = useState<SimulatorResult | null>(null)
+  });
+  const amount = watch("amount");
+  const [result, setResult] = useState<SimulatorResult | null>(null);
 
-  const effectiveRate = loan.interestRateOverride ?? loan.interestRate
-  const effectiveMinDays = loan.minPeriodOverride ?? loan.minInterestDays
-  const dailyRate = calculateDailyRate(effectiveRate)
-  const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(dailyRate)
+  const effectiveRate = loan.interestRateOverride ?? loan.interestRate;
+  const dailyRate = calculateDailyRate(effectiveRate);
+  const dailyInterestAmount = new BigNumber(loan.principalAmount).multipliedBy(
+    dailyRate,
+  );
 
-  const sortedPayments = [...payments].sort(
-    (a, b) => new Date(a.paymentDate).getTime() - new Date(b.paymentDate).getTime()
-  )
-  const lastPayment = sortedPayments.at(-1)
-  const currentOutstanding = ledgerBalance ?? loan.principalAmount
+  const currentOutstanding = ledgerBalance ?? loan.principalAmount;
 
-  const now = new Date()
+  const now = new Date();
   const totalDaysElapsed = Math.floor(
-    (now.getTime() - new Date(loan.startDate).getTime()) / (1000 * 60 * 60 * 24)
-  )
+    (now.getTime() - new Date(loan.startDate).getTime()) /
+      (1000 * 60 * 60 * 24),
+  );
 
   // Use actual days for accrual — min period only applies to payment allocation
   const totalInterestAccrued = calculateInterest(
     currentOutstanding,
     effectiveRate,
     totalDaysElapsed,
-    0
-  )
+    0,
+  );
 
   const totalInterestPaid = totalInterestPaidProp
     ? new BigNumber(totalInterestPaidProp)
-    : new BigNumber(0)
+    : new BigNumber(0);
 
   const currentDaysOverdueBN = calculateDaysOverdue(
     totalInterestAccrued,
     totalInterestPaid,
-    dailyInterestAmount
-  )
-  const currentUnpaidInterest = totalInterestAccrued.minus(totalInterestPaid)
+    dailyInterestAmount,
+  );
+  const currentUnpaidInterest = totalInterestAccrued.minus(totalInterestPaid);
 
-  function handleSimulate() {
-    if (!amount || new BigNumber(amount).isLessThanOrEqualTo(0)) return
+  async function handleSimulate() {
+    if (!amount || new BigNumber(amount).isLessThanOrEqualTo(0)) return;
 
-    const lastPaymentDate = lastPayment
-      ? new Date(lastPayment.paymentDate)
-      : new Date(loan.startDate)
-    const daysElapsedSinceLastPayment = Math.floor(
-      (now.getTime() - lastPaymentDate.getTime()) / (1000 * 60 * 60 * 24)
-    )
-
-    const allocation = allocatePayment({
+    const allocation = await allocateLoanPayment({
       paymentAmount: amount,
-      principalBalanceBefore: currentOutstanding,
-      monthlyRateDecimal: effectiveRate,
-      daysElapsed: daysElapsedSinceLastPayment,
-      minInterestDays: effectiveMinDays,
-      paymentNumber: sortedPayments.length + 1,
-    })
+      loanId: loan.id,
+      asOf: endOfDay(now),
+    });
 
-    const afterInterestPaid = totalInterestPaid.plus(new BigNumber(allocation.interestPortion))
+    const afterInterestPaid = totalInterestPaid.plus(
+      new BigNumber(allocation.interestPortion),
+    );
     const afterDaysOverdueBN = calculateDaysOverdue(
       totalInterestAccrued,
       afterInterestPaid,
-      dailyInterestAmount
-    )
-    const afterUnpaidInterestBN = totalInterestAccrued.minus(afterInterestPaid)
+      dailyInterestAmount,
+    );
+    const afterUnpaidInterestBN = totalInterestAccrued.minus(afterInterestPaid);
 
     setResult({
       allocation,
@@ -109,20 +106,26 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
       afterDaysOverdue: afterDaysOverdueBN.toFixed(0),
       currentOutstanding,
       currentUnpaidInterest: formatAmount(
-        currentUnpaidInterest.isLessThan(0) ? new BigNumber(0) : currentUnpaidInterest
+        currentUnpaidInterest.isLessThan(0)
+          ? new BigNumber(0)
+          : currentUnpaidInterest,
       ),
       afterUnpaidInterest: formatAmount(
-        afterUnpaidInterestBN.isLessThan(0) ? new BigNumber(0) : afterUnpaidInterestBN
+        afterUnpaidInterestBN.isLessThan(0)
+          ? new BigNumber(0)
+          : afterUnpaidInterestBN,
       ),
-    })
+    });
   }
 
   const amountChanged =
-    result !== null && result.allocation.principalBalanceAfter !== currentOutstanding
+    result !== null &&
+    result.allocation.principalBalanceAfter !== currentOutstanding;
   const interestChanged =
-    result !== null && result.afterUnpaidInterest !== result.currentUnpaidInterest
+    result !== null &&
+    result.afterUnpaidInterest !== result.currentUnpaidInterest;
   const daysChanged =
-    result !== null && result.afterDaysOverdue !== result.currentDaysOverdue
+    result !== null && result.afterDaysOverdue !== result.currentDaysOverdue;
 
   return (
     <div className="space-y-4">
@@ -131,13 +134,23 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
         <InfoPopover>
           <p className="font-semibold text-sm mb-1">How the Simulator Works</p>
           <p className="text-xs text-muted-foreground mb-2">
-            The simulator shows what would happen if you made a payment right now, without actually recording it.
+            The simulator shows what would happen if you made a payment right
+            now, without actually recording it.
           </p>
           <p className="text-xs font-semibold mb-1">Payment Allocation</p>
           <div className="text-xs text-muted-foreground mb-2 space-y-1">
-            <p>1. Interest is calculated first: Interest = Principal Balance × (Monthly Rate ÷ 30) × Days Since Last Payment</p>
-            <p>2. The minimum interest period (30 days) applies — even if you pay early, interest for 30 days is charged</p>
-            <p>3. Payment covers interest first, then remaining amount reduces principal</p>
+            <p>
+              1. Interest is calculated first: Interest = Principal Balance ×
+              (Monthly Rate ÷ 30) × Days Since Last Payment
+            </p>
+            <p>
+              2. The minimum interest period (30 days) applies — even if you pay
+              early, interest for 30 days is charged
+            </p>
+            <p>
+              3. Payment covers interest first, then remaining amount reduces
+              principal
+            </p>
           </div>
           <p className="text-xs font-semibold mb-1">Formula</p>
           <div className="space-y-1 mb-2">
@@ -153,17 +166,23 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
           </div>
           <p className="text-xs font-semibold mb-1">Example</p>
           <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
-            <p>Outstanding: UGX 1,000,000, Rate: 10%/month, 35 days since last payment</p>
+            <p>
+              Outstanding: UGX 1,000,000, Rate: 10%/month, 35 days since last
+              payment
+            </p>
             <p>Accrued interest = 1,000,000 × (0.10 ÷ 30) × 35 = UGX 116,667</p>
             <p className="font-semibold mt-1">Payment of UGX 200,000:</p>
             <p>Interest portion: UGX 116,667</p>
             <p>Principal portion: 200,000 − 116,667 = UGX 83,333</p>
-            <p>New balance: 1,000,000 − 83,333 = <strong>UGX 916,667</strong></p>
+            <p>
+              New balance: 1,000,000 − 83,333 = <strong>UGX 916,667</strong>
+            </p>
           </div>
         </InfoPopover>
       </h2>
       <p className="text-sm text-muted-foreground">
-        Simulate a payment to see how it would affect this loan without recording it.
+        Simulate a payment to see how it would affect this loan without
+        recording it.
       </p>
 
       <div className="flex items-end gap-3 flex-wrap">
@@ -176,14 +195,18 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
         />
         <Button
           onClick={handleSimulate}
-          disabled={!amount || new BigNumber(amount || "0").isLessThanOrEqualTo(0)}
+          disabled={
+            !amount || new BigNumber(amount || "0").isLessThanOrEqualTo(0)
+          }
         >
           Simulate
         </Button>
       </div>
 
       {!result && (
-        <p className="text-sm text-muted-foreground">Enter an amount to simulate.</p>
+        <p className="text-sm text-muted-foreground">
+          Enter an amount to simulate.
+        </p>
       )}
 
       {result && (
@@ -196,12 +219,20 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
                 </p>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Principal Balance</span>
-                    <span className="font-medium">{formatCurrency(result.currentOutstanding)}</span>
+                    <span className="text-muted-foreground">
+                      Principal Balance
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(result.currentOutstanding)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Unpaid Interest</span>
-                    <span className="font-medium">{formatCurrency(result.currentUnpaidInterest)}</span>
+                    <span className="text-muted-foreground">
+                      Unpaid Interest
+                    </span>
+                    <span className="font-medium">
+                      {formatCurrency(result.currentUnpaidInterest)}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Days Coverage</span>
@@ -222,20 +253,34 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
                 </p>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Principal Balance</span>
-                    <span className={amountChanged ? "font-semibold" : "font-medium"}>
+                    <span className="text-muted-foreground">
+                      Principal Balance
+                    </span>
+                    <span
+                      className={
+                        amountChanged ? "font-semibold" : "font-medium"
+                      }
+                    >
                       {formatCurrency(result.allocation.principalBalanceAfter)}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Unpaid Interest</span>
-                    <span className={interestChanged ? "font-semibold" : "font-medium"}>
+                    <span className="text-muted-foreground">
+                      Unpaid Interest
+                    </span>
+                    <span
+                      className={
+                        interestChanged ? "font-semibold" : "font-medium"
+                      }
+                    >
                       {formatCurrency(result.afterUnpaidInterest)}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Days Coverage</span>
-                    <span className={daysChanged ? "font-semibold" : "font-medium"}>
+                    <span
+                      className={daysChanged ? "font-semibold" : "font-medium"}
+                    >
                       {result.afterDaysOverdue === "0"
                         ? "Loan is current — no overdue days."
                         : `${result.afterDaysOverdue} days overdue`}
@@ -254,7 +299,8 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
           {!result.allocation.loanFullyPaid &&
             result.allocation.principalPortion === "0.00" && (
               <p className="text-sm text-yellow-700">
-                This amount covers partial interest only. No principal is reduced.
+                This amount covers partial interest only. No principal is
+                reduced.
               </p>
             )}
           {result.afterDaysOverdue === "0" &&
@@ -267,5 +313,5 @@ export function SimulatorPanel({ loan, payments, ledgerBalance, totalInterestPai
         </>
       )}
     </div>
-  )
+  );
 }

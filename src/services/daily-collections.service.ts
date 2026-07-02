@@ -154,7 +154,7 @@ export const getLoansDueToday = (): Effect.Effect<
             customerId: loan.customerId,
             customerName: loan.customerName,
             loanAmount: loan.principalAmount,
-            outstandingBalance: info.outstandingBalance,
+            outstandingBalance: info.totalBalanceOwed,
             daysOverdue,
             lastPaymentDate: info.lastPaymentDate,
           });

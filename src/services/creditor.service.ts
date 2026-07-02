@@ -11,13 +11,20 @@ import {
 } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
-import { autoPostInterestExpense, autoPostCreditorInvestment, autoPostCreditorPrincipalRepaid } from "@/services/auto-post.service";
-import { getCreditorBalancesFromLedger, getInterestPayableFromLedger, getCreditorTotalInvestedFromLedger, getCreditorTotalRepaidFromLedger, getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service";
-import { reverseCreditorInterestAccrual } from "@/services/transaction.service";
 import {
-  allocatePayment,
-  formatAmount,
-} from "@/lib/interest/engine";
+  autoPostInterestExpense,
+  autoPostCreditorInvestment,
+  autoPostCreditorPrincipalRepaid,
+} from "@/services/auto-post.service";
+import {
+  getCreditorBalancesFromLedger,
+  getInterestPayableFromLedger,
+  getCreditorTotalInvestedFromLedger,
+  getCreditorTotalRepaidFromLedger,
+  getCreditorRepaymentPortionsFromLedger,
+} from "@/services/ledger-queries.service";
+import { reverseCreditorInterestAccrual } from "@/services/transaction.service";
+import { allocatePayment, formatAmount } from "@/lib/interest/engine";
 import BigNumber from "bignumber.js";
 import type {
   Creditor,
@@ -69,8 +76,8 @@ export const createCreditor = (
   }).pipe(
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),
-      () => createCreditor({ ...input, id: undefined }, actorId)
-    )
+      () => createCreditor({ ...input, id: undefined }, actorId),
+    ),
   );
 
 /**
@@ -106,9 +113,11 @@ export const createCreditorWithTxid = (
         });
 
         const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
+          sql`SELECT pg_current_xact_id()::text as txid`,
         );
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid);
+        const txid = Number(
+          (txidRows as unknown as Array<{ txid: string }>)[0].txid,
+        );
         return { creditor, txid };
       });
     },
@@ -116,8 +125,8 @@ export const createCreditorWithTxid = (
   }).pipe(
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),
-      () => createCreditorWithTxid({ ...input, id: undefined }, actorId)
-    )
+      () => createCreditorWithTxid({ ...input, id: undefined }, actorId),
+    ),
   );
 
 export const updateCreditor = (
@@ -172,7 +181,10 @@ export const updateCreditorWithTxid = (
   id: string,
   input: UpdateCreditorInput,
   actorId: string,
-): Effect.Effect<{ creditor: Creditor; txid: number }, CreditorNotFound | DatabaseError> =>
+): Effect.Effect<
+  { creditor: Creditor; txid: number },
+  CreditorNotFound | DatabaseError
+> =>
   Effect.tryPromise({
     try: async () => {
       const [existing] = await db
@@ -207,9 +219,11 @@ export const updateCreditorWithTxid = (
         });
 
         const txidRows = await tx.execute<{ txid: string }>(
-          sql`SELECT pg_current_xact_id()::text as txid`
+          sql`SELECT pg_current_xact_id()::text as txid`,
         );
-        const txid = Number((txidRows as unknown as Array<{ txid: string }>)[0].txid);
+        const txid = Number(
+          (txidRows as unknown as Array<{ txid: string }>)[0].txid,
+        );
         return { creditor: updated, txid };
       });
     },
@@ -242,7 +256,11 @@ export const getCreditor = (
 export const listCreditors = (): Effect.Effect<Creditor[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
-      return await db.select().from(creditors).orderBy(asc(creditors.name)).limit(200);
+      return await db
+        .select()
+        .from(creditors)
+        .orderBy(asc(creditors.name))
+        .limit(200);
     },
     catch: (e) => new DatabaseError({ cause: e }),
   });
@@ -253,18 +271,32 @@ export const listCreditors = (): Effect.Effect<Creditor[], DatabaseError> =>
 // raising further.
 const CREDITOR_LEDGER_LIST_CAP = 2000;
 
-export const listCreditorInvestments = (): Effect.Effect<CreditorInvestment[], DatabaseError> =>
+export const listCreditorInvestments = (): Effect.Effect<
+  CreditorInvestment[],
+  DatabaseError
+> =>
   Effect.tryPromise({
     try: async () => {
-      return await db.select().from(creditorInvestments).orderBy(asc(creditorInvestments.createdAt)).limit(CREDITOR_LEDGER_LIST_CAP);
+      return await db
+        .select()
+        .from(creditorInvestments)
+        .orderBy(asc(creditorInvestments.createdAt))
+        .limit(CREDITOR_LEDGER_LIST_CAP);
     },
     catch: (e) => new DatabaseError({ cause: e }),
   });
 
-export const listCreditorRepayments = (): Effect.Effect<CreditorRepayment[], DatabaseError> =>
+export const listCreditorRepayments = (): Effect.Effect<
+  CreditorRepayment[],
+  DatabaseError
+> =>
   Effect.tryPromise({
     try: async () => {
-      return await db.select().from(creditorRepayments).orderBy(asc(creditorRepayments.repaymentDate)).limit(CREDITOR_LEDGER_LIST_CAP);
+      return await db
+        .select()
+        .from(creditorRepayments)
+        .orderBy(asc(creditorRepayments.repaymentDate))
+        .limit(CREDITOR_LEDGER_LIST_CAP);
     },
     catch: (e) => new DatabaseError({ cause: e }),
   });
@@ -311,7 +343,7 @@ export const addInvestment = (
           actorId,
           depositLocation: input.depositLocation,
           subLocationId: input.subLocationId,
-        })
+        });
 
         return investment;
       });
@@ -323,9 +355,12 @@ export const addInvestment = (
     },
   }).pipe(
     Effect.catchIf(
-      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
-      () => addInvestment({ ...input, id: undefined }, actorId)
-    )
+      (e) =>
+        e._tag === "DatabaseError" &&
+        !!input.id &&
+        isUniqueConstraintError(e.cause),
+      () => addInvestment({ ...input, id: undefined }, actorId),
+    ),
   );
 
 export const recordCreditorRepayment = (
@@ -363,11 +398,18 @@ export const recordCreditorRepayment = (
         );
 
         // Derive principal balance from ledger (pass tx for transactional consistency)
-        const ledgerBalances = await getCreditorBalancesFromLedger([input.investmentId], tx);
-        const principalBalance = ledgerBalances.get(input.investmentId) ?? (() => {
-          console.warn(`[recordCreditorRepayment] No ledger entries for investment ${input.investmentId}, using amount as fallback`)
-          return new BigNumber(investment.amount);
-        })();
+        const ledgerBalances = await getCreditorBalancesFromLedger(
+          [input.investmentId],
+          tx,
+        );
+        const principalBalance =
+          ledgerBalances.get(input.investmentId) ??
+          (() => {
+            console.warn(
+              `[recordCreditorRepayment] No ledger entries for investment ${input.investmentId}, using amount as fallback`,
+            );
+            return new BigNumber(investment.amount);
+          })();
         const principalBalanceStr = formatAmount(principalBalance);
 
         const allocation = allocatePayment({
@@ -406,7 +448,7 @@ export const recordCreditorRepayment = (
             investmentId: input.investmentId,
             repaymentDate: input.repaymentDate,
             actorId,
-          })
+          });
         }
 
         if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
@@ -429,7 +471,7 @@ export const recordCreditorRepayment = (
             repaymentDate: input.repaymentDate,
             actorId,
             sourceLocation: input.sourceLocation,
-          })
+          });
         }
 
         return repayment;
@@ -442,9 +484,12 @@ export const recordCreditorRepayment = (
     },
   }).pipe(
     Effect.catchIf(
-      (e) => e._tag === "DatabaseError" && !!input.id && isUniqueConstraintError(e.cause),
-      () => recordCreditorRepayment({ ...input, id: undefined }, actorId)
-    )
+      (e) =>
+        e._tag === "DatabaseError" &&
+        !!input.id &&
+        isUniqueConstraintError(e.cause),
+      () => recordCreditorRepayment({ ...input, id: undefined }, actorId),
+    ),
   );
 
 export const getCreditorDashboard = (
@@ -469,7 +514,12 @@ export const getCreditorDashboard = (
       const investmentIds = investments.map((inv) => inv.id);
 
       // Derive all financial figures from the ledger
-      const [ledgerBalances, interestPayableMap, totalInvestedBN, totalRepaymentsMadeBN] = await Promise.all([
+      const [
+        ledgerBalances,
+        interestPayableMap,
+        totalInvestedBN,
+        totalRepaymentsMadeBN,
+      ] = await Promise.all([
         getCreditorBalancesFromLedger(investmentIds),
         getInterestPayableFromLedger(investmentIds),
         getCreditorTotalInvestedFromLedger(investmentIds),
@@ -477,29 +527,39 @@ export const getCreditorDashboard = (
       ]);
 
       // Batch-fetch repayment portions from ledger for per-investment repaid totals
-      const allRepayments = investmentIds.length > 0
-        ? await db
-            .select()
-            .from(creditorRepayments)
-            .where(inArray(creditorRepayments.investmentId, investmentIds))
-        : [];
+      const allRepayments =
+        investmentIds.length > 0
+          ? await db
+              .select()
+              .from(creditorRepayments)
+              .where(inArray(creditorRepayments.investmentId, investmentIds))
+          : [];
 
       const repaymentAmountsByInvestment = new Map<string, BigNumber>();
       for (const r of allRepayments) {
-        const current = repaymentAmountsByInvestment.get(r.investmentId) ?? new BigNumber(0);
-        repaymentAmountsByInvestment.set(r.investmentId, current.plus(r.amount));
+        const current =
+          repaymentAmountsByInvestment.get(r.investmentId) ?? new BigNumber(0);
+        repaymentAmountsByInvestment.set(
+          r.investmentId,
+          current.plus(r.amount),
+        );
       }
 
       let totalInterestAccrued = new BigNumber(0);
 
       for (const investment of investments) {
         if (!ledgerBalances.has(investment.id)) {
-          console.warn(`[getCreditorDashboard] No ledger entries for investment ${investment.id}, using amount as fallback`)
+          console.warn(
+            `[getCreditorDashboard] No ledger entries for investment ${investment.id}, using amount as fallback`,
+          );
         }
-        const principalBalance = ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
-        const interestAccrued = interestPayableMap.get(investment.id) ?? new BigNumber(0);
+        const principalBalance =
+          ledgerBalances.get(investment.id) ?? new BigNumber(investment.amount);
+        const interestAccrued =
+          interestPayableMap.get(investment.id) ?? new BigNumber(0);
         totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
-        const totalRepaid = repaymentAmountsByInvestment.get(investment.id) ?? new BigNumber(0);
+        const totalRepaid =
+          repaymentAmountsByInvestment.get(investment.id) ?? new BigNumber(0);
 
         investmentSummaries.push({
           id: investment.id,
@@ -550,7 +610,12 @@ export const getSystemCapital = (): Effect.Effect<
       const investmentIds = allInvestments.map((inv) => inv.id);
 
       // Derive all financial figures from the ledger
-      const [ledgerBalances, interestPayableMap, totalInvestedBN, totalRepaymentsMadeBN] = await Promise.all([
+      const [
+        ledgerBalances,
+        interestPayableMap,
+        totalInvestedBN,
+        totalRepaymentsMadeBN,
+      ] = await Promise.all([
         getCreditorBalancesFromLedger(investmentIds),
         getInterestPayableFromLedger(investmentIds),
         getCreditorTotalInvestedFromLedger(investmentIds),
@@ -559,7 +624,8 @@ export const getSystemCapital = (): Effect.Effect<
 
       let totalInterestAccrued = new BigNumber(0);
       for (const investment of allInvestments) {
-        const interestAccrued = interestPayableMap.get(investment.id) ?? new BigNumber(0);
+        const interestAccrued =
+          interestPayableMap.get(investment.id) ?? new BigNumber(0);
         totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
       }
 
@@ -609,10 +675,7 @@ export const getCreditorMonthlyInterestDue = (): Effect.Effect<
 
         const current =
           dueByCreditor.get(investment.creditorId) ?? new BigNumber(0);
-        dueByCreditor.set(
-          investment.creditorId,
-          current.plus(monthlyInterest),
-        );
+        dueByCreditor.set(investment.creditorId, current.plus(monthlyInterest));
       }
 
       const result = new Map<string, string>();
@@ -667,7 +730,12 @@ export const getCreditorsPageData = (): Effect.Effect<
       const investmentIds = allInvestments.map((inv) => inv.id);
 
       // Single Promise.all for all ledger queries (no duplicates)
-      const [ledgerBalances, interestPayableMap, totalInvestedBN, totalRepaymentsMadeBN] = await Promise.all([
+      const [
+        ledgerBalances,
+        interestPayableMap,
+        totalInvestedBN,
+        totalRepaymentsMadeBN,
+      ] = await Promise.all([
         getCreditorBalancesFromLedger(investmentIds),
         getInterestPayableFromLedger(investmentIds),
         getCreditorTotalInvestedFromLedger(investmentIds),
@@ -677,7 +745,8 @@ export const getCreditorsPageData = (): Effect.Effect<
       // --- System capital ---
       let totalInterestAccrued = new BigNumber(0);
       for (const investment of allInvestments) {
-        const interestAccrued = interestPayableMap.get(investment.id) ?? new BigNumber(0);
+        const interestAccrued =
+          interestPayableMap.get(investment.id) ?? new BigNumber(0);
         totalInterestAccrued = totalInterestAccrued.plus(interestAccrued);
       }
       const totalPrincipal = Array.from(ledgerBalances.values()).reduce(
@@ -694,7 +763,8 @@ export const getCreditorsPageData = (): Effect.Effect<
         if (principalBalance.isLessThanOrEqualTo(0)) continue;
         const monthlyRate = new BigNumber(investment.interestRateMonthly);
         const monthlyInterest = principalBalance.times(monthlyRate);
-        const current = dueByCreditor.get(investment.creditorId) ?? new BigNumber(0);
+        const current =
+          dueByCreditor.get(investment.creditorId) ?? new BigNumber(0);
         dueByCreditor.set(investment.creditorId, current.plus(monthlyInterest));
       }
       const monthlyDue: Record<string, string> = {};
@@ -854,7 +924,10 @@ export const getCreditorMonthlySummary = (
             for (const [invId, bal] of balances) {
               const share = bal.div(totalBalance);
               const reduction = totalPrincipalPaid.times(share);
-              balances.set(invId, BigNumber.max(bal.minus(reduction), new BigNumber(0)));
+              balances.set(
+                invId,
+                BigNumber.max(bal.minus(reduction), new BigNumber(0)),
+              );
             }
           }
         }

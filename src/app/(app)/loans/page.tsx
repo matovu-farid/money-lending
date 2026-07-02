@@ -1,38 +1,38 @@
-"use client"
+"use client";
 
-import { useState, useMemo, useCallback } from "react"
-import { useRouter } from "next/navigation"
-import { useLoansWithBalances } from "@/collections/loan-views"
-import { Plus, ChevronRight, Loader2, Printer } from "lucide-react"
-import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog"
-import { OverdueBadge } from "@/components/watchlist/overdue-badge"
-import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import type { LoanListEntry } from "@/types"
-import { cn, formatDate, formatDateTime, formatCurrency } from "@/lib/utils"
-import { isPenaltyActive } from "@/lib/interest/effective-rate"
-import { exportLoansExcelAction } from "@/actions/loan.actions"
-import { toast } from "sonner"
-import { Download } from "lucide-react"
-import { downloadBase64 } from "@/lib/download"
-import { InfoPopover } from "@/components/ui/info-popover"
-import { PageHeader } from "@/components/ui/page-header"
-import { LoanTypeBadge } from "@/components/loans/loan-type-badge"
+import { useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { useLoansWithBalances } from "@/collections/loan-views";
+import { Plus, ChevronRight, Loader2, Printer } from "lucide-react";
+import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog";
+import { OverdueBadge } from "@/components/watchlist/overdue-badge";
+import { ResponsiveTable, type Column } from "@/components/ui/responsive-table";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import type { LoanListEntry } from "@/types";
+import { cn, formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
+import { isPenaltyActive } from "@/lib/interest/effective-rate";
+import { exportLoansExcelAction } from "@/actions/loan.actions";
+import { toast } from "sonner";
+import { Download } from "lucide-react";
+import { downloadBase64 } from "@/lib/download";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { PageHeader } from "@/components/ui/page-header";
+import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 
-type FilterCategory = "all" | "critical" | "at-risk" | "early"
+type FilterCategory = "all" | "critical" | "at-risk" | "early";
 
 function categorize(daysOverdue: number): Exclude<FilterCategory, "all"> {
-  if (daysOverdue >= 30) return "critical"
-  if (daysOverdue >= 25) return "at-risk"
-  return "early"
+  if (daysOverdue >= 30) return "critical";
+  if (daysOverdue >= 25) return "at-risk";
+  return "early";
 }
 
 function criticalityRank(entry: LoanListEntry): number {
-  if (entry.daysOverdue >= 30) return 0
-  if (entry.daysOverdue >= 25) return 1
-  if (entry.daysOverdue >= 0) return 2
-  return 3
+  if (entry.daysOverdue >= 30) return 0;
+  if (entry.daysOverdue >= 25) return 1;
+  if (entry.daysOverdue >= 0) return 2;
+  return 3;
 }
 
 function escapeHtml(value: string): string {
@@ -41,7 +41,7 @@ function escapeHtml(value: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;")
+    .replace(/'/g, "&#39;");
 }
 
 /**
@@ -49,23 +49,26 @@ function escapeHtml(value: string): string {
  * generateLoansExcel (src/services/export/excel.service.ts) for printing.
  */
 function buildLoansPrintHtml(entries: LoanListEntry[]): string {
-  const generated = formatDate(new Date())
-  let totalPrincipal = 0
-  let totalOutstanding = 0
-  let totalOwed = 0
-  let totalInterest = 0
+  const generated = formatDate(new Date());
+  let totalPrincipal = 0;
+  let totalOutstanding = 0;
+  let totalOwed = 0;
+  let totalInterest = 0;
 
-  const rows = entries.map((e) => {
-    const principal = parseFloat(e.principalAmount)
-    const outstanding = parseFloat(e.outstandingBalance)
-    const interest = parseFloat(e.unpaidInterest)
-    const owed = outstanding + interest
-    totalPrincipal += principal
-    totalOutstanding += outstanding
-    totalOwed += owed
-    totalInterest += interest
-    const last = e.lastPaymentDate ? formatDate(e.lastPaymentDate) : "No payments"
-    return `<tr>
+  const rows = entries
+    .map((e) => {
+      const principal = parseFloat(e.principalAmount);
+      const outstanding = parseFloat(e.outstandingBalance);
+      const interest = parseFloat(e.unpaidInterest);
+      const owed = outstanding + interest;
+      totalPrincipal += principal;
+      totalOutstanding += outstanding;
+      totalOwed += owed;
+      totalInterest += interest;
+      const last = e.lastPaymentDate
+        ? formatDate(e.lastPaymentDate)
+        : "No payments";
+      return `<tr>
       <td>${escapeHtml(e.customerName)}</td>
       <td>${escapeHtml(e.customerContact ?? "")}</td>
       <td class="num">${formatCurrency(e.principalAmount)}</td>
@@ -74,10 +77,11 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
       <td class="num">${formatCurrency(e.unpaidInterest)}</td>
       <td class="num">${e.daysOverdue}</td>
       <td>${escapeHtml(last)}</td>
-    </tr>`
-  }).join("")
+    </tr>`;
+    })
+    .join("");
 
-  const countLabel = `${entries.length} loan${entries.length === 1 ? "" : "s"}`
+  const countLabel = `${entries.length} loan${entries.length === 1 ? "" : "s"}`;
 
   return `<!doctype html>
 <html>
@@ -129,115 +133,117 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
     </tfoot>
   </table>
 </body>
-</html>`
+</html>`;
 }
 
-
 export default function LoansPage() {
-  const router = useRouter()
-  const { data, isLoading } = useLoansWithBalances()
-  const entries = data ?? []
-  const error: string | null = null
-  const calculatedAt = new Date()
+  const router = useRouter();
+  const { data, isLoading } = useLoansWithBalances();
+  const entries = data ?? [];
+  const error: string | null = null;
+  const calculatedAt = new Date();
 
-  const [activeFilter, setActiveFilter] = useState<FilterCategory>("all")
-  const [isExporting, setIsExporting] = useState(false)
-  const [pickerOpen, setPickerOpen] = useState(false)
-  const [navigatingTo, setNavigatingTo] = useState<string | null>(null)
+  const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
+  const [isExporting, setIsExporting] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
 
   const handleExportExcel = useCallback(async () => {
-    setIsExporting(true)
+    setIsExporting(true);
     try {
-      const result = await exportLoansExcelAction(activeFilter)
+      const result = await exportLoansExcelAction(activeFilter);
       if ("error" in result) {
-        toast.error(result.error)
-        return
+        toast.error(result.error);
+        return;
       }
-      if (!result.data) return
+      if (!result.data) return;
 
-      const dateStr = new Date().toISOString().slice(0, 10)
+      const dateStr = new Date().toISOString().slice(0, 10);
       downloadBase64(
         result.data,
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         `sovereign-ledger-loans-${dateStr}.xlsx`,
-      )
-      toast.success("Excel file downloaded")
+      );
+      toast.success("Excel file downloaded");
     } catch {
-      toast.error("Failed to export loans")
+      toast.error("Failed to export loans");
     } finally {
-      setIsExporting(false)
+      setIsExporting(false);
     }
-  }, [activeFilter])
+  }, [activeFilter]);
 
   const sortedEntries = useMemo(() => {
     return [...entries].sort((a, b) => {
-      const rankDiff = criticalityRank(a) - criticalityRank(b)
-      if (rankDiff !== 0) return rankDiff
-      return b.daysOverdue - a.daysOverdue
-    })
-  }, [entries])
+      const rankDiff = criticalityRank(a) - criticalityRank(b);
+      if (rankDiff !== 0) return rankDiff;
+      return b.daysOverdue - a.daysOverdue;
+    });
+  }, [entries]);
 
   const { critical, atRisk, early } = useMemo(() => {
     const groups = {
       critical: [] as LoanListEntry[],
       atRisk: [] as LoanListEntry[],
       early: [] as LoanListEntry[],
-    }
+    };
     for (const entry of sortedEntries) {
-      if (entry.daysOverdue < 0) continue
-      const cat = categorize(entry.daysOverdue)
-      if (cat === "critical") groups.critical.push(entry)
-      else if (cat === "at-risk") groups.atRisk.push(entry)
-      else groups.early.push(entry)
+      if (entry.daysOverdue < 0) continue;
+      const cat = categorize(entry.daysOverdue);
+      if (cat === "critical") groups.critical.push(entry);
+      else if (cat === "at-risk") groups.atRisk.push(entry);
+      else groups.early.push(entry);
     }
-    return groups
-  }, [sortedEntries])
+    return groups;
+  }, [sortedEntries]);
 
   const stats = useMemo(() => {
     function totalBalance(list: LoanListEntry[]) {
-      return list.reduce((sum, e) => sum + parseFloat(e.outstandingBalance), 0)
+      return list.reduce((sum, e) => sum + parseFloat(e.outstandingBalance), 0);
     }
     return {
       critical: { count: critical.length, balance: totalBalance(critical) },
       atRisk: { count: atRisk.length, balance: totalBalance(atRisk) },
       early: { count: early.length, balance: totalBalance(early) },
       total: critical.length + atRisk.length + early.length,
-    }
-  }, [critical, atRisk, early])
+    };
+  }, [critical, atRisk, early]);
 
   const filteredEntries = useMemo(() => {
     switch (activeFilter) {
       case "critical":
-        return critical
+        return critical;
       case "at-risk":
-        return atRisk
+        return atRisk;
       case "early":
-        return early
+        return early;
       default:
-        return sortedEntries
+        return sortedEntries;
     }
-  }, [activeFilter, critical, atRisk, early, sortedEntries])
+  }, [activeFilter, critical, atRisk, early, sortedEntries]);
 
   const handlePrint = useCallback(() => {
-    const iframe = document.createElement("iframe")
-    iframe.style.position = "fixed"
-    iframe.style.left = "-9999px"
-    iframe.style.top = "-9999px"
-    iframe.srcdoc = buildLoansPrintHtml(filteredEntries)
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.left = "-9999px";
+    iframe.style.top = "-9999px";
+    iframe.srcdoc = buildLoansPrintHtml(filteredEntries);
     iframe.onload = () => {
-      iframe.contentWindow?.focus()
-      iframe.contentWindow?.print()
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
       setTimeout(() => {
-        if (iframe.parentNode) document.body.removeChild(iframe)
-      }, 1000)
-    }
-    document.body.appendChild(iframe)
-  }, [filteredEntries])
+        if (iframe.parentNode) document.body.removeChild(iframe);
+      }, 1000);
+    };
+    document.body.appendChild(iframe);
+  }, [filteredEntries]);
 
-  const handleRowClick = useCallback((loanId: string) => {
-    setNavigatingTo(loanId)
-    router.push(`/loans/${loanId}`)
-  }, [router])
+  const handleRowClick = useCallback(
+    (loanId: string) => {
+      setNavigatingTo(loanId);
+      router.push(`/loans/${loanId}`);
+    },
+    [router],
+  );
 
   const columns: Column<LoanListEntry>[] = [
     {
@@ -245,9 +251,7 @@ export default function LoansPage() {
       header: "Customer Name",
       cardLabel: "Customer",
       primary: true,
-      render: (e) => (
-        <span className="font-medium">{e.customerName}</span>
-      ),
+      render: (e) => <span className="font-medium">{e.customerName}</span>,
     },
     {
       key: "principalAmount",
@@ -260,10 +264,12 @@ export default function LoansPage() {
               The original amount disbursed to the borrower.
             </p>
             <p className="text-xs text-muted-foreground mb-2">
-              This does not change &mdash; it&apos;s the base amount the loan was issued for.
+              This does not change &mdash; it&apos;s the base amount the loan
+              was issued for.
             </p>
             <p className="text-xs text-muted-foreground">
-              Interest is calculated on the outstanding balance, not the original principal.
+              Interest is calculated on the outstanding balance, not the
+              original principal.
             </p>
           </InfoPopover>
         </span>
@@ -282,11 +288,13 @@ export default function LoansPage() {
               The remaining principal that the borrower still owes.
             </p>
             <p className="text-xs text-muted-foreground mb-2">
-              Starts equal to the principal amount and decreases as payments are made.
+              Starts equal to the principal amount and decreases as payments are
+              made.
             </p>
             <p className="text-xs font-semibold mb-1">Formula</p>
             <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-              Principal Balance = Principal &minus; Total Principal Payments Made
+              Principal Balance = Principal &minus; Total Principal Payments
+              Made
             </p>
             <p className="text-xs text-muted-foreground">
               Note: This does NOT include unpaid interest.
@@ -305,14 +313,16 @@ export default function LoansPage() {
           <InfoPopover>
             <p className="font-semibold text-sm mb-1">Total Due</p>
             <p className="text-xs text-muted-foreground mb-2">
-              The total amount the borrower must pay right now to fully settle the loan.
+              The total amount the borrower must pay right now to fully settle
+              the loan.
             </p>
             <p className="text-xs font-semibold mb-1">Formula</p>
             <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
               Total Due = Principal Balance + Unpaid Interest
             </p>
             <p className="text-xs text-muted-foreground mb-2">
-              Where Unpaid Interest = Total Interest Accrued &minus; Total Interest Paid
+              Where Unpaid Interest = Total Interest Accrued &minus; Total
+              Interest Paid
             </p>
             <p className="text-xs text-muted-foreground">
               This figure changes daily as interest continues to accrue.
@@ -322,8 +332,9 @@ export default function LoansPage() {
       ),
       cardLabel: "Total Due",
       render: (e) => {
-        const totalOwed = parseFloat(e.outstandingBalance) + parseFloat(e.unpaidInterest)
-        return formatCurrency(totalOwed.toString())
+        const totalOwed =
+          parseFloat(e.outstandingBalance) + parseFloat(e.unpaidInterest);
+        return formatCurrency(totalOwed.toString());
       },
     },
     {
@@ -338,11 +349,15 @@ export default function LoansPage() {
             </p>
             <p className="text-xs font-semibold mb-1">Formula</p>
             <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
-              Days Overdue = (Total Interest Accrued − Total Interest Paid) ÷ Daily Interest Amount
+              Days Overdue = (Total Interest Accrued − Total Interest Paid) ÷
+              Daily Interest Amount
             </p>
             <p className="text-xs text-muted-foreground mb-1">Where:</p>
             <ul className="text-xs text-muted-foreground mb-2 list-disc pl-4 space-y-0.5">
-              <li>Total Interest Accrued = Principal × (Monthly Rate ÷ 30) × Days Since Loan Start</li>
+              <li>
+                Total Interest Accrued = Principal × (Monthly Rate ÷ 30) × Days
+                Since Loan Start
+              </li>
               <li>Daily Interest Amount = Principal × (Monthly Rate ÷ 30)</li>
             </ul>
             <p className="text-xs font-semibold mb-1">Example</p>
@@ -351,7 +366,9 @@ export default function LoansPage() {
               <p>Daily interest = 1,000,000 × (0.10 ÷ 30) = UGX 3,333</p>
               <p>After 45 days, interest accrued = UGX 150,000</p>
               <p>If UGX 100,000 interest paid → Unpaid = UGX 50,000</p>
-              <p>Days overdue = 50,000 ÷ 3,333 ≈ <strong>15 days</strong></p>
+              <p>
+                Days overdue = 50,000 ÷ 3,333 ≈ <strong>15 days</strong>
+              </p>
             </div>
           </InfoPopover>
         </span>
@@ -362,7 +379,10 @@ export default function LoansPage() {
           <div className="flex items-center gap-1.5">
             <OverdueBadge daysOverdue={e.daysOverdue} />
             {isPenaltyActive(e.daysOverdue, e.penaltyWaived) && (
-              <Badge variant="destructive" className="rounded-full text-[10px] px-1.5">
+              <Badge
+                variant="destructive"
+                className="rounded-full text-[10px] px-1.5"
+              >
                 Penalty
               </Badge>
             )}
@@ -398,8 +418,7 @@ export default function LoansPage() {
           <ChevronRight className="h-4 w-4 text-muted-foreground" />
         ),
     },
-  ]
-
+  ];
 
   return (
     <div className="space-y-6">
@@ -437,93 +456,116 @@ export default function LoansPage() {
         <>
           {/* Stat Cards — quiet filter buttons; severity signaled via dot, not background */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 print:hidden">
-            {([
-              {
-                key: "critical",
-                label: "Critical (30+ days)",
-                dotClass: "bg-red-500",
-                count: stats.critical.count,
-                balance: stats.critical.balance,
-                info: (
-                  <>
-                    <p className="font-semibold text-sm mb-1">Critical (30+ days)</p>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Loans where unpaid interest has accumulated for 30 or more days. These borrowers have missed at least one full interest cycle.
-                    </p>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Immediate follow-up is recommended to prevent further losses.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      The &ldquo;principal balance&rdquo; amount shown is the remaining principal for loans in this category.
-                    </p>
-                  </>
-                ),
-              },
-              {
-                key: "at-risk",
-                label: "At Risk (25-29 days)",
-                dotClass: "bg-yellow-500",
-                count: stats.atRisk.count,
-                balance: stats.atRisk.balance,
-                info: (
-                  <>
-                    <p className="font-semibold text-sm mb-1">At Risk (25-29 days)</p>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Loans approaching the 30-day overdue threshold. These borrowers are close to becoming critical &mdash; a payment now would prevent escalation.
-                    </p>
-                    <p className="text-xs text-muted-foreground">Proactive contact is recommended.</p>
-                  </>
-                ),
-              },
-              {
-                key: "early",
-                label: "Early (0-24 days)",
-                dotClass: "bg-green-500",
-                count: stats.early.count,
-                balance: stats.early.balance,
-                info: (
-                  <>
-                    <p className="font-semibold text-sm mb-1">Early (0-24 days)</p>
-                    <p className="text-xs text-muted-foreground">
-                      Loans with some overdue interest but still within the first interest cycle. These are normal operational loans that need routine collection.
-                    </p>
-                  </>
-                ),
-              },
-              {
-                key: "all",
-                label: "All Loans",
-                dotClass: "bg-foreground/40",
-                count: sortedEntries.length,
-                balance: null as string | null,
-                overdueText: `${stats.total} overdue`,
-                info: (
-                  <>
-                    <p className="font-semibold text-sm mb-1">All Loans</p>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Total count of all active loans regardless of overdue status.
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      The &ldquo;overdue&rdquo; count shown is loans with any days overdue (&gt; 0). Click to remove filters and see the full portfolio.
-                    </p>
-                  </>
-                ),
-              },
-            ] as const).map((card) => {
-              const isActive = activeFilter === card.key
+            {(
+              [
+                {
+                  key: "critical",
+                  label: "Critical (30+ days)",
+                  dotClass: "bg-red-500",
+                  count: stats.critical.count,
+                  balance: stats.critical.balance,
+                  info: (
+                    <>
+                      <p className="font-semibold text-sm mb-1">
+                        Critical (30+ days)
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Loans where unpaid interest has accumulated for 30 or
+                        more days. These borrowers have missed at least one full
+                        interest cycle.
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Immediate follow-up is recommended to prevent further
+                        losses.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        The &ldquo;principal balance&rdquo; amount shown is the
+                        remaining principal for loans in this category.
+                      </p>
+                    </>
+                  ),
+                },
+                {
+                  key: "at-risk",
+                  label: "At Risk (25-29 days)",
+                  dotClass: "bg-yellow-500",
+                  count: stats.atRisk.count,
+                  balance: stats.atRisk.balance,
+                  info: (
+                    <>
+                      <p className="font-semibold text-sm mb-1">
+                        At Risk (25-29 days)
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Loans approaching the 30-day overdue threshold. These
+                        borrowers are close to becoming critical &mdash; a
+                        payment now would prevent escalation.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Proactive contact is recommended.
+                      </p>
+                    </>
+                  ),
+                },
+                {
+                  key: "early",
+                  label: "Early (0-24 days)",
+                  dotClass: "bg-green-500",
+                  count: stats.early.count,
+                  balance: stats.early.balance,
+                  info: (
+                    <>
+                      <p className="font-semibold text-sm mb-1">
+                        Early (0-24 days)
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Loans with some overdue interest but still within the
+                        first interest cycle. These are normal operational loans
+                        that need routine collection.
+                      </p>
+                    </>
+                  ),
+                },
+                {
+                  key: "all",
+                  label: "All Loans",
+                  dotClass: "bg-foreground/40",
+                  count: sortedEntries.length,
+                  balance: null as string | null,
+                  overdueText: `${stats.total} overdue`,
+                  info: (
+                    <>
+                      <p className="font-semibold text-sm mb-1">All Loans</p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Total count of all active loans regardless of overdue
+                        status.
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        The &ldquo;overdue&rdquo; count shown is loans with any
+                        days overdue (&gt; 0). Click to remove filters and see
+                        the full portfolio.
+                      </p>
+                    </>
+                  ),
+                },
+              ] as const
+            ).map((card) => {
+              const isActive = activeFilter === card.key;
               return (
                 <button
                   key={card.key}
                   type="button"
                   onClick={() =>
-                    setActiveFilter(card.key === "all" ? "all" : isActive ? "all" : card.key)
+                    setActiveFilter(
+                      card.key === "all" ? "all" : isActive ? "all" : card.key,
+                    )
                   }
                   className={cn(
                     "group relative rounded-xl border bg-card p-4 text-left transition-all duration-150 ease-out shadow-xs",
                     "hover:shadow-md hover:-translate-y-0.5",
                     isActive
                       ? "border-foreground/40 ring-2 ring-foreground/15"
-                      : "border-border/60 hover:border-border"
+                      : "border-border/60 hover:border-border",
                   )}
                   aria-pressed={isActive}
                 >
@@ -532,9 +574,14 @@ export default function LoansPage() {
                     <div className="inline-flex items-center gap-2 text-muted-foreground">
                       <span
                         aria-hidden="true"
-                        className={cn("h-1.5 w-1.5 rounded-full shrink-0", card.dotClass)}
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full shrink-0",
+                          card.dotClass,
+                        )}
                       />
-                      <p className="text-sm font-medium text-foreground/80">{card.label}</p>
+                      <p className="text-sm font-medium text-foreground/80">
+                        {card.label}
+                      </p>
                       <InfoPopover>{card.info}</InfoPopover>
                     </div>
                     {/* Hero number — same scale across all 4 cards (repetition) */}
@@ -545,11 +592,13 @@ export default function LoansPage() {
                     <p className="text-xs text-muted-foreground tabular-nums">
                       {card.balance != null
                         ? `${formatCurrency(card.balance)} outstanding`
-                        : ("overdueText" in card ? card.overdueText : "Total portfolio")}
+                        : "overdueText" in card
+                          ? card.overdueText
+                          : "Total portfolio"}
                     </p>
                   </div>
                 </button>
-              )
+              );
             })}
           </div>
 
@@ -568,11 +617,7 @@ export default function LoansPage() {
               <Download className="h-4 w-4" />
               {isExporting ? "Exporting..." : "Export Excel"}
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePrint}
-            >
+            <Button variant="outline" size="sm" onClick={handlePrint}>
               <Printer className="h-4 w-4" />
               Print
             </Button>
@@ -581,7 +626,9 @@ export default function LoansPage() {
           {/* Filter empty state */}
           {filteredEntries.length === 0 && activeFilter !== "all" ? (
             <div className="py-12 text-center">
-              <h2 className="text-lg font-semibold">No loans in this category.</h2>
+              <h2 className="text-lg font-semibold">
+                No loans in this category.
+              </h2>
               <p className="text-sm text-muted-foreground mt-2">
                 No loans match the selected filter. Try a different category.
               </p>
@@ -602,7 +649,7 @@ export default function LoansPage() {
                 "data-testid": "data-row",
                 className: `cursor-pointer hover:bg-muted/50 ${navigatingTo === e.id ? "opacity-70" : ""}`,
                 onClick: () => handleRowClick(e.id),
-      
+
                 role: "button",
                 "aria-label": `View loan for ${e.customerName}`,
               })}
@@ -612,5 +659,5 @@ export default function LoansPage() {
       )}
       <CustomerPickerDialog open={pickerOpen} onOpenChange={setPickerOpen} />
     </div>
-  )
+  );
 }

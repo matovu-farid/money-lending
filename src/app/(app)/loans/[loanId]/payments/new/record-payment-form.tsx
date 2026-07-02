@@ -1,74 +1,96 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
-import { useForm, Controller } from "react-hook-form"
-import { ArrowLeft } from "lucide-react"
-import { toast } from "sonner"
-import { generateClientId } from "@/lib/client-id"
-import { insertPaymentWithInput, type PaymentRow } from "@/collections/payments"
-import { useSession } from "@/lib/auth-client"
-import { generateReceiptNumber } from "@/lib/receipt-number"
-import { Button } from "@/components/ui/button"
-import { DatePicker } from "@/components/ui/date-picker"
-import { Label } from "@/components/ui/label"
-import { MoneyInput } from "@/components/ui/money-input"
-import { Separator } from "@/components/ui/separator"
-import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
-import { DrawerDialog, DrawerDialogContent } from "@/components/ui/drawer-dialog"
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useForm, Controller } from "react-hook-form";
+import { ArrowLeft } from "lucide-react";
+import { toast } from "sonner";
+import { generateClientId } from "@/lib/client-id";
+import {
+  insertPaymentWithInput,
+  type PaymentRow,
+} from "@/collections/payments";
+import { useSession } from "@/lib/auth-client";
+import { generateReceiptNumber } from "@/lib/receipt-number";
+import { Button } from "@/components/ui/button";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Label } from "@/components/ui/label";
+import { MoneyInput } from "@/components/ui/money-input";
+import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DepositLocationSelect } from "@/components/ui/deposit-location-select";
+import {
+  DrawerDialog,
+  DrawerDialogContent,
+} from "@/components/ui/drawer-dialog";
 import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog"
-import { InfoPopover } from "@/components/ui/info-popover"
-import { formatDate, todayDateString } from "@/lib/utils"
-import { CurrencyCell } from "@/components/ui/currency-cell"
-import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
-import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment"
-import type { ReceiptPaymentData, DepositLocation } from "@/types"
-import type { RecordPaymentInput } from "@/types/payment"
-import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants"
-import { computeReceiptAllocation } from "@/lib/receipt-allocation"
+} from "@/components/ui/dialog";
+import { InfoPopover } from "@/components/ui/info-popover";
+import { formatDate, todayDateString } from "@/lib/utils";
+import { CurrencyCell } from "@/components/ui/currency-cell";
+import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal";
+import { PosReceiptRepayment } from "@/components/receipts/pos-receipt-repayment";
+import type { ReceiptPaymentData, DepositLocation } from "@/types";
+import type { RecordPaymentInput } from "@/types/payment";
+import { DEPOSIT_LOCATION_SHORT_LABELS, AMOUNT_PRESETS } from "@/lib/constants";
+import { computeReceiptAllocation } from "@/lib/receipt-allocation";
+import { allocateLoanPayment } from "@/lib/interest/engine";
+import { endOfDay } from "date-fns";
 
 interface BalanceData {
-  outstandingPrincipal: string
-  accruedInterest: string
-  totalBalance: string
+  outstandingPrincipal: string;
+  accruedInterest: string;
+  totalBalance: string;
 }
 
 interface RecordPaymentFormProps {
-  loanId: string
-  customerId: string
-  customerName: string
-  loanReference: string
-  loanStartDate: string
-  balanceData: BalanceData | null
-  balanceLoading?: boolean
+  loanId: string;
+  customerId: string;
+  customerName: string;
+  loanReference: string;
+  loanStartDate: string;
+  balanceData: BalanceData | null;
+  balanceLoading?: boolean;
 }
 
-
 interface PaymentFormValues {
-  paymentDate: string
-  amount: string
-  depositLocation: DepositLocation
-  subLocationId: string
-  note: string
+  paymentDate: string;
+  amount: string;
+  depositLocation: DepositLocation;
+  subLocationId: string;
+  note: string;
 }
 
 function BalanceSkeleton() {
-  return <span className="inline-block h-4 w-24 rounded bg-muted-foreground/10 animate-pulse align-middle" />
+  return (
+    <span className="inline-block h-4 w-24 rounded bg-muted-foreground/10 animate-pulse align-middle" />
+  );
 }
 
-export function RecordPaymentForm({ loanId, customerName, loanReference, loanStartDate, balanceData, balanceLoading }: RecordPaymentFormProps) {
-  const router = useRouter()
-  const { data: session } = useSession()
-  const [receiptData, setReceiptData] = useState<{ payment: ReceiptPaymentData; receiptNumber: string; totalBalanceBefore?: string } | null>(null)
-  const [confirmOpen, setConfirmOpen] = useState(false)
-  const [pendingData, setPendingData] = useState<PaymentFormValues | null>(null)
+export function RecordPaymentForm({
+  loanId,
+  customerName,
+  loanReference,
+  loanStartDate,
+  balanceData,
+  balanceLoading,
+}: RecordPaymentFormProps) {
+  const router = useRouter();
+  const { data: session } = useSession();
+  const [receiptData, setReceiptData] = useState<{
+    payment: ReceiptPaymentData;
+    receiptNumber: string;
+    totalBalanceBefore?: string;
+  } | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingData, setPendingData] = useState<PaymentFormValues | null>(
+    null,
+  );
 
   const {
     register,
@@ -83,20 +105,20 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       subLocationId: "",
       note: "",
     },
-  })
+  });
 
   function onFormSubmit(data: PaymentFormValues) {
     // Show confirmation dialog instead of submitting directly
-    setPendingData(data)
-    setConfirmOpen(true)
+    setPendingData(data);
+    setConfirmOpen(true);
   }
 
   async function handleConfirmedSubmit() {
-    if (!pendingData) return
-    setConfirmOpen(false)
+    if (!pendingData) return;
+    setConfirmOpen(false);
 
-    const id = generateClientId()
-    const now = new Date()
+    const id = generateClientId();
+    const now = new Date();
 
     const optimistic: PaymentRow = {
       id,
@@ -105,7 +127,10 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       amount: pendingData.amount.trim(),
       recordedBy: "",
       depositLocation: pendingData.depositLocation,
-      subLocationId: pendingData.depositLocation === "bank" ? pendingData.subLocationId || null : null,
+      subLocationId:
+        pendingData.depositLocation === "bank"
+          ? pendingData.subLocationId || null
+          : null,
       editReason: null,
       deletedAt: null,
       deletedBy: null,
@@ -115,7 +140,7 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       markedWrongBy: null,
       createdAt: now,
       updatedAt: now,
-    }
+    };
 
     const input: RecordPaymentInput = {
       id,
@@ -123,24 +148,33 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       paymentDate: pendingData.paymentDate + "T12:00:00",
       amount: pendingData.amount.trim(),
       depositLocation: pendingData.depositLocation,
-      subLocationId: pendingData.depositLocation === "bank" ? pendingData.subLocationId || undefined : undefined,
+      subLocationId:
+        pendingData.depositLocation === "bank"
+          ? pendingData.subLocationId || undefined
+          : undefined,
       note: pendingData.note.trim() || undefined,
-    }
+    };
 
     // Compute receipt allocation from available balance data
-    const allocation = computeReceiptAllocation(pendingData.amount.trim(), balanceData)
-    const totalBalanceBefore = balanceData?.totalBalance
+    // const allocation = computeReceiptAllocation(pendingData.amount.trim(), balanceData)
+    const allocation = await allocateLoanPayment({
+      asOf: endOfDay(new Date(pendingData.paymentDate)),
+      loanId,
+      paymentAmount: pendingData.amount.trim(),
+    });
+    const totalBalanceBefore = balanceData?.totalBalance;
 
-    const tx = insertPaymentWithInput(id, optimistic, input)
+    const tx = insertPaymentWithInput(id, optimistic, input);
     try {
-      await tx.isPersisted.promise
+      await tx.isPersisted.promise;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to record payment"
-      toast.error(message)
-      setPendingData(null)
-      return
+      const message =
+        err instanceof Error ? err.message : "Failed to record payment";
+      toast.error(message);
+      setPendingData(null);
+      return;
     }
-    toast.success("Payment recorded successfully")
+    toast.success("Payment recorded successfully");
 
     setReceiptData({
       payment: {
@@ -150,8 +184,8 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       } as unknown as ReceiptPaymentData,
       receiptNumber: generateReceiptNumber(),
       totalBalanceBefore,
-    })
-    setPendingData(null)
+    });
+    setPendingData(null);
   }
 
   return (
@@ -182,15 +216,29 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
           </div>
           <Separator className="my-2" />
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Outstanding Principal</span>
-            {balanceLoading || !balanceData ? <BalanceSkeleton /> : (
-              <CurrencyCell amount={balanceData.outstandingPrincipal} className="text-sm" />
+            <span className="text-sm text-muted-foreground">
+              Outstanding Principal
+            </span>
+            {balanceLoading || !balanceData ? (
+              <BalanceSkeleton />
+            ) : (
+              <CurrencyCell
+                amount={balanceData.outstandingPrincipal}
+                className="text-sm"
+              />
             )}
           </div>
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-muted-foreground">Accrued Interest</span>
-            {balanceLoading || !balanceData ? <BalanceSkeleton /> : (
-              <CurrencyCell amount={balanceData.accruedInterest} className="text-sm" />
+            <span className="text-sm text-muted-foreground">
+              Accrued Interest
+            </span>
+            {balanceLoading || !balanceData ? (
+              <BalanceSkeleton />
+            ) : (
+              <CurrencyCell
+                amount={balanceData.accruedInterest}
+                className="text-sm"
+              />
             )}
           </div>
           <Separator className="my-2" />
@@ -199,7 +247,10 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
             {balanceLoading || !balanceData ? (
               <span className="inline-block h-6 w-32 rounded bg-muted-foreground/10 animate-pulse align-middle" />
             ) : (
-              <CurrencyCell amount={balanceData.totalBalance} className="font-bold text-lg" />
+              <CurrencyCell
+                amount={balanceData.totalBalance}
+                className="font-bold text-lg"
+              />
             )}
           </div>
         </CardContent>
@@ -210,21 +261,27 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
           <CardTitle className="inline-flex items-center gap-1">
             Payment Details
             <InfoPopover>
-              <p className="font-semibold text-sm mb-1">How Payments Are Allocated</p>
+              <p className="font-semibold text-sm mb-1">
+                How Payments Are Allocated
+              </p>
               <p className="text-xs text-muted-foreground mb-2">
-                Every payment is split automatically: interest is paid first, then any remainder reduces the principal balance.
+                Every payment is split automatically: interest is paid first,
+                then any remainder reduces the principal balance.
               </p>
               <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
                 Payment → Interest portion + Principal portion
               </p>
               <p className="text-xs text-muted-foreground mb-2">
-                A minimum of 30 days interest is always charged, even if paying early. Any amount is accepted — there is no minimum payment.
+                A minimum of 30 days interest is always charged, even if paying
+                early. Any amount is accepted — there is no minimum payment.
               </p>
               <div className="bg-muted/50 rounded-md p-2 text-xs space-y-1">
                 <p className="font-medium">Example:</p>
                 <p>Balance: UGX 1,000,000 at 10%/month</p>
                 <p>After 30 days interest = UGX 100,000</p>
-                <p>Pay UGX 150,000 → UGX 100,000 interest + UGX 50,000 principal</p>
+                <p>
+                  Pay UGX 150,000 → UGX 100,000 interest + UGX 50,000 principal
+                </p>
               </div>
             </InfoPopover>
           </CardTitle>
@@ -248,7 +305,9 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
                 )}
               />
               {errors.paymentDate && (
-                <p className="text-sm text-destructive">{errors.paymentDate.message}</p>
+                <p className="text-sm text-destructive">
+                  {errors.paymentDate.message}
+                </p>
               )}
             </div>
 
@@ -306,16 +365,27 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
                     <span className="font-medium">{customerName}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Loan Reference</span>
+                    <span className="text-muted-foreground">
+                      Loan Reference
+                    </span>
                     <span className="font-mono">{loanReference}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Amount</span>
-                    <CurrencyCell amount={pendingData.amount} className="font-semibold" />
+                    <CurrencyCell
+                      amount={pendingData.amount}
+                      className="font-semibold"
+                    />
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Deposit Location</span>
-                    <span>{DEPOSIT_LOCATION_SHORT_LABELS[pendingData.depositLocation] ?? pendingData.depositLocation}</span>
+                    <span className="text-muted-foreground">
+                      Deposit Location
+                    </span>
+                    <span>
+                      {DEPOSIT_LOCATION_SHORT_LABELS[
+                        pendingData.depositLocation
+                      ] ?? pendingData.depositLocation}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Payment Date</span>
@@ -324,7 +394,9 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
                   {pendingData.note.trim() && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Note</span>
-                      <span className="text-right max-w-[60%]">{pendingData.note.trim()}</span>
+                      <span className="text-right max-w-[60%]">
+                        {pendingData.note.trim()}
+                      </span>
                     </div>
                   )}
                 </CardContent>
@@ -346,8 +418,8 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
       <PosReceiptModal
         open={receiptData !== null}
         onClose={() => {
-          setReceiptData(null)
-          router.push(`/loans/${loanId}`)
+          setReceiptData(null);
+          router.push(`/loans/${loanId}`);
         }}
         title="Payment Receipt"
         autoActions
@@ -355,15 +427,23 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
         {receiptData && (
           <PosReceiptRepayment
             receiptNumber={receiptData.receiptNumber}
-            date={receiptData.payment.paymentDate instanceof Date
-              ? receiptData.payment.paymentDate.toISOString()
-              : String(receiptData.payment.paymentDate)}
+            date={
+              receiptData.payment.paymentDate instanceof Date
+                ? receiptData.payment.paymentDate.toISOString()
+                : String(receiptData.payment.paymentDate)
+            }
             customerName={customerName}
             loanReference={loanReference}
             amountPaid={receiptData.payment.amount}
-            interestPortion={receiptData.payment.allocation?.interestPortion ?? "0"}
-            principalPortion={receiptData.payment.allocation?.principalPortion ?? "0"}
-            balanceAfter={receiptData.payment.allocation?.principalBalanceAfter ?? "0"}
+            interestPortion={
+              receiptData.payment.allocation?.interestPortion ?? "0"
+            }
+            principalPortion={
+              receiptData.payment.allocation?.principalPortion ?? "0"
+            }
+            balanceAfter={
+              receiptData.payment.allocation?.principalBalanceAfter ?? "0"
+            }
             outstandingBalance={receiptData.totalBalanceBefore}
             depositLocation={receiptData.payment.depositLocationValue}
             officerName={session?.user?.name ?? "Officer"}
@@ -371,5 +451,5 @@ export function RecordPaymentForm({ loanId, customerName, loanReference, loanSta
         )}
       </PosReceiptModal>
     </div>
-  )
+  );
 }

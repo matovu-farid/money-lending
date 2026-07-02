@@ -36,9 +36,15 @@ import {
 } from "@/types";
 import { revalidatePath } from "next/cache";
 
-type LoanPaymentContextData = NonNullable<Awaited<ReturnType<typeof getLoanPaymentContext>>>;
-type LoanReceiptData = NonNullable<Awaited<ReturnType<typeof getLoanReceiptData>>>;
-type CustomerLoansData = Awaited<ReturnType<typeof getCustomerLoansWithOverdue>>;
+type LoanPaymentContextData = NonNullable<
+  Awaited<ReturnType<typeof getLoanPaymentContext>>
+>;
+type LoanReceiptData = NonNullable<
+  Awaited<ReturnType<typeof getLoanReceiptData>>
+>;
+type CustomerLoansData = Awaited<
+  ReturnType<typeof getCustomerLoansWithOverdue>
+>;
 /** The success shape shared by penalty mutations (waive / adjust multiplier). */
 type LoanPenaltyResult = { data: Loan; txid: number };
 import { notifyAdmin, resolveLoanContext } from "@/lib/email";

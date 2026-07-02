@@ -32,7 +32,11 @@ import {
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
 } from "./ledger-queries.service";
-import { allocatePayment, formatAmount } from "@/lib/interest/engine";
+import {
+  allocateLoanPayment,
+  allocatePayment,
+  formatAmount,
+} from "@/lib/interest/engine";
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
 import { daysBetween } from "@/lib/db/utils";
 import {
@@ -677,16 +681,10 @@ export const updateLoan = (
                 new Date(p.paymentDate),
               );
 
-              const allocation = allocatePayment({
+              const allocation = await allocateLoanPayment({
                 paymentAmount: p.amount,
-                principalBalanceBefore: runningBalance.toFixed(0),
-                monthlyRateDecimal,
-                daysElapsed,
-                minInterestDays,
-                loanType,
-                originalPrincipal: input.principalAmount,
-                termMonths: updatedLoan.termMonths ?? undefined,
-                paymentNumber: i + 1,
+                loanId: input.loanId,
+                asOf: p.paymentDate,
               });
 
               if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
@@ -1094,7 +1092,7 @@ export async function getLoanReceiptData(
     receiptNumber: `LOAN-${shortId(loanId).toUpperCase()}`,
     date: loan.startDate.toISOString(),
     customerName: customer?.fullName ?? "—",
-    customerNin: customer?.nin ?? undefined,
+    customerNin: customer?.id ?? undefined,
     customerPhone: customer?.contact ?? undefined,
     loanAmount: isRollover
       ? new BigNumber(loan.principalAmount)

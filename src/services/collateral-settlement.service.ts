@@ -1,21 +1,24 @@
-import { Effect } from "effect"
-import { db } from "@/lib/db"
-import { loans } from "@/lib/db/schema/loans"
-import { collateral } from "@/lib/db/schema/collateral"
-import { payments } from "@/lib/db/schema/payments"
-import { getBaseRate } from "@/lib/interest/effective-rate"
-import { customers } from "@/lib/db/schema/customers"
-import { eq, and, isNull, asc } from "drizzle-orm"
-import BigNumber from "bignumber.js"
-import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors"
-import { shortId } from "@/lib/utils"
-import { writeAuditLog } from "./audit.service"
-import { calculateInterest, formatAmount } from "@/lib/interest/engine"
-import { daysBetween } from "@/lib/db/utils"
-import { postJournalEntry, reverseInterestAccrual } from "@/services/transaction.service"
-import { autoPostPrincipalRecovery } from "@/services/auto-post.service"
-import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service"
-import type { SettleWithCollateralInput, Loan } from "@/types"
+import { Effect } from "effect";
+import { db } from "@/lib/db";
+import { loans } from "@/lib/db/schema/loans";
+import { collateral } from "@/lib/db/schema/collateral";
+import { payments } from "@/lib/db/schema/payments";
+import { getBaseRate } from "@/lib/interest/effective-rate";
+import { customers } from "@/lib/db/schema/customers";
+import { eq, and, isNull, asc } from "drizzle-orm";
+import BigNumber from "bignumber.js";
+import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors";
+import { shortId } from "@/lib/utils";
+import { writeAuditLog } from "./audit.service";
+import { calculateInterest, formatAmount } from "@/lib/interest/engine";
+import { daysBetween } from "@/lib/db/utils";
+import {
+  postJournalEntry,
+  reverseInterestAccrual,
+} from "@/services/transaction.service";
+import { autoPostPrincipalRecovery } from "@/services/auto-post.service";
+import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service";
+import type { SettleWithCollateralInput, Loan } from "@/types";
 
 /**
  * Computes accrued interest for a loan given its active payments.
@@ -27,35 +30,35 @@ import type { SettleWithCollateralInput, Loan } from "@/types"
 export function computeAccruedInterest(
   loan: Loan,
   activePayments: { paymentDate: Date }[],
-  outstandingPrincipal: BigNumber
+  outstandingPrincipal: BigNumber,
 ): BigNumber {
-  const loanType = loan.loanType ?? "perpetual"
-  const monthlyRateDecimal = getBaseRate(loan)
-  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays
+  const loanType = loan.loanType ?? "perpetual";
+  const monthlyRateDecimal = getBaseRate(loan);
+  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
 
-  const now = new Date()
+  const now = new Date();
 
   if (loanType === "perpetual") {
     // Total interest accrued from start date to now
     const prevDate =
       activePayments.length === 0
         ? new Date(loan.startDate)
-        : new Date(activePayments[activePayments.length - 1].paymentDate)
-    const daysElapsed = daysBetween(prevDate, now)
+        : new Date(activePayments[activePayments.length - 1].paymentDate);
+    const daysElapsed = daysBetween(prevDate, now);
     const totalAccrued = calculateInterest(
       outstandingPrincipal.toFixed(0),
       monthlyRateDecimal,
       daysElapsed,
-      minInterestDays
-    )
-    return totalAccrued
+      minInterestDays,
+    );
+    return totalAccrued;
   }
 
   const prevDate =
     activePayments.length === 0
       ? new Date(loan.startDate)
-      : new Date(activePayments[activePayments.length - 1].paymentDate)
-  const daysElapsed = daysBetween(prevDate, now)
+      : new Date(activePayments[activePayments.length - 1].paymentDate);
+  const daysElapsed = daysBetween(prevDate, now);
 
   if (loanType === "fixed_rate") {
     // Pro-rate monthly interest on original principal by days elapsed
@@ -63,8 +66,8 @@ export function computeAccruedInterest(
       loan.principalAmount,
       monthlyRateDecimal,
       daysElapsed,
-      minInterestDays
-    )
+      minInterestDays,
+    );
   }
 
   if (loanType === "reducing_balance") {
@@ -73,8 +76,8 @@ export function computeAccruedInterest(
       outstandingPrincipal.toFixed(0),
       monthlyRateDecimal,
       daysElapsed,
-      minInterestDays
-    )
+      minInterestDays,
+    );
   }
 
   // Fallback: perpetual
@@ -82,8 +85,8 @@ export function computeAccruedInterest(
     outstandingPrincipal.toFixed(0),
     monthlyRateDecimal,
     daysElapsed,
-    minInterestDays
-  )
+    minInterestDays,
+  );
 }
 
 /**
@@ -100,47 +103,64 @@ export function computeAccruedInterest(
  */
 export const settleWithCollateral = (
   input: SettleWithCollateralInput,
-  actorId: string
+  actorId: string,
 ): Effect.Effect<Loan, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [loan] = await db
         .select()
         .from(loans)
-        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
+        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)));
 
-      if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
+      if (!loan) throw { _tag: "LoanNotFound", id: input.loanId };
 
       if (loan.status !== "active") {
         throw {
           _tag: "ValidationError",
           message: `Loan must be active to settle with collateral. Current status: ${loan.status}`,
           field: "loanId",
-        }
+        };
       }
 
       return await db.transaction(async (tx) => {
         // Fetch ledger-derived balance INSIDE the transaction for consistency
-        const settleBalanceMap = await getLoanBalancesFromLedger([input.loanId], undefined, tx)
-        const settleHasLedger = settleBalanceMap.has(input.loanId)
-        const settleLedgerBalance = settleBalanceMap.get(input.loanId) ?? new BigNumber(0)
+        const settleBalanceMap = await getLoanBalancesFromLedger(
+          [input.loanId],
+          undefined,
+          tx,
+        );
+        const settleHasLedger = settleBalanceMap.has(input.loanId);
+        const settleLedgerBalance =
+          settleBalanceMap.get(input.loanId) ?? new BigNumber(0);
         if (!settleHasLedger) {
-          console.warn(`[settleWithCollateral] No ledger entries for loan ${input.loanId}, using principalAmount as fallback`)
+          console.warn(
+            `[settleWithCollateral] No ledger entries for loan ${input.loanId}, using principalAmount as fallback`,
+          );
         }
         const outstandingPrincipal = settleHasLedger
           ? settleLedgerBalance
-          : new BigNumber(loan.principalAmount)
+          : new BigNumber(loan.principalAmount);
 
         const activePayments = await tx
           .select()
           .from(payments)
-          .where(and(eq(payments.loanId, input.loanId), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+          .where(
+            and(
+              eq(payments.loanId, input.loanId),
+              isNull(payments.deletedAt),
+              eq(payments.markedWrong, false),
+            ),
+          )
+          .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
 
         // Accrued interest
-        const accruedInterest = computeAccruedInterest(loan as Loan, activePayments, outstandingPrincipal)
+        const accruedInterest = computeAccruedInterest(
+          loan as Loan,
+          activePayments,
+          outstandingPrincipal,
+        );
 
-        const now = new Date()
+        const now = new Date();
 
         // Reverse any outstanding interest accrual before posting settlement interest
         if (accruedInterest.isGreaterThan(0)) {
@@ -148,7 +168,7 @@ export const settleWithCollateral = (
             loanId: input.loanId,
             paymentDate: now.toISOString(),
             actorId,
-          })
+          });
         }
 
         // Post accrued interest as double-entry journal
@@ -163,7 +183,7 @@ export const settleWithCollateral = (
             transactionDate: now,
             recordedBy: actorId,
             loanId: input.loanId,
-          })
+          });
         }
 
         // Post outstanding principal recovery as double-entry journal
@@ -173,21 +193,21 @@ export const settleWithCollateral = (
             loanId: input.loanId,
             transactionDate: now.toISOString(),
             actorId,
-          })
+          });
         }
 
         // Mark collateral as seized
         await tx
           .update(collateral)
           .set({ seizedAt: now, seizedBy: actorId })
-          .where(eq(collateral.loanId, input.loanId))
+          .where(eq(collateral.loanId, input.loanId));
 
         // Update loan status to settled_with_collateral
         const [updatedLoan] = await tx
           .update(loans)
           .set({ status: "settled_with_collateral", updatedAt: now })
           .where(eq(loans.id, input.loanId))
-          .returning()
+          .returning();
 
         // Audit log
         await writeAuditLog(tx, {
@@ -202,29 +222,29 @@ export const settleWithCollateral = (
             outstandingPrincipal: formatAmount(outstandingPrincipal),
             accruedInterest: formatAmount(accruedInterest),
           },
-        })
+        });
 
-        return updatedLoan as Loan
-      })
+        return updatedLoan as Loan;
+      });
     },
     catch: (e: any) => {
-      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id })
-      if (e instanceof ValidationError) return e
+      if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id });
+      if (e instanceof ValidationError) return e;
       if (e?._tag === "ValidationError")
-        return new ValidationError({ message: e.message, field: e.field })
-      return new DatabaseError({ cause: e })
+        return new ValidationError({ message: e.message, field: e.field });
+      return new DatabaseError({ cause: e });
     },
-  })
+  });
 
 /**
  * Returns the active (non-deleted) loan for a customer along with summary figures,
  * or null if the customer has no active loan.
  */
 export async function getCustomerActiveLoan(customerId: string): Promise<{
-  loan: Loan
-  customerName: string
-  outstandingPrincipal: string
-  accruedInterest: string
+  loan: Loan;
+  customerName: string;
+  outstandingPrincipal: string;
+  accruedInterest: string;
 } | null> {
   const [row] = await db
     .select({
@@ -237,37 +257,49 @@ export async function getCustomerActiveLoan(customerId: string): Promise<{
       and(
         eq(loans.customerId, customerId),
         eq(loans.status, "active"),
-        isNull(loans.deletedAt)
-      )
+        isNull(loans.deletedAt),
+      ),
     )
-    .limit(1)
+    .limit(1);
 
-  if (!row) return null
+  if (!row) return null;
 
-  const { loan, customerName } = row
+  const { loan, customerName } = row;
 
   const activePayments = await db
     .select()
     .from(payments)
-    .where(and(eq(payments.loanId, loan.id), isNull(payments.deletedAt), eq(payments.markedWrong, false)))
-    .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
+    .where(
+      and(
+        eq(payments.loanId, loan.id),
+        isNull(payments.deletedAt),
+        eq(payments.markedWrong, false),
+      ),
+    )
+    .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
 
-  const custBalanceMap = await getLoanBalancesFromLedger([loan.id])
-  const custHasLedger = custBalanceMap.has(loan.id)
-  const custLedgerBalance = custBalanceMap.get(loan.id) ?? new BigNumber(0)
+  const custBalanceMap = await getLoanBalancesFromLedger([loan.id]);
+  const custHasLedger = custBalanceMap.has(loan.id);
+  const custLedgerBalance = custBalanceMap.get(loan.id) ?? new BigNumber(0);
   if (!custHasLedger) {
-    console.warn(`[getCustomerActiveLoan] No ledger entries for loan ${loan.id}, using principalAmount as fallback`)
+    console.warn(
+      `[getCustomerActiveLoan] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
+    );
   }
   const outstandingPrincipal = custHasLedger
     ? custLedgerBalance
-    : new BigNumber(loan.principalAmount)
+    : new BigNumber(loan.principalAmount);
 
-  const accruedInterest = computeAccruedInterest(loan, activePayments, outstandingPrincipal)
+  const accruedInterest = computeAccruedInterest(
+    loan,
+    activePayments,
+    outstandingPrincipal,
+  );
 
   return {
     loan,
     customerName: customerName ?? "",
     outstandingPrincipal: formatAmount(outstandingPrincipal),
     accruedInterest: formatAmount(accruedInterest),
-  }
+  };
 }

@@ -130,7 +130,7 @@ export const getDashboardKPIs = (): Effect.Effect<
 
       for (const row of balanceRows) {
         balanceByLoanId.set(row.loanId, {
-          outstandingBalance: row.outstandingBalance,
+          outstandingBalance: row.totalBalanceOwed,
           unpaidInterest: row.unpaidInterest,
         });
       }

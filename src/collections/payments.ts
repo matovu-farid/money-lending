@@ -1,7 +1,7 @@
-"use client"
+"use client";
 
-import { createCollection } from "@tanstack/react-db"
-import { queryCollectionOptions } from "@/lib/collection-options"
+import { createCollection } from "@tanstack/react-db";
+import { queryCollectionOptions } from "@/lib/collection-options";
 import {
   recordPaymentAction,
   editPaymentAction,
@@ -9,17 +9,14 @@ import {
   markPaymentWrongAction,
   unmarkPaymentWrongAction,
   listAllPaymentsAction,
-} from "@/actions/payment.actions"
-import type {
-  RecordPaymentInput,
-  EditPaymentInput,
-} from "@/types/payment"
-import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections"
-import { getQueryClient } from "@/lib/query-client"
-import { queryKeys } from "@/lib/query-keys"
-import { invalidateLendingProjections } from "@/lib/cache-invalidation"
-import { emitTableChange } from "@/lib/table-events"
-import { throwIfActionError, coerceDates } from "./_utils"
+} from "@/actions/payment.actions";
+import type { RecordPaymentInput, EditPaymentInput } from "@/types/payment";
+import { paymentSchema, type PaymentRow } from "@/lib/schemas/collections";
+import { getQueryClient } from "@/lib/query-client";
+import { queryKeys } from "@/lib/query-keys";
+import { invalidateLendingProjections } from "@/lib/cache-invalidation";
+import { emitTableChange } from "@/lib/table-events";
+import { throwIfActionError, coerceDates } from "./_utils";
 
 /**
  * Row shape synced via HTTP polling — mirrors the `payments` DB table after
@@ -33,7 +30,7 @@ import { throwIfActionError, coerceDates } from "./_utils"
  *     loan-detail-client.tsx)
  *   - recorderName: getUserNameMapCollection(recordedBy ids)
  */
-export type { PaymentRow }
+export type { PaymentRow };
 
 /**
  * Metadata shapes routed through the `metadata` parameter of
