@@ -273,6 +273,11 @@ describe("Customer Actions", () => {
       const result = await updateCustomerAction("c1", { fullName: "New Name" })
 
       expect(result).toEqual({ data: updated, txid: 12345 })
+      expect(mockUpdateCustomerWithTxid).toHaveBeenCalledWith(
+        "c1",
+        { fullName: "New Name" },
+        "u1",
+      )
       expect(mockRevalidatePath).toHaveBeenCalledWith("/customers")
       expect(mockRevalidatePath).toHaveBeenCalledWith("/customers/c1")
     })

@@ -102,21 +102,50 @@ export const getCustomer = (
 export const updateCustomer = (
   id: string,
   input: UpdateCustomerInput,
+  actorId: string,
 ): Effect.Effect<Customer, CustomerNotFound | DatabaseError> =>
   Effect.tryPromise({
     try: () =>
-      db
-        .update(customers)
-        .set({ ...input, updatedAt: new Date() })
-        .where(eq(customers.id, id))
-        .returning()
-        .then((rows) => rows[0]),
-    catch: (e) => new DatabaseError({ cause: e }),
-  }).pipe(
-    Effect.flatMap((row) =>
-      row ? Effect.succeed(row) : Effect.fail(new CustomerNotFound({ id })),
-    ),
-  );
+      db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.id, id));
+        if (!current) throw new CustomerNotFound({ id });
+
+        const [updated] = await tx
+          .update(customers)
+          .set({ ...input, updatedAt: new Date() })
+          .where(eq(customers.id, id))
+          .returning();
+        if (!updated) throw new CustomerNotFound({ id });
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "customer.update",
+          entityType: "customer",
+          entityId: id,
+          beforeValue: {
+            fullName: current.fullName,
+            nin: current.nin,
+            contact: current.contact,
+            address: current.address,
+          },
+          afterValue: {
+            fullName: updated.fullName,
+            nin: updated.nin,
+            contact: updated.contact,
+            address: updated.address,
+          },
+        });
+
+        return updated;
+      }),
+    catch: (e) => {
+      if (e instanceof CustomerNotFound) return e;
+      return new DatabaseError({ cause: e });
+    },
+  });
 
 /**
  * Like updateCustomer but also returns the Postgres transaction ID.
@@ -127,6 +156,7 @@ export const updateCustomer = (
 export const updateCustomerWithTxid = (
   id: string,
   input: UpdateCustomerInput,
+  actorId: string,
 ): Effect.Effect<
   { customer: Customer; txid: number },
   CustomerNotFound | DatabaseError
@@ -134,12 +164,38 @@ export const updateCustomerWithTxid = (
   Effect.tryPromise({
     try: () =>
       db.transaction(async (tx) => {
+        const [current] = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.id, id));
+        if (!current) throw new CustomerNotFound({ id });
+
         const [customer] = await tx
           .update(customers)
           .set({ ...input, updatedAt: new Date() })
           .where(eq(customers.id, id))
           .returning();
         if (!customer) throw new CustomerNotFound({ id });
+
+        await writeAuditLog(tx, {
+          actorId,
+          action: "customer.update",
+          entityType: "customer",
+          entityId: id,
+          beforeValue: {
+            fullName: current.fullName,
+            nin: current.nin,
+            contact: current.contact,
+            address: current.address,
+          },
+          afterValue: {
+            fullName: customer.fullName,
+            nin: customer.nin,
+            contact: customer.contact,
+            address: customer.address,
+          },
+        });
+
         const txidRows = await tx.execute<{ txid: string }>(
           sql`SELECT pg_current_xact_id()::text as txid`,
         );

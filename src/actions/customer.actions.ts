@@ -92,10 +92,10 @@ const updateCustomerWrapped = withAction<
   any
 >({
   permission: "customer:update",
-  action: async (_session, { id, input }) => {
+  action: async (session, { id, input }) => {
     try {
       const { customer, txid } = await Effect.runPromise(
-        updateCustomerWithTxid(id, input),
+        updateCustomerWithTxid(id, input, session.user.id),
       );
       revalidatePath("/customers");
       revalidatePath(`/customers/${id}`);

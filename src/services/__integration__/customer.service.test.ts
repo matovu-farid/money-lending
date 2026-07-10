@@ -115,7 +115,7 @@ describe("Customer Service (integration)", () => {
     )
 
     const updated = await Effect.runPromise(
-      updateCustomer(created.id, { fullName: "Carol Apio-Okello" })
+      updateCustomer(created.id, { fullName: "Carol Apio-Okello" }, "admin-7")
     )
 
     expect(updated.fullName).toBe("Carol Apio-Okello")
@@ -124,13 +124,34 @@ describe("Customer Service (integration)", () => {
     // Verify persistence via a fresh fetch
     const refetched = await Effect.runPromise(getCustomer(created.id))
     expect(refetched.fullName).toBe("Carol Apio-Okello")
+
+    const logs = await testDb
+      .select()
+      .from(auditLog)
+      .where(eq(auditLog.entityId, created.id))
+
+    expect(logs).toHaveLength(1)
+    expect(logs[0].action).toBe("customer.update")
+    expect(logs[0].actorId).toBe("admin-7")
+    expect(JSON.parse(logs[0].beforeValue!)).toEqual({
+      fullName: "Carol Apio",
+      nin: "C0000000000000",
+      contact: "0773000003",
+      address: "Gulu, Uganda",
+    })
+    expect(JSON.parse(logs[0].afterValue!)).toEqual({
+      fullName: "Carol Apio-Okello",
+      nin: "C0000000000000",
+      contact: "0773000003",
+      address: "Gulu, Uganda",
+    })
   }, TEST_TIMEOUT)
 
   // ── 5. updateCustomer with bad id ──────────────────────────────────
   it("returns CustomerNotFound when updating a non-existent customer", async () => {
     const fakeId = crypto.randomUUID()
     const exit = await Effect.runPromiseExit(
-      updateCustomer(fakeId, { fullName: "Nobody" })
+      updateCustomer(fakeId, { fullName: "Nobody" }, "admin-7")
     )
 
     expect(Exit.isFailure(exit)).toBe(true)

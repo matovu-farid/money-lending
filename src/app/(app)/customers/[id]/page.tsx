@@ -335,7 +335,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
       try {
         customerCollection.update(customerId, (draft) => {
           draft.fullName = data.fullName.trim();
-          draft.id = data.nin.trim();
+          draft.nin = data.nin.trim();
           draft.contact = data.contact.trim();
           draft.address = data.address.trim();
         });

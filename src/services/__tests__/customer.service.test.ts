@@ -5,9 +5,15 @@ vi.mock("@/lib/db", () => {
   const mockDb = {
     select: vi.fn(),
     insert: vi.fn(),
+    update: vi.fn(),
+    transaction: vi.fn(),
   }
   return { db: mockDb }
 })
+
+vi.mock("@/services/audit.service", () => ({
+  writeAuditLog: vi.fn(),
+}))
 
 describe("Customer Service", () => {
   beforeEach(() => {
@@ -55,6 +61,81 @@ describe("Customer Service", () => {
 
     expect(result).toEqual(mockCustomer)
     expect(mockedDb.insert).toHaveBeenCalledTimes(1)
+  })
+
+  it("updates a customer and writes an audit log", async () => {
+    const { db } = await import("@/lib/db")
+    const { writeAuditLog } = await import("@/services/audit.service")
+    const { updateCustomer } = await import("@/services/customer.service")
+    const mockedDb = vi.mocked(db)
+    const mockedWriteAuditLog = vi.mocked(writeAuditLog)
+
+    const currentCustomer = {
+      id: "cust-1",
+      fullName: "John Doe",
+      nin: "CF83037108RLLK",
+      contact: "0771234567",
+      address: "Kampala, Uganda",
+      status: "active",
+      createdAt: new Date("2026-01-01"),
+      updatedAt: new Date("2026-01-01"),
+    }
+    const updatedCustomer = {
+      ...currentCustomer,
+      fullName: "John Doe Jr",
+      contact: "0779999999",
+      updatedAt: new Date("2026-02-01"),
+    }
+
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([currentCustomer]),
+        }),
+      }),
+      update: vi.fn().mockReturnValue({
+        set: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([updatedCustomer]),
+          }),
+        }),
+      }),
+    }
+
+    mockedDb.transaction.mockImplementation(async (callback: any) =>
+      callback(tx),
+    )
+
+    const result = await Effect.runPromise(
+      updateCustomer(
+        "cust-1",
+        { fullName: "John Doe Jr", contact: "0779999999" },
+        "admin-1",
+      ),
+    )
+
+    expect(result).toEqual(updatedCustomer)
+    expect(mockedWriteAuditLog).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        actorId: "admin-1",
+        action: "customer.update",
+        entityType: "customer",
+        entityId: "cust-1",
+        beforeValue: {
+          fullName: "John Doe",
+          nin: "CF83037108RLLK",
+          contact: "0771234567",
+          address: "Kampala, Uganda",
+        },
+        afterValue: {
+          fullName: "John Doe Jr",
+          nin: "CF83037108RLLK",
+          contact: "0779999999",
+          address: "Kampala, Uganda",
+        },
+      }),
+    )
   })
 
   it("returns CustomerNotFound for invalid ID", async () => {
