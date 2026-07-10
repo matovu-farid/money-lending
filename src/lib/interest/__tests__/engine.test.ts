@@ -1,10 +1,20 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import BigNumber from "bignumber.js";
+
+vi.mock("../loanBalanceData", () => ({
+  computeSingleLoanBalanceData: vi.fn(),
+}));
+
+vi.mock("../engine-server", () => ({
+  allocateLoanPaymentServerSide: vi.fn(),
+}));
+
 import {
   calculateInterest,
   calculateDailyRate,
   calculateLoanSummary,
   calculateDaysOverdue,
+  calculateDaysOverdueFromInterestAccrued,
   formatAmount,
   allocatePayment,
   calculateSchedule,
@@ -104,6 +114,20 @@ describe("Interest Engine", () => {
     expect(result.toNumber()).toBeCloseTo(30, 0);
   });
 
+  it("calculateDaysOverdueFromInterestAccrued: mirrors elapsed-days calculation from accrued interest", () => {
+    const result = calculateDaysOverdueFromInterestAccrued("100000", "3333.33");
+    const expected = new BigNumber("100000").dividedBy(
+      new BigNumber("3333.33"),
+    );
+    expect(result.toFixed(4)).toBe(expected.toFixed(4));
+    expect(result.toNumber()).toBeCloseTo(30, 0);
+  });
+
+  it("calculateDaysOverdueFromInterestAccrued: returns 0 when accrued interest is zero or daily rate is zero", () => {
+    expect(calculateDaysOverdueFromInterestAccrued("0", "3333.33").toFixed(2)).toBe("0.00");
+    expect(calculateDaysOverdueFromInterestAccrued("100000", "0").toFixed(2)).toBe("0.00");
+  });
+
   // Regression: 1/30 precision bug. Computing `balance × (monthlyRate/30) × 30`
   // at any finite DECIMAL_PLACES produces a result one ULP short of the
   // intuitive `balance × monthlyRate`. Deferring the divide-by-30 to the end
@@ -148,7 +172,7 @@ describe("allocatePayment", () => {
     // interest = 1000000 * (0.10/30) * 30 = 100000; payment 50000 < 100000
     const result = allocatePayment({
       paymentAmount: "50000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -165,7 +189,7 @@ describe("allocatePayment", () => {
     // interest = 100000; payment = 150000; principal portion = 50000; balance after = 950000
     const result = allocatePayment({
       paymentAmount: "150000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -182,7 +206,7 @@ describe("allocatePayment", () => {
     // interest = 100000; principal portion = 1000000; balance after = 0
     const result = allocatePayment({
       paymentAmount: "1100000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -199,7 +223,7 @@ describe("allocatePayment", () => {
     // interest = 1000000 * (0.10/30) * max(15, 30) = 100000
     const result = allocatePayment({
       paymentAmount: "150000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 15,
       minInterestDays: 30,
@@ -215,7 +239,7 @@ describe("allocatePayment", () => {
     // payoff requires balance + min-30 interest = 1,000,000 + 100,000 = 1,100,000
     const result = allocatePayment({
       paymentAmount: "1100000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 15,
       minInterestDays: 30,
@@ -230,7 +254,7 @@ describe("allocatePayment", () => {
   it("any amount accepted — payment of 1.00 allocates entirely to interest without error (LOAN-09)", () => {
     const result = allocatePayment({
       paymentAmount: "1.00",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -254,7 +278,7 @@ describe("allocatePayment", () => {
     // interest = 1,000,000 × 0.10 × 15 / 30 = 50,000 (NOT 100,000)
     const result = allocatePayment({
       paymentAmount: "100000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 15,
       minInterestDays: 30,
@@ -269,7 +293,7 @@ describe("allocatePayment", () => {
     // interest = 800,000 × 0.10 × 7 / 30 ≈ 18,666.67
     const result = allocatePayment({
       paymentAmount: "100000",
-      outstandingBalance: "800000",
+      principalBalanceBefore: "800000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 7,
       minInterestDays: 30,
@@ -283,7 +307,7 @@ describe("allocatePayment", () => {
     // → minimum 30 days kicks in: interest = 100,000.
     const result = allocatePayment({
       paymentAmount: "100000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 15,
       minInterestDays: 30,
@@ -296,7 +320,7 @@ describe("allocatePayment", () => {
     // 45 days at 10%: balance × 0.10 × 45/30 = 1,000,000 × 0.15 = 150,000
     const result = allocatePayment({
       paymentAmount: "200000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 45,
       minInterestDays: 30,
@@ -311,7 +335,7 @@ describe("allocatePayment", () => {
     // interest = 1000000 * (0.10/30) * max(20, 45) = 150000
     const result = allocatePayment({
       paymentAmount: "200000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 20,
       minInterestDays: 45,
@@ -327,7 +351,7 @@ describe("allocatePayment", () => {
     // payoff: needs balance + min-45 = 1000000 + 150000 = 1150000
     const result = allocatePayment({
       paymentAmount: "1150000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 20,
       minInterestDays: 45,
@@ -342,7 +366,7 @@ describe("allocatePayment", () => {
   it("backward compatible — no loanType uses perpetual logic", () => {
     const result = allocatePayment({
       paymentAmount: "150000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -355,7 +379,7 @@ describe("allocatePayment", () => {
   it("loanType='perpetual' explicitly uses perpetual logic", () => {
     const result = allocatePayment({
       paymentAmount: "150000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -369,7 +393,7 @@ describe("allocatePayment", () => {
   it("loanType='fixed_rate' dispatches to fixed rate allocation", () => {
     const result = allocatePayment({
       paymentAmount: "300000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -388,7 +412,7 @@ describe("allocatePayment", () => {
   it("loanType='reducing_balance' dispatches to reducing balance allocation", () => {
     const result = allocatePayment({
       paymentAmount: "300000",
-      outstandingBalance: "800000",
+      principalBalanceBefore: "800000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -408,7 +432,7 @@ describe("allocatePayment", () => {
     // owed = 1,000,000 * (0.10/30) * max(0, 30) - 30,000 already paid = 70,000
     const result = allocatePayment({
       paymentAmount: "100000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 0,
       minInterestDays: 30,
@@ -425,7 +449,7 @@ describe("allocatePayment", () => {
     // payoff requires balance + (min-30 − alreadyPaid) = 1,000,000 + (100,000 − 30,000) = 1,070,000
     const result = allocatePayment({
       paymentAmount: "1070000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 0,
       minInterestDays: 30,
@@ -444,7 +468,7 @@ describe("allocatePayment", () => {
     // Payment of 50,000 → all to principal
     const result = allocatePayment({
       paymentAmount: "50000",
-      outstandingBalance: "1000000",
+      principalBalanceBefore: "1000000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -903,7 +927,7 @@ describe("Bug 3: interestAlreadyPaidInPeriod must preserve decimal precision", (
     // With .toFixed(2) fix: "3333.34" -> "3333.34" -> interest owed = 50000 - 3333.34 = 46666.66
     const result = allocatePayment({
       paymentAmount: "50000",
-      outstandingBalance: "500000",
+      principalBalanceBefore: "500000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -923,7 +947,7 @@ describe("Bug 3: interestAlreadyPaidInPeriod must preserve decimal precision", (
     // Correct: remaining = 7000 - 2333.33 = 4666.67
     const result = allocatePayment({
       paymentAmount: "10000",
-      outstandingBalance: "100000",
+      principalBalanceBefore: "100000",
       monthlyRateDecimal: "0.07",
       daysElapsed: 30,
       minInterestDays: 30,
@@ -943,7 +967,7 @@ describe("Bug 3: interestAlreadyPaidInPeriod must preserve decimal precision", (
     // Correct: remaining = 50000 - 5000.01 = 44999.99
     const result = allocatePayment({
       paymentAmount: "50000",
-      outstandingBalance: "500000",
+      principalBalanceBefore: "500000",
       monthlyRateDecimal: "0.10",
       daysElapsed: 30,
       minInterestDays: 30,

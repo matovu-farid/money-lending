@@ -103,6 +103,10 @@ function checkInvariants(model: LoanModel): string[] {
     principalAmount: model.principal,
     baseRate: model.rate,
     startDate: model.startDate,
+    lastPaymentDate:
+      activePayments.length === 0
+        ? model.startDate
+        : activePayments[activePayments.length - 1].date,
     loanType: "perpetual",
     termMonths: null,
     totalInterestPaid: model.totalInterestPaid.toFixed(0),
@@ -203,7 +207,7 @@ class MakePaymentCommand implements fc.Command<LoanModel, RealState> {
 
     const alloc = allocatePayment({
       paymentAmount,
-      outstandingBalance: model.balance.toFixed(0),
+      principalBalanceBefore: model.balance.toFixed(0),
       monthlyRateDecimal: model.rate,
       daysElapsed,
       minInterestDays: model.minDays,
@@ -320,6 +324,10 @@ class CheckOverdueCommand implements fc.Command<LoanModel, RealState> {
       principalAmount: model.principal,
       baseRate: model.rate,
       startDate: model.startDate,
+      lastPaymentDate:
+        activePayments.length === 0
+          ? model.startDate
+          : activePayments[activePayments.length - 1].date,
       loanType: "perpetual",
       termMonths: null,
       totalInterestPaid: model.totalInterestPaid.toFixed(0),
@@ -546,7 +554,7 @@ describe("Stateful Model: Term Loan Lifecycle (fixed_rate)", () => {
 
             const alloc = allocatePayment({
               paymentAmount: installment.integerValue().toFixed(0),
-              outstandingBalance: balance.toFixed(0),
+              principalBalanceBefore: balance.toFixed(0),
               monthlyRateDecimal: rate,
               daysElapsed: 30,
               minInterestDays: 30,

@@ -5,12 +5,14 @@ import { computeLoanOverdueInfo } from "../overdue";
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 const baseLoan = {
+  id: "loan-1",
   status: "active" as const,
   loanType: "perpetual" as const,
   principalAmount: "1000000",
   interestRate: "0.10",
   interestRateOverride: null as string | null,
   minInterestDays: 30,
+  startDate: new Date("2026-01-01"),
 };
 
 function serverDailyRate(
@@ -73,6 +75,7 @@ describe("computeDailyRate — server equivalence (perpetual)", () => {
       principalAmount: "1000000",
       baseRate: "0.10",
       startDate: new Date("2026-01-01"),
+      lastPaymentDate: new Date("2026-01-01"),
       loanType: "perpetual",
       termMonths: null,
       totalInterestPaid: "0",
@@ -92,6 +95,7 @@ describe("computeDailyRate — server equivalence (perpetual)", () => {
       principalAmount: "1000000",
       baseRate: "0.10",
       startDate: new Date("2026-01-01"),
+      lastPaymentDate: new Date("2026-01-01"),
       loanType: "perpetual",
       termMonths: null,
       totalInterestPaid: "0",
@@ -122,6 +126,7 @@ describe("computeDailyRate — server equivalence (perpetual)", () => {
       principalAmount: "1000000",
       baseRate: "0.08", // caller passes getBaseRate result as baseRate
       startDate: new Date("2026-01-01"),
+      lastPaymentDate: new Date("2026-01-01"),
       loanType: "perpetual",
       termMonths: null,
       totalInterestPaid: "0",
@@ -138,7 +143,7 @@ describe("computeDailyRate — server equivalence (perpetual)", () => {
 // ─── server equivalence (term loans) ─────────────────────────────────────────
 
 describe("computeDailyRate — server equivalence (fixed_rate)", () => {
-  it("fixed_rate: uses originalPrincipal × rate / 30 (matches server)", () => {
+  it("falls back to principalAmount when outstanding balance is zero (matches server)", () => {
     const fixedLoan = {
       ...baseLoan,
       loanType: "fixed_rate" as const,
@@ -146,16 +151,17 @@ describe("computeDailyRate — server equivalence (fixed_rate)", () => {
     };
     // Server: monthlyInterest = principalAmount × baseRate = 1M × 0.10 = 100k
     // dailyRate = 100k / 30 = 3333
-    const client = computeDailyRate(fixedLoan, "700000"); // outstandingBalance ignored for fixed_rate
+    const client = computeDailyRate(fixedLoan, "0");
     const srv = serverDailyRate({
       principalAmount: "1000000",
       baseRate: "0.10",
       startDate: new Date("2026-01-01"),
+      lastPaymentDate: new Date("2026-01-01"),
       loanType: "fixed_rate",
       termMonths: 6,
       totalInterestPaid: "0",
       paymentCount: 0,
-      totalBalanceOwed: "700000",
+      totalBalanceOwed: "0",
       penaltyWaived: false,
       loan: fixedLoan,
       asOf: new Date("2026-02-01"),
@@ -179,6 +185,7 @@ describe("computeDailyRate — server equivalence (reducing_balance)", () => {
       principalAmount: "1000000",
       baseRate: "0.10",
       startDate: new Date("2026-01-01"),
+      lastPaymentDate: new Date("2026-01-01"),
       loanType: "reducing_balance",
       termMonths: 6,
       totalInterestPaid: "80000",
