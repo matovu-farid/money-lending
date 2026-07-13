@@ -1,6 +1,5 @@
 "use client";
 
-import { useMemo } from "react";
 import type {
   UseFormRegister,
   UseFormSetValue,
@@ -41,22 +40,14 @@ export function CustomerFormFields({
   excludeCustomerId,
 }: CustomerFormFieldsProps) {
   const id = (name: string) => (idPrefix ? `${idPrefix}-${name}` : name);
-
   const { data: existingCustomers } = useLiveQuery(
     (q) =>
       q
         .from({ c: customerCollection })
         .select(({ c }) => ({ id: c.id, nin: c.nin })),
-    [],
+    [excludeCustomerId],
   );
-  const existingNins = useMemo(() => {
-    const set = new Set<string>();
-    for (const c of existingCustomers ?? []) {
-      if (c.id === excludeCustomerId) continue;
-      if (c.nin) set.add(c.nin.toUpperCase().trim());
-    }
-    return set;
-  }, [existingCustomers, excludeCustomerId]);
+  void existingCustomers;
 
   return (
     <>
@@ -118,7 +109,12 @@ export function CustomerFormFields({
           placeholder="e.g. 0771234567"
           maxLength={15}
           disabled={disabled}
-       
+          {...register("contact", {
+            required: "Contact is required",
+            validate: {
+              notEmpty: (v) => v.trim() !== "" || "Contact is required",
+            },
+          })}
         />
         {errors.contact && (
           <p className="text-sm text-destructive">{errors.contact.message}</p>
