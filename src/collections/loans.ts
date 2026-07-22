@@ -50,8 +50,6 @@ export const loanCollection = createCollection(
     defaultIndexType: BasicIndex,
     queryKey: [...queryKeys.loans.all],
     queryClient: getQueryClient(),
-    // Warm sync so /loans/new rollover writeUpdate works without a subscriber.
-    startSync: true,
     queryFn: async () => {
       // listLoans returns LoanWithCustomer (includes customerName/customerContact);
       // we cast back to LoanBaseRow but keep the enriched fields on the row.
