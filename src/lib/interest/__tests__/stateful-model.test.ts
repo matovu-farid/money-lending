@@ -113,7 +113,7 @@ function checkInvariants(model: LoanModel): string[] {
     paymentCount: activePayments.length,
     totalBalanceOwed: model.balance.toFixed(0),
     penaltyWaived: false,
-    loan: { interestRate: model.rate, interestRateOverride: null },
+    loan: { id: "loan-1", interestRate: model.rate, interestRateOverride: null, startDate: model.startDate },
     asOf: model.currentDate,
   });
 
@@ -334,7 +334,7 @@ class CheckOverdueCommand implements fc.Command<LoanModel, RealState> {
       paymentCount: activePayments.length,
       totalBalanceOwed: model.balance.toFixed(0),
       penaltyWaived: false,
-      loan: { interestRate: model.rate, interestRateOverride: null },
+      loan: { id: "loan-1", interestRate: model.rate, interestRateOverride: null, startDate: model.startDate },
       asOf: model.currentDate,
     });
 
@@ -559,7 +559,7 @@ describe("Stateful Model: Term Loan Lifecycle (fixed_rate)", () => {
               daysElapsed: 30,
               minInterestDays: 30,
               loanType: "fixed_rate",
-              principalAmount: principal,
+              originalPrincipal: principal,
               termMonths: term,
               paymentNumber: month,
             });

@@ -398,7 +398,7 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
       loanType: "fixed_rate",
-      principalAmount: "1000000",
+      originalPrincipal: "1000000",
       termMonths: 5,
       paymentNumber: 1,
     });
@@ -417,7 +417,7 @@ describe("allocatePayment", () => {
       daysElapsed: 30,
       minInterestDays: 30,
       loanType: "reducing_balance",
-      principalAmount: "1000000",
+      originalPrincipal: "1000000",
       termMonths: 5,
     });
     // reducing balance: interest = 800000 * 0.10 = 80000

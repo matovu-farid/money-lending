@@ -30,9 +30,11 @@ afterEach(() => {
 });
 
 const baseLoan = {
+  id: "loan-1",
   interestRate: "0.10",
   interestRateOverride: null,
   penaltyMultiplier: null,
+  startDate: new Date(2025, 0, 1),
 };
 
 // ─── Helper ───────────────────────────────────────────────────────

@@ -1067,7 +1067,7 @@ function simulateLoanLifecycle(params: {
     paymentCount: paymentNumber,
     totalBalanceOwed: balance.toFixed(0),
     penaltyWaived: false,
-    loan: { interestRate: rate, interestRateOverride: null },
+    loan: { id: "loan-1", interestRate: rate, interestRateOverride: null, startDate },
     asOf: now,
   });
 
@@ -1723,7 +1723,7 @@ describe("L3: Time-Warp — Overdue at Dangerous Dates", () => {
             paymentCount: 0,
             totalBalanceOwed: principal,
             penaltyWaived: false,
-            loan: { interestRate: rate, interestRateOverride: null },
+            loan: { id: "loan-1", interestRate: rate, interestRateOverride: null, startDate },
             asOf: date,
           });
 
@@ -1760,7 +1760,7 @@ describe("L3: Time-Warp — Overdue at Dangerous Dates", () => {
                 paymentCount: 0,
                 totalBalanceOwed: principal,
                 penaltyWaived: false,
-                loan: { interestRate: rate, interestRateOverride: null },
+                loan: { id: "loan-1", interestRate: rate, interestRateOverride: null, startDate: date },
                 asOf,
               });
 

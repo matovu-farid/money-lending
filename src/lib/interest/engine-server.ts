@@ -165,13 +165,20 @@ export async function allocateLoanSettlementAmount(
   };
 }
 
+export type AllocateLoanPaymentParams = Omit<
+  AllocateLoanSettlementParams,
+  "amount"
+> & {
+  paymentAmount: string;
+};
+
 export async function allocateLoanPaymentServerSide(
-  params: AllocateLoanSettlementParams & { paymentAmount: string },
+  params: AllocateLoanPaymentParams,
 ) {
   const { paymentAmount, ...rest } = params;
   return allocateLoanSettlementAmount({
+    ...rest,
     amount: paymentAmount,
     settlementKind: "payment",
-    ...rest,
   });
 }

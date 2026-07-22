@@ -386,7 +386,7 @@ describe("FUZZ: Overdue Calculation Invariants", () => {
         paymentCount: 1,
         totalBalanceOwed: principal,
         penaltyWaived: false,
-        loan: { interestRate: rate, interestRateOverride: null },
+        loan: { id: "loan-1", interestRate: rate, interestRateOverride: null, startDate },
         asOf,
       });
 
@@ -660,7 +660,7 @@ describe("FUZZ: Edge Date Stress Tests", () => {
           paymentCount: 0,
           totalBalanceOwed: principal,
           penaltyWaived: false,
-          loan: { interestRate: rate, interestRateOverride: null },
+          loan: { id: "loan-1", interestRate: rate, interestRateOverride: null, startDate },
           asOf,
         });
 
@@ -691,7 +691,7 @@ describe("FUZZ: Edge Date Stress Tests", () => {
         paymentCount: 0,
         totalBalanceOwed: "1000000",
         penaltyWaived: false,
-        loan: { interestRate: "0.1000", interestRateOverride: null },
+        loan: { id: "loan-1", interestRate: "0.1000", interestRateOverride: null, startDate: start31st },
         asOf,
       });
 
