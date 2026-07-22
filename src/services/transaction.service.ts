@@ -41,7 +41,6 @@ import {
   getCreditorBalancesFromLedger,
   getPaymentPortionsFromLedger,
 } from "./ledger-queries.service";
-import { getLastPaymentDate } from "./payment.service";
 import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -452,6 +451,8 @@ export const deleteTransaction = (
         "collateral_settlement",
         "fund_transfer",
         "interest_accrual",
+        "loan_waiver",
+        "loan_waiver_reversal",
       ];
       if (
         transaction.referenceType &&

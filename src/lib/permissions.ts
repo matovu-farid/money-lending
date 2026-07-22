@@ -48,7 +48,7 @@ export const superAdminRole = ac.newRole({
 
 export const PERMISSIONS: readonly Permission[] = [
   // operations
-  "loan:create", "loan:read", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
+  "loan:create", "loan:read", "loan:update", "loan:disburse", "loan:rollover", "loan:settle", "loan:waiver",
   "customer:create", "customer:read", "customer:update",
   "payment:create", "payment:read", "payment:update", "payment:delete", "payment:edit-any", "payment:delete-any",
   "expense:create", "expense:read",
@@ -99,6 +99,7 @@ const supervisorExtras: Permission[] = [
 ]
 
 const adminExtras: Permission[] = [
+  "loan:waiver",
   "rate-change:approve-low",
   "role:assign-supervisor",
   "creditor:read", "creditor:create", "creditor:update",
@@ -133,7 +134,8 @@ export const MANAGING_SUPERVISOR_ELEVATED = new Set<Permission>(
       !p.startsWith("creditor:") &&
       !p.startsWith("role:") &&
       !p.startsWith("delegation:") &&
-      !p.startsWith("ip-allowlist:")
+      !p.startsWith("ip-allowlist:") &&
+      p !== "loan:waiver"
   )
 )
 

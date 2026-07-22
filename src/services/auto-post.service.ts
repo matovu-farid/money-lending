@@ -166,6 +166,54 @@ export async function autoPostPrincipalRecovery(
   })
 }
 
+/** Non-cash interest write-down: DR Loan Losses / CR Interest Earned */
+export async function autoPostLoanWaiverInterest(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string;
+    loanId: string;
+    waiverId: string;
+    waiverDate: string;
+    actorId: string;
+  },
+): Promise<void> {
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Loan Losses", type: "expense" },
+    creditCategory: { name: "Interest Earned", type: "revenue" },
+    amount: params.amount,
+    referenceType: "loan_waiver",
+    referenceId: params.waiverId,
+    description: `Interest waived - loan ${shortId(params.loanId).toUpperCase()}`,
+    transactionDate: new Date(params.waiverDate),
+    recordedBy: params.actorId,
+    loanId: params.loanId,
+  });
+}
+
+/** Non-cash principal write-down: DR Loan Losses / CR Loans Receivable */
+export async function autoPostLoanWaiverPrincipal(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string;
+    loanId: string;
+    waiverId: string;
+    waiverDate: string;
+    actorId: string;
+  },
+): Promise<void> {
+  await postJournalEntry(tx, {
+    debitCategory: { name: "Loan Losses", type: "expense" },
+    creditCategory: { name: "Loans Receivable", type: "asset" },
+    amount: params.amount,
+    referenceType: "loan_waiver",
+    referenceId: params.waiverId,
+    description: `Principal waived - loan ${shortId(params.loanId).toUpperCase()}`,
+    transactionDate: new Date(params.waiverDate),
+    recordedBy: params.actorId,
+    loanId: params.loanId,
+  });
+}
+
 export async function autoPostCreditorInvestment(
   tx: DrizzleTransaction,
   params: { amount: string; investmentId: string; investmentDate: string; actorId: string; depositLocation?: "cash" | "bank" | "strong_room"; subLocationId?: string }

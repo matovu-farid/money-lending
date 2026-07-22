@@ -15,7 +15,6 @@ import {
   type DailyCollectionRow,
   type LoanDueToday,
 } from "@/types";
-import { getLastPaymentDate } from "./payment.service";
 import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
 
 export const getDailyCollections = (

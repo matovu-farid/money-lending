@@ -7,8 +7,10 @@
 //   - function   refresh_loan_balance(uuid)
 //   - function   on_transactions_change_for_loan_balance()
 //   - function   on_payments_change_for_loan_balance()
+//   - function   on_loan_waivers_change_for_loan_balance()
 //   - trigger    trg_transactions_loan_balance on transactions
 //   - trigger    trg_payments_loan_balance     on payments
+//   - trigger    trg_loan_waivers_loan_balance on loan_waivers
 //
 // Why this exists: drizzle-kit migrate runs each numbered migration exactly
 // once per env, so it cannot self-heal if something external drops the
@@ -28,11 +30,13 @@ const EXPECTED_FUNCTIONS = [
   "refresh_loan_balance",
   "on_transactions_change_for_loan_balance",
   "on_payments_change_for_loan_balance",
+  "on_loan_waivers_change_for_loan_balance",
 ]
 
 const EXPECTED_TRIGGERS = [
   { name: "trg_transactions_loan_balance", table: "transactions" },
   { name: "trg_payments_loan_balance", table: "payments" },
+  { name: "trg_loan_waivers_loan_balance", table: "loan_waivers" },
 ]
 
 async function main() {

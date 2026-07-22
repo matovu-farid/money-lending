@@ -4,7 +4,7 @@ import { payments } from "@/lib/db/schema/payments";
 import { loans } from "@/lib/db/schema/loans";
 import { customers } from "@/lib/db/schema/customers";
 import { user } from "@/lib/db/schema/auth";
-import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate";
+import { getEffectiveRate } from "@/lib/interest/effective-rate";
 import {
   eq,
   asc,
@@ -27,7 +27,6 @@ import {
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
 import { allocateLoanPayment, formatAmount } from "@/lib/interest/engine";
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
 import {
   postJournalEntry,
   reverseInterestAccrual,
@@ -38,11 +37,10 @@ import {
 } from "./auto-post.service";
 import {
   getLoanBalanceFromLedger,
-  getInterestEarnedFromLedger,
   getPaymentPortionsFromLedger,
 } from "./ledger-queries.service";
 import BigNumber from "bignumber.js";
-import { escapeLikePattern, daysBetween } from "@/lib/db/utils";
+import { escapeLikePattern } from "@/lib/db/utils";
 import { localDateString } from "@/lib/utils";
 import {
   assertLoanOperational,
@@ -65,6 +63,19 @@ import {
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { endOfDay } from "date-fns";
 import { allocateLoanPaymentServerSide } from "@/lib/interest/engine-server";
+import {
+  getLastSettlementDate,
+  reconstructPrincipalBalanceBefore,
+  sumInterestAlreadyPaidInPeriod,
+  getPriorSettlementDate,
+} from "@/services/settlement.service";
+
+export {
+  getLastSettlementDate,
+  getLastSettlementEvent,
+  getLastSettlementEventsForLoans,
+  getLastPaymentDate,
+} from "@/services/settlement.service";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -98,20 +109,18 @@ export async function maybeUpdateLoanStatusAfterPayment(
   }
 }
 
-export async function getLastPaymentDate(loan: {
-  id: string;
-  startDate: Date;
-}) {
-  const payment = await db.query.payments.findFirst({
-    where: and(
-      eq(payments.loanId, loan.id),
-      isNull(payments.deletedAt),
-      eq(payments.markedWrong, false),
-    ),
-    orderBy: (payments, { desc }) => [desc(payments.paymentDate)],
-  });
-  return payment?.paymentDate ?? loan.startDate;
+/** Ledger principal = 0 AND accrual unpaid interest = 0 at `asOf`. */
+export async function isLoanEconomicallyFullyPaid(
+  loanId: string,
+  asOf: Date = new Date(),
+  queryDb?: Pick<typeof db, "select">,
+): Promise<boolean> {
+  const principal = await getLoanBalanceFromLedger(loanId, asOf, queryDb);
+  if (principal.isGreaterThan(0)) return false;
+  const info = await computeSingleLoanBalanceData(loanId, asOf, queryDb);
+  return new BigNumber(info.unpaidInterest).isLessThanOrEqualTo(0);
 }
+
 /**
  * Compute the current balance summary for a loan: outstanding principal,
  * accrued interest, and total balance. Single source of truth used by
@@ -217,6 +226,7 @@ export const recordPaymentWithTxid = (
           loanId: loan.id,
           asOf: endOfDay(new Date(input.paymentDate)),
           paymentAmount: input.amount,
+          queryDb: tx,
         });
 
         const activePayments = await tx
@@ -248,7 +258,7 @@ export const recordPaymentWithTxid = (
         if (loanType === "fixed_rate") {
           // Fixed rate: remaining principal + all remaining term interest
           const monthlyInterest = new BigNumber(
-            loan.principalAmount,
+            principalBalanceBefore,
           ).multipliedBy(new BigNumber(monthlyRateDecimal));
           const remainingMonths = Math.max(
             (loan.termMonths ?? 0) - paymentNumber + 1,
@@ -331,13 +341,10 @@ export const recordPaymentWithTxid = (
           });
         }
 
-        // Check fully-paid status from ledger after posting journals (use tx to see just-written entries)
-        const postPaymentBalance = await getLoanBalanceFromLedger(
-          input.loanId,
-          undefined,
-          tx,
-        );
-        if (postPaymentBalance.isZero()) {
+        // Check fully-paid status after posting journals
+        if (
+          await isLoanEconomicallyFullyPaid(input.loanId, endOfDay(new Date(input.paymentDate)), tx)
+        ) {
           await maybeUpdateLoanStatusAfterPayment(
             tx,
             loan,
@@ -531,48 +538,25 @@ export const editPaymentWithTxid = (
         const paymentIdx = activePayments.findIndex(
           (p) => p.id === input.paymentId,
         );
-        // Match recordPayment: prevDate is the latest *other* payment strictly
-        // before this one's date, falling back to startDate. Same-day peers
-        // share a period boundary rather than chaining off each other.
-        const beforeEdited = activePayments.filter(
-          (p) =>
-            p.id !== input.paymentId &&
-            new Date(p.paymentDate) < newPaymentDate,
-        );
-        const prevDate =
-          beforeEdited.length === 0
-            ? new Date(loan.startDate)
-            : new Date(beforeEdited[beforeEdited.length - 1].paymentDate);
-        const daysElapsed = daysBetween(prevDate, newPaymentDate);
         const paymentNumber = paymentIdx + 1;
 
-        // Compute principalBalanceBefore by walking payments in chronological order
-        // (ledger balance after reversals is wrong when editing a non-latest payment
-        // because later payments' journals are still active)
-        let principalBalanceBefore = loan.principalAmount;
-        if (paymentIdx > 0) {
-          const priorPaymentIds = activePayments
-            .slice(0, paymentIdx)
-            .map((p) => p.id);
-          const priorPortions = await getPaymentPortionsFromLedger(
+        const priorPaymentIds =
+          paymentIdx > 0
+            ? activePayments.slice(0, paymentIdx).map((p) => p.id)
+            : [];
+        const principalBalanceBefore = await reconstructPrincipalBalanceBefore(
+          {
+            loanId: loan.id,
+            originalPrincipal: loan.principalAmount,
+            targetDate: newPaymentDate,
             priorPaymentIds,
-            tx,
-          );
-          let runningBalance = new BigNumber(loan.principalAmount);
-          for (const priorId of priorPaymentIds) {
-            const pp = priorPortions.get(priorId);
-            if (pp)
-              runningBalance = runningBalance.minus(
-                new BigNumber(pp.principalPortion),
-              );
-          }
-          if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0);
-          principalBalanceBefore = runningBalance.toFixed(0);
-        }
+            queryDb: tx,
+          },
+        );
 
         const overdueInfo = await computeSingleLoanBalanceData(
           loan.id,
-          new Date(),
+          endOfDay(newPaymentDate),
         );
 
         const monthlyRateDecimal = getEffectiveRate(
@@ -580,41 +564,37 @@ export const editPaymentWithTxid = (
           overdueInfo.penaltyActive,
         );
 
-        // Compute interest already paid by earlier payments in the same period
-        // (excluding the payment being edited, since its journals were reversed above).
-        // The period this payment falls into is (prevDate, paymentDate]. Future-period
-        // payments must also be excluded — they belong to a later window, not this one.
-        let interestAlreadyPaidInPeriod = "0";
-        {
-          const earlierInPeriod = activePayments.filter(
-            (p) =>
-              p.id !== input.paymentId &&
-              new Date(p.paymentDate) > prevDate &&
-              new Date(p.paymentDate) <= newPaymentDate,
-          );
-          if (earlierInPeriod.length > 0) {
-            const portionsMap = await getPaymentPortionsFromLedger(
-              earlierInPeriod.map((p) => p.id),
-              tx,
-            );
-            let sum = new BigNumber(0);
-            for (const [, portions] of portionsMap) {
-              sum = sum.plus(portions.interestPortion);
-            }
-            interestAlreadyPaidInPeriod = sum.toFixed(2);
-          }
-        }
+        const prevSettlementDate = await getPriorSettlementDate(
+          loan,
+          newPaymentDate,
+          [input.paymentId],
+          tx,
+        );
+        const interestAlreadyPaidInPeriod =
+          await sumInterestAlreadyPaidInPeriod({
+            loanId: loan.id,
+            prevDate: prevSettlementDate,
+            targetDate: newPaymentDate,
+            excludePaymentId: input.paymentId,
+            queryDb: tx,
+          });
+
         const allocation = await allocateLoanPayment({
           paymentAmount: newAmount,
           loanId: loan.id,
-          asOf: payment.paymentDate,
+          asOf: endOfDay(newPaymentDate),
+          interestAlreadyPaidInPeriod,
+          principalBalanceBefore,
+          paymentNumber,
+          prevSettlementDate,
+          queryDb: tx,
         });
 
         // M2: Reject overpayments that exceed total owed
         let totalOwed: BigNumber;
         if (loanType === "fixed_rate") {
           const monthlyInterest = new BigNumber(
-            loan.principalAmount,
+            principalBalanceBefore,
           ).multipliedBy(new BigNumber(monthlyRateDecimal));
           const remainingMonths = Math.max(
             (loan.termMonths ?? 0) - paymentNumber + 1,
@@ -671,13 +651,14 @@ export const editPaymentWithTxid = (
           });
         }
 
-        // 5. Check fully-paid status via ledger
-        const postEditBalance = await getLoanBalanceFromLedger(
-          payment.loanId,
-          undefined,
-          tx,
-        );
-        if (postEditBalance.isZero()) {
+        // 5. Check fully-paid status (economic, not ledger-principal-only)
+        if (
+          await isLoanEconomicallyFullyPaid(
+            payment.loanId,
+            endOfDay(newPaymentDate),
+            tx,
+          )
+        ) {
           await maybeUpdateLoanStatusAfterPayment(
             tx,
             loan,
@@ -835,24 +816,19 @@ export const deletePaymentWithTxid = (
           });
         }
 
-        // 4. Check loan status via ledger
-        const postDeleteBalance = await getLoanBalanceFromLedger(
-          payment.loanId,
-          undefined,
-          tx,
-        );
-        if (postDeleteBalance.isZero() && loan.status !== "fully_paid") {
-          // No balance remaining - shouldn't happen after delete but handle edge case
-          await maybeUpdateLoanStatusAfterPayment(
-            tx,
-            loan,
-            "fully_paid",
-            actorId,
-          );
-        } else if (
-          postDeleteBalance.isGreaterThan(0) &&
-          loan.status === "fully_paid"
+        // 4. Check loan status (economic fully paid, not ledger-principal-only)
+        if (
+          await isLoanEconomicallyFullyPaid(payment.loanId, new Date(), tx)
         ) {
+          if (loan.status !== "fully_paid") {
+            await maybeUpdateLoanStatusAfterPayment(
+              tx,
+              loan,
+              "fully_paid",
+              actorId,
+            );
+          }
+        } else if (loan.status === "fully_paid") {
           await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
         }
 
@@ -1255,14 +1231,9 @@ export async function markPaymentWrong(
     }
 
     // Check if loan should revert from fully_paid to active
-    const ledgerBalance = await getLoanBalanceFromLedger(
-      payment.loanId,
-      undefined,
-      tx,
-    );
     if (
       loan.status === "fully_paid" &&
-      ledgerBalance.isGreaterThan(0)
+      !(await isLoanEconomicallyFullyPaid(payment.loanId, new Date(), tx))
     ) {
       await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
     }
@@ -1313,11 +1284,6 @@ export async function unmarkPaymentWrong(
       .where(eq(payments.id, paymentId))
       .returning();
 
-    // Recompute allocation from loan state to determine interest/principal portions
-    const baseRate = getBaseRate(loan);
-    const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
-    const loanType = loan.loanType ?? "perpetual";
-
     // Get all active (non-deleted, non-wrong) payments ordered by date to find position
     const activePayments = await tx
       .select()
@@ -1332,77 +1298,44 @@ export async function unmarkPaymentWrong(
       .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
 
     const paymentIndex = activePayments.findIndex((p) => p.id === paymentId);
-    const prevPayment =
-      paymentIndex > 0 ? activePayments[paymentIndex - 1] : null;
-    const prevDate = prevPayment
-      ? new Date(prevPayment.paymentDate)
-      : new Date(loan.startDate);
-
-    // Reconstruct principalBalanceBefore by walking prior payments' ledger portions
-    let principalBalanceBefore = loan.principalAmount;
-    if (paymentIndex > 0) {
-      const priorPaymentIds = activePayments
-        .slice(0, paymentIndex)
-        .map((p) => p.id);
-      const priorPortions = await getPaymentPortionsFromLedger(
-        priorPaymentIds,
-        tx,
-      );
-      let runningBalance = new BigNumber(loan.principalAmount);
-      for (const priorId of priorPaymentIds) {
-        const pp = priorPortions.get(priorId);
-        if (pp)
-          runningBalance = runningBalance.minus(
-            new BigNumber(pp.principalPortion),
-          );
-      }
-      if (runningBalance.isLessThan(0)) runningBalance = new BigNumber(0);
-      principalBalanceBefore = runningBalance.toFixed(0);
-    }
-    const daysElapsed = daysBetween(prevDate, new Date(payment.paymentDate));
-
-    // Compute penalty status as of the payment date (not today) to match recordPayment behavior
-    const interestEarnedMap = await getInterestEarnedFromLedger(
-      [payment.loanId],
-      tx,
-    );
-    const overdueInfo = computeLoanOverdueInfo({
-      principalAmount: loan.principalAmount,
-      baseRate,
-      startDate: new Date(loan.startDate),
-      loanType: toLoanType(loan.loanType),
-      termMonths: loan.termMonths,
-      totalInterestPaid: formatAmount(
-        interestEarnedMap.get(payment.loanId) ?? new BigNumber(0),
-      ),
-      paymentCount: activePayments.length,
-      totalBalanceOwed: principalBalanceBefore,
-      penaltyWaived: loan.penaltyWaived,
-      loan,
-      asOf: new Date(payment.paymentDate),
-      lastPaymentDate: await getLastPaymentDate(loan),
-    });
-    const monthlyRateDecimal = getEffectiveRate(
-      loan,
-      overdueInfo.penaltyActive,
-    );
+    const paymentDate = new Date(payment.paymentDate);
     const paymentNumber = paymentIndex + 1;
 
-    // const allocation = allocatePayment({
-    //   paymentAmount: payment.amount,
-    //   outstandingBalance: principalBalanceBefore,
-    //   monthlyRateDecimal,
-    //   daysElapsed,
-    //   minInterestDays,
-    //   loanType,
-    //   principalAmount: loan.principalAmount,
-    //   termMonths: loan.termMonths ?? undefined,
-    //   paymentNumber,
-    // });
+    const priorPaymentIds =
+      paymentIndex > 0
+        ? activePayments.slice(0, paymentIndex).map((p) => p.id)
+        : [];
+    const principalBalanceBefore = await reconstructPrincipalBalanceBefore({
+      loanId: loan.id,
+      originalPrincipal: loan.principalAmount,
+      targetDate: paymentDate,
+      priorPaymentIds,
+      queryDb: tx,
+    });
+
+    const prevSettlementDate = await getPriorSettlementDate(
+      loan,
+      paymentDate,
+      [paymentId],
+      tx,
+    );
+    const interestAlreadyPaidInPeriod = await sumInterestAlreadyPaidInPeriod({
+      loanId: loan.id,
+      prevDate: prevSettlementDate,
+      targetDate: paymentDate,
+      excludePaymentId: paymentId,
+      queryDb: tx,
+    });
+
     const allocation = await allocateLoanPayment({
       paymentAmount: payment.amount,
       loanId: loan.id,
-      asOf: payment.paymentDate,
+      asOf: endOfDay(paymentDate),
+      interestAlreadyPaidInPeriod,
+      principalBalanceBefore,
+      paymentNumber,
+      prevSettlementDate,
+      queryDb: tx,
     });
     // Re-post interest earned journal entry
     if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
@@ -1433,8 +1366,11 @@ export async function unmarkPaymentWrong(
       });
     }
 
-    // Check if loan should be marked fully_paid
-    if (allocation.loanFullyPaid && loan.status !== "fully_paid") {
+    // Check if loan should be marked fully_paid (economic, not allocator-only)
+    if (
+      (await isLoanEconomicallyFullyPaid(payment.loanId, endOfDay(paymentDate), tx)) &&
+      loan.status !== "fully_paid"
+    ) {
       await maybeUpdateLoanStatusAfterPayment(
         tx,
         loan,

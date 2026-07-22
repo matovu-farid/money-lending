@@ -45,6 +45,7 @@ const DEFAULT_EXPENSE_CATEGORIES = [
   // The user-typed label is stored in transactions.category;
   // categoryId stays NOT NULL so accounting-type semantics survive.
   "User Expense",
+  "Loan Losses",
 ]
 
 export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>

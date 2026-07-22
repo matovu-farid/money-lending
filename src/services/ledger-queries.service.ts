@@ -84,9 +84,27 @@ export async function getSingleInterestEarnedFromLedger(
  */
 export async function getInterestEarnedFromLedger(
   loanIds: string[],
-  queryDb: Pick<typeof db, "select"> = db,
+  asOrQueryDb?: Date | Pick<typeof db, "select">,
+  maybeQueryDb?: Pick<typeof db, "select">,
 ): Promise<Map<string, BigNumber>> {
   if (loanIds.length === 0) return new Map();
+
+  let asOf: Date | undefined;
+  let queryDb: Pick<typeof db, "select"> = db;
+  if (asOrQueryDb instanceof Date) {
+    asOf = asOrQueryDb;
+    if (maybeQueryDb) queryDb = maybeQueryDb;
+  } else if (asOrQueryDb) {
+    queryDb = asOrQueryDb;
+  }
+
+  const conditions = [
+    eq(transactionCategories.name, "Interest Earned"),
+    inArray(transactions.loanId, loanIds),
+  ];
+  if (asOf) {
+    conditions.push(lte(transactions.transactionDate, asOf));
+  }
 
   const rows = await queryDb
     .select({
@@ -99,13 +117,7 @@ export async function getInterestEarnedFromLedger(
       transactionCategories,
       eq(transactions.categoryId, transactionCategories.id),
     )
-    .where(
-      and(
-        eq(transactionCategories.name, "Interest Earned"),
-        inArray(transactions.loanId, loanIds),
-        // isNull(transactions.),
-      ),
-    )
+    .where(and(...conditions))
     .groupBy(transactions.loanId, transactions.type);
 
   const balances = new Map<string, BigNumber>();
@@ -312,6 +324,85 @@ export async function getPaymentPortionsFromLedger(
   >();
   for (const [paymentId, portions] of portionMap) {
     result.set(paymentId, {
+      interestPortion: portions.interest.toFixed(2),
+      principalPortion: portions.principal.toFixed(2),
+    });
+  }
+  return result;
+}
+
+/**
+ * Derive per-waiver interest and principal portions from the ledger.
+ * Queries "Interest Earned" and "Loans Receivable" entries grouped by referenceId (waiverId).
+ */
+export async function getWaiverPortionsFromLedger(
+  waiverIds: string[],
+  queryDb: Pick<typeof db, "select"> = db,
+): Promise<Map<string, { interestPortion: string; principalPortion: string }>> {
+  if (waiverIds.length === 0) return new Map();
+
+  const rows = await queryDb
+    .select({
+      referenceId: transactions.referenceId,
+      categoryName: transactionCategories.name,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id),
+    )
+    .where(
+      and(
+        inArray(transactions.referenceId, waiverIds),
+        eq(transactions.referenceType, "loan_waiver"),
+        inArray(transactionCategories.name, [
+          "Interest Earned",
+          "Loans Receivable",
+        ]),
+      ),
+    )
+    .groupBy(
+      transactions.referenceId,
+      transactionCategories.name,
+      transactions.type,
+    );
+
+  const portionMap = new Map<
+    string,
+    { interest: BigNumber; principal: BigNumber }
+  >();
+
+  for (const row of rows) {
+    if (!row.referenceId) continue;
+    const current = portionMap.get(row.referenceId) ?? {
+      interest: new BigNumber(0),
+      principal: new BigNumber(0),
+    };
+    const amount = new BigNumber(row.total);
+
+    if (row.categoryName === "Interest Earned") {
+      current.interest =
+        row.txType === "credit"
+          ? current.interest.plus(amount)
+          : current.interest.minus(amount);
+    } else if (row.categoryName === "Loans Receivable") {
+      current.principal =
+        row.txType === "credit"
+          ? current.principal.plus(amount)
+          : current.principal.minus(amount);
+    }
+
+    portionMap.set(row.referenceId, current);
+  }
+
+  const result = new Map<
+    string,
+    { interestPortion: string; principalPortion: string }
+  >();
+  for (const [waiverId, portions] of portionMap) {
+    result.set(waiverId, {
       interestPortion: portions.interest.toFixed(2),
       principalPortion: portions.principal.toFixed(2),
     });

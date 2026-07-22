@@ -1,54 +1,177 @@
 "use server";
 
 import BigNumber from "bignumber.js";
+import { and, eq, isNull, lte } from "drizzle-orm";
+import { db } from "../db";
+import { loans, payments } from "../db/schema";
 import { computeSingleLoanBalanceData } from "./loanBalanceData";
-import { formatAmount } from "./engine";
+import {
+  allocatePayment,
+  formatAmount,
+  type PaymentAllocation,
+} from "./engine";
+import { getEffectiveRate } from "./effective-rate";
+import { toLoanType } from "@/types";
+import { getRemainingPrincipalFromLedger } from "@/services/ledger-queries.service";
+import { daysBetween } from "@/lib/db/utils";
+import { getLastSettlementDate } from "@/services/settlement.service";
 
-export async function allocateLoanPaymentServerSide(params: {
-  paymentAmount: string;
+type QueryDb = Pick<typeof db, "select">;
+
+export type AllocateLoanSettlementParams = {
+  amount: string;
   asOf: Date;
   loanId: string;
-
-  /** Interest already collected from earlier payments within the same min-interest period */
+  /** Interest already collected from earlier settlements within the same min-interest period */
   interestAlreadyPaidInPeriod?: string;
-}) {
-  const { paymentAmount, asOf, loanId } = params;
+  /** Override for edit/unmark when walking prior settlements */
+  principalBalanceBefore?: string;
+  paymentNumber?: number;
+  prevSettlementDate?: Date;
+  /** Use transaction handle so reads see in-flight journals (R14-C2) */
+  queryDb?: QueryDb;
+  /** Waivers are write-downs, not scheduled installments (R14-H1) */
+  settlementKind?: "payment" | "waiver";
+};
 
-  const info = await computeSingleLoanBalanceData(loanId, asOf);
+/**
+ * When engine interest exceeds accrual unpaid interest, re-split interest-first
+ * with interest capped at the accrual figure (R14-H2).
+ */
+function clampAllocationToUnpaidInterest(
+  allocation: PaymentAllocation,
+  paymentAmount: string,
+  unpaidInterest: string,
+  principalBalanceBefore: string,
+  monthlyRateDecimal: string,
+): PaymentAllocation {
+  const unpaidCap = new BigNumber(unpaidInterest);
+  const interestBN = new BigNumber(allocation.interestPortion);
+  if (interestBN.isLessThanOrEqualTo(unpaidCap)) return allocation;
 
   const payment = new BigNumber(paymentAmount);
-
-  const interestOwed = info.unpaidInterest;
-
-  if (payment.isLessThanOrEqualTo(interestOwed)) {
-    return {
-      interestPortion: formatAmount(payment),
-      principalPortion: "0.00",
-      principalBalanceBefore: info.remainingPrincipalAmount,
-      principalBalanceAfter: info.remainingPrincipalAmount,
-      totalBalanceOwedAfter: formatAmount(
-        BigNumber(info.totalBalanceOwed).minus(payment),
-      ),
-      loanFullyPaid: false,
-      ...info,
-    };
-  }
-
-  const principalBalanceBefore = BigNumber(info.remainingPrincipalAmount);
-  const principalPortion = BigNumber.min(
-    payment.minus(interestOwed),
-    principalBalanceBefore,
-  );
-  const principalBalanceAfter = principalBalanceBefore.minus(principalPortion);
-  
+  const balance = new BigNumber(principalBalanceBefore);
+  const interest = BigNumber.min(interestBN, unpaidCap);
+  const principal = BigNumber.min(payment.minus(interest), balance);
+  const principalAfter = BigNumber.max(balance.minus(principal), 0);
 
   return {
-    interestPortion: interestOwed,
-    principalPortion: formatAmount(principalPortion),
-    principalBalanceBefore: formatAmount(principalBalanceBefore),
-    principalBalanceAfter: formatAmount(principalBalanceAfter),
-    totalBalanceOwedAfter: formatAmount(principalBalanceAfter),
-    loanFullyPaid: principalBalanceAfter.isZero(),
+    ...allocation,
+    interestPortion: formatAmount(interest),
+    principalPortion: formatAmount(principal),
+    principalBalanceAfter: formatAmount(principalAfter),
+    outstandingBalanceAfter: formatAmount(
+      principalAfter.multipliedBy(new BigNumber(monthlyRateDecimal)).dividedBy(30),
+    ),
+    loanFullyPaid: principalAfter.isZero(),
+  };
+}
+
+/**
+ * Loan-type-aware settlement allocation shared by payments and waivers.
+ * Dispatches to `allocatePayment` in engine.ts with balance context from
+ * `computeSingleLoanBalanceData`.
+ */
+export async function allocateLoanSettlementAmount(
+  params: AllocateLoanSettlementParams,
+) {
+  const {
+    amount,
+    asOf,
+    loanId,
+    interestAlreadyPaidInPeriod,
+    principalBalanceBefore: principalOverride,
+    paymentNumber: paymentNumberOverride,
+    prevSettlementDate,
+    queryDb = db,
+    settlementKind = "payment",
+  } = params;
+
+  const [loan] = await queryDb
+    .select()
+    .from(loans)
+    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
+  if (!loan) throw new Error(`Loan not found: ${loanId}`);
+
+  const info = await computeSingleLoanBalanceData(loanId, asOf, queryDb);
+  const monthlyRateDecimal = getEffectiveRate(loan, info.penaltyActive);
+  const loanType = toLoanType(loan.loanType);
+  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
+
+  let principalBalanceBefore = principalOverride;
+  if (!principalBalanceBefore) {
+    const map = await getRemainingPrincipalFromLedger([loanId], asOf, queryDb);
+    principalBalanceBefore = formatAmount(map.get(loanId) ?? new BigNumber(0));
+  }
+
+  const prevDate =
+    prevSettlementDate ??
+    (await getLastSettlementDate(loan, { asOf }, queryDb));
+  const daysElapsed = daysBetween(prevDate, asOf);
+
+  let paymentNumber = paymentNumberOverride;
+  if (!paymentNumber) {
+    const activePayments = await queryDb
+      .select({ id: payments.id })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.loanId, loanId),
+          isNull(payments.deletedAt),
+          eq(payments.markedWrong, false),
+          lte(payments.paymentDate, asOf),
+        ),
+      );
+    // Waivers do not advance the installment schedule on fixed_rate loans.
+    paymentNumber =
+      settlementKind === "waiver"
+        ? Math.max(activePayments.length, 1)
+        : activePayments.length + 1;
+  }
+
+  let allocation = allocatePayment({
+    paymentAmount: amount,
+    principalBalanceBefore,
+    monthlyRateDecimal,
+    daysElapsed,
+    minInterestDays,
+    loanType,
+    originalPrincipal: loan.principalAmount,
+    termMonths: loan.termMonths ?? undefined,
+    paymentNumber,
+    interestAlreadyPaidInPeriod,
+  });
+
+  allocation = clampAllocationToUnpaidInterest(
+    allocation,
+    amount,
+    info.unpaidInterest,
+    principalBalanceBefore,
+    monthlyRateDecimal,
+  );
+
+  const principalAfter = new BigNumber(allocation.principalBalanceAfter);
+  const unpaidAfter = BigNumber.max(
+    new BigNumber(info.unpaidInterest).minus(allocation.interestPortion),
+    0,
+  );
+  const loanFullyPaid = principalAfter.isZero() && unpaidAfter.isZero();
+
+  return {
+    ...allocation,
+    loanFullyPaid,
+    totalBalanceOwedAfter: formatAmount(principalAfter.plus(unpaidAfter)),
     ...info,
   };
+}
+
+export async function allocateLoanPaymentServerSide(
+  params: AllocateLoanSettlementParams & { paymentAmount: string },
+) {
+  const { paymentAmount, ...rest } = params;
+  return allocateLoanSettlementAmount({
+    amount: paymentAmount,
+    settlementKind: "payment",
+    ...rest,
+  });
 }

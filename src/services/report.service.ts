@@ -26,7 +26,6 @@ import {
   type CashflowData,
   type CashflowMonth,
 } from "@/types";
-import { getLastPaymentDate } from "./payment.service";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
 
 export const getPnlData = (

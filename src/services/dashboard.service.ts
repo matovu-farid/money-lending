@@ -13,7 +13,6 @@ import { DatabaseError } from "@/lib/errors";
 import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
 import BigNumber from "bignumber.js";
 import { toLoanType, type DashboardKPIs, type ActivityFeedItem } from "@/types";
-import { getLastPaymentDate } from "./payment.service";
 import { computeLoanBalanceDataArray } from "@/lib/interest/loanBalanceData";
 
 export const getDashboardKPIs = (): Effect.Effect<

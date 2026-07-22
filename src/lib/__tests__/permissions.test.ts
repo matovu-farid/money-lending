@@ -434,7 +434,7 @@ describe("PERMISSIONS array", () => {
   it("contains all expected permissions", () => {
     const expected: Permission[] = [
       // operations
-      "loan:create", "loan:read", "loan:update", "loan:disburse", "loan:rollover", "loan:settle",
+      "loan:create", "loan:read", "loan:update", "loan:disburse", "loan:rollover", "loan:settle", "loan:waiver",
       "customer:create", "customer:read", "customer:update",
       "payment:create", "payment:read", "payment:update", "payment:delete", "payment:edit-any", "payment:delete-any",
       "expense:create", "expense:read",
@@ -520,6 +520,7 @@ describe("ROLE_PERMISSIONS", () => {
     }
     // Admin extras
     const extras: Permission[] = [
+      "loan:waiver",
       "rate-change:approve-low",
       "role:assign-supervisor",
       "settings:read", "settings:update",
@@ -573,6 +574,10 @@ describe("MANAGING_SUPERVISOR_ELEVATED", () => {
     for (const perm of MANAGING_SUPERVISOR_ELEVATED) {
       expect(perm.startsWith("delegation:")).toBe(false)
     }
+  })
+
+  it("excludes loan:waiver", () => {
+    expect(MANAGING_SUPERVISOR_ELEVATED.has("loan:waiver")).toBe(false)
   })
 })
 
@@ -732,7 +737,7 @@ describe("Property-Based: Permission Hierarchy", () => {
     }
   })
 
-  it("MANAGING_SUPERVISOR_ELEVATED excludes creditor:*, role:*, delegation:*, ip-allowlist:*", () => {
+  it("MANAGING_SUPERVISOR_ELEVATED excludes creditor:*, role:*, delegation:*, ip-allowlist:*, loan:waiver", () => {
     fc.assert(
       fc.property(
         fc.constantFrom(...Array.from(MANAGING_SUPERVISOR_ELEVATED)),
@@ -741,7 +746,8 @@ describe("Property-Based: Permission Hierarchy", () => {
             !perm.startsWith("creditor:") &&
             !perm.startsWith("role:") &&
             !perm.startsWith("delegation:") &&
-            !perm.startsWith("ip-allowlist:")
+            !perm.startsWith("ip-allowlist:") &&
+            perm !== "loan:waiver"
           )
         }
       ),
@@ -749,7 +755,7 @@ describe("Property-Based: Permission Hierarchy", () => {
     )
   })
 
-  it("supervisor + MANAGING_SUPERVISOR_ELEVATED covers all admin perms except creditor/role/delegation/ip-allowlist", () => {
+  it("supervisor + MANAGING_SUPERVISOR_ELEVATED covers all admin perms except creditor/role/delegation/ip-allowlist/loan:waiver", () => {
     const supervisorPerms = getPermissionsForRole("supervisor")
     const combined = new Set([...supervisorPerms, ...MANAGING_SUPERVISOR_ELEVATED])
     const adminPerms = getPermissionsForRole("admin")
@@ -759,7 +765,8 @@ describe("Property-Based: Permission Hierarchy", () => {
         perm.startsWith("creditor:") ||
         perm.startsWith("role:") ||
         perm.startsWith("delegation:") ||
-        perm.startsWith("ip-allowlist:")
+        perm.startsWith("ip-allowlist:") ||
+        perm === "loan:waiver"
       ) {
         continue
       }

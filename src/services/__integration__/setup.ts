@@ -21,6 +21,7 @@ export async function resetDb() {
       creditor_repayments,
       creditor_investments,
       creditors,
+      loan_waivers,
       payments,
       collateral,
       loans,
@@ -61,6 +62,10 @@ export async function seedTestUser() {
 export async function seedCategories() {
   await db.insert(schema.transactionCategories).values([
     { name: "Interest Earned", type: "revenue" as const, isDefault: true },
+    { name: "Interest Receivable", type: "revenue" as const, isDefault: true },
+    { name: "Loans Receivable", type: "asset" as const, isDefault: true },
+    { name: "Loan Losses", type: "expense" as const, isDefault: true },
+    { name: "Cash", type: "asset" as const, isDefault: true },
     { name: "Interest Payments", type: "expense" as const, isDefault: true },
     { name: "Share Capital", type: "equity" as const, isDefault: true },
   ])

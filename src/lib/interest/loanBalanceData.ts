@@ -1,6 +1,6 @@
 "use server";
 
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "../db";
 import { loans, payments } from "../db/schema";
 import { computeLoanOverdueInfo } from "./overdue";
@@ -13,8 +13,10 @@ import {
   getRemainingPrincipalFromLedger,
 } from "@/services/ledger-queries.service";
 import BigNumber from "bignumber.js";
-import { getLastPaymentDate } from "@/services/payment.service";
+import { getLastSettlementEventsForLoans } from "@/services/settlement.service";
 import { isOperationalLoan } from "@/lib/loan-visibility";
+
+type QueryDb = Pick<typeof db, "select">;
 
 type BalanceInfo = ReturnType<typeof computeLoanOverdueInfo> & {
   totalBalanceOwed: string;
@@ -40,8 +42,12 @@ function zeroedBalanceInfo(
   };
 }
 
-export async function computeSingleLoanBalanceData(loanId: string, asOf: Date) {
-  return (await computeLoanBalanceData([loanId], asOf)).get(loanId)!;
+export async function computeSingleLoanBalanceData(
+  loanId: string,
+  asOf: Date,
+  queryDb: QueryDb = db,
+) {
+  return (await computeLoanBalanceData([loanId], asOf, queryDb)).get(loanId)!;
 }
 
 export async function computeAllLoansBalanceData() {
@@ -60,23 +66,26 @@ export async function computeLoanBalanceDataArray(
 ) {
   return Array.from((await computeLoanBalanceData(loanIds, asOf)).values());
 }
-export async function getTotalInterestPaid(loanId: string) {
-  const interestEarnedMap = await getInterestEarnedFromLedger([loanId]);
-  return formatAmount(interestEarnedMap.get(loanId) ?? new BigNumber(0));
-}
 
 /**
  * Path A balance feed for loanBalanceCollection.
  * Non-operational loans return zeros without payment/ledger IO (R11-1 / R19-3).
  * Rows are still emitted so historical detail joins keep working.
+ *
+ * Pass `queryDb` (e.g. transaction handle) so in-flight journal rows are visible.
  */
-export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
+export async function computeLoanBalanceData(
+  loanIds: string[],
+  asOf: Date,
+  queryDb: QueryDb = db,
+) {
   const results: Map<string, BalanceInfo> = new Map();
   if (loanIds.length === 0) return results;
 
-  const loansFromDb = await db.query.loans.findMany({
-    where: and(inArray(loans.id, loanIds), isNull(loans.deletedAt)),
-  });
+  const loansFromDb = await queryDb
+    .select()
+    .from(loans)
+    .where(and(inArray(loans.id, loanIds), isNull(loans.deletedAt)));
 
   const operational = loansFromDb.filter((loan) =>
     isOperationalLoan(loan.status),
@@ -95,22 +104,40 @@ export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
   const operationalIds = operational.map((loan) => loan.id);
   if (operationalIds.length === 0) return results;
 
-  const remainingPrincipalbalanceMap =
-    await getRemainingPrincipalFromLedger(operationalIds);
-  const balanceMap = await getLoanBalancesFromLedger(operationalIds);
-
-  const promises = operational.map(async (loan) => {
-    const activePayments = await db
+  const [
+    remainingPrincipalbalanceMap,
+    balanceMap,
+    interestEarnedMap,
+    settlementEvents,
+    allPayments,
+  ] = await Promise.all([
+    getRemainingPrincipalFromLedger(operationalIds, asOf, queryDb),
+    getLoanBalancesFromLedger(operationalIds, asOf, queryDb),
+    getInterestEarnedFromLedger(operationalIds, asOf, queryDb),
+    getLastSettlementEventsForLoans(operationalIds, asOf, queryDb),
+    queryDb
       .select()
       .from(payments)
       .where(
         and(
-          eq(payments.loanId, loan.id),
+          inArray(payments.loanId, operationalIds),
           isNull(payments.deletedAt),
           eq(payments.markedWrong, false),
+          lte(payments.paymentDate, asOf),
         ),
       )
-      .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
+      .orderBy(asc(payments.paymentDate), asc(payments.createdAt)),
+  ]);
+
+  const paymentsByLoanId = new Map<string, typeof allPayments>();
+  for (const p of allPayments) {
+    const list = paymentsByLoanId.get(p.loanId) ?? [];
+    list.push(p);
+    paymentsByLoanId.set(p.loanId, list);
+  }
+
+  for (const loan of operational) {
+    const activePayments = paymentsByLoanId.get(loan.id) ?? [];
     const hasLedgerEntries = balanceMap.has(loan.id);
     const ledgerBalance = balanceMap.get(loan.id) ?? new BigNumber(0);
     if (!hasLedgerEntries) {
@@ -126,8 +153,11 @@ export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
 
     const baseRate = getBaseRate(loan);
     const loanType = toLoanType(loan.loanType);
-    const totalInterestPaid = await getTotalInterestPaid(loan.id);
-    const lastPaymentDate = await getLastPaymentDate(loan);
+    const totalInterestPaid = formatAmount(
+      interestEarnedMap.get(loan.id) ?? new BigNumber(0),
+    );
+    const lastPaymentDate =
+      settlementEvents.get(loan.id)?.date ?? new Date(loan.startDate);
 
     const info = computeLoanOverdueInfo({
       principalAmount: loan.principalAmount,
@@ -135,9 +165,9 @@ export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
       startDate: new Date(loan.startDate),
       loanType,
       termMonths: loan.termMonths,
-      totalInterestPaid: totalInterestPaid,
+      totalInterestPaid,
       paymentCount: activePayments.length,
-      totalBalanceOwed: totalBalanceOwed,
+      totalBalanceOwed,
       penaltyWaived: loan.penaltyWaived,
       loan,
       lastPaymentDate,
@@ -146,13 +176,12 @@ export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
 
     results.set(loan.id, {
       ...info,
-      totalBalanceOwed: totalBalanceOwed,
+      totalBalanceOwed,
       lastPaymentDate,
       loanId: loan.id,
       remainingPrincipalAmount: formatAmount(remainingPrincipalbalance),
     });
-  });
-  await Promise.all(promises);
+  }
 
   return results;
 }

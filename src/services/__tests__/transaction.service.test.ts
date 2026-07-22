@@ -962,6 +962,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       "loan", "loan_reversal", "loan_repost",
       "rollover", "collateral_settlement", "fund_transfer",
       "interest_accrual",
+      "loan_waiver", "loan_waiver_reversal",
     ]
 
     for (const refType of systemRefTypes) {

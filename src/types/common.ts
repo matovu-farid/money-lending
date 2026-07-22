@@ -9,7 +9,7 @@ export type UserRole = keyof typeof ROLE_LEVELS
 
 export type Permission =
   // operations – loans
-  | "loan:create" | "loan:read" | "loan:update" | "loan:disburse" | "loan:rollover" | "loan:settle"
+  | "loan:create" | "loan:read" | "loan:update" | "loan:disburse" | "loan:rollover" | "loan:settle" | "loan:waiver"
   // operations – customers
   | "customer:create" | "customer:read" | "customer:update"
   // operations – payments

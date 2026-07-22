@@ -81,3 +81,39 @@ export function validatePositiveAmount(
   }
   return null;
 }
+
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function validateUuid(
+  value: string | undefined | null,
+  fieldName: string,
+): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || !UUID_PATTERN.test(trimmed)) {
+    return `${fieldName} must be a valid UUID`;
+  }
+  return null;
+}
+
+export function validateWaiveReason(
+  value: string | undefined | null,
+): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed || trimmed.length < 10) {
+    return "Reason must be at least 10 characters";
+  }
+  return null;
+}
+
+export function validateWaiveLoanAmountInput(input: {
+  loanId: string;
+  amount: string;
+  reason: string;
+}): string | null {
+  const loanIdErr = validateUuid(input.loanId, "Loan ID");
+  if (loanIdErr) return loanIdErr;
+  const amountErr = validatePositiveDecimal(input.amount, "Amount");
+  if (amountErr) return amountErr;
+  return validateWaiveReason(input.reason);
+}

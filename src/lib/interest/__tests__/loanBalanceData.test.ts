@@ -6,7 +6,7 @@ const mockSelect = vi.fn()
 const mockGetRemainingPrincipalFromLedger = vi.fn()
 const mockGetLoanBalancesFromLedger = vi.fn()
 const mockGetInterestEarnedFromLedger = vi.fn()
-const mockGetLastPaymentDate = vi.fn()
+const mockGetLastSettlementEventsForLoans = vi.fn()
 const mockComputeLoanOverdueInfo = vi.fn()
 
 vi.mock("@/lib/db", () => ({
@@ -37,8 +37,8 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getInterestEarnedFromLedger: mockGetInterestEarnedFromLedger,
 }))
 
-vi.mock("@/services/payment.service", () => ({
-  getLastPaymentDate: mockGetLastPaymentDate,
+vi.mock("@/services/settlement.service", () => ({
+  getLastSettlementEventsForLoans: mockGetLastSettlementEventsForLoans,
 }))
 
 vi.mock("@/lib/interest/overdue", () => ({
@@ -49,29 +49,34 @@ describe("loanBalanceData", () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
-    mockFindMany.mockResolvedValue([
-      {
-        id: "loan-1",
-        principalAmount: "1000000",
-        interestRate: "0.10",
-        interestRateOverride: null,
-        loanType: "perpetual",
-        termMonths: null,
-        penaltyWaived: false,
-        startDate: new Date("2026-01-01T00:00:00.000Z"),
-      },
-    ])
+    const loanRow = {
+      id: "loan-1",
+      status: "active",
+      principalAmount: "1000000",
+      interestRate: "0.10",
+      interestRateOverride: null,
+      loanType: "perpetual",
+      termMonths: null,
+      penaltyWaived: false,
+      startDate: new Date("2026-01-01T00:00:00.000Z"),
+    }
 
-    mockSelect.mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockReturnValue({
-          orderBy: vi.fn().mockResolvedValue([
-            { id: "payment-1" },
-            { id: "payment-2" },
-          ]),
+    mockSelect
+      .mockReturnValueOnce({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([loanRow]),
         }),
-      }),
-    })
+      })
+      .mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([
+              { id: "payment-1", loanId: "loan-1" },
+              { id: "payment-2", loanId: "loan-1" },
+            ]),
+          }),
+        }),
+      })
 
     mockGetRemainingPrincipalFromLedger.mockResolvedValue(
       new Map([["loan-1", new BigNumber("650000")]]),
@@ -82,8 +87,16 @@ describe("loanBalanceData", () => {
     mockGetInterestEarnedFromLedger.mockResolvedValue(
       new Map([["loan-1", new BigNumber("150000")]]),
     )
-    mockGetLastPaymentDate.mockResolvedValue(
-      new Date("2026-02-01T00:00:00.000Z"),
+    mockGetLastSettlementEventsForLoans.mockResolvedValue(
+      new Map([
+        [
+          "loan-1",
+          {
+            kind: "payment",
+            date: new Date("2026-02-01T00:00:00.000Z"),
+          },
+        ],
+      ]),
     )
     mockComputeLoanOverdueInfo.mockReturnValue({
       daysOverdue: 12,
@@ -97,10 +110,8 @@ describe("loanBalanceData", () => {
   it("computeSingleLoanBalanceData returns ledger-backed balance and overdue data", async () => {
     const { computeSingleLoanBalanceData } = await import("../loanBalanceData")
 
-    const result = await computeSingleLoanBalanceData(
-      "loan-1",
-      new Date("2026-03-01T00:00:00.000Z"),
-    )
+    const asOf = new Date("2026-03-01T00:00:00.000Z")
+    const result = await computeSingleLoanBalanceData("loan-1", asOf)
 
     expect(result.loanId).toBe("loan-1")
     expect(result.totalBalanceOwed).toBe("1200000")
@@ -110,6 +121,21 @@ describe("loanBalanceData", () => {
     )
     expect(result.daysOverdue).toBe(12)
     expect(result.unpaidInterest).toBe("30000")
+    expect(mockGetRemainingPrincipalFromLedger).toHaveBeenCalledWith(
+      ["loan-1"],
+      asOf,
+      expect.anything(),
+    )
+    expect(mockGetLoanBalancesFromLedger).toHaveBeenCalledWith(
+      ["loan-1"],
+      asOf,
+      expect.anything(),
+    )
+    expect(mockGetInterestEarnedFromLedger).toHaveBeenCalledWith(
+      ["loan-1"],
+      asOf,
+      expect.anything(),
+    )
     expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         principalAmount: "1000000",
@@ -119,16 +145,8 @@ describe("loanBalanceData", () => {
         totalBalanceOwed: "1200000",
         penaltyWaived: false,
         lastPaymentDate: new Date("2026-02-01T00:00:00.000Z"),
-        asOf: new Date("2026-03-01T00:00:00.000Z"),
+        asOf,
       }),
     )
-  })
-
-  it("getTotalInterestPaid formats the ledger total as money", async () => {
-    const { getTotalInterestPaid } = await import("../loanBalanceData")
-    const result = await getTotalInterestPaid("loan-1")
-
-    expect(result).toBe("150000.00")
-    expect(mockGetInterestEarnedFromLedger).toHaveBeenCalledWith(["loan-1"])
   })
 })

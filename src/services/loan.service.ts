@@ -50,7 +50,6 @@ import {
   type LoanListEntry,
   type LoanStatus,
 } from "@/types";
-import { getLastPaymentDate } from "./payment.service";
 import {
   computeAllLoansBalanceData,
   computeLoanBalanceData,
@@ -1387,11 +1386,8 @@ export async function computeOverdue(
     let unpaidInterest = "0";
     let outstandingBalance = "0";
 
-    const loanPayments = paymentsByLoanId.get(loan.id) ?? [];
-    const lastPayment = loanPayments.at(-1);
-    const lastPaymentDate: Date | null = lastPayment
-      ? lastPayment.paymentDate
-      : null;
+    const balanceEntry = balanceInfo.get(loan.id);
+    const lastPaymentDate: Date | null = balanceEntry?.lastPaymentDate ?? null;
 
     if (loan.status === "active") {
       const ledgerBalance = ledgerBalances.get(loan.id);
