@@ -392,8 +392,10 @@ export async function createLoanAction(input: CreateLoanInput) {
     const data = await Effect.runPromise(
       createLoan(loanInput, session.user.id),
     );
-    revalidatePath("/loans");
-    revalidatePath(`/customers/${input.customerId}`);
+    // No revalidatePath — /loans and /customers/[id] are client pages backed by
+    // TanStack DB + Electric. loanCollection.onInsert already runs
+    // invalidateLendingProjections + emitTableChange (see fund-transfer.actions.ts).
+    // Intentionally not awaited — notifyAdmin is fire-and-forget.
     notifyAdmin({
       eventType: "loan.disbursed",
       context: resolveLoanContext(data.id),

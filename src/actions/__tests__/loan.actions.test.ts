@@ -488,7 +488,7 @@ describe("Loan Actions", () => {
       expect((result as any).error).toContain("Disbursement source")
     })
 
-    it("creates loan and revalidates on success", async () => {
+    it("creates loan without revalidatePath on success", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("admin")
       const created = { id: "new-loan-id" }
@@ -498,8 +498,7 @@ describe("Loan Actions", () => {
 
       expect(result).toEqual({ data: created })
       expect(mockCreateLoan).toHaveBeenCalled()
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/loans")
-      expect(mockRevalidatePath).toHaveBeenCalledWith("/customers/c1")
+      expect(mockRevalidatePath).not.toHaveBeenCalled()
     })
 
     it("returns error when customer not found", async () => {
