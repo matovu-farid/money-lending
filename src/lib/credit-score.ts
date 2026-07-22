@@ -18,9 +18,15 @@ function daysBetween(a: Date | string, b: Date | string): number {
 /**
  * For terminal loans Path A zeros daysOverdue — reconstruct whether a penalty
  * would have applied from payment gaps / durable waive flag (R15-5).
+ *
+ * Trailing gap uses `updatedAt` as the close signal when present (rollover /
+ * settle / fully_paid write updatedAt), otherwise falls back to lastPaymentDate.
  */
 export function terminalLoanHadPenalty(
-  loan: Pick<LoanListEntry, "startDate" | "penaltyWaived" | "lastPaymentDate">,
+  loan: Pick<
+    LoanListEntry,
+    "startDate" | "penaltyWaived" | "lastPaymentDate" | "updatedAt"
+  >,
   payments: Array<{ paymentDate: Date | string }>,
 ): boolean {
   if (loan.penaltyWaived === true) return true
@@ -32,12 +38,13 @@ export function terminalLoanHadPenalty(
     if (daysBetween(prev, p.paymentDate) >= PENALTY_THRESHOLD_DAYS) return true
     prev = toDate(p.paymentDate)
   }
-  // Gap from last payment (or start) to loan close signal (lastPaymentDate)
-  const end = loan.lastPaymentDate ? toDate(loan.lastPaymentDate) : prev
-  if (sorted.length === 0) {
-    return daysBetween(loan.startDate, end) >= PENALTY_THRESHOLD_DAYS
-  }
-  return false
+  const close =
+    loan.updatedAt != null
+      ? toDate(loan.updatedAt)
+      : loan.lastPaymentDate
+        ? toDate(loan.lastPaymentDate)
+        : prev
+  return daysBetween(prev, close) >= PENALTY_THRESHOLD_DAYS
 }
 
 // ---------------------------------------------------------------------------

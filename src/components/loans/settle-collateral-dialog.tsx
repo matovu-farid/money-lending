@@ -4,6 +4,9 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { Loader2, ShieldAlert } from "lucide-react"
 import { loanCollection } from "@/collections/loans"
+import { operationalLoanCollection } from "@/collections/operational-loans"
+import { invalidateLendingProjections } from "@/lib/cache-invalidation"
+import { getQueryClient } from "@/lib/query-client"
 import { formatCurrency } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -51,6 +54,13 @@ export function SettleCollateralDialog({
 
     try {
       setIsPending(true)
+      // Ensure writeDelete context exists (loan detail may not subscribe to operational)
+      await operationalLoanCollection.preload()
+      try {
+        operationalLoanCollection.utils.writeDelete(loanId)
+      } catch {
+        // May already be absent from operational sync
+      }
       const tx = loanCollection.update(
         loanId,
         { metadata: { intent: "settle", reason: reason.trim() } },
@@ -69,6 +79,8 @@ export function SettleCollateralDialog({
       })
       if ("data" in result) setReceipt(result.data)
     } catch (err) {
+      // Restore watchlist if settle failed after optimistic writeDelete
+      invalidateLendingProjections(getQueryClient())
       toast.error(err instanceof Error ? err.message : "Failed to settle loan")
     } finally {
       setIsPending(false)

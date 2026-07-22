@@ -239,7 +239,7 @@ function NewLoanPageInner() {
 
   // --- Submit ---
 
-  function onSubmit(data: LoanFormValues) {
+  async function onSubmit(data: LoanFormValues) {
     setIsSubmitting(true)
 
     const collateral: CollateralInput = {
@@ -321,7 +321,7 @@ function NewLoanPageInner() {
     }
 
     // Insert into collection (queues server action) and show receipt immediately
-    insertLoanWithInput(id, optimistic, formInput)
+    await insertLoanWithInput(id, optimistic, formInput)
 
     setReceiptData({
       receiptNumber: generateReceiptNumber(),

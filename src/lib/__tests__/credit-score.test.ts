@@ -609,6 +609,7 @@ describe("calculateCreditScore", () => {
       daysOverdue: 0,
       penaltyWaived: false,
       startDate: new Date("2026-01-01"),
+      updatedAt: new Date("2026-04-01"),
     })
     expect(
       terminalLoanHadPenalty(loan, [
@@ -616,15 +617,36 @@ describe("calculateCreditScore", () => {
       ]),
     ).toBe(true)
     expect(
-      terminalLoanHadPenalty(loan, [
-        { paymentDate: new Date("2026-01-20") },
-      ]),
+      terminalLoanHadPenalty(
+        {
+          ...loan,
+          updatedAt: new Date("2026-01-25"),
+        },
+        [{ paymentDate: new Date("2026-01-20") }],
+      ),
     ).toBe(false)
     expect(
       terminalLoanHadPenalty(
         { ...loan, penaltyWaived: true },
         [{ paymentDate: new Date("2026-01-20") }],
       ),
+    ).toBe(true)
+  })
+
+  it("terminalLoanHadPenalty: counts trailing gap from last payment to close", () => {
+    const loan = makeLoan({
+      id: "loan1",
+      customerId: "cust1",
+      status: "rolled_over",
+      daysOverdue: 0,
+      penaltyWaived: false,
+      startDate: new Date("2026-01-01"),
+      updatedAt: new Date("2026-04-15"), // rolled over after 70d silence
+    })
+    expect(
+      terminalLoanHadPenalty(loan, [
+        { paymentDate: new Date("2026-01-20") }, // on-time
+      ]),
     ).toBe(true)
   })
 })

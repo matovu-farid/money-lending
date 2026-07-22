@@ -23,6 +23,12 @@ import {
 import { loanBalanceCollection } from "@/collections/loan-balances";
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests";
 import { loanCollection } from "@/collections/loans";
+import {
+  editPaymentAction,
+  deletePaymentAction,
+} from "@/actions/payment.actions";
+import { invalidateLendingProjections } from "@/lib/cache-invalidation";
+import { getQueryClient } from "@/lib/query-client";
 import { isPenaltyActive } from "@/lib/interest/effective-rate";
 import { generateClientId } from "@/lib/client-id";
 import { useLiveQuery, eq } from "@tanstack/react-db";
@@ -374,17 +380,50 @@ export function LoanDetailClient({
     return map;
   }, [payments, currentPortions, loan.principalAmount]);
 
-  function handleEditSubmit() {
+  async function handleEditSubmit() {
     if (!editingPayment) return;
+    const reason = editReason.trim();
+    const nextAmount = editAmount.trim() || undefined;
+    const nextDate = editDate
+      ? new Date(editDate + "T12:00:00")
+      : undefined;
+    const editInput = {
+      paymentId: editingPayment.id,
+      reason,
+      ...(nextAmount ? { amount: nextAmount } : {}),
+      ...(nextDate ? { paymentDate: nextDate.toISOString() } : {}),
+    };
     try {
-      paymentCollection.update(
-        editingPayment.id,
-        { metadata: { intent: "edit", reason: editReason.trim() } },
-        (draft) => {
-          if (editAmount.trim()) draft.amount = editAmount.trim();
-          if (editDate) draft.paymentDate = new Date(editDate + "T12:00:00");
-        },
-      );
+      // Prefer capped collection for optimistic sync when the row is present;
+      // fall back to the server action so uncapped history rows still mutate.
+      try {
+        paymentCollection.update(
+          editingPayment.id,
+          { metadata: { intent: "edit", reason } },
+          (draft) => {
+            if (nextAmount) draft.amount = nextAmount;
+            if (nextDate) draft.paymentDate = nextDate;
+          },
+        );
+        // Keep uncapped detail table in sync immediately (display source)
+        try {
+          getLoanPaymentsCollection(loan.id).utils.writeUpdate({
+            _key: editingPayment.id,
+            id: editingPayment.id,
+            ...(nextAmount ? { amount: nextAmount } : {}),
+            ...(nextDate ? { paymentDate: nextDate } : {}),
+          });
+        } catch {
+          // Row may not be in synced store yet
+        }
+      } catch {
+        const result = await editPaymentAction(editInput);
+        if ("error" in result) {
+          toast.error(result.error);
+          return;
+        }
+        invalidateLendingProjections(getQueryClient());
+      }
       toast.success("Payment updated");
       closePaymentEdit();
     } catch {
@@ -392,12 +431,32 @@ export function LoanDetailClient({
     }
   }
 
-  function handleDeleteSubmit() {
+  async function handleDeleteSubmit() {
     if (!deletingPayment) return;
+    const reason = deleteReason.trim();
     try {
-      paymentCollection.delete(deletingPayment.id, {
-        metadata: { reason: deleteReason.trim() },
-      });
+      try {
+        paymentCollection.delete(deletingPayment.id, {
+          metadata: { reason },
+        });
+        try {
+          getLoanPaymentsCollection(loan.id).utils.writeDelete(
+            deletingPayment.id,
+          );
+        } catch {
+          // Row may not be in synced store yet
+        }
+      } catch {
+        const result = await deletePaymentAction({
+          paymentId: deletingPayment.id,
+          reason,
+        });
+        if ("error" in result) {
+          toast.error(result.error);
+          return;
+        }
+        invalidateLendingProjections(getQueryClient());
+      }
       toast.success("Payment deleted");
       closePaymentDelete();
     } catch {

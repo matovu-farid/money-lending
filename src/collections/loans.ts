@@ -50,6 +50,8 @@ export const loanCollection = createCollection(
     defaultIndexType: BasicIndex,
     queryKey: [...queryKeys.loans.all],
     queryClient: getQueryClient(),
+    // Warm sync so /loans/new rollover writeUpdate works without a subscriber.
+    startSync: true,
     queryFn: async () => {
       // listLoans returns LoanWithCustomer (includes customerName/customerContact);
       // we cast back to LoanBaseRow but keep the enriched fields on the row.
@@ -71,7 +73,13 @@ export const loanCollection = createCollection(
       if (!meta?.input) {
         throw new Error("Loan inserts must include metadata.input (CreateLoanInput)")
       }
-      throwIfActionError(await createLoanAction(meta.input))
+      try {
+        throwIfActionError(await createLoanAction(meta.input))
+      } catch (err) {
+        // Restore operational/loan collections after optimistic writeDelete/writeUpdate
+        invalidateLendingProjections(getQueryClient())
+        throw err
+      }
       // Cross-cutting invalidations for surfaces NOT yet projection-backed.
       invalidateLendingProjections(getQueryClient())
       // Fan out to subscribeToTableChanges consumers (dashboard, loan-status-counts, daily-collections, reports, loan-extras location-balances).
@@ -93,7 +101,7 @@ export const loanCollection = createCollection(
           }),
         )
         try {
-          operationalLoanCollection.delete(original.id)
+          operationalLoanCollection.utils.writeDelete(original.id)
         } catch {
           // May already be absent from operational sync
         }
@@ -128,23 +136,32 @@ export const loanCollection = createCollection(
  *
  * On rollover: optimistically mark the predecessor rolled_over and remove it
  * from the operational collection before the server round-trip (R25-1).
+ * Uses QueryCollection utils.write* — plain insert/delete require onInsert/onDelete.
  */
-export function insertLoanWithInput(
+export async function insertLoanWithInput(
   _id: string,
   optimistic: LoanRow,
   input: CreateLoanInput,
-) {
+): Promise<void> {
+  // Ensure write* contexts exist even when /loans/new has no live query
+  // subscriber (avoids SyncNotInitializedError).
+  await Promise.all([
+    loanCollection.preload(),
+    operationalLoanCollection.preload(),
+  ])
+
   if (input.rollover?.fromLoanId) {
     const predecessorId = input.rollover.fromLoanId
     try {
-      loanCollection.update(predecessorId, (draft) => {
-        draft.status = "rolled_over"
+      loanCollection.utils.writeUpdate({
+        id: predecessorId,
+        status: "rolled_over",
       })
     } catch {
-      // Predecessor may be outside the capped sync window
+      // Predecessor may be outside the capped sync window / not yet synced
     }
     try {
-      operationalLoanCollection.delete(predecessorId)
+      operationalLoanCollection.utils.writeDelete(predecessorId)
     } catch {
       // May already be absent from operational sync
     }
@@ -156,7 +173,7 @@ export function insertLoanWithInput(
 
   // New loan is active — keep operational watchlist in sync immediately
   try {
-    operationalLoanCollection.insert(optimistic)
+    operationalLoanCollection.utils.writeInsert(optimistic)
   } catch {
     // Refetch via invalidateLendingProjections on persist will repair
   }

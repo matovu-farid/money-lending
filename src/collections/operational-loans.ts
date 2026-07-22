@@ -38,6 +38,9 @@ export const operationalLoanCollection = createCollection(
     defaultIndexType: BasicIndex,
     queryKey: [...queryKeys.loans.operational],
     queryClient: getQueryClient(),
+    // Keep sync warm so rollover/settle write* on /loans/new (no live query
+    // subscriber) does not hit SyncNotInitializedError (R25-1).
+    startSync: true,
     queryFn: async () => {
       const rows = throwIfActionError(await listOperationalLoansAction())
         .data as OperationalLoanRow[]
