@@ -40,6 +40,7 @@ interface EnrichedRequest extends RateChangeRequest {
   customerName: string
   loanRef: string
   principalAmount: string
+  loanStatus?: string
 }
 
 function LoadingSkeleton() {
@@ -117,9 +118,13 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
 
   // Build lookup maps for O(1) resolution
   const loanMap = useMemo(() => {
-    const m = new Map<string, { principalAmount: string; customerId: string }>()
+    const m = new Map<string, { principalAmount: string; customerId: string; status: string }>()
     for (const l of allLoans) {
-      m.set(l.id, { principalAmount: l.principalAmount, customerId: l.customerId })
+      m.set(l.id, {
+        principalAmount: l.principalAmount,
+        customerId: l.customerId,
+        status: l.status,
+      })
     }
     return m
   }, [allLoans])
@@ -142,6 +147,7 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
         customerName,
         loanRef: `LOAN-${shortId(r.loanId).toUpperCase()}`,
         principalAmount: loan?.principalAmount ?? "0",
+        loanStatus: loan?.status,
       }
     })
   }, [rawRequests, loanMap, customerMap])
@@ -174,7 +180,10 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
     })
   }
 
-  const pendingRequests = requests.filter((r) => r.status === "pending")
+  // Hide pending requests whose loan is no longer operational (auto-cancelled on close)
+  const pendingRequests = requests.filter(
+    (r) => r.status === "pending" && r.loanStatus === "active",
+  )
   const reviewedRequests = requests.filter((r) => r.status !== "pending")
 
   if (isInitialLoading) {

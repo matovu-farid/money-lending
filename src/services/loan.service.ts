@@ -20,6 +20,7 @@ import {
 } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
+import { auditLog } from "@/lib/db/schema/audit";
 import { postJournalEntry } from "./transaction.service";
 import {
   autoPostPrincipalDisbursement,
@@ -56,6 +57,8 @@ import {
   computeLoanBalanceDataArray,
   computeSingleLoanBalanceData,
 } from "@/lib/interest/loanBalanceData";
+import { assertLoanOperational } from "@/lib/loan-visibility";
+import { cancelPendingRateChangeRequestsForLoan } from "./rate-change-request.service";
 
 const checkCustomerCompleteness = (customer: {
   fullName: string | null;
@@ -68,6 +71,40 @@ const checkCustomerCompleteness = (customer: {
   if (!customer.address?.trim()) missing.push("address");
   return missing;
 };
+
+/** Shared select shape for LoanWithCustomer list queries (listLoans / listOperationalLoans). */
+const loanWithCustomerSelect = {
+  id: loans.id,
+  customerId: loans.customerId,
+  principalAmount: loans.principalAmount,
+  issuanceFee: loans.issuanceFee,
+  interestRate: loans.interestRate,
+  minInterestDays: loans.minInterestDays,
+  startDate: loans.startDate,
+  status: loans.status,
+  interestRateOverride: loans.interestRateOverride,
+  minPeriodOverride: loans.minPeriodOverride,
+  issuedBy: loans.issuedBy,
+  disbursementSource: loans.disbursementSource,
+  subLocationId: loans.subLocationId,
+  loanType: loans.loanType,
+  termMonths: loans.termMonths,
+  penaltyMultiplier: loans.penaltyMultiplier,
+  penaltyWaived: loans.penaltyWaived,
+  penaltyWaivedBy: loans.penaltyWaivedBy,
+  penaltyWaivedAt: loans.penaltyWaivedAt,
+  rolledOverFrom: loans.rolledOverFrom,
+  rolloverAmount: loans.rolloverAmount,
+  backdatedFrom: loans.backdatedFrom,
+  backdatedBy: loans.backdatedBy,
+  backdatedAt: loans.backdatedAt,
+  backdateNote: loans.backdateNote,
+  createdAt: loans.createdAt,
+  updatedAt: loans.updatedAt,
+  deletedAt: loans.deletedAt,
+  customerName: customers.fullName,
+  customerContact: customers.contact,
+} as const;
 
 export const createLoan = (
   input: CreateLoanInput,
@@ -226,6 +263,13 @@ export const createLoan = (
             .update(loans)
             .set({ status: "rolled_over", updatedAt: new Date() })
             .where(eq(loans.id, existingActiveLoan.id));
+
+          await cancelPendingRateChangeRequestsForLoan(
+            tx,
+            existingActiveLoan.id,
+            "rolled_over",
+            actorId,
+          );
 
           // Audit log for old loan
           await writeAuditLog(tx, {
@@ -397,38 +441,7 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const rows = await db
-        .select({
-          id: loans.id,
-          customerId: loans.customerId,
-          principalAmount: loans.principalAmount,
-          issuanceFee: loans.issuanceFee,
-          interestRate: loans.interestRate,
-          minInterestDays: loans.minInterestDays,
-          startDate: loans.startDate,
-          status: loans.status,
-          interestRateOverride: loans.interestRateOverride,
-          minPeriodOverride: loans.minPeriodOverride,
-          issuedBy: loans.issuedBy,
-          disbursementSource: loans.disbursementSource,
-          subLocationId: loans.subLocationId,
-          loanType: loans.loanType,
-          termMonths: loans.termMonths,
-          penaltyMultiplier: loans.penaltyMultiplier,
-          penaltyWaived: loans.penaltyWaived,
-          penaltyWaivedBy: loans.penaltyWaivedBy,
-          penaltyWaivedAt: loans.penaltyWaivedAt,
-          rolledOverFrom: loans.rolledOverFrom,
-          rolloverAmount: loans.rolloverAmount,
-          backdatedFrom: loans.backdatedFrom,
-          backdatedBy: loans.backdatedBy,
-          backdatedAt: loans.backdatedAt,
-          backdateNote: loans.backdateNote,
-          createdAt: loans.createdAt,
-          updatedAt: loans.updatedAt,
-          deletedAt: loans.deletedAt,
-          customerName: customers.fullName,
-          customerContact: customers.contact,
-        })
+        .select(loanWithCustomerSelect)
         .from(loans)
         .innerJoin(customers, eq(loans.customerId, customers.id))
         .where(isNull(loans.deletedAt))
@@ -439,10 +452,165 @@ export const listLoans = (): Effect.Effect<LoanWithCustomer[], DatabaseError> =>
     catch: (e) => new DatabaseError({ cause: e }),
   });
 
+/**
+ * Uncapped active loans for operational surfaces (watchlist, export, reports).
+ * Same LoanWithCustomer shape + newest-first order as listLoans — no 500 cap.
+ */
+export const listOperationalLoans = (): Effect.Effect<
+  LoanWithCustomer[],
+  DatabaseError
+> =>
+  Effect.tryPromise({
+    try: async () => {
+      const rows = await db
+        .select(loanWithCustomerSelect)
+        .from(loans)
+        .innerJoin(customers, eq(loans.customerId, customers.id))
+        .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)))
+        .orderBy(desc(loans.createdAt));
+      return rows;
+    },
+    catch: (e) => new DatabaseError({ cause: e }),
+  });
+
+/**
+ * Direct loan row read. Use `includeDeleted: true` for rollover chain walking
+ * (getLoan filters soft-deleted and must not be used for audit chains).
+ */
+export async function getLoanRowById(
+  id: string,
+  opts: { includeDeleted?: boolean } = {},
+): Promise<Loan | null> {
+  const [row] = await db
+    .select()
+    .from(loans)
+    .where(
+      opts.includeDeleted
+        ? eq(loans.id, id)
+        : and(eq(loans.id, id), isNull(loans.deletedAt)),
+    );
+  return (row as Loan | undefined) ?? null;
+}
+
+/** Walk rolledOverFrom backwards (oldest first). Includes soft-deleted rows. */
+export async function getLoanPredecessorChain(loanId: string): Promise<Loan[]> {
+  const chain: Loan[] = [];
+  const visited = new Set<string>();
+  let current = await getLoanRowById(loanId, { includeDeleted: true });
+  if (!current) return chain;
+
+  let predecessorId = current.rolledOverFrom;
+  while (predecessorId && !visited.has(predecessorId)) {
+    visited.add(predecessorId);
+    const pred = await getLoanRowById(predecessorId, { includeDeleted: true });
+    if (!pred) break;
+    chain.unshift(pred);
+    predecessorId = pred.rolledOverFrom;
+  }
+  return chain;
+}
+
+/** Non-deleted successor where rolledOverFrom = loanId, or null. */
+export async function getLoanSuccessor(loanId: string): Promise<Loan | null> {
+  const [row] = await db
+    .select()
+    .from(loans)
+    .where(
+      and(eq(loans.rolledOverFrom, loanId), isNull(loans.deletedAt)),
+    )
+    .orderBy(desc(loans.createdAt))
+    .limit(1);
+  return (row as Loan | undefined) ?? null;
+}
+
+/** Single-loan list entry (uncapped) for deep links outside listLoans sync. */
+export async function getLoanListEntryById(
+  loanId: string,
+): Promise<LoanListEntry | null> {
+  const [row] = await db
+    .select(loanWithCustomerSelect)
+    .from(loans)
+    .innerJoin(customers, eq(loans.customerId, customers.id))
+    .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
+  if (!row) return null;
+  const [entry] = await computeOverdue([row]);
+  return entry ?? null;
+}
+
+/** Batch uncapped list entries for payment-list fallback outside the 500-cap sync. */
+export async function getLoanListEntriesByIds(
+  loanIds: string[],
+): Promise<LoanListEntry[]> {
+  const unique = [...new Set(loanIds.filter(Boolean))];
+  if (unique.length === 0) return [];
+  const rows = await db
+    .select(loanWithCustomerSelect)
+    .from(loans)
+    .innerJoin(customers, eq(loans.customerId, customers.id))
+    .where(and(inArray(loans.id, unique), isNull(loans.deletedAt)));
+  return computeOverdue(rows);
+}
+
+/** Rollover audit rows for history UI (entityId = predecessor loan). */
+export async function getRolloverAuditEntries(
+  loanIds: string[],
+): Promise<
+  Array<{
+    id: string;
+    entityId: string;
+    occurredAt: Date;
+    afterValue: {
+      rolledIntoLoanId?: string;
+      carriedPrincipal?: string;
+      carriedInterest?: string;
+    } | null;
+  }>
+> {
+  const unique = [...new Set(loanIds.filter(Boolean))];
+  if (unique.length === 0) return [];
+  const rows = await db
+    .select({
+      id: auditLog.id,
+      entityId: auditLog.entityId,
+      occurredAt: auditLog.occurredAt,
+      afterValue: auditLog.afterValue,
+    })
+    .from(auditLog)
+    .where(
+      and(
+        eq(auditLog.entityType, "loan"),
+        eq(auditLog.action, "loan.rollover"),
+        inArray(auditLog.entityId, unique),
+      ),
+    )
+    .orderBy(desc(auditLog.occurredAt));
+
+  return rows.map((row) => {
+    let afterValue: {
+      rolledIntoLoanId?: string;
+      carriedPrincipal?: string;
+      carriedInterest?: string;
+    } | null = null;
+    if (row.afterValue) {
+      try {
+        afterValue = JSON.parse(row.afterValue) as typeof afterValue;
+      } catch {
+        afterValue = null;
+      }
+    }
+    return {
+      id: row.id,
+      entityId: row.entityId,
+      occurredAt: row.occurredAt,
+      afterValue,
+    };
+  });
+}
+
 export const updateLoan = (
   input: UpdateLoanInput,
   actorId: string,
-): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
+): Effect.Effect<Loan, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [existingLoan] = await db
@@ -451,6 +619,7 @@ export const updateLoan = (
         .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)));
 
       if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId };
+      assertLoanOperational(existingLoan);
 
       const setObj: Partial<typeof loans.$inferInsert> & { updatedAt: Date } = {
         updatedAt: new Date(),
@@ -720,9 +889,14 @@ export const updateLoan = (
       });
     },
     catch: (e: unknown) => {
-      const err = e as { _tag?: string; id?: string };
+      const err = e as { _tag?: string; id?: string; message?: string; field?: string };
       if (err?._tag === "LoanNotFound")
         return new LoanNotFound({ id: err.id as string });
+      if (err?._tag === "ValidationError")
+        return new ValidationError({
+          message: err.message ?? "Validation failed",
+          field: err.field,
+        });
       return new DatabaseError({ cause: e });
     },
   });
@@ -730,7 +904,7 @@ export const updateLoan = (
 export const deleteLoan = (
   input: DeleteLoanInput,
   actorId: string,
-): Effect.Effect<Loan, LoanNotFound | DatabaseError> =>
+): Effect.Effect<Loan, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [existingLoan] = await db
@@ -739,6 +913,36 @@ export const deleteLoan = (
         .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)));
 
       if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId };
+
+      // D1: block delete of rollover successors and predecessors with a live successor
+      if (existingLoan.rolledOverFrom) {
+        throw {
+          _tag: "ValidationError",
+          message:
+            "Cannot delete a loan that was created from a rollover. Historical chain must be preserved.",
+          field: "loanId",
+        };
+      }
+      if (existingLoan.status === "rolled_over") {
+        const [successor] = await db
+          .select({ id: loans.id })
+          .from(loans)
+          .where(
+            and(
+              eq(loans.rolledOverFrom, existingLoan.id),
+              isNull(loans.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (successor) {
+          throw {
+            _tag: "ValidationError",
+            message:
+              "Cannot delete a rolled-over loan while its successor still exists.",
+            field: "loanId",
+          };
+        }
+      }
 
       const now = new Date();
 
@@ -970,9 +1174,19 @@ export const deleteLoan = (
       });
     },
     catch: (e: unknown) => {
-      const err = e as { _tag?: string; id?: string };
+      const err = e as {
+        _tag?: string;
+        id?: string;
+        message?: string;
+        field?: string;
+      };
       if (err?._tag === "LoanNotFound")
         return new LoanNotFound({ id: err.id as string });
+      if (err?._tag === "ValidationError")
+        return new ValidationError({
+          message: err.message ?? "Cannot delete loan",
+          field: err.field,
+        });
       return new DatabaseError({ cause: e });
     },
   });
@@ -1010,6 +1224,7 @@ export interface LoanPaymentContext {
   customerName: string;
   loanReference: string;
   startDate: string;
+  status: LoanStatus;
 }
 
 /** Loan + customer context for the payment-recording screen. null when not found. */
@@ -1022,6 +1237,7 @@ export async function getLoanPaymentContext(
       customerId: loans.customerId,
       customerName: customers.fullName,
       startDate: loans.startDate,
+      status: loans.status,
     })
     .from(loans)
     .innerJoin(customers, eq(loans.customerId, customers.id))
@@ -1035,6 +1251,7 @@ export async function getLoanPaymentContext(
     customerName: row.customerName,
     loanReference: `LOAN-${shortId(row.id).toUpperCase()}`,
     startDate: localDateString(row.startDate),
+    status: row.status as LoanStatus,
   };
 }
 
@@ -1168,26 +1385,26 @@ export async function computeOverdue(
     let daysOverdue = 0;
     let dailyRate = "0";
     let unpaidInterest = "0";
+    let outstandingBalance = "0";
 
     const loanPayments = paymentsByLoanId.get(loan.id) ?? [];
-
-    const ledgerBalance = ledgerBalances.get(loan.id);
-    if (ledgerBalance === undefined) {
-      console.warn(
-        `[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
-      );
-    }
-    const outstandingBalance =
-      ledgerBalance !== undefined
-        ? ledgerBalance.toFixed(0)
-        : loan.principalAmount;
-
     const lastPayment = loanPayments.at(-1);
     const lastPaymentDate: Date | null = lastPayment
       ? lastPayment.paymentDate
       : null;
 
     if (loan.status === "active") {
+      const ledgerBalance = ledgerBalances.get(loan.id);
+      if (ledgerBalance === undefined) {
+        console.warn(
+          `[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
+        );
+      }
+      outstandingBalance =
+        ledgerBalance !== undefined
+          ? ledgerBalance.toFixed(0)
+          : loan.principalAmount;
+
       const info = balanceInfo.get(loan.id);
       if (info) {
         daysOverdue = info.daysOverdue;
@@ -1212,38 +1429,7 @@ export async function getCustomerLoansWithOverdue(
   customerId: string,
 ): Promise<LoanListEntry[]> {
   const customerLoans = await db
-    .select({
-      id: loans.id,
-      customerId: loans.customerId,
-      principalAmount: loans.principalAmount,
-      issuanceFee: loans.issuanceFee,
-      interestRate: loans.interestRate,
-      minInterestDays: loans.minInterestDays,
-      startDate: loans.startDate,
-      status: loans.status,
-      interestRateOverride: loans.interestRateOverride,
-      minPeriodOverride: loans.minPeriodOverride,
-      issuedBy: loans.issuedBy,
-      disbursementSource: loans.disbursementSource,
-      subLocationId: loans.subLocationId,
-      loanType: loans.loanType,
-      termMonths: loans.termMonths,
-      penaltyMultiplier: loans.penaltyMultiplier,
-      penaltyWaived: loans.penaltyWaived,
-      penaltyWaivedBy: loans.penaltyWaivedBy,
-      penaltyWaivedAt: loans.penaltyWaivedAt,
-      rolledOverFrom: loans.rolledOverFrom,
-      rolloverAmount: loans.rolloverAmount,
-      backdatedFrom: loans.backdatedFrom,
-      backdatedBy: loans.backdatedBy,
-      backdatedAt: loans.backdatedAt,
-      backdateNote: loans.backdateNote,
-      createdAt: loans.createdAt,
-      updatedAt: loans.updatedAt,
-      deletedAt: loans.deletedAt,
-      customerName: customers.fullName,
-      customerContact: customers.contact,
-    })
+    .select(loanWithCustomerSelect)
     .from(loans)
     .innerJoin(customers, eq(loans.customerId, customers.id))
     .where(and(eq(loans.customerId, customerId), isNull(loans.deletedAt)))
@@ -1274,10 +1460,9 @@ export async function getLoanStatusCounts(): Promise<
   return counts;
 }
 
-/** Active loans enriched with overdue info. */
+/** Active loans enriched with overdue info (uncapped — uses listOperationalLoans). */
 export async function listActiveLoansWithOverdue(): Promise<LoanListEntry[]> {
-  const allLoans = await Effect.runPromise(listLoans());
-  const activeLoans = allLoans.filter((l) => l.status === "active");
+  const activeLoans = await Effect.runPromise(listOperationalLoans());
   return computeOverdue(activeLoans);
 }
 
@@ -1292,8 +1477,8 @@ export type LoanExportFilter =
 export async function getLoansForExport(
   filter: LoanExportFilter,
 ): Promise<LoanListEntry[]> {
-  const allLoans = await Effect.runPromise(listLoans());
-  let entries = await computeOverdue(allLoans);
+  const operational = await Effect.runPromise(listOperationalLoans());
+  let entries = await computeOverdue(operational);
 
   if (filter && filter !== "all") {
     entries = entries.filter((entry) => {
@@ -1319,11 +1504,13 @@ export async function waivePenalty(
 ): Promise<{ data: Loan; txid: number } | { notFound: true }> {
   return db.transaction(async (tx) => {
     const [loan] = await tx
-      .select({ id: loans.id })
+      .select()
       .from(loans)
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      .for("update");
 
     if (!loan) return { notFound: true as const };
+    assertLoanOperational(loan);
 
     const [updated] = await tx
       .update(loans)
@@ -1356,11 +1543,13 @@ export async function adjustPenaltyMultiplier(
 ): Promise<{ data: Loan; txid: number } | { notFound: true }> {
   return db.transaction(async (tx) => {
     const [loan] = await tx
-      .select({ id: loans.id })
+      .select()
       .from(loans)
-      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)));
+      .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
+      .for("update");
 
     if (!loan) return { notFound: true as const };
+    assertLoanOperational(loan);
 
     const [updated] = await tx
       .update(loans)

@@ -253,13 +253,18 @@ describe("Rate Change Request Service", () => {
     // After the TOCTOU fix, both select and update happen inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
+        let selectCall = 0
         const mockTx = {
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                for: vi.fn().mockResolvedValue([mockRequest]),
+          select: vi.fn().mockImplementation(() => {
+            selectCall++
+            const row = selectCall === 1 ? mockRequest : { ...mockLoan, deletedAt: null }
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  for: vi.fn().mockResolvedValue([row]),
+                }),
               }),
-            }),
+            }
           }),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({
@@ -416,13 +421,18 @@ describe("Rate Change Request Service", () => {
     let capturedTx: any = null
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
+        let selectCall = 0
         const mockTx = {
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                for: vi.fn().mockResolvedValue([mockRequest]),
+          select: vi.fn().mockImplementation(() => {
+            selectCall++
+            const row = selectCall === 1 ? mockRequest : { ...mockLoan, deletedAt: null }
+            return {
+              from: vi.fn().mockReturnValue({
+                where: vi.fn().mockReturnValue({
+                  for: vi.fn().mockResolvedValue([row]),
+                }),
               }),
-            }),
+            }
           }),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({

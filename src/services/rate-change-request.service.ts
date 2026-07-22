@@ -10,7 +10,51 @@ import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { autoPostRateChangeAdjustment } from "./auto-post.service"
 import { shortId } from "@/lib/utils"
+import { assertLoanOperational } from "@/lib/loan-visibility"
 import type { CreateRateChangeRequestInput, ReviewRateChangeRequestInput, RateChangeRequest } from "@/types"
+
+type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
+
+export type CancelPendingRateChangeReason =
+  | "loan_closed"
+  | "rolled_over"
+  | "settled"
+  | "fully_paid"
+
+const CANCEL_NOTE: Record<CancelPendingRateChangeReason, string> = {
+  loan_closed: "Cancelled: loan closed",
+  rolled_over: "Cancelled: loan rolled over",
+  settled: "Cancelled: loan settled with collateral",
+  fully_paid: "Cancelled: loan fully paid",
+}
+
+/**
+ * Auto-reject pending rate-change requests when a loan leaves the operational set.
+ * Call inside the same transaction as the status change.
+ */
+export async function cancelPendingRateChangeRequestsForLoan(
+  tx: DrizzleTransaction,
+  loanId: string,
+  reason: CancelPendingRateChangeReason,
+  actorId: string,
+): Promise<number> {
+  const updated = await tx
+    .update(rateChangeRequests)
+    .set({
+      status: "rejected",
+      reviewNote: CANCEL_NOTE[reason],
+      reviewedBy: actorId,
+      reviewedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(rateChangeRequests.loanId, loanId),
+        eq(rateChangeRequests.status, "pending"),
+      ),
+    )
+    .returning({ id: rateChangeRequests.id })
+  return updated.length
+}
 
 export interface RateChangeRequestWithLoan extends RateChangeRequest {
   customerName: string
@@ -48,6 +92,17 @@ export async function createPendingRateChangeRequest(params: {
   requiredApproverRole: string
 }): Promise<RateChangeRequest> {
   return db.transaction(async (tx) => {
+    const [loan] = await tx
+      .select({ id: loans.id, status: loans.status, deletedAt: loans.deletedAt })
+      .from(loans)
+      .where(eq(loans.id, params.loanId))
+      .for("update")
+
+    if (!loan || loan.deletedAt) {
+      throw { _tag: "LoanNotFound", id: params.loanId }
+    }
+    assertLoanOperational(loan)
+
     const [existingPending] = await tx
       .select({ id: rateChangeRequests.id })
       .from(rateChangeRequests)
@@ -99,15 +154,16 @@ export const createRateChangeRequest = (
   requestedBy: string,
   requiredApproverRole: string,
   currentRate: string
-): Effect.Effect<RateChangeRequest, LoanNotFound | DatabaseError> =>
+): Effect.Effect<RateChangeRequest, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const [loan] = await db
         .select()
         .from(loans)
-        .where(eq(loans.id, input.loanId))
+        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
 
       if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
+      assertLoanOperational(loan)
 
       const [request] = await db
         .insert(rateChangeRequests)
@@ -127,6 +183,11 @@ export const createRateChangeRequest = (
     catch: (e) => {
       const err = e as Record<string, unknown>
       if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
+      if (err?._tag === "ValidationError")
+        return new ValidationError({
+          message: (err.message as string) ?? "Loan is not active",
+          field: err.field as string | undefined,
+        })
       return new DatabaseError({ cause: e })
     },
   }).pipe(
@@ -140,17 +201,18 @@ export const applyRateChangeImmediately = (
   loanId: string,
   newRate: string,
   actorId: string
-): Effect.Effect<void, LoanNotFound | DatabaseError> =>
+): Effect.Effect<void, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       await db.transaction(async (tx) => {
         const [loan] = await tx
           .select()
           .from(loans)
-          .where(eq(loans.id, loanId))
+          .where(and(eq(loans.id, loanId), isNull(loans.deletedAt)))
           .for("update")
 
         if (!loan) throw { _tag: "LoanNotFound", id: loanId }
+        assertLoanOperational(loan)
 
         await tx
           .update(loans)
@@ -178,6 +240,11 @@ export const applyRateChangeImmediately = (
     catch: (e) => {
       const err = e as Record<string, unknown>
       if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
+      if (err?._tag === "ValidationError")
+        return new ValidationError({
+          message: (err.message as string) ?? "Loan is not active",
+          field: err.field as string | undefined,
+        })
       return new DatabaseError({ cause: e })
     },
   })
@@ -232,7 +299,7 @@ export const listRequestsForLoan = (
 export const reviewRequest = (
   input: ReviewRateChangeRequestInput,
   reviewerId: string
-): Effect.Effect<RateChangeRequest, RateChangeRequestNotFound | ValidationError | DatabaseError> =>
+): Effect.Effect<RateChangeRequest, RateChangeRequestNotFound | LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
@@ -262,6 +329,15 @@ export const reviewRequest = (
           .returning()
 
         if (input.action === "approved") {
+          const [loan] = await tx
+            .select()
+            .from(loans)
+            .where(and(eq(loans.id, request.loanId), isNull(loans.deletedAt)))
+            .for("update")
+
+          if (!loan) throw { _tag: "LoanNotFound", id: request.loanId }
+          assertLoanOperational(loan)
+
           // Apply the rate change to the loan
           await tx
             .update(loans)
@@ -301,7 +377,8 @@ export const reviewRequest = (
     catch: (e) => {
       const err = e as Record<string, unknown>
       if (err?._tag === "RateChangeRequestNotFound") return new RateChangeRequestNotFound({ id: err.id as string })
-      if (err?._tag === "ValidationError") return new ValidationError({ message: err.message as string })
+      if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
+      if (err?._tag === "ValidationError") return new ValidationError({ message: err.message as string, field: err.field as string | undefined })
       return new DatabaseError({ cause: e })
     },
   })

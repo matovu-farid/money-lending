@@ -16,6 +16,7 @@ import {
   getLoanBalanceSummary,
   getActivePaymentById,
   listActivePaymentsByLoan,
+  listPaymentsForLoanIds,
   markPaymentWrong,
   unmarkPaymentWrong,
 } from "@/services/payment.service"
@@ -193,6 +194,21 @@ export const getPaymentsByLoanAction = withAction<string, { data: Payment[] } | 
   },
 })
 
+export const getPaymentsForLoanIdsAction = withAction<
+  string[],
+  { data: Payment[] } | { error: string }
+>({
+  permission: "payment:read",
+  action: async (_session, loanIds) => {
+    try {
+      const rows = await listPaymentsForLoanIds(loanIds ?? [])
+      return { data: rows }
+    } catch {
+      return { error: "Internal server error" }
+    }
+  },
+})
+
 export const searchActiveLoansAction = withAction<
   string,
   { data: ActiveLoanSearchResult[] } | { error: string }
@@ -266,6 +282,9 @@ const markPaymentWrongWrapped = withAction<
       const tag = (e as { _tag?: string })?._tag
       if (tag === "PaymentNotFound") return { error: "Payment not found" }
       if (tag === "AlreadyMarkedWrong") return { error: "Payment is already marked as wrong" }
+      if (tag === "ValidationError") {
+        return { error: (e as { message?: string }).message ?? "Loan is not active" }
+      }
       return { error: "Internal server error" }
     }
   },
@@ -291,6 +310,9 @@ export const unmarkPaymentWrongAction = withAction<string, PaymentMutationResult
       if (tag === "PaymentNotFound") return { error: "Payment not found" }
       if (tag === "LoanNotFound") return { error: "Loan not found" }
       if (tag === "NotMarkedWrong") return { error: "Payment is not marked as wrong" }
+      if (tag === "ValidationError") {
+        return { error: (e as { message?: string }).message ?? "Loan is not active" }
+      }
       return { error: "Internal server error" }
     }
   },

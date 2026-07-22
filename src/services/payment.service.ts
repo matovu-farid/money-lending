@@ -45,6 +45,12 @@ import BigNumber from "bignumber.js";
 import { escapeLikePattern, daysBetween } from "@/lib/db/utils";
 import { localDateString } from "@/lib/utils";
 import {
+  assertLoanOperational,
+  isOperationalLoan,
+  isTerminalLoanStatus,
+} from "@/lib/loan-visibility";
+import { cancelPendingRateChangeRequestsForLoan } from "./rate-change-request.service";
+import {
   toLoanType,
   type RecordPaymentInput,
   type EditPaymentInput,
@@ -54,10 +60,43 @@ import {
   type PaymentWithCustomer,
   type ActiveLoanSearchResult,
   type RecentlyCollectedLoan,
+  type LoanStatus,
 } from "@/types";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { endOfDay } from "date-fns";
 import { allocateLoanPaymentServerSide } from "@/lib/interest/engine-server";
+
+type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Skip automatic status transitions on terminal lifecycle loans
+ * (never flip rolled_over / settled / fully_paid via payment side effects
+ * when those statuses are already terminal — entry guards block mutations
+ * on non-active loans; this is defense in depth).
+ */
+export async function maybeUpdateLoanStatusAfterPayment(
+  tx: DrizzleTransaction,
+  loan: { id: string; status: LoanStatus },
+  next: "fully_paid" | "active",
+  actorId?: string,
+): Promise<void> {
+  if (isTerminalLoanStatus(loan.status)) return;
+  if (loan.status === next) return;
+
+  await tx
+    .update(loans)
+    .set({ status: next, updatedAt: new Date() })
+    .where(eq(loans.id, loan.id));
+
+  if (next === "fully_paid" && actorId) {
+    await cancelPendingRateChangeRequestsForLoan(
+      tx,
+      loan.id,
+      "fully_paid",
+      actorId,
+    );
+  }
+}
 
 export async function getLastPaymentDate(loan: {
   id: string;
@@ -85,9 +124,19 @@ export async function getLoanBalanceSummary(loanId: string): Promise<{
   loanType: string;
 }> {
   const [loan] = await db.select().from(loans).where(eq(loans.id, loanId));
-  if (!loan) throw new LoanNotFound({ id: loanId });
+  if (!loan || loan.deletedAt) throw new LoanNotFound({ id: loanId });
 
   const loanType = toLoanType(loan.loanType);
+
+  // Path A / R21-4: readable for history but zeros for non-operational loans
+  if (!isOperationalLoan(loan.status)) {
+    return {
+      outstandingPrincipal: "0",
+      accruedInterest: "0",
+      totalBalance: "0",
+      loanType,
+    };
+  }
 
   const info = await computeSingleLoanBalanceData(loan.id, new Date());
 
@@ -130,7 +179,9 @@ export const recordPaymentWithTxid = (
           .from(loans)
           .where(eq(loans.id, input.loanId))
           .for("update");
-        if (!loan) throw { _tag: "LoanNotFound", id: input.loanId };
+        if (!loan || loan.deletedAt)
+          throw { _tag: "LoanNotFound", id: input.loanId };
+        assertLoanOperational(loan);
 
         // L2: Reject zero or negative payment amounts
         if (new BigNumber(input.amount).isLessThanOrEqualTo(0)) {
@@ -287,10 +338,12 @@ export const recordPaymentWithTxid = (
           tx,
         );
         if (postPaymentBalance.isZero()) {
-          await tx
-            .update(loans)
-            .set({ status: "fully_paid", updatedAt: new Date() })
-            .where(eq(loans.id, input.loanId));
+          await maybeUpdateLoanStatusAfterPayment(
+            tx,
+            loan,
+            "fully_paid",
+            actorId,
+          );
         }
 
         const txidRows = await tx.execute<{ txid: string }>(
@@ -354,7 +407,9 @@ export const editPaymentWithTxid = (
           .from(loans)
           .where(eq(loans.id, payment.loanId))
           .for("update");
-        if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId };
+        if (!loan || loan.deletedAt)
+          throw { _tag: "LoanNotFound", id: payment.loanId };
+        assertLoanOperational(loan);
 
         const newAmount = input.amount ?? payment.amount;
         const newPaymentDate = input.paymentDate
@@ -623,15 +678,14 @@ export const editPaymentWithTxid = (
           tx,
         );
         if (postEditBalance.isZero()) {
-          await tx
-            .update(loans)
-            .set({ status: "fully_paid", updatedAt: new Date() })
-            .where(eq(loans.id, payment.loanId));
+          await maybeUpdateLoanStatusAfterPayment(
+            tx,
+            loan,
+            "fully_paid",
+            actorId,
+          );
         } else if (loan.status === "fully_paid") {
-          await tx
-            .update(loans)
-            .set({ status: "active", updatedAt: new Date() })
-            .where(eq(loans.id, payment.loanId));
+          await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
         }
 
         const [updatedPayment] = await tx
@@ -670,7 +724,10 @@ export const editPaymentWithTxid = (
 export const deletePayment = (
   input: DeletePaymentInput,
   actorId: string,
-): Effect.Effect<Payment, PaymentNotFound | LoanNotFound | DatabaseError> =>
+): Effect.Effect<
+  Payment,
+  PaymentNotFound | LoanNotFound | ValidationError | DatabaseError
+> =>
   Effect.map(deletePaymentWithTxid(input, actorId), ({ payment }) => payment);
 
 /**
@@ -684,7 +741,7 @@ export const deletePaymentWithTxid = (
   actorId: string,
 ): Effect.Effect<
   { payment: Payment; txid: number },
-  PaymentNotFound | LoanNotFound | DatabaseError
+  PaymentNotFound | LoanNotFound | ValidationError | DatabaseError
 > =>
   Effect.tryPromise({
     try: async () => {
@@ -701,7 +758,9 @@ export const deletePaymentWithTxid = (
           .from(loans)
           .where(eq(loans.id, payment.loanId))
           .for("update");
-        if (!loan) throw { _tag: "LoanNotFound", id: payment.loanId };
+        if (!loan || loan.deletedAt)
+          throw { _tag: "LoanNotFound", id: payment.loanId };
+        assertLoanOperational(loan);
 
         // 1. Get portions from ledger before soft-deleting
         const portions = await getPaymentPortionsFromLedger(
@@ -784,18 +843,17 @@ export const deletePaymentWithTxid = (
         );
         if (postDeleteBalance.isZero() && loan.status !== "fully_paid") {
           // No balance remaining - shouldn't happen after delete but handle edge case
-          await tx
-            .update(loans)
-            .set({ status: "fully_paid", updatedAt: now })
-            .where(eq(loans.id, payment.loanId));
+          await maybeUpdateLoanStatusAfterPayment(
+            tx,
+            loan,
+            "fully_paid",
+            actorId,
+          );
         } else if (
           postDeleteBalance.isGreaterThan(0) &&
           loan.status === "fully_paid"
         ) {
-          await tx
-            .update(loans)
-            .set({ status: "active", updatedAt: now })
-            .where(eq(loans.id, payment.loanId));
+          await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
         }
 
         const [deletedRow] = await tx
@@ -816,6 +874,8 @@ export const deletePaymentWithTxid = (
       if (e?._tag === "PaymentNotFound")
         return new PaymentNotFound({ id: e.id });
       if (e?._tag === "LoanNotFound") return new LoanNotFound({ id: e.id });
+      if (e?._tag === "ValidationError")
+        return new ValidationError({ message: e.message, field: e.field });
       return new DatabaseError({ cause: e });
     },
   });
@@ -1103,6 +1163,25 @@ export async function listActivePaymentsByLoan(
     .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
 }
 
+/** Uncapped payments for many loans (credit score — R17-2). */
+export async function listPaymentsForLoanIds(
+  loanIds: string[],
+): Promise<Payment[]> {
+  const unique = [...new Set(loanIds.filter(Boolean))];
+  if (unique.length === 0) return [];
+  return db
+    .select()
+    .from(payments)
+    .where(
+      and(
+        inArray(payments.loanId, unique),
+        isNull(payments.deletedAt),
+        eq(payments.markedWrong, false),
+      ),
+    )
+    .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
+}
+
 /**
  * Marks a payment as wrong and reverses its ledger impact in a single
  * transaction. Throws `{ _tag: "PaymentNotFound" | "AlreadyMarkedWrong" }`.
@@ -1119,6 +1198,14 @@ export async function markPaymentWrong(
       .where(and(eq(payments.id, paymentId), isNull(payments.deletedAt)));
     if (!payment) throw { _tag: "PaymentNotFound" };
     if (payment.markedWrong) throw { _tag: "AlreadyMarkedWrong" };
+
+    const [loan] = await tx
+      .select()
+      .from(loans)
+      .where(eq(loans.id, payment.loanId))
+      .for("update");
+    if (!loan || loan.deletedAt) throw { _tag: "LoanNotFound", id: payment.loanId };
+    assertLoanOperational(loan);
 
     const [updatedPayment] = await tx
       .update(payments)
@@ -1173,19 +1260,11 @@ export async function markPaymentWrong(
       undefined,
       tx,
     );
-    const [loan] = await tx
-      .select()
-      .from(loans)
-      .where(eq(loans.id, payment.loanId));
     if (
-      loan &&
       loan.status === "fully_paid" &&
       ledgerBalance.isGreaterThan(0)
     ) {
-      await tx
-        .update(loans)
-        .set({ status: "active", updatedAt: new Date() })
-        .where(eq(loans.id, payment.loanId));
+      await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
     }
 
     const txidRows = await tx.execute<{ txid: string }>(
@@ -1218,8 +1297,10 @@ export async function unmarkPaymentWrong(
     const [loan] = await tx
       .select()
       .from(loans)
-      .where(eq(loans.id, payment.loanId));
-    if (!loan) throw { _tag: "LoanNotFound" };
+      .where(eq(loans.id, payment.loanId))
+      .for("update");
+    if (!loan || loan.deletedAt) throw { _tag: "LoanNotFound", id: payment.loanId };
+    assertLoanOperational(loan);
 
     const [updatedPayment] = await tx
       .update(payments)
@@ -1354,10 +1435,12 @@ export async function unmarkPaymentWrong(
 
     // Check if loan should be marked fully_paid
     if (allocation.loanFullyPaid && loan.status !== "fully_paid") {
-      await tx
-        .update(loans)
-        .set({ status: "fully_paid", updatedAt: new Date() })
-        .where(eq(loans.id, payment.loanId));
+      await maybeUpdateLoanStatusAfterPayment(
+        tx,
+        loan,
+        "fully_paid",
+        actorId,
+      );
     }
 
     const txidRows = await tx.execute<{ txid: string }>(

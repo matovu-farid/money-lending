@@ -293,7 +293,8 @@ export const getRecentActivity = (
             : {};
           const afterVal = entry.afterValue ? JSON.parse(entry.afterValue) : {};
           customerId = beforeVal.customerId as string | undefined;
-          loanId = entry.entityId;
+          loanId =
+            (afterVal.rolledIntoLoanId as string | undefined) ?? entry.entityId;
           const customerName = customerId
             ? customerNameMap.get(customerId)
             : undefined;

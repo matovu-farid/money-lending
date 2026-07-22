@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema/customers";
 import { loans } from "@/lib/db/schema/loans";
 import { payments } from "@/lib/db/schema/payments";
-import { eq, ilike, inArray, and, or, count, isNull, desc, sql } from "drizzle-orm";
+import { eq, ilike, inArray, and, or, count, isNull, desc, sql, exists } from "drizzle-orm";
 import { DatabaseError, CustomerNotFound } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
@@ -255,6 +255,23 @@ export const searchCustomers = (
       if (params.status?.length)
         conditions.push(inArray(customers.status, params.status));
 
+      if (params.loanStatus?.length) {
+        conditions.push(
+          exists(
+            db
+              .select({ id: loans.id })
+              .from(loans)
+              .where(
+                and(
+                  eq(loans.customerId, customers.id),
+                  inArray(loans.status, params.loanStatus),
+                  isNull(loans.deletedAt),
+                ),
+              ),
+          ),
+        );
+      }
+
       const whereClause = conditions.length ? and(...conditions) : undefined;
 
       const pageSize = params.pageSize ?? 20;
@@ -278,6 +295,7 @@ export const searchCustomers = (
                   and(
                     inArray(loans.customerId, customerIds),
                     eq(loans.status, "active"),
+                    isNull(loans.deletedAt),
                   ),
                 )
             : [];

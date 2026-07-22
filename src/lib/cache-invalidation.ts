@@ -35,6 +35,14 @@ export function invalidateLendingProjections(qc: QueryClient): void {
   invalidateFinancialProjections(qc)
   qc.invalidateQueries({ queryKey: queryKeys.loanBalances.all })
   qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
+  // Loan list collections + lifecycle-derived checks (rollover / settle / fully_paid)
+  qc.invalidateQueries({ queryKey: queryKeys.loans.all })
+  qc.invalidateQueries({ queryKey: queryKeys.loans.operational })
+  qc.invalidateQueries({ queryKey: queryKeys.loans.activeLoanCheckAll })
+  qc.invalidateQueries({ queryKey: ["loans", "customer"] })
+  qc.invalidateQueries({ queryKey: queryKeys.loanStatusCounts.all })
+  qc.invalidateQueries({ queryKey: queryKeys.payments.byLoanAll })
+  qc.invalidateQueries({ queryKey: queryKeys.payments.byCustomerAll })
 }
 
 /**

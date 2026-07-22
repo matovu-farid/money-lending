@@ -1,5 +1,6 @@
 export { customerCollection } from "./customers"
 export { loanCollection, insertLoanWithInput } from "./loans"
+export { operationalLoanCollection } from "./operational-loans"
 //export { loanBalanceCollection } from "./loan-balances"
 export { paymentCollection } from "./payments"
 export { expenseCollection } from "./expenses"
@@ -62,6 +63,11 @@ export {
   getLoanCollateralCollection,
   getActiveLoanCheckCollection,
   getPaymentPortionsCollection,
+  getCustomerLoansCollection,
+  getLoanPaymentsCollection,
+  getCustomerPaymentsCollection,
+  pinCollectionKey,
+  unpinCollectionKey,
 } from "./loan-extras"
 
 export { expenseCategoryCollection } from "./expense-categories"
@@ -77,4 +83,4 @@ export {
 
 export { bankAccountCollection } from "./bank-accounts"
 
-export { useLoansWithBalances, useLoanWithBalance, useLoansForCustomer } from "./loan-views"
+export { useLoansWithBalances, useOperationalLoansWithBalances, useLoanWithBalance, useLoansForCustomer } from "./loan-views"

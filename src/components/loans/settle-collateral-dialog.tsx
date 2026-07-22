@@ -55,7 +55,7 @@ export function SettleCollateralDialog({
         loanId,
         { metadata: { intent: "settle", reason: reason.trim() } },
         (draft) => {
-          draft.status = "fully_paid"
+          draft.status = "settled_with_collateral"
         },
       )
       await tx.isPersisted.promise

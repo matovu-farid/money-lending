@@ -4,7 +4,7 @@ import { useState, useTransition, useMemo } from "react";
 import { format } from "date-fns";
 import { useForm, Controller } from "react-hook-form";
 import { useLiveQuery, eq } from "@tanstack/react-db";
-import { useLoansWithBalances } from "@/collections/loan-views";
+import { useOperationalLoansWithBalances } from "@/collections/loan-views";
 import { loanBalanceCollection } from "@/collections/loan-balances";
 import {
   insertPaymentWithInput,
@@ -87,7 +87,7 @@ export function QuickRecordDialog({
   });
 
   // Get active loans from projection hook (includes customerName + lastPaymentDate)
-  const { data: allActiveLoans = [] } = useLoansWithBalances();
+  const { data: allActiveLoans = [] } = useOperationalLoansWithBalances();
   const recentLoans = useMemo(
     () =>
       allActiveLoans

@@ -12,6 +12,7 @@ import {
   scorePaydown,
   scorePenalties,
   calculateCreditScore,
+  terminalLoanHadPenalty,
 } from "../credit-score"
 
 // ---------------------------------------------------------------------------
@@ -452,6 +453,16 @@ describe("scorePaydown", () => {
     const loan = { status: "active", startDate: new Date("2026-01-01"), minInterestDays: 30, principalAmount: "1000000" }
     expect(scorePaydown(loan, "500000", null)).toBe(0.5)
   })
+
+  it("returns 0.5 for rolled_over even when display balance is zeroed", () => {
+    const loan = { status: "rolled_over", startDate: new Date("2026-01-01"), minInterestDays: 30, principalAmount: "1000000" }
+    expect(scorePaydown(loan, "0", null)).toBe(0.5)
+  })
+
+  it("returns 0.5 for settled_with_collateral even when display balance is zeroed", () => {
+    const loan = { status: "settled_with_collateral", startDate: new Date("2026-01-01"), minInterestDays: 30, principalAmount: "1000000" }
+    expect(scorePaydown(loan, "0", null)).toBe(0.5)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -588,5 +599,32 @@ describe("calculateCreditScore", () => {
     const rolledResult = calculateCreditScore([rolledLoan], [])
 
     expect(activeResult.score).toBe(rolledResult.score)
+  })
+
+  it("terminalLoanHadPenalty: detects 60+ day gaps even when daysOverdue is zeroed", () => {
+    const loan = makeLoan({
+      id: "loan1",
+      customerId: "cust1",
+      status: "rolled_over",
+      daysOverdue: 0,
+      penaltyWaived: false,
+      startDate: new Date("2026-01-01"),
+    })
+    expect(
+      terminalLoanHadPenalty(loan, [
+        { paymentDate: new Date("2026-03-15") }, // 73 days from start
+      ]),
+    ).toBe(true)
+    expect(
+      terminalLoanHadPenalty(loan, [
+        { paymentDate: new Date("2026-01-20") },
+      ]),
+    ).toBe(false)
+    expect(
+      terminalLoanHadPenalty(
+        { ...loan, penaltyWaived: true },
+        [{ paymentDate: new Date("2026-01-20") }],
+      ),
+    ).toBe(true)
   })
 })

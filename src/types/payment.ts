@@ -1,6 +1,7 @@
 import type { InferSelectModel, InferInsertModel } from "drizzle-orm"
 import type { payments } from "@/lib/db/schema/payments"
 import type { DepositLocation } from "./common"
+import type { LoanStatus } from "./loan"
 
 export type Payment = InferSelectModel<typeof payments>
 export type NewPayment = InferInsertModel<typeof payments>
@@ -53,6 +54,8 @@ export interface PaymentWithCustomer {
   recorderName: string
   depositLocation: DepositLocation
   createdAt: Date
+  /** Present when joined from payments list — used to gate mutation UI */
+  loanStatus?: LoanStatus
 }
 
 /** Ledger-derived payment allocation per payment ID */

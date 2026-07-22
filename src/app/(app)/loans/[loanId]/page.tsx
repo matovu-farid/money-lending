@@ -3,6 +3,7 @@
 import { use, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { useLoanWithBalance } from "@/collections/loan-views"
+import { pinCollectionKey, unpinCollectionKey } from "@/collections/loan-extras"
 import { toast } from "sonner"
 import { LoanDetailClient } from "./loan-detail-client"
 
@@ -13,6 +14,12 @@ export default function LoanDetailPage({
 }) {
   const { loanId } = use(params)
   const router = useRouter()
+
+  // Keep per-id collections for this loan from being LRU-evicted mid-view (R25-3)
+  useEffect(() => {
+    pinCollectionKey(loanId)
+    return () => unpinCollectionKey(loanId)
+  }, [loanId])
 
   // Read loan from join hook — returns LoanListEntry shape (includes customerName)
   const { data: loans, isLoading: loanLoading } = useLoanWithBalance(loanId)

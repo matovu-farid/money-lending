@@ -115,10 +115,17 @@ export function getActivityHref(
   entityType: string,
   entityId: string,
   afterValue: Record<string, unknown> | null,
+  action?: string,
 ): string | null {
   switch (entityType) {
-    case "loan":
+    case "loan": {
+      // Rollover audit entityId is the predecessor — link to successor when known
+      if (action === "loan.rollover") {
+        const successorId = afterValue?.rolledIntoLoanId as string | undefined
+        if (successorId) return `/loans/${successorId}`
+      }
       return `/loans/${entityId}`
+    }
 
     case "payment": {
       const loanId = afterValue?.loanId as string | undefined
@@ -257,7 +264,7 @@ export const getActivities = (
           customerNameMap,
         )
 
-        const href = getActivityHref(row.entityType, row.entityId, afterVal)
+        const href = getActivityHref(row.entityType, row.entityId, afterVal, row.action)
 
         return {
           id: row.id,

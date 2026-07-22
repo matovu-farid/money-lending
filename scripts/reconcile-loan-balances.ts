@@ -2,21 +2,93 @@
 // One-off reconciliation: compares trigger-maintained loan_balances rows
 // against a fresh server-side recompute via getLoanBalancesFromLedger /
 // getInterestEarnedFromLedger. Reports any drift.
+// Also checks rolled_over chain integrity (successor exists, ledger ≈ 0).
 //
 // Usage: pnpm tsx scripts/reconcile-loan-balances.ts
 // Exit code 0 if all match; 1 if any drift.
 
 import { db } from "@/lib/db";
 import { loans } from "@/lib/db/schema/loans";
-import { loanBalances } from "@/lib/db/schema/loan-balances";
 import { payments } from "@/lib/db/schema/payments";
 import {
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
 } from "@/services/ledger-queries.service";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and, isNull, isNotNull } from "drizzle-orm";
 import BigNumber from "bignumber.js";
 import { computeAllLoansBalanceData } from "@/lib/interest/loanBalanceData";
+
+async function checkRolloverChainIntegrity(): Promise<number> {
+  let issues = 0;
+  const rolledOver = await db
+    .select({ id: loans.id })
+    .from(loans)
+    .where(and(eq(loans.status, "rolled_over"), isNull(loans.deletedAt)));
+
+  const ledgerBalances = await getLoanBalancesFromLedger(
+    rolledOver.map((l) => l.id),
+  );
+
+  for (const { id } of rolledOver) {
+    const successors = await db
+      .select({ id: loans.id })
+      .from(loans)
+      .where(and(eq(loans.rolledOverFrom, id), isNull(loans.deletedAt)));
+
+    if (successors.length === 0) {
+      console.error(
+        `[reconcile] CHAIN loan=${id}: rolled_over with no non-deleted successor`,
+      );
+      issues++;
+    } else if (successors.length > 1) {
+      console.error(
+        `[reconcile] CHAIN loan=${id}: multiple successors (${successors.map((s) => s.id).join(", ")})`,
+      );
+      issues++;
+    }
+
+    const balance = ledgerBalances.get(id) ?? new BigNumber(0);
+    if (!balance.isZero()) {
+      console.error(
+        `[reconcile] CHAIN loan=${id}: rolled_over ledger balance is ${balance.toFixed(2)} (expected ≈ 0)`,
+      );
+      issues++;
+    }
+  }
+
+  // Reverse: every non-deleted loan with rolledOverFrom must point at a
+  // predecessor that exists and is status=rolled_over (or soft-deleted).
+  const withPredecessor = await db
+    .select({
+      id: loans.id,
+      rolledOverFrom: loans.rolledOverFrom,
+    })
+    .from(loans)
+    .where(and(isNotNull(loans.rolledOverFrom), isNull(loans.deletedAt)));
+
+  for (const row of withPredecessor) {
+    const predId = row.rolledOverFrom!;
+    const [pred] = await db
+      .select({ id: loans.id, status: loans.status, deletedAt: loans.deletedAt })
+      .from(loans)
+      .where(eq(loans.id, predId))
+      .limit(1);
+
+    if (!pred) {
+      console.error(
+        `[reconcile] CHAIN loan=${row.id}: rolledOverFrom=${predId} predecessor missing`,
+      );
+      issues++;
+    } else if (pred.status !== "rolled_over" && !pred.deletedAt) {
+      console.error(
+        `[reconcile] CHAIN loan=${row.id}: rolledOverFrom=${predId} has status=${pred.status} (expected rolled_over)`,
+      );
+      issues++;
+    }
+  }
+
+  return issues;
+}
 
 async function main() {
   const allLoans = await db.select({ id: loans.id }).from(loans);
@@ -59,13 +131,18 @@ async function main() {
     }
     const actualBalance = new BigNumber(proj.totalBalanceOwed);
     const actualInterest = new BigNumber(proj.unpaidInterest);
-    if (!actualBalance.isEqualTo(expectedBalance)) {
+    // Path A zeros non-operational display balances — only flag drift when
+    // the projection still shows a non-zero balance that disagrees with ledger.
+    if (!actualBalance.isEqualTo(expectedBalance) && !actualBalance.isZero()) {
       console.error(
         `[reconcile] DRIFT loan=${id} outstanding_balance: projection=${actualBalance.toFixed(2)} expected=${expectedBalance.toFixed(2)}`,
       );
       drift++;
     }
-    if (!actualInterest.isEqualTo(expectedInterest)) {
+    if (
+      !actualInterest.isEqualTo(expectedInterest) &&
+      !actualInterest.isZero()
+    ) {
       console.error(
         `[reconcile] DRIFT loan=${id} unpaid_interest: projection=${actualInterest.toFixed(2)} expected=${expectedInterest.toFixed(2)}`,
       );
@@ -73,13 +150,16 @@ async function main() {
     }
     const projLpdMs = proj.lastPaymentDate?.getTime() ?? null;
     const expLpdMs = expectedLpd?.getTime() ?? null;
-    if (projLpdMs !== expLpdMs) {
+    if (projLpdMs !== expLpdMs && !actualBalance.isZero()) {
       console.error(
         `[reconcile] DRIFT loan=${id} last_payment_date: projection=${proj.lastPaymentDate} expected=${expectedLpd}`,
       );
       drift++;
     }
   }
+
+  const chainIssues = await checkRolloverChainIntegrity();
+  drift += chainIssues;
 
   if (drift === 0) {
     console.log(`[reconcile] OK — ${ids.length} loan(s) checked, no drift`);

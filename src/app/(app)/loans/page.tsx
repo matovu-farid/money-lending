@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useLoansWithBalances } from "@/collections/loan-views";
+import { useOperationalLoansWithBalances } from "@/collections/loan-views";
 import { Plus, ChevronRight, Loader2, Printer } from "lucide-react";
 import { CustomerPickerDialog } from "@/components/customers/customer-picker-dialog";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
@@ -138,7 +138,7 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
 
 export default function LoansPage() {
   const router = useRouter();
-  const { data, isLoading } = useLoansWithBalances();
+  const { data, isLoading } = useOperationalLoansWithBalances();
   const entries = data ?? [];
   const error: string | null = null;
   const calculatedAt = new Date();

@@ -14,6 +14,7 @@ import {
 } from "@/services/ledger-queries.service";
 import BigNumber from "bignumber.js";
 import { getLastPaymentDate } from "@/services/payment.service";
+import { isOperationalLoan } from "@/lib/loan-visibility";
 
 type BalanceInfo = ReturnType<typeof computeLoanOverdueInfo> & {
   totalBalanceOwed: string;
@@ -21,6 +22,23 @@ type BalanceInfo = ReturnType<typeof computeLoanOverdueInfo> & {
   lastPaymentDate: Date;
   remainingPrincipalAmount: string;
 };
+
+function zeroedBalanceInfo(
+  loanId: string,
+  lastPaymentDate: Date,
+): BalanceInfo {
+  return {
+    daysOverdue: 0,
+    dailyRate: "0",
+    unpaidInterest: "0",
+    penaltyActive: false,
+    effectiveRate: "0",
+    totalBalanceOwed: "0",
+    lastPaymentDate,
+    loanId,
+    remainingPrincipalAmount: "0",
+  };
+}
 
 export async function computeSingleLoanBalanceData(loanId: string, asOf: Date) {
   return (await computeLoanBalanceData([loanId], asOf)).get(loanId)!;
@@ -46,16 +64,42 @@ export async function getTotalInterestPaid(loanId: string) {
   const interestEarnedMap = await getInterestEarnedFromLedger([loanId]);
   return formatAmount(interestEarnedMap.get(loanId) ?? new BigNumber(0));
 }
+
+/**
+ * Path A balance feed for loanBalanceCollection.
+ * Non-operational loans return zeros without payment/ledger IO (R11-1 / R19-3).
+ * Rows are still emitted so historical detail joins keep working.
+ */
 export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
+  const results: Map<string, BalanceInfo> = new Map();
+  if (loanIds.length === 0) return results;
+
   const loansFromDb = await db.query.loans.findMany({
     where: and(inArray(loans.id, loanIds), isNull(loans.deletedAt)),
   });
-  const results: Map<string, BalanceInfo> = new Map();
-  const remainingPrincipalbalanceMap =
-    await getRemainingPrincipalFromLedger(loanIds);
 
-  const balanceMap = await getLoanBalancesFromLedger(loanIds);
-  const promises = loansFromDb.map(async (loan) => {
+  const operational = loansFromDb.filter((loan) =>
+    isOperationalLoan(loan.status),
+  );
+  const historical = loansFromDb.filter(
+    (loan) => !isOperationalLoan(loan.status),
+  );
+
+  for (const loan of historical) {
+    results.set(
+      loan.id,
+      zeroedBalanceInfo(loan.id, new Date(loan.startDate)),
+    );
+  }
+
+  const operationalIds = operational.map((loan) => loan.id);
+  if (operationalIds.length === 0) return results;
+
+  const remainingPrincipalbalanceMap =
+    await getRemainingPrincipalFromLedger(operationalIds);
+  const balanceMap = await getLoanBalancesFromLedger(operationalIds);
+
+  const promises = operational.map(async (loan) => {
     const activePayments = await db
       .select()
       .from(payments)
@@ -83,6 +127,7 @@ export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
     const baseRate = getBaseRate(loan);
     const loanType = toLoanType(loan.loanType);
     const totalInterestPaid = await getTotalInterestPaid(loan.id);
+    const lastPaymentDate = await getLastPaymentDate(loan);
 
     const info = computeLoanOverdueInfo({
       principalAmount: loan.principalAmount,
@@ -95,14 +140,14 @@ export async function computeLoanBalanceData(loanIds: string[], asOf: Date) {
       totalBalanceOwed: totalBalanceOwed,
       penaltyWaived: loan.penaltyWaived,
       loan,
-      lastPaymentDate: await getLastPaymentDate(loan),
+      lastPaymentDate,
       asOf,
     });
 
     results.set(loan.id, {
       ...info,
       totalBalanceOwed: totalBalanceOwed,
-      lastPaymentDate: await getLastPaymentDate(loan),
+      lastPaymentDate,
       loanId: loan.id,
       remainingPrincipalAmount: formatAmount(remainingPrincipalbalance),
     });

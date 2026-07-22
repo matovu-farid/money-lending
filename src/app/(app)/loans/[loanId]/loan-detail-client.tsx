@@ -16,13 +16,16 @@ import {
   getLoanCollateralCollection,
   getUserNameMapCollection,
   getPaymentPortionsCollection,
+  getLoanPaymentsCollection,
+  pinCollectionKey,
+  unpinCollectionKey,
 } from "@/collections/loan-extras";
 import { loanBalanceCollection } from "@/collections/loan-balances";
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests";
 import { loanCollection } from "@/collections/loans";
 import { isPenaltyActive } from "@/lib/interest/effective-rate";
 import { generateClientId } from "@/lib/client-id";
-import { useLiveQuery, eq, and, isNull } from "@tanstack/react-db";
+import { useLiveQuery, eq } from "@tanstack/react-db";
 import type {
   UserRole,
   RateChangeRequest,
@@ -53,6 +56,8 @@ import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { RateChangeDialog } from "./rate-change-dialog";
 import { LoanStatementDialog } from "./loan-statement-dialog";
 import { buildLoanStatement } from "@/lib/loan-statement";
+import { LoanRolloverHistoryBanner } from "@/components/loans/loan-rollover-history";
+import { isLoanReadOnly } from "@/lib/loan-visibility";
 
 interface LoanDetailClientProps {
   loanEntry: LoanListEntry;
@@ -70,6 +75,7 @@ export function LoanDetailClient({
 
   const { has } = usePermissions();
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived);
+  const readOnly = isLoanReadOnly(loan.status);
 
   // Fetch userRole via collection
   const { data: userRoleRows } = useLiveQuery((q) =>
@@ -91,21 +97,19 @@ export function LoanDetailClient({
   const collateralNature = collateralData?.nature;
   const collateralDescription = collateralData?.description ?? null;
 
-  // Use TanStack DB collection for payments — live, reactive, cached.
-  // The Electric shape provides raw `payments` rows (no customerName/portions);
-  // we project them into the PaymentWithCustomer shape downstream consumers
-  // (PaymentTable, SimulatorPanel) already type against. customerName is
-  // already known on this page (passed in via props), and portions / balances
-  // are derived below from `currentPortions` + `runningBalanceMap`.
-  // Filter out soft-deleted payments at the data layer — the Electric shape
-  // syncs every row (including deleted ones), but ledger reversals make them
-  // misleading to display, so they must be invisible everywhere in the UI.
-  const { data: rawPayments } = useLiveQuery(
-    (q) =>
-      q
-        .from({ p: paymentCollection })
-        .where(({ p }) => and(eq(p.loanId, loan.id), isNull(p.deletedAt))),
+  // Uncapped per-loan payments (R17-3) — not the global 2000-cap paymentCollection.
+  // Mutations still go through paymentCollection for optimistic Electric sync.
+  const loanPaymentsColl = useMemo(
+    () => getLoanPaymentsCollection(loan.id),
     [loan.id],
+  );
+  useEffect(() => {
+    pinCollectionKey(loan.id);
+    return () => unpinCollectionKey(loan.id);
+  }, [loan.id]);
+  const { data: rawPayments } = useLiveQuery(
+    (q) => q.from({ p: loanPaymentsColl }).select(({ p }) => p),
+    [loanPaymentsColl],
   );
   const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : [];
 
@@ -558,14 +562,16 @@ export function LoanDetailClient({
             <Calculator className="h-3.5 w-3.5" />
             Show Math
           </Button>
-          <Link
-            href={`/loans/new?customerId=${loan.customerId}`}
-            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
-          >
-            <PlusCircle className="h-3.5 w-3.5" />
-            Issue New Loan
-          </Link>
-          {loan.status === "active" && has("loan:settle") && (
+          {!readOnly && (
+            <Link
+              href={`/loans/new?customerId=${loan.customerId}`}
+              className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            >
+              <PlusCircle className="h-3.5 w-3.5" />
+              Issue New Loan
+            </Link>
+          )}
+          {!readOnly && loan.status === "active" && has("loan:settle") && (
             <Button
               variant="outline"
               size="sm"
@@ -578,6 +584,12 @@ export function LoanDetailClient({
           )}
         </div>
       </div>
+
+      <LoanRolloverHistoryBanner
+        loanId={loan.id}
+        status={loan.status}
+        rolledOverFrom={loan.rolledOverFrom}
+      />
 
       {/* Loan Details Grid */}
       <LoanInfoCards

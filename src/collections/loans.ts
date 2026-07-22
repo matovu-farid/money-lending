@@ -16,6 +16,7 @@ import { queryKeys } from "@/lib/query-keys"
 import { invalidateLendingProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
 import { throwIfActionError, coerceDates } from "./_utils"
+import { operationalLoanCollection } from "./operational-loans"
 
 /**
  * Row shape synced via HTTP polling — mirrors the `loans` DB table with
@@ -91,11 +92,12 @@ export const loanCollection = createCollection(
             reason: meta.reason,
           }),
         )
-        const qc = getQueryClient()
-        qc.invalidateQueries({ queryKey: queryKeys.loanBalances.all })
-        qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.portfolio })
-        qc.invalidateQueries({ queryKey: queryKeys.reports.balanceSheet() })
+        try {
+          operationalLoanCollection.delete(original.id)
+        } catch {
+          // May already be absent from operational sync
+        }
+        invalidateLendingProjections(getQueryClient())
         emitTableChange("loans")
         emitTableChange("transactions")
         return { txid: result.txid }
@@ -123,13 +125,39 @@ export const loanCollection = createCollection(
 /**
  * Thin wrapper kept because the call site needs to pass an off-row
  * `CreateLoanInput` (collateral, rollover, etc.) via the metadata channel.
+ *
+ * On rollover: optimistically mark the predecessor rolled_over and remove it
+ * from the operational collection before the server round-trip (R25-1).
  */
 export function insertLoanWithInput(
   _id: string,
   optimistic: LoanRow,
   input: CreateLoanInput,
 ) {
+  if (input.rollover?.fromLoanId) {
+    const predecessorId = input.rollover.fromLoanId
+    try {
+      loanCollection.update(predecessorId, (draft) => {
+        draft.status = "rolled_over"
+      })
+    } catch {
+      // Predecessor may be outside the capped sync window
+    }
+    try {
+      operationalLoanCollection.delete(predecessorId)
+    } catch {
+      // May already be absent from operational sync
+    }
+  }
+
   loanCollection.insert(optimistic, {
     metadata: { intent: "create", input } satisfies LoanInsertMetadata,
   })
+
+  // New loan is active — keep operational watchlist in sync immediately
+  try {
+    operationalLoanCollection.insert(optimistic)
+  } catch {
+    // Refetch via invalidateLendingProjections on persist will repair
+  }
 }

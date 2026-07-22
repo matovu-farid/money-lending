@@ -51,6 +51,7 @@ export const loans = pgTable("loans", {
   index("idx_loans_customer_id").on(table.customerId),
   index("idx_loans_status").on(table.status),
   index("idx_loans_active").on(table.customerId, table.status).where(sql`deleted_at IS NULL`),
+  index("idx_loans_rolled_over_from").on(table.rolledOverFrom),
   check(
     "loans_bank_requires_sub_location",
     sql`${table.disbursementSource} <> 'bank' OR ${table.subLocationId} IS NOT NULL`,

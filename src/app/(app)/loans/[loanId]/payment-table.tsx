@@ -147,17 +147,21 @@ export function PaymentTable({
                                 officerName: userNameMap[payment.recordedBy] ?? "Officer",
                               }}
                             />
-                            <DropdownMenuItem
-                              onClick={() => onEditPayment(payment)}
-                            >
-                              Edit Payment
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => onDeletePayment(payment)}
-                              variant="destructive"
-                            >
-                              Delete Payment
-                            </DropdownMenuItem>
+                            {loanStatus === "active" && (
+                              <>
+                                <DropdownMenuItem
+                                  onClick={() => onEditPayment(payment)}
+                                >
+                                  Edit Payment
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => onDeletePayment(payment)}
+                                  variant="destructive"
+                                >
+                                  Delete Payment
+                                </DropdownMenuItem>
+                              </>
+                            )}
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </TableCell>

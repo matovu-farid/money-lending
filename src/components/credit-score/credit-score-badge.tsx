@@ -1,9 +1,13 @@
 "use client"
 
-import { useMemo } from "react"
+import { useEffect, useMemo } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { useLoansForCustomer } from "@/collections/loan-views"
-import { paymentCollection } from "@/collections/payments"
+import {
+  getCustomerPaymentsCollection,
+  pinCollectionKey,
+  unpinCollectionKey,
+} from "@/collections/loan-extras"
 import { calculateCreditScore } from "@/lib/credit-score"
 import type { PaymentWithCustomer } from "@/types"
 import { InfoPopover } from "@/components/ui/info-popover"
@@ -17,29 +21,44 @@ interface CreditScoreBadgeProps {
 export function CreditScoreBadge({ customerId, className }: CreditScoreBadgeProps) {
   const { data: customerLoans } = useLoansForCustomer(customerId)
 
-  // Payments are now a raw row stream (no customerId). Filter client-side by
-  // matching loanIds for this customer.
-  const { data: allPayments } = useLiveQuery(
-    (q) => q.from({ p: paymentCollection }).select(({ p }) => p),
-    [],
+  const loanIds = useMemo(
+    () => (customerLoans ?? []).map((l) => l.id),
+    [customerLoans],
+  )
+  const loanIdsKey = loanIds.slice().sort().join(",")
+
+  const paymentsColl = useMemo(
+    () => getCustomerPaymentsCollection(customerId, loanIds),
+    // loanIdsKey keeps identity stable when membership unchanged
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [customerId, loanIdsKey],
+  )
+
+  useEffect(() => {
+    if (!customerId) return
+    const pinKey = `${customerId}:${loanIdsKey}`
+    pinCollectionKey(pinKey)
+    return () => unpinCollectionKey(pinKey)
+  }, [customerId, loanIdsKey])
+
+  const { data: customerPaymentRows } = useLiveQuery(
+    (q) => q.from({ p: paymentsColl }).select(({ p }) => p),
+    [paymentsColl],
   )
 
   const customerPayments = useMemo(() => {
-    const loanIds = new Set((customerLoans ?? []).map((l) => l.id))
-    return (allPayments ?? [])
-      .filter((p) => loanIds.has(p.loanId))
-      .map((p) => ({
-        ...p,
-        // calculateCreditScore only reads loanId + paymentDate
-        customerId,
-        customerName: "",
-        interestPortion: "0",
-        principalPortion: "0",
-        principalBalanceAfter: "0",
-        outstandingBalance: "0",
-        recorderName: "",
-      })) as unknown as PaymentWithCustomer[]
-  }, [allPayments, customerLoans, customerId])
+    return (customerPaymentRows ?? []).map((p) => ({
+      ...p,
+      // calculateCreditScore only reads loanId + paymentDate
+      customerId,
+      customerName: "",
+      interestPortion: "0",
+      principalPortion: "0",
+      principalBalanceAfter: "0",
+      outstandingBalance: "0",
+      recorderName: "",
+    })) as unknown as PaymentWithCustomer[]
+  }, [customerPaymentRows, customerId])
 
   const result = useMemo(
     () => calculateCreditScore(customerLoans ?? [], customerPayments),

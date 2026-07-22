@@ -26,6 +26,10 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
+vi.mock("@/services/rate-change-request.service", () => ({
+  cancelPendingRateChangeRequestsForLoan: vi.fn().mockResolvedValue(0),
+}))
+
 vi.mock("drizzle-orm", async () => {
   const actual = await vi.importActual("drizzle-orm")
   return actual
@@ -1270,5 +1274,140 @@ describe("Loan Service", () => {
     const exit = await Effect.runPromiseExit(listLoans())
 
     expect(Exit.isFailure(exit)).toBe(true)
+  })
+
+  // ── Rollover visibility helpers ────────────────────────────────────
+
+  it("listOperationalLoans: uncapped active-only query (no limit)", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const orderBy = vi.fn().mockResolvedValue([{ ...mockLoan, customerName: "John Doe" }])
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        innerJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ orderBy }),
+        }),
+      }),
+    } as any)
+
+    const { listOperationalLoans } = await import("@/services/loan.service")
+    const result = await Effect.runPromise(listOperationalLoans())
+
+    expect(result).toHaveLength(1)
+    expect(orderBy).toHaveBeenCalled()
+    // No .limit() on the operational list chain
+    expect(orderBy.mock.results[0].value).toBeInstanceOf(Promise)
+  })
+
+  it("getLoanPredecessorChain: walks rolledOverFrom oldest-first", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const oldest = {
+      ...mockLoan,
+      id: "loan-old",
+      status: "rolled_over",
+      rolledOverFrom: null,
+    }
+    const middle = {
+      ...mockLoan,
+      id: "loan-mid",
+      status: "rolled_over",
+      rolledOverFrom: "loan-old",
+    }
+    const newest = {
+      ...mockLoan,
+      id: "loan-new",
+      status: "active",
+      rolledOverFrom: "loan-mid",
+    }
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockImplementation(async () => {
+          // Call order: newest → mid → old
+          const calls = (mockedDb.select as ReturnType<typeof vi.fn>).mock.calls.length
+          if (calls === 1) return [newest]
+          if (calls === 2) return [middle]
+          if (calls === 3) return [oldest]
+          return []
+        }),
+      }),
+    }))
+
+    const { getLoanPredecessorChain } = await import("@/services/loan.service")
+    const chain = await getLoanPredecessorChain("loan-new")
+    expect(chain.map((l) => l.id)).toEqual(["loan-old", "loan-mid"])
+  })
+
+  it("getLoanSuccessor: returns non-deleted successor", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const successor = {
+      ...mockLoan,
+      id: "loan-succ",
+      rolledOverFrom: "loan-1",
+    }
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          orderBy: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([successor]),
+          }),
+        }),
+      }),
+    } as any)
+
+    const { getLoanSuccessor } = await import("@/services/loan.service")
+    const result = await getLoanSuccessor("loan-1")
+    expect(result?.id).toBe("loan-succ")
+  })
+
+  it("updateLoan: rejects non-operational loans", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          { ...mockLoan, status: "rolled_over" },
+        ]),
+      }),
+    } as any)
+
+    const { updateLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(
+      updateLoan(
+        { loanId: "loan-1", principalAmount: "600000", reason: "Test" },
+        "actor-1",
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (exit._tag === "Failure") {
+      const error = Cause.squash(exit.cause) as { _tag?: string; message?: string }
+      expect(error._tag).toBe("ValidationError")
+      expect(error.message).toBe("Loan is not active")
+    }
+  })
+
+  it("deleteLoan: blocks successor loans with rolledOverFrom", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockResolvedValue([
+          { ...mockLoan, rolledOverFrom: "loan-prev" },
+        ]),
+      }),
+    } as any)
+
+    const { deleteLoan } = await import("@/services/loan.service")
+    const exit = await Effect.runPromiseExit(
+      deleteLoan({ loanId: "loan-1", reason: "Test" }, "actor-1"),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (exit._tag === "Failure") {
+      const error = Cause.squash(exit.cause) as { _tag?: string }
+      expect(error._tag).toBe("ValidationError")
+    }
   })
 })

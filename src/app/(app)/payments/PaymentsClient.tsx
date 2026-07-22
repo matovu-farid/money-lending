@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLiveQuery, eq, ilike, gte, lte } from "@tanstack/react-db";
+import { useQuery } from "@tanstack/react-query";
 import { paymentCollection } from "@/collections/payments";
 import { loanCollection } from "@/collections/loans";
 import { useLoansWithBalances } from "@/collections/loan-views";
@@ -11,6 +12,9 @@ import {
   getPaymentPortionsCollection,
   getUserNameMapCollection,
 } from "@/collections/loan-extras";
+import { getLoanListEntriesByIdsAction } from "@/actions/loan.actions";
+import { queryKeys } from "@/lib/query-keys";
+import { isOperationalLoan } from "@/lib/loan-visibility";
 import BigNumber from "bignumber.js";
 import { toast } from "sonner";
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react";
@@ -43,7 +47,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { CurrencyCell } from "@/components/ui/currency-cell";
 import { useSession } from "@/lib/auth-client";
 import { formatDate, shortId } from "@/lib/utils";
-import type { PaymentWithCustomer } from "@/types";
+import type { PaymentWithCustomer, LoanStatus } from "@/types";
 import { usePermissions } from "@/hooks/use-permissions";
 import { usePaymentsPageStore } from "@/lib/stores/payments-page";
 import { useUrlFilters } from "@/hooks/use-url-filters";
@@ -52,6 +56,7 @@ import { DailyCollectionsTab } from "./DailyCollectionsTab";
 import { QuickRecordDialog } from "./QuickRecordDialog";
 import { FilterPanel } from "@/components/ui/filter-panel";
 import { downloadBlob } from "@/lib/download";
+import type { DepositLocation } from "@/types";
 
 function exportToCsv(rows: PaymentWithCustomer[]) {
   const headers = [
@@ -197,14 +202,31 @@ function PaymentsContent({
   // Projected loans — provides customerName + other enriched fields
   const { data: allLoans, isLoading: loansLoading } = useLoansWithBalances();
 
-  // Build a map of loanId → { customerName, customerId } from projected data
+  // Build a map of loanId → { customerName, customerId, status } from projected data
   const loanInfoMap = useMemo(() => {
-    const m = new Map<string, { customerName: string; customerId: string }>();
+    const m = new Map<
+      string,
+      { customerName: string; customerId: string; status: LoanStatus }
+    >();
     for (const l of allLoans ?? []) {
-      m.set(l.id, { customerName: l.customerName, customerId: l.customerId });
+      m.set(l.id, {
+        customerName: l.customerName,
+        customerId: l.customerId,
+        status: l.status,
+      });
+    }
+    // Also index raw capped collection for status when projection is thin
+    for (const l of allLoansRaw ?? []) {
+      if (!m.has(l.id)) {
+        m.set(l.id, {
+          customerName: "—",
+          customerId: l.customerId,
+          status: l.status as LoanStatus,
+        });
+      }
     }
     return m;
-  }, [allLoans]);
+  }, [allLoans, allLoansRaw]);
 
   // Display query: JOINs paymentCollection + loanCollection and pushes the
   // date filters into the differential dataflow. customerName filtering is
@@ -222,7 +244,7 @@ function PaymentsContent({
     (q) => {
       let qb = q
         .from({ p: paymentCollection })
-        .join({ l: loanCollection }, ({ p, l }) => eq(p.loanId, l.id), "inner");
+        .join({ l: loanCollection }, ({ p, l }) => eq(p.loanId, l.id), "left");
       if (dateFromTime !== null) {
         qb = qb.where(({ p }) => gte(p.paymentDate, new Date(dateFromTime)));
       }
@@ -237,26 +259,59 @@ function PaymentsContent({
         recordedBy: p.recordedBy,
         depositLocation: p.depositLocation,
         createdAt: p.createdAt,
-        customerId: l.customerId,
+        customerId: l?.customerId ?? "",
       }));
     },
     [dateFromTime, dateToTime],
   );
 
+  // Loans missing from the 500-cap sync — resolve via uncapped batch action
+  const missingLoanIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const r of joinedRows ?? []) {
+      if (!loanInfoMap.has(r.loanId)) ids.add(r.loanId);
+    }
+    return [...ids].sort();
+  }, [joinedRows, loanInfoMap]);
+
+  const { data: fallbackLoans = [] } = useQuery({
+    queryKey: [...queryKeys.loans.all, "payment-list-fallback", missingLoanIds],
+    queryFn: async () => {
+      const result = await getLoanListEntriesByIdsAction(missingLoanIds);
+      if ("error" in result) return [];
+      return result.data;
+    },
+    enabled: missingLoanIds.length > 0,
+    staleTime: 30_000,
+  });
+
+  const resolvedLoanInfoMap = useMemo(() => {
+    const m = new Map(loanInfoMap);
+    for (const l of fallbackLoans) {
+      m.set(l.id, {
+        customerName: l.customerName,
+        customerId: l.customerId,
+        status: l.status,
+      });
+    }
+    return m;
+  }, [loanInfoMap, fallbackLoans]);
+
   // Merge projected customerName into joined rows, then apply customerName filter in JS
   const filteredJoinedRows = useMemo(() => {
     const rows = (joinedRows ?? []).map((r) => {
-      const info = loanInfoMap.get(r.loanId);
+      const info = resolvedLoanInfoMap.get(r.loanId);
       return {
         ...r,
-        customerId: info?.customerId ?? r.customerId,
-        customerName: info?.customerName ?? "Unknown",
+        customerId: info?.customerId ?? r.customerId ?? "",
+        customerName: info?.customerName ?? (r.customerId ? "Unknown" : "—"),
+        loanStatus: info?.status,
       };
     });
     if (!customerName) return rows;
     const term = customerName.toLowerCase();
     return rows.filter((r) => r.customerName.toLowerCase().includes(term));
-  }, [joinedRows, loanInfoMap, customerName]);
+  }, [joinedRows, resolvedLoanInfoMap, customerName]);
 
   const isInitialLoading =
     (paymentsLoading && !rawPayments) || (loansRawLoading && !allLoansRaw);
@@ -312,11 +367,19 @@ function PaymentsContent({
   // data here would understate the balance for survivors).
   const balanceAfterMap = useMemo(() => {
     const loanPrincipal = new Map<string, string>();
+    const operationalLoanIds = new Set<string>();
     for (const l of allLoansRaw ?? []) {
       loanPrincipal.set(l.id, l.principalAmount);
+      if (isOperationalLoan(l.status as LoanStatus)) {
+        operationalLoanIds.add(l.id);
+      }
+    }
+    for (const [id, info] of resolvedLoanInfoMap) {
+      if (isOperationalLoan(info.status)) operationalLoanIds.add(id);
     }
     const byLoan = new Map<string, typeof rawPayments>();
     for (const p of rawPayments ?? []) {
+      if (!operationalLoanIds.has(p.loanId)) continue;
       const list = byLoan.get(p.loanId) ?? [];
       list.push(p);
       byLoan.set(p.loanId, list);
@@ -340,7 +403,7 @@ function PaymentsContent({
       }
     }
     return map;
-  }, [rawPayments, allLoansRaw, portionsMap]);
+  }, [rawPayments, allLoansRaw, portionsMap, resolvedLoanInfoMap]);
 
   // Project the filtered + joined rows into the PaymentWithCustomer shape the
   // rest of the page consumes. customerName + dates are already filtered by
@@ -352,7 +415,7 @@ function PaymentsContent({
         return {
           id: p.id,
           loanId: p.loanId,
-          customerId: p.customerId,
+          customerId: p.customerId ?? "",
           customerName: p.customerName ?? "Unknown",
           paymentDate: p.paymentDate,
           amount: p.amount,
@@ -362,8 +425,9 @@ function PaymentsContent({
           outstandingBalance: balanceAfterMap[p.id] ?? "0",
           recordedBy: p.recordedBy,
           recorderName: userNameMap[p.recordedBy] ?? "",
-          depositLocation: p.depositLocation,
+          depositLocation: p.depositLocation as DepositLocation,
           createdAt: p.createdAt,
+          loanStatus: p.loanStatus,
         };
       }),
     [filteredJoinedRows, portionsMap, userNameMap, balanceAfterMap],
@@ -561,7 +625,12 @@ function PaymentsContent({
             key: "actions",
             header: "",
             hideInCard: false,
-            render: (row: PaymentWithCustomer) => (
+            render: (row: PaymentWithCustomer) => {
+              // Fail closed: unknown status must not unlock mutations (R5-4)
+              if (!row.loanStatus || !isOperationalLoan(row.loanStatus)) {
+                return null;
+              }
+              return (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   aria-label="Payment actions"
@@ -583,7 +652,8 @@ function PaymentsContent({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-            ),
+              );
+            },
           } satisfies Column<PaymentWithCustomer>,
         ]
       : []),

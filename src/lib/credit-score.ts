@@ -1,10 +1,43 @@
 import type { LoanListEntry } from "@/types/loan"
 import type { PaymentWithCustomer } from "@/types/payment"
-import { isPenaltyActive } from "@/lib/interest/effective-rate"
+import {
+  isPenaltyActive,
+  PENALTY_THRESHOLD_DAYS,
+} from "@/lib/interest/effective-rate"
 
 /** Normalize a Date or serialized ISO string to a Date object */
 function toDate(d: Date | string): Date {
   return d instanceof Date ? d : new Date(d)
+}
+
+/** Days between two dates (absolute calendar-ish gap via ms). */
+function daysBetween(a: Date | string, b: Date | string): number {
+  return Math.abs(toDate(b).getTime() - toDate(a).getTime()) / (1000 * 60 * 60 * 24)
+}
+
+/**
+ * For terminal loans Path A zeros daysOverdue — reconstruct whether a penalty
+ * would have applied from payment gaps / durable waive flag (R15-5).
+ */
+export function terminalLoanHadPenalty(
+  loan: Pick<LoanListEntry, "startDate" | "penaltyWaived" | "lastPaymentDate">,
+  payments: Array<{ paymentDate: Date | string }>,
+): boolean {
+  if (loan.penaltyWaived === true) return true
+  const sorted = [...payments].sort(
+    (a, b) => toDate(a.paymentDate).getTime() - toDate(b.paymentDate).getTime(),
+  )
+  let prev = toDate(loan.startDate)
+  for (const p of sorted) {
+    if (daysBetween(prev, p.paymentDate) >= PENALTY_THRESHOLD_DAYS) return true
+    prev = toDate(p.paymentDate)
+  }
+  // Gap from last payment (or start) to loan close signal (lastPaymentDate)
+  const end = loan.lastPaymentDate ? toDate(loan.lastPaymentDate) : prev
+  if (sorted.length === 0) {
+    return daysBetween(loan.startDate, end) >= PENALTY_THRESHOLD_DAYS
+  }
+  return false
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +174,11 @@ export function scorePaydown(
   outstandingBalance: string,
   lastPaymentDate: Date | null,
 ): number {
+  // Terminal lifecycle statuses: do not use zeroed display balances (R13-3)
+  if (loan.status === "rolled_over" || loan.status === "settled_with_collateral") {
+    return 0.5
+  }
+
   const principal = parseFloat(loan.principalAmount)
   const outstanding = parseFloat(outstandingBalance)
   if (loan.status === "fully_paid" && lastPaymentDate) {
@@ -203,7 +241,17 @@ export function calculateCreditScore(
       loan.lastPaymentDate,
     ) * weights[i]
   }
-  const penaltyLoans = scorableLoans.filter((l) => isPenaltyActive(l.daysOverdue, l.penaltyWaived))
+  const penaltyLoans = scorableLoans.filter((l) => {
+    // Path A zeros daysOverdue on terminal loans — use durable flags + payment gaps (R15-5)
+    if (
+      l.status === "rolled_over" ||
+      l.status === "fully_paid" ||
+      l.status === "settled_with_collateral"
+    ) {
+      return terminalLoanHadPenalty(l, paymentsByLoan.get(l.id) ?? [])
+    }
+    return isPenaltyActive(l.daysOverdue, l.penaltyWaived)
+  })
   const penalties = scorableLoans.length > 0
     ? (scorableLoans.length - penaltyLoans.length) / scorableLoans.length
     : 1.0

@@ -87,10 +87,16 @@ async function main() {
   const allLoans = await db
     .select()
     .from(loans)
-    .where(and(isNull(loans.deletedAt), eq(loans.loanType, "perpetual")))
+    .where(
+      and(
+        isNull(loans.deletedAt),
+        eq(loans.status, "active"),
+        eq(loans.loanType, "perpetual"),
+      ),
+    )
     .orderBy(asc(loans.createdAt));
 
-  console.log(`[backfill] scanning ${allLoans.length} perpetual loans`);
+  console.log(`[backfill] scanning ${allLoans.length} active perpetual loans`);
 
   const reports: LoanReport[] = [];
 

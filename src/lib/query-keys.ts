@@ -14,8 +14,14 @@ export const queryKeys = {
   // ── Loans ────────────────────────────────────────────────────────────
   loans: {
     all: ["loans"] as const,
+    /** Uncapped active-only list (`listOperationalLoans`). */
+    operational: ["loans", "operational"] as const,
     collateral: (loanId: string) => ["loans", loanId, "collateral"] as const,
     activeLoanCheck: (customerId: string) => ["active-loan-check", customerId] as const,
+    /** Prefix for all active-loan-check keys — invalidate on loan lifecycle writes. */
+    activeLoanCheckAll: ["active-loan-check"] as const,
+    detail: (loanId: string) => ["loans", "detail", loanId] as const,
+    customerLoans: (customerId: string) => ["loans", "customer", customerId] as const,
     dueToday: ["loans-due-today"] as const,
   },
 
@@ -30,6 +36,12 @@ export const queryKeys = {
     portions: (loanId: string, paymentIds: string) =>
       ["payments", "portions", loanId, paymentIds] as const,
     portionsAll: ["payments", "portions"] as const,
+    /** Uncapped payments for one loan (loan detail / history — R17-3). */
+    byLoan: (loanId: string) => ["loan-payments", loanId] as const,
+    byLoanAll: ["loan-payments"] as const,
+    /** Uncapped payments for a customer's loans (credit score — R17-2). */
+    byCustomer: (customerId: string) => ["customer-payments", customerId] as const,
+    byCustomerAll: ["customer-payments"] as const,
   },
 
   // ── Customers ────────────────────────────────────────────────────────

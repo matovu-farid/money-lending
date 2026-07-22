@@ -15,6 +15,7 @@ import {
   createLoan,
   listLoans,
   listLoanBalances,
+  listOperationalLoans,
   getLoanPaymentContext,
   getLoanCollateral,
   getLoanReceiptData,
@@ -24,6 +25,11 @@ import {
   getLoanStatusCounts,
   getLoansForExport,
   listActiveLoansWithOverdue,
+  getLoanListEntryById,
+  getLoanListEntriesByIds,
+  getLoanPredecessorChain,
+  getLoanSuccessor,
+  getRolloverAuditEntries,
   waivePenalty,
   adjustPenaltyMultiplier,
 } from "@/services/loan.service";
@@ -103,6 +109,67 @@ export const getLoanReceiptDataAction = withAction<
 export const listLoansAction = withAction({
   permission: "loan:read",
   effect: () => listLoans(),
+});
+
+/** Uncapped active loans for operational UI (watchlist, payment pickers). */
+export const listOperationalLoansAction = withAction({
+  permission: "loan:read",
+  effect: () => listOperationalLoans(),
+});
+
+/** Single-loan balance entry for deep links outside the capped loanCollection. */
+export const getLoanWithBalanceAction = withAction<
+  string,
+  { data: Awaited<ReturnType<typeof getLoanListEntryById>> } | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanId) => {
+    const entry = await getLoanListEntryById(loanId);
+    if (!entry) return { error: "Loan not found" };
+    return { data: entry };
+  },
+});
+
+/** Batch list entries for payment-list fallback outside the 500-cap sync. */
+export const getLoanListEntriesByIdsAction = withAction<
+  string[],
+  { data: Awaited<ReturnType<typeof getLoanListEntriesByIds>> } | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanIds) => {
+    return { data: await getLoanListEntriesByIds(loanIds) };
+  },
+});
+
+export const getLoanPredecessorChainAction = withAction<
+  string,
+  { data: Loan[] } | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanId) => {
+    return { data: await getLoanPredecessorChain(loanId) };
+  },
+});
+
+export const getLoanSuccessorAction = withAction<
+  string,
+  { data: Loan | null } | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanId) => {
+    return { data: await getLoanSuccessor(loanId) };
+  },
+});
+
+export const getRolloverAuditEntriesAction = withAction<
+  string[],
+  | { data: Awaited<ReturnType<typeof getRolloverAuditEntries>> }
+  | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanIds) => {
+    return { data: await getRolloverAuditEntries(loanIds) };
+  },
 });
 
 export async function getCurrentUserRoleAction(): Promise<UserRole> {
@@ -425,7 +492,13 @@ export const waivePenaltyAction = withAction<
       revalidatePath("/loans");
       revalidatePath(`/loans/${loanId}`);
       return { data: result.data, txid: result.txid };
-    } catch {
+    } catch (e: unknown) {
+      if ((e as { _tag?: string })?._tag === "ValidationError") {
+        return {
+          error:
+            (e as { message?: string }).message ?? "Loan is not active",
+        };
+      }
       return { error: "Internal server error" };
     }
   },
@@ -458,7 +531,13 @@ const adjustPenaltyMultiplierWrapped = withAction<
       revalidatePath("/loans");
       revalidatePath(`/loans/${loanId}`);
       return { data: result.data, txid: result.txid };
-    } catch {
+    } catch (e: unknown) {
+      if ((e as { _tag?: string })?._tag === "ValidationError") {
+        return {
+          error:
+            (e as { message?: string }).message ?? "Loan is not active",
+        };
+      }
       return { error: "Internal server error" };
     }
   },

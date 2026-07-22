@@ -18,6 +18,7 @@ import {
 } from "@/services/transaction.service";
 import { autoPostPrincipalRecovery } from "@/services/auto-post.service";
 import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service";
+import { cancelPendingRateChangeRequestsForLoan } from "@/services/rate-change-request.service";
 import type { SettleWithCollateralInput, Loan } from "@/types";
 
 /**
@@ -208,6 +209,13 @@ export const settleWithCollateral = (
           .set({ status: "settled_with_collateral", updatedAt: now })
           .where(eq(loans.id, input.loanId))
           .returning();
+
+        await cancelPendingRateChangeRequestsForLoan(
+          tx,
+          input.loanId,
+          "settled",
+          actorId,
+        );
 
         // Audit log
         await writeAuditLog(tx, {

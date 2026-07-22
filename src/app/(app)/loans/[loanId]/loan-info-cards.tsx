@@ -169,9 +169,14 @@ export function LoanInfoCards({
             )}
           </div>
         )}
-        {pendingRateRequest && (
+        {pendingRateRequest && loan.status === "active" && (
           <Badge variant="outline" className="mt-2 text-xs">
             Pending: {formatRate(pendingRateRequest.requestedRate, 1)}
+          </Badge>
+        )}
+        {pendingRateRequest && loan.status !== "active" && (
+          <Badge variant="outline" className="mt-2 text-xs text-muted-foreground">
+            Request cancelled (loan closed)
           </Badge>
         )}
         {loan.status === "active" && has("rate-change:create") && !pendingRateRequest && (

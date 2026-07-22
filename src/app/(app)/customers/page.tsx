@@ -4,10 +4,11 @@ import { useState, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useLiveQuery } from "@tanstack/react-db"
+import { useQuery } from "@tanstack/react-query"
 import { customerCollection } from "@/collections/customers"
-import { useLoansWithBalances } from "@/collections/loan-views"
+import { searchCustomersAction } from "@/actions/customer.actions"
 import { CustomerSearchBar } from "@/components/customers/customer-search-bar"
-import type { CustomerSearchParams } from "@/types"
+import type { Customer, CustomerSearchParams } from "@/types"
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
@@ -19,76 +20,66 @@ import { normalizeUgandanPhone } from "@/lib/validators"
 
 const PAGE_SIZE = 20
 
+function usesServerLoanFilters(params: CustomerSearchParams): boolean {
+  return (
+    !!params.loanStatus?.length ||
+    (!!params.daysRemainingFilter && params.daysRemainingFilter !== "any")
+  )
+}
+
 export default function CustomersPage() {
   const router = useRouter()
   const [page, setPage] = useState(0)
   const [searchParams, setSearchParams] = useState<CustomerSearchParams>({})
 
+  const needsServerSearch = usesServerLoanFilters(searchParams)
+
   const { data: allCustomers, isLoading: customersLoading } = useLiveQuery((q) =>
-    q.from({ c: customerCollection }).select(({ c }) => c)
+    q.from({ c: customerCollection }).select(({ c }) => c),
   )
 
-  // Only sync the loan collection when a loan-based filter is active. The
-  // loan collection is backed by a slow server action (listLoansWithOverdueAction);
-  // pulling it on every customers-page visit was the main source of latency.
-  const needsLoans =
-    !!searchParams.loanStatus?.length ||
-    (!!searchParams.daysRemainingFilter && searchParams.daysRemainingFilter !== "any")
+  // Loan-based filters must hit uncapped server search (R17-5 / R19-2) —
+  // do not join capped customerCollection × loan collections client-side.
+  const { data: serverSearch, isLoading: serverLoading } = useQuery({
+    queryKey: ["customers", "search", searchParams, page],
+    queryFn: async () => {
+      const result = await searchCustomersAction({
+        ...searchParams,
+        page,
+        pageSize: PAGE_SIZE,
+      })
+      if ("error" in result) throw new Error(String(result.error))
+      return result.data as { rows: Customer[]; total: number }
+    },
+    enabled: needsServerSearch,
+    staleTime: 15_000,
+  })
 
-  const { data: allLoansData, isLoading: loansLoading } = useLoansWithBalances()
-  const allLoans = needsLoans ? allLoansData : undefined
-
-  // Client-side filtering
+  // Client-side filtering for name/status-only modes (fast path on synced collection)
   const filtered = useMemo(() => {
+    if (needsServerSearch) return []
     let result = allCustomers ?? []
     if (searchParams.name) {
       const term = searchParams.name.trim().toLowerCase()
       const normalizedPhone = normalizeUgandanPhone(searchParams.name)
-      result = result.filter((c) =>
-        c.fullName.toLowerCase().includes(term) ||
-        c.nin.toLowerCase().includes(term) ||
-        c.contact.toLowerCase().includes(term) ||
-        (normalizedPhone ? c.contact === normalizedPhone : false)
+      result = result.filter(
+        (c) =>
+          c.fullName.toLowerCase().includes(term) ||
+          c.nin.toLowerCase().includes(term) ||
+          c.contact.toLowerCase().includes(term) ||
+          (normalizedPhone ? c.contact === normalizedPhone : false),
       )
     }
     if (searchParams.status?.length) {
       result = result.filter((c) => searchParams.status!.includes(c.status))
     }
-
-    // Cross-reference with loans for loan-based filters
-    const loans = allLoans ?? []
-    if (searchParams.loanStatus?.length) {
-      const customerIdsWithMatchingLoans = new Set(
-        loans
-          .filter((l) => searchParams.loanStatus!.includes(l.status))
-          .map((l) => l.customerId)
-      )
-      result = result.filter((c) => customerIdsWithMatchingLoans.has(c.id))
-    }
-    if (searchParams.daysRemainingFilter && searchParams.daysRemainingFilter !== "any") {
-      const matchingCustomerIds = new Set(
-        loans
-          .filter((l) => {
-            if (l.status !== "active") return false
-            if (searchParams.daysRemainingFilter === "due_within_30") {
-              return l.daysOverdue === 0
-            }
-            if (searchParams.daysRemainingFilter === "overdue_30_plus") {
-              return l.daysOverdue >= 30
-            }
-            return false
-          })
-          .map((l) => l.customerId)
-      )
-      result = result.filter((c) => matchingCustomerIds.has(c.id))
-    }
-
     return result
-  }, [allCustomers, allLoans, searchParams])
+  }, [allCustomers, searchParams, needsServerSearch])
 
-  // Client-side pagination
-  const customers = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-  const total = filtered.length
+  const customers = needsServerSearch
+    ? (serverSearch?.rows ?? [])
+    : filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+  const total = needsServerSearch ? (serverSearch?.total ?? 0) : filtered.length
 
   const handleSearch = useCallback((params: CustomerSearchParams) => {
     setPage(0)
@@ -100,9 +91,13 @@ export default function CustomersPage() {
     setSearchParams({})
   }, [])
 
-  const isLoading = customersLoading || (needsLoans && loansLoading)
+  const isLoading = needsServerSearch
+    ? serverLoading
+    : customersLoading
 
-
+  const hasActiveFilters = Object.keys(searchParams).some(
+    (k) => searchParams[k as keyof CustomerSearchParams] !== undefined,
+  )
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -122,7 +117,7 @@ export default function CustomersPage() {
         </div>
       ) : customers.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-          {Object.keys(searchParams).some((k) => searchParams[k as keyof CustomerSearchParams] !== undefined) ? (
+          {hasActiveFilters ? (
             <>
               <p className="text-muted-foreground">No customers match your search.</p>
               <Button variant="ghost" size="sm" onClick={handleClearFilters}>
@@ -148,7 +143,11 @@ export default function CustomersPage() {
                 key: "fullName",
                 header: "Name",
                 primary: true,
-                render: (c) => <span className="font-medium group-hover/row:underline">{c.fullName}</span>,
+                render: (c) => (
+                  <span className="font-medium group-hover/row:underline">
+                    {c.fullName}
+                  </span>
+                ),
               },
               {
                 key: "contact",
@@ -163,13 +162,17 @@ export default function CustomersPage() {
                     <InfoPopover>
                       <p className="font-semibold text-sm mb-1">Customer Status</p>
                       <p className="text-xs text-muted-foreground mb-2">
-                        <span className="font-semibold">Active</span> &mdash; Customer is in good standing and eligible for new loans.
+                        <span className="font-semibold">Active</span> &mdash; Customer
+                        is in good standing and eligible for new loans.
                       </p>
                       <p className="text-xs text-muted-foreground mb-2">
-                        <span className="font-semibold">Blacklisted</span> &mdash; Customer has been flagged and cannot receive new loans. This is set manually by an admin or loan officer.
+                        <span className="font-semibold">Blacklisted</span> &mdash;
+                        Customer has been flagged and cannot receive new loans. This
+                        is set manually by an admin or loan officer.
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        <span className="font-semibold">Inactive</span> &mdash; Customer has no active loans and hasn&apos;t had activity recently.
+                        <span className="font-semibold">Inactive</span> &mdash; Customer
+                        has no active loans and hasn&apos;t had activity recently.
                       </p>
                     </InfoPopover>
                   </span>
@@ -180,7 +183,7 @@ export default function CustomersPage() {
                   </Badge>
                 ),
               },
-            ] as Column<typeof customers[number]>[]}
+            ] as Column<(typeof customers)[number]>[]}
             rows={customers}
             getRowKey={(c) => c.id}
             getRowProps={(c) => ({
@@ -191,19 +194,33 @@ export default function CustomersPage() {
               onClick: c.id.startsWith("optimistic-")
                 ? undefined
                 : () => router.push(`/customers/${c.id}`),
-   
             })}
           />
 
           <div className="flex items-center justify-between pt-4">
             <p className="text-sm text-muted-foreground">
-              Showing <span className="font-mono tabular-nums">{page * PAGE_SIZE + 1}&ndash;{Math.min((page + 1) * PAGE_SIZE, total)}</span> of <span className="font-mono tabular-nums">{total}</span> customers
+              Showing{" "}
+              <span className="font-mono tabular-nums">
+                {total === 0 ? 0 : page * PAGE_SIZE + 1}&ndash;
+                {Math.min((page + 1) * PAGE_SIZE, total)}
+              </span>{" "}
+              of <span className="font-mono tabular-nums">{total}</span> customers
             </p>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page === 0}
+                onClick={() => setPage((p) => p - 1)}
+              >
                 Previous
               </Button>
-              <Button variant="outline" size="sm" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage(p => p + 1)}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={(page + 1) * PAGE_SIZE >= total}
+                onClick={() => setPage((p) => p + 1)}
+              >
                 Next
               </Button>
             </div>

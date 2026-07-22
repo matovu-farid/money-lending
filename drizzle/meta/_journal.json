@@ -190,6 +190,13 @@
       "when": 1783956493762,
       "tag": "0026_powerful_retro_girl",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784699757355,
+      "tag": "0027_loans_rolled_over_from_idx",
+      "breakpoints": true
     }
   ]
 }

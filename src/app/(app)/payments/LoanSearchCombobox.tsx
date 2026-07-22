@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react"
 import { Clock, Search, X } from "lucide-react"
-import { useLoansWithBalances } from "@/collections/loan-views"
+import { useOperationalLoansWithBalances } from "@/collections/loan-views"
 import { Input } from "@/components/ui/input"
 import { formatCurrency, shortId } from "@/lib/utils"
 import type { ActiveLoanSearchResult } from "@/types"
@@ -26,7 +26,7 @@ export function LoanSearchCombobox({ selectedLoan, onSelect, onClear, recentLoan
   const sideOffset = 4
 
   const isSearchMode = query.trim().length >= 2
-  const { data: allLoans } = useLoansWithBalances()
+  const { data: allLoans } = useOperationalLoansWithBalances()
   const results: ActiveLoanSearchResult[] = useMemo(() => {
     if (!isSearchMode) return []
     const q = query.toLowerCase()

@@ -8,20 +8,34 @@ import {
   getCurrentUserRoleAction,
   resolveUserNamesAction,
   getLoanCollateralAction,
+  getCustomerLoansWithOverdueAction,
 } from "@/actions/loan.actions"
-import { getPaymentPortionsAction } from "@/actions/payment.actions"
+import { getPaymentPortionsAction, getPaymentsByLoanAction, getPaymentsForLoanIdsAction } from "@/actions/payment.actions"
 import { checkCustomerActiveLoanAction } from "@/actions/settlement.actions"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
-import type { UserRole, PaymentPortionsMap } from "@/types"
+import type { UserRole, PaymentPortionsMap, Payment } from "@/types"
+import type { Loan } from "@/types"
+import type { LoanListEntry } from "@/types/loan"
 import { subscribeToTableChanges } from "@/lib/table-events"
-import { boundedSet } from "@/lib/bounded-map"
+import { boundedSet, boundedTouch } from "@/lib/bounded-map"
 import { coerceDates } from "./_utils"
 
 // Cap on each per-id collection cache. Each entry has `startSync: true` and
-// holds a live query observer; without bounding, long sessions accumulate
-// dozens of background subscriptions for loans/customers no longer in view.
-const MAX_PER_ID_CACHED = 32
+// holds a live query observer. Raised from 32→64 and paired with LRU touch +
+// pin-on-view so multi-hop loan history deep links survive (R25-3).
+const MAX_PER_ID_CACHED = 64
+
+/** Keys that must not be FIFO-evicted while their page is mounted. */
+const pinnedCollectionKeys = new Set<string>()
+
+export function pinCollectionKey(key: string): void {
+  pinnedCollectionKeys.add(key)
+}
+
+export function unpinCollectionKey(key: string): void {
+  pinnedCollectionKeys.delete(key)
+}
 
 // Auto-refresh location balances when any cash-moving table changes.
 // Creditor investments/repayments deposit/withdraw from a location too;
@@ -33,6 +47,18 @@ subscribeToTableChanges("transactions", getQueryClient(), [queryKeys.locationBal
 subscribeToTableChanges("fund_transfers", getQueryClient(), [queryKeys.locationBalances.all])
 subscribeToTableChanges("creditor_investments", getQueryClient(), [queryKeys.locationBalances.all])
 subscribeToTableChanges("creditor_repayments", getQueryClient(), [queryKeys.locationBalances.all])
+// Per-customer loan history collections (prefix match via invalidateLendingProjections)
+subscribeToTableChanges("loans", getQueryClient(), [["loans", "customer"]])
+subscribeToTableChanges("payments", getQueryClient(), [["loans", "customer"]])
+// Per-loan / per-customer payment collections (R17-2 / R17-3 / R23-7)
+subscribeToTableChanges("payments", getQueryClient(), [
+  queryKeys.payments.byLoanAll,
+  queryKeys.payments.byCustomerAll,
+])
+subscribeToTableChanges("loans", getQueryClient(), [
+  queryKeys.loans.activeLoanCheckAll,
+  queryKeys.payments.byCustomerAll,
+])
 
 // --- Collateral natures (no params, singleton array) ---
 
@@ -170,16 +196,23 @@ const loanCollateralCollections = new Map<string, LoanCollateralCollectionType>(
 
 export function getLoanCollateralCollection(loanId: string) {
   let collection = loanCollateralCollections.get(loanId)
-  if (!collection) {
-    collection = createLoanCollateralCollection(loanId)
-    boundedSet(loanCollateralCollections, loanId, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
+  if (collection) {
+    boundedTouch(loanCollateralCollections, loanId)
+    return collection
   }
+  collection = createLoanCollateralCollection(loanId)
+  boundedSet(
+    loanCollateralCollections,
+    loanId,
+    collection,
+    MAX_PER_ID_CACHED,
+    (c) => c.cleanup(),
+    pinnedCollectionKeys,
+  )
   return collection
 }
 
 // --- Active loan check for customer (parameterized) ---
-
-import type { Loan } from "@/types"
 
 export type ActiveLoanCheckData = {
   loan: Loan
@@ -225,10 +258,19 @@ const emptyActiveLoanCheckCollection = createCollection(
 export function getActiveLoanCheckCollection(customerId: string) {
   if (!customerId) return emptyActiveLoanCheckCollection
   let collection = activeLoanCheckCollections.get(customerId)
-  if (!collection) {
-    collection = createActiveLoanCheckCollection(customerId)
-    boundedSet(activeLoanCheckCollections, customerId, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
+  if (collection) {
+    boundedTouch(activeLoanCheckCollections, customerId)
+    return collection
   }
+  collection = createActiveLoanCheckCollection(customerId)
+  boundedSet(
+    activeLoanCheckCollections,
+    customerId,
+    collection,
+    MAX_PER_ID_CACHED,
+    (c) => c.cleanup(),
+    pinnedCollectionKeys,
+  )
   return collection
 }
 
@@ -268,9 +310,209 @@ export function getPaymentPortionsCollection(loanId: string, paymentIds: string[
   if (paymentIds.length === 0) return emptyPaymentPortionsCollection
   const key = `${loanId}:${paymentIds.sort().join(",")}`
   let collection = paymentPortionsCollections.get(key)
-  if (!collection) {
-    collection = createPaymentPortionsCollection(loanId, paymentIds)
-    boundedSet(paymentPortionsCollections, key, collection, MAX_PER_ID_CACHED, (c) => c.cleanup())
+  if (collection) {
+    boundedTouch(paymentPortionsCollections, key)
+    return collection
   }
+  collection = createPaymentPortionsCollection(loanId, paymentIds)
+  boundedSet(
+    paymentPortionsCollections,
+    key,
+    collection,
+    MAX_PER_ID_CACHED,
+    (c) => c.cleanup(),
+    pinnedCollectionKeys,
+  )
+  return collection
+}
+
+// --- Customer loans with overdue (uncapped per customer — R13-2 / Phase 2.4) ---
+
+export type CustomerLoanRow = LoanListEntry & { _key: string }
+
+function createCustomerLoansCollection(customerId: string) {
+  return createCollection(
+    queryCollectionOptions<CustomerLoanRow>({
+      queryKey: [...queryKeys.loans.customerLoans(customerId)],
+      queryClient: getQueryClient(),
+      queryFn: async (): Promise<Array<CustomerLoanRow>> => {
+        const result = await getCustomerLoansWithOverdueAction(customerId)
+        if ("error" in result) return []
+        return coerceDates(
+          result.data.map((loan) => ({ ...loan, _key: loan.id })),
+          [
+            "startDate",
+            "penaltyWaivedAt",
+            "backdatedFrom",
+            "backdatedAt",
+            "createdAt",
+            "updatedAt",
+            "deletedAt",
+            "lastPaymentDate",
+          ],
+        ) as CustomerLoanRow[]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+      staleTime: 30_000,
+    }),
+  )
+}
+
+type CustomerLoansCollectionType = ReturnType<typeof createCustomerLoansCollection>
+const customerLoansCollections = new Map<string, CustomerLoansCollectionType>()
+
+const emptyCustomerLoansCollection = createCollection(
+  queryCollectionOptions<CustomerLoanRow>({
+    queryKey: [...queryKeys.loans.customerLoans("__empty__")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<CustomerLoanRow>> => [],
+    getKey: (row) => row._key,
+  }),
+)
+
+/**
+ * Uncapped loan history for one customer (credit score + customer detail).
+ * Do not use the global 500-cap loanCollection for this surface.
+ */
+export function getCustomerLoansCollection(customerId: string) {
+  if (!customerId) return emptyCustomerLoansCollection
+  let collection = customerLoansCollections.get(customerId)
+  if (collection) {
+    boundedTouch(customerLoansCollections, customerId)
+    return collection
+  }
+  collection = createCustomerLoansCollection(customerId)
+  boundedSet(
+    customerLoansCollections,
+    customerId,
+    collection,
+    MAX_PER_ID_CACHED,
+    (c) => c.cleanup(),
+    pinnedCollectionKeys,
+  )
+  return collection
+}
+
+// --- Per-loan payments (uncapped — R17-3) ---
+
+export type LoanPaymentRow = Payment & { _key: string }
+
+function createLoanPaymentsCollection(loanId: string) {
+  return createCollection(
+    queryCollectionOptions<LoanPaymentRow>({
+      queryKey: [...queryKeys.payments.byLoan(loanId)],
+      queryClient: getQueryClient(),
+      queryFn: async (): Promise<Array<LoanPaymentRow>> => {
+        const result = await getPaymentsByLoanAction(loanId)
+        if ("error" in result) return []
+        return coerceDates(
+          result.data.map((p) => ({ ...p, _key: p.id })),
+          ["paymentDate", "createdAt", "updatedAt", "deletedAt"],
+        ) as LoanPaymentRow[]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+      staleTime: 30_000,
+    }),
+  )
+}
+
+type LoanPaymentsCollectionType = ReturnType<typeof createLoanPaymentsCollection>
+const loanPaymentsCollections = new Map<string, LoanPaymentsCollectionType>()
+
+const emptyLoanPaymentsCollection = createCollection(
+  queryCollectionOptions<LoanPaymentRow>({
+    queryKey: [...queryKeys.payments.byLoan("__empty__")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<LoanPaymentRow>> => [],
+    getKey: (row) => row._key,
+  }),
+)
+
+/** Uncapped payments for one loan — loan detail / history (not global 2000-cap). */
+export function getLoanPaymentsCollection(loanId: string) {
+  if (!loanId) return emptyLoanPaymentsCollection
+  let collection = loanPaymentsCollections.get(loanId)
+  if (collection) {
+    boundedTouch(loanPaymentsCollections, loanId)
+    return collection
+  }
+  collection = createLoanPaymentsCollection(loanId)
+  boundedSet(
+    loanPaymentsCollections,
+    loanId,
+    collection,
+    MAX_PER_ID_CACHED,
+    (c) => c.cleanup(),
+    pinnedCollectionKeys,
+  )
+  return collection
+}
+
+// --- Per-customer payments across all their loans (uncapped — R17-2) ---
+
+export type CustomerPaymentRow = Payment & { _key: string }
+
+function createCustomerPaymentsCollection(customerId: string, loanIds: string[]) {
+  const key = [...loanIds].sort().join(",")
+  return createCollection(
+    queryCollectionOptions<CustomerPaymentRow>({
+      queryKey: [...queryKeys.payments.byCustomer(customerId), key],
+      queryClient: getQueryClient(),
+      queryFn: async (): Promise<Array<CustomerPaymentRow>> => {
+        const result = await getPaymentsForLoanIdsAction(loanIds)
+        if ("error" in result) return []
+        return coerceDates(
+          result.data.map((p) => ({ ...p, _key: p.id })),
+          ["paymentDate", "createdAt", "updatedAt", "deletedAt"],
+        ) as CustomerPaymentRow[]
+      },
+      getKey: (row) => row._key,
+      startSync: true,
+      staleTime: 30_000,
+    }),
+  )
+}
+
+type CustomerPaymentsCollectionType = ReturnType<
+  typeof createCustomerPaymentsCollection
+>
+const customerPaymentsCollections = new Map<string, CustomerPaymentsCollectionType>()
+
+const emptyCustomerPaymentsCollection = createCollection(
+  queryCollectionOptions<CustomerPaymentRow>({
+    queryKey: [...queryKeys.payments.byCustomer("__empty__")],
+    queryClient: getQueryClient(),
+    queryFn: async (): Promise<Array<CustomerPaymentRow>> => [],
+    getKey: (row) => row._key,
+  }),
+)
+
+/**
+ * Uncapped payments for a customer's loan set (credit score).
+ * Keyed by customerId + sorted loanIds so the collection refreshes when
+ * the loan set changes after rollover.
+ */
+export function getCustomerPaymentsCollection(
+  customerId: string,
+  loanIds: string[],
+) {
+  if (!customerId || loanIds.length === 0) return emptyCustomerPaymentsCollection
+  const cacheKey = `${customerId}:${[...loanIds].sort().join(",")}`
+  let collection = customerPaymentsCollections.get(cacheKey)
+  if (collection) {
+    boundedTouch(customerPaymentsCollections, cacheKey)
+    return collection
+  }
+  collection = createCustomerPaymentsCollection(customerId, loanIds)
+  boundedSet(
+    customerPaymentsCollections,
+    cacheKey,
+    collection,
+    MAX_PER_ID_CACHED,
+    (c) => c.cleanup(),
+    pinnedCollectionKeys,
+  )
   return collection
 }

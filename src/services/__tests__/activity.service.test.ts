@@ -119,6 +119,17 @@ describe("getActivityHref", () => {
     expect(getActivityHref("loan", "loan-123", null)).toBe("/loans/loan-123")
   })
 
+  it("prefers successor for loan.rollover", () => {
+    expect(
+      getActivityHref(
+        "loan",
+        "old-loan",
+        { rolledIntoLoanId: "new-loan" },
+        "loan.rollover",
+      ),
+    ).toBe("/loans/new-loan")
+  })
+
   it("returns loan path for payment with loanId in afterValue", () => {
     expect(getActivityHref("payment", "pay-1", { loanId: "loan-456" })).toBe("/loans/loan-456")
   })
