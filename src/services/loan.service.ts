@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { loans } from "@/lib/db/schema/loans";
 import { collateral } from "@/lib/db/schema/collateral";
 import { payments } from "@/lib/db/schema/payments";
+import { loanWaivers } from "@/lib/db/schema/loan-waivers";
 import { getBaseRate } from "@/lib/interest/effective-rate";
 import { customers } from "@/lib/db/schema/customers";
 import { user } from "@/lib/db/schema/auth";
@@ -32,6 +33,7 @@ import {
   getPaymentPortionsFromLedger,
   getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
+  getWaiverPortionsFromLedger,
 } from "./ledger-queries.service";
 import {
   allocateLoanPayment,
@@ -1162,6 +1164,66 @@ export const deleteLoan = (
               loanId: input.loanId,
             });
           }
+        }
+
+        const activeWaivers = await tx
+          .select()
+          .from(loanWaivers)
+          .where(
+            and(
+              eq(loanWaivers.loanId, input.loanId),
+              isNull(loanWaivers.deletedAt),
+            ),
+          );
+
+        if (activeWaivers.length > 0) {
+          const waiverPortions = await getWaiverPortionsFromLedger(
+            activeWaivers.map((w) => w.id),
+            tx,
+          );
+
+          for (const w of activeWaivers) {
+            const portion = waiverPortions.get(w.id);
+            if (!portion) continue;
+
+            if (new BigNumber(portion.interestPortion).isGreaterThan(0)) {
+              await postJournalEntry(tx, {
+                debitCategory: { name: "Interest Earned", type: "revenue" },
+                creditCategory: { name: "Loan Losses", type: "expense" },
+                amount: portion.interestPortion,
+                referenceType: "loan_waiver_reversal",
+                referenceId: w.id,
+                description: `Reversal - interest waiver for deleted loan ${shortId(input.loanId).toUpperCase()}: ${input.reason}`,
+                transactionDate: new Date(w.waiverDate),
+                recordedBy: actorId,
+                loanId: input.loanId,
+              });
+            }
+
+            if (new BigNumber(portion.principalPortion).isGreaterThan(0)) {
+              await postJournalEntry(tx, {
+                debitCategory: { name: "Loans Receivable", type: "asset" },
+                creditCategory: { name: "Loan Losses", type: "expense" },
+                amount: portion.principalPortion,
+                referenceType: "loan_waiver_reversal",
+                referenceId: w.id,
+                description: `Reversal - principal waiver for deleted loan ${shortId(input.loanId).toUpperCase()}: ${input.reason}`,
+                transactionDate: new Date(w.waiverDate),
+                recordedBy: actorId,
+                loanId: input.loanId,
+              });
+            }
+          }
+
+          await tx
+            .update(loanWaivers)
+            .set({ deletedAt: now })
+            .where(
+              and(
+                eq(loanWaivers.loanId, input.loanId),
+                isNull(loanWaivers.deletedAt),
+              ),
+            );
         }
 
         await tx

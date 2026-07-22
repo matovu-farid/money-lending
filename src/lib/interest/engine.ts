@@ -616,4 +616,76 @@ export function allocatePayment(params: {
   };
 }
 
+/**
+ * When engine interest exceeds accrual unpaid interest, re-split interest-first
+ * with interest capped at the accrual figure (R14-H2).
+ */
+export function clampAllocationToUnpaidInterest(
+  allocation: PaymentAllocation,
+  paymentAmount: string,
+  unpaidInterest: string,
+  principalBalanceBefore: string,
+  monthlyRateDecimal: string,
+): PaymentAllocation {
+  const unpaidCap = new BigNumber(unpaidInterest);
+  const interestBN = new BigNumber(allocation.interestPortion);
+  if (interestBN.isLessThanOrEqualTo(unpaidCap)) return allocation;
+
+  const payment = new BigNumber(paymentAmount);
+  const balance = new BigNumber(principalBalanceBefore);
+  const interest = BigNumber.min(interestBN, unpaidCap);
+  const principal = BigNumber.min(payment.minus(interest), balance);
+  const principalAfter = BigNumber.max(balance.minus(principal), 0);
+
+  return {
+    ...allocation,
+    interestPortion: formatAmount(interest),
+    principalPortion: formatAmount(principal),
+    principalBalanceAfter: formatAmount(principalAfter),
+    outstandingBalanceAfter: formatAmount(
+      principalAfter.multipliedBy(new BigNumber(monthlyRateDecimal)).dividedBy(30),
+    ),
+    loanFullyPaid: principalAfter.isZero(),
+  };
+}
+
+/** Instant waiver split preview — same rules as server settlement + unpaid cap. */
+export function previewWaiverAllocation(params: {
+  amount: string;
+  principalBalanceBefore: string;
+  unpaidInterest: string;
+  monthlyRateDecimal: string;
+  daysElapsed: number;
+  minInterestDays: number;
+  loanType?: LoanType;
+  originalPrincipal?: string;
+  termMonths?: number;
+  paymentNumber?: number;
+  interestAlreadyPaidInPeriod?: string;
+}): Pick<PaymentAllocation, "interestPortion" | "principalPortion"> {
+  const allocation = allocatePayment({
+    paymentAmount: params.amount,
+    principalBalanceBefore: params.principalBalanceBefore,
+    monthlyRateDecimal: params.monthlyRateDecimal,
+    daysElapsed: params.daysElapsed,
+    minInterestDays: params.minInterestDays,
+    loanType: params.loanType,
+    originalPrincipal: params.originalPrincipal,
+    termMonths: params.termMonths,
+    paymentNumber: params.paymentNumber,
+    interestAlreadyPaidInPeriod: params.interestAlreadyPaidInPeriod,
+  });
+  const clamped = clampAllocationToUnpaidInterest(
+    allocation,
+    params.amount,
+    params.unpaidInterest,
+    params.principalBalanceBefore,
+    params.monthlyRateDecimal,
+  );
+  return {
+    interestPortion: clamped.interestPortion,
+    principalPortion: clamped.principalPortion,
+  };
+}
+
 export const allocateLoanPayment = allocateLoanPaymentServerSide;

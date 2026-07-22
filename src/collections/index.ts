@@ -3,6 +3,11 @@ export { loanCollection, insertLoanWithInput } from "./loans"
 export { operationalLoanCollection } from "./operational-loans"
 //export { loanBalanceCollection } from "./loan-balances"
 export { paymentCollection } from "./payments"
+export {
+  getLoanWaiversCollection,
+  insertWaiverWithInput,
+  type LoanWaiverRow,
+} from "./loan-waivers"
 export { expenseCollection } from "./expenses"
 export { incomeCollection } from "./income"
 export { creditorCollection } from "./creditors"

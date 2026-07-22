@@ -25,6 +25,7 @@ export type NotificationEvent =
   | "fund.transfer.created"
   | "capital.injection.created"
   | "settlement.completed"
+  | "loan.waiver"
 
 const SUBJECT_MAP: Record<NotificationEvent, string> = {
   "loan.disbursed": "Loan disbursed",
@@ -38,6 +39,7 @@ const SUBJECT_MAP: Record<NotificationEvent, string> = {
   "fund.transfer.created": "Fund transfer recorded",
   "capital.injection.created": "Capital injection recorded",
   "settlement.completed": "Loan settled with collateral",
+  "loan.waiver": "Loan amount waived",
 }
 
 /**
@@ -56,6 +58,7 @@ const DIRECTION_MAP: Record<NotificationEvent, "in" | "out" | "internal"> = {
   "fund.transfer.created": "internal",
   "capital.injection.created": "in",
   "settlement.completed": "internal",
+  "loan.waiver": "internal",
 }
 
 export type NotificationPayload = {

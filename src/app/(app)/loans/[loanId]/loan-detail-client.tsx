@@ -9,6 +9,7 @@ import {
   ShieldAlert,
   PlusCircle,
   Calculator,
+  HandCoins,
 } from "lucide-react";
 import { paymentCollection } from "@/collections/payments";
 import {
@@ -42,6 +43,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import type { Loan, PaymentPortionsMap } from "@/types";
 import { CopyButton } from "@/components/ui/copy-button";
 import { SettleCollateralDialog } from "@/components/loans/settle-collateral-dialog";
+import { WaiveLoanDialog, WaiverHistorySection } from "@/components/loans/waive-loan-dialog";
 import { SimulatorPanel } from "@/components/loans/simulator-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -82,6 +84,7 @@ export function LoanDetailClient({
   const { has } = usePermissions();
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived);
   const readOnly = isLoanReadOnly(loan.status);
+  const canWaiveAmount = !readOnly && has("loan:waiver");
 
   // Fetch userRole via collection
   const { data: userRoleRows } = useLiveQuery((q) =>
@@ -228,6 +231,9 @@ export function LoanDetailClient({
     settlingCollateral,
     openSettleCollateral,
     closeSettleCollateral,
+    waivingAmount,
+    openWaiveAmount,
+    closeWaiveAmount,
     requestingRateChange,
     newRate,
     openRateChange,
@@ -641,6 +647,17 @@ export function LoanDetailClient({
               Settle with Collateral
             </Button>
           )}
+          {canWaiveAmount && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => openWaiveAmount()}
+              className="text-amber-700 hover:text-amber-800 hover:bg-amber-50 border-amber-300"
+            >
+              <HandCoins className="h-3.5 w-3.5" />
+              Waive Amount
+            </Button>
+          )}
         </div>
       </div>
 
@@ -884,6 +901,10 @@ export function LoanDetailClient({
         onDeletePayment={openPaymentDelete}
       />
 
+      {canWaiveAmount && (
+        <WaiverHistorySection loanId={loan.id} userNameMap={userNameMap} />
+      )}
+
       {loan.status === "active" && (
         <SimulatorPanel
           loan={loan}
@@ -927,6 +948,20 @@ export function LoanDetailClient({
         onClose={closeRateChange}
       />
 
+      {canWaiveAmount && (
+        <WaiveLoanDialog
+          open={waivingAmount}
+          onOpenChange={(v) => {
+            if (!v) closeWaiveAmount();
+          }}
+          loan={loan}
+          daysOverdue={daysOverdue}
+          paymentDates={activePayments.map((p) => p.paymentDate)}
+          principalBalance={outstandingBalance}
+          unpaidInterest={unpaidInterestNum.toString()}
+          totalDue={totalDue.toString()}
+        />
+      )}
       {balanceData && collateralNature && (
         <SettleCollateralDialog
           open={settlingCollateral}

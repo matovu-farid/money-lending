@@ -74,6 +74,7 @@ export async function waiveLoanAmount(
     const [waiver] = await tx
       .insert(loanWaivers)
       .values({
+        ...(input.id ? { id: input.id } : {}),
         loanId: input.loanId,
         amount: input.amount,
         waiverDate,

@@ -28,6 +28,12 @@ subscribeToTableChanges("loans", getQueryClient(), [
 subscribeToTableChanges("payments", getQueryClient(), [
   queryKeys.loans.operational,
 ])
+subscribeToTableChanges("loan_waivers", getQueryClient(), [
+  queryKeys.loans.operational,
+])
+subscribeToTableChanges("transactions", getQueryClient(), [
+  queryKeys.loans.operational,
+])
 
 export const operationalLoanCollection = createCollection(
   queryCollectionOptions({

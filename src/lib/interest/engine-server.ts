@@ -8,7 +8,7 @@ import { computeSingleLoanBalanceData } from "./loanBalanceData";
 import {
   allocatePayment,
   formatAmount,
-  type PaymentAllocation,
+  clampAllocationToUnpaidInterest,
 } from "./engine";
 import { getEffectiveRate } from "./effective-rate";
 import { toLoanType } from "@/types";
@@ -33,39 +33,6 @@ export type AllocateLoanSettlementParams = {
   /** Waivers are write-downs, not scheduled installments (R14-H1) */
   settlementKind?: "payment" | "waiver";
 };
-
-/**
- * When engine interest exceeds accrual unpaid interest, re-split interest-first
- * with interest capped at the accrual figure (R14-H2).
- */
-function clampAllocationToUnpaidInterest(
-  allocation: PaymentAllocation,
-  paymentAmount: string,
-  unpaidInterest: string,
-  principalBalanceBefore: string,
-  monthlyRateDecimal: string,
-): PaymentAllocation {
-  const unpaidCap = new BigNumber(unpaidInterest);
-  const interestBN = new BigNumber(allocation.interestPortion);
-  if (interestBN.isLessThanOrEqualTo(unpaidCap)) return allocation;
-
-  const payment = new BigNumber(paymentAmount);
-  const balance = new BigNumber(principalBalanceBefore);
-  const interest = BigNumber.min(interestBN, unpaidCap);
-  const principal = BigNumber.min(payment.minus(interest), balance);
-  const principalAfter = BigNumber.max(balance.minus(principal), 0);
-
-  return {
-    ...allocation,
-    interestPortion: formatAmount(interest),
-    principalPortion: formatAmount(principal),
-    principalBalanceAfter: formatAmount(principalAfter),
-    outstandingBalanceAfter: formatAmount(
-      principalAfter.multipliedBy(new BigNumber(monthlyRateDecimal)).dividedBy(30),
-    ),
-    loanFullyPaid: principalAfter.isZero(),
-  };
-}
 
 /**
  * Loan-type-aware settlement allocation shared by payments and waivers.

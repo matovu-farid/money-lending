@@ -107,6 +107,12 @@ export const queryKeys = {
     all: ["loan-balances"] as const,
   },
 
+  // ── Loan Waivers (admin-only) ────────────────────────────────────────
+  loanWaivers: {
+    all: ["loan-waivers"] as const,
+    byLoan: (loanId: string) => ["loan-waivers", loanId] as const,
+  },
+
   // ── Location Balances ────────────────────────────────────────────────
   locationBalances: {
     all: ["location-balances"] as const,

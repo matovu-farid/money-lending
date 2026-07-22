@@ -27,6 +27,9 @@ interface LoanDetailState {
   // Collateral settlement
   settlingCollateral: boolean
 
+  // Loan amount waiver (admin-only)
+  waivingAmount: boolean
+
   // Rate change dialog
   requestingRateChange: boolean
   newRate: string
@@ -66,6 +69,10 @@ interface LoanDetailActions {
   openSettleCollateral: () => void
   closeSettleCollateral: () => void
 
+  // Loan amount waiver
+  openWaiveAmount: () => void
+  closeWaiveAmount: () => void
+
   // Rate change
   openRateChange: (currentRate: string) => void
   closeRateChange: () => void
@@ -104,6 +111,7 @@ const initialState: LoanDetailState = {
   deletingLoan: false,
   loanDeleteReason: "",
   settlingCollateral: false,
+  waivingAmount: false,
   requestingRateChange: false,
   newRate: "",
   adjustingPenalty: false,
@@ -157,6 +165,10 @@ export const useLoanDetailStore = create<LoanDetailState & LoanDetailActions>()(
   // Collateral
   openSettleCollateral: () => set({ settlingCollateral: true }),
   closeSettleCollateral: () => set({ settlingCollateral: false }),
+
+  // Loan amount waiver
+  openWaiveAmount: () => set({ waivingAmount: true }),
+  closeWaiveAmount: () => set({ waivingAmount: false }),
 
   // Rate change
   openRateChange: (currentRate) =>

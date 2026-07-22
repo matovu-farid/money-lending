@@ -26,6 +26,8 @@ import type { Permission, UserRole } from "@/types"
 vi.mock("@/lib/validators", () => ({
   validatePositiveDecimal: vi.fn(() => null),
   validateRequired: vi.fn(),
+  validateWaiveLoanAmountInput: vi.fn(() => null),
+  validateUuid: vi.fn(() => null),
 }))
 
 vi.mock("@/lib/action-utils", () => {
@@ -156,6 +158,12 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("@/lib/email", () => ({
   sendAdminNotification: vi.fn().mockResolvedValue(undefined),
+  notifyAdmin: vi.fn(),
+  resolveLoanContext: vi.fn().mockResolvedValue({
+    entityRef: "LOAN-TEST",
+    counterpartyLabel: "Customer",
+    deepLinkPath: "/loans/loan-1",
+  }),
 }))
 
 vi.mock("@/services/transaction.service", () => ({
@@ -173,6 +181,36 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getPaymentPortionsFromLedger: vi.fn(),
   getLoanBalancesFromLedger: vi.fn(),
   getInterestEarnedFromLedger: vi.fn(),
+  getWaiverPortionsFromLedger: vi.fn(),
+}))
+
+vi.mock("@/lib/interest/engine-server", () => ({
+  allocateLoanSettlementAmount: vi.fn().mockResolvedValue({
+    interestPortion: "500",
+    principalPortion: "500",
+    unpaidInterest: "1000",
+    remainingPrincipalAmount: "10000",
+    totalBalanceOwedAfter: "11000",
+  }),
+}))
+
+vi.mock("@/services/loan-waiver.service", () => ({
+  waiveLoanAmount: vi.fn().mockResolvedValue({
+    waiver: {
+      id: "waiver-1",
+      loanId: "loan-1",
+      amount: "1000",
+      waiverDate: new Date(),
+      reason: "test reason here",
+      recordedBy: "u1",
+      createdAt: new Date(),
+      deletedAt: null,
+    },
+    interestPortion: "500",
+    principalPortion: "500",
+    txid: 1,
+  }),
+  listLoanWaiversForLoan: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock("@/lib/interest/engine", () => ({
@@ -224,7 +262,13 @@ import {
   getSettingsAction,
 } from "../settings.actions"
 
-import { fakeSession, lowRoleSession, loanOfficerSession, supervisorSession } from "./test-utils"
+import {
+  waiveLoanAmountAction,
+  listLoanWaiversAction,
+  previewWaiverAllocationAction,
+} from "../loan-waiver.actions"
+
+import { fakeSession, lowRoleSession, loanOfficerSession, supervisorSession, superAdminSession } from "./test-utils"
 
 const mockGetSession = vi.mocked(getSession)
 const mockCheckPermission = vi.mocked(checkPermission)
@@ -500,6 +544,111 @@ describe("Authorization regression tests", () => {
   })
 
   // ==========================================================================
+  // loan:waiver — admin-only loan amount waiver
+  // ==========================================================================
+  describe("waiveLoanAmountAction authorization", () => {
+    const input = {
+      loanId: "loan-1",
+      amount: "1000",
+      reason: "Customer hardship waiver",
+    }
+
+    it("requires loan:waiver permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+
+      await waiveLoanAmountAction(input)
+
+      expect(mockCheckPermission).toHaveBeenCalledWith(
+        fakeSession,
+        "loan:waiver",
+        "Only admins can waive loan amounts",
+      )
+    })
+
+    it("rejects unauthenticated users", async () => {
+      mockGetSession.mockResolvedValue(null)
+      const result = await waiveLoanAmountAction(input)
+      expect(result).toEqual({ error: "Unauthorized" })
+    })
+
+    it("rejects loan officers", async () => {
+      mockGetSession.mockResolvedValue(loanOfficerSession)
+      const result = await waiveLoanAmountAction(input)
+      expect(result).toEqual({ error: "Only admins can waive loan amounts" })
+    })
+
+    it("rejects supervisors", async () => {
+      mockGetSession.mockResolvedValue(supervisorSession)
+      const result = await waiveLoanAmountAction(input)
+      expect(result).toEqual({ error: "Only admins can waive loan amounts" })
+    })
+
+    it("allows admins", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const result = await waiveLoanAmountAction(input)
+      expect(result).not.toEqual({ error: "Only admins can waive loan amounts" })
+      expect(result).not.toEqual({ error: "Forbidden" })
+      expect(result).not.toEqual({ error: "Unauthorized" })
+    })
+
+    it("allows superAdmins", async () => {
+      mockGetSession.mockResolvedValue(superAdminSession)
+      const result = await waiveLoanAmountAction(input)
+      expect(result).not.toEqual({ error: "Only admins can waive loan amounts" })
+      expect(result).not.toEqual({ error: "Forbidden" })
+      expect(result).not.toEqual({ error: "Unauthorized" })
+    })
+  })
+
+  describe("listLoanWaiversAction authorization", () => {
+    it("requires loan:waiver permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+
+      await listLoanWaiversAction("loan-1")
+
+      expect(mockCheckPermission).toHaveBeenCalledWith(
+        fakeSession,
+        "loan:waiver",
+        "Only admins can view loan waivers",
+      )
+    })
+
+    it("rejects loan officers", async () => {
+      mockGetSession.mockResolvedValue(loanOfficerSession)
+      const result = await listLoanWaiversAction("loan-1")
+      expect(result).toEqual({ error: "Only admins can view loan waivers" })
+    })
+  })
+
+  describe("previewWaiverAllocationAction authorization", () => {
+    it("requires loan:waiver permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+
+      await previewWaiverAllocationAction({ loanId: "loan-1", amount: "1000" })
+
+      expect(mockCheckPermission).toHaveBeenCalledWith(
+        fakeSession,
+        "loan:waiver",
+        "Only admins can preview waiver allocation",
+      )
+    })
+
+    it("rejects supervisors", async () => {
+      mockGetSession.mockResolvedValue(supervisorSession)
+      const result = await previewWaiverAllocationAction({
+        loanId: "loan-1",
+        amount: "1000",
+      })
+      expect(result).toEqual({
+        error: "Only admins can preview waiver allocation",
+      })
+    })
+  })
+
+  // ==========================================================================
   // Cross-cutting: verify the permission catalog assigns correctly
   // ==========================================================================
   describe("permission catalog sanity checks", () => {
@@ -534,6 +683,13 @@ describe("Authorization regression tests", () => {
       expect(perms.has("payment:create")).toBe(true)
       expect(perms.has("settings:update")).toBe(true)
       expect(perms.has("settings:read")).toBe(true)
+    })
+
+    it("admin and superAdmin have loan:waiver; loanOfficer and supervisor do not", () => {
+      expect(getPermissionsForRole("admin").has("loan:waiver")).toBe(true)
+      expect(getPermissionsForRole("superAdmin").has("loan:waiver")).toBe(true)
+      expect(getPermissionsForRole("loanOfficer").has("loan:waiver")).toBe(false)
+      expect(getPermissionsForRole("supervisor").has("loan:waiver")).toBe(false)
     })
   })
 })

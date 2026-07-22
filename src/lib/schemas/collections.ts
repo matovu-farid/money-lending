@@ -33,6 +33,7 @@ import {
   rateChangeRequests,
   delegations,
   invitations,
+  loanWaivers,
 } from "@/lib/db/schema"
 
 const factory = createSchemaFactory({ coerce: { date: true } })
@@ -73,6 +74,9 @@ export const transactionSchema = createSelectSchema(transactions)
 export type TransactionRow = typeof transactionSchema._zod.output
 
 export const rateChangeRequestSchema = createSelectSchema(rateChangeRequests)
+
+export const loanWaiverSchema = createSelectSchema(loanWaivers)
+export type LoanWaiverRow = typeof loanWaiverSchema._zod.output
 export type RateChangeRequestRow = typeof rateChangeRequestSchema._zod.output
 
 export const delegationSchema = createSelectSchema(delegations)
