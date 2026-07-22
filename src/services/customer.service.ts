@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { customers } from "@/lib/db/schema/customers";
 import { loans } from "@/lib/db/schema/loans";
 import { payments } from "@/lib/db/schema/payments";
-import { eq, ilike, inArray, and, count, isNull, desc, sql } from "drizzle-orm";
+import { eq, ilike, inArray, and, or, count, isNull, desc, sql } from "drizzle-orm";
 import { DatabaseError, CustomerNotFound } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
@@ -22,6 +22,11 @@ import {
 import {
   computeSingleLoanBalanceData,
 } from "@/lib/interest/loanBalanceData";
+import { normalizeUgandanPhone } from "@/lib/validators";
+
+function normalizeCustomerContact(contact: string): string {
+  return normalizeUgandanPhone(contact) ?? contact.trim();
+}
 
 export const createCustomer = (
   input: CreateCustomerInput,
@@ -34,7 +39,7 @@ export const createCustomer = (
           ...(input.id ? { id: input.id } : {}),
           fullName: input.fullName,
           nin: input.nin,
-          contact: input.contact,
+          contact: normalizeCustomerContact(input.contact),
           address: input.address,
         })
         .returning()
@@ -65,7 +70,7 @@ export const createCustomerWithTxid = (
             ...(input.id ? { id: input.id } : {}),
             fullName: input.fullName,
             nin: input.nin,
-            contact: input.contact,
+            contact: normalizeCustomerContact(input.contact),
             address: input.address,
           })
           .returning();
@@ -115,7 +120,13 @@ export const updateCustomer = (
 
         const [updated] = await tx
           .update(customers)
-          .set({ ...input, updatedAt: new Date() })
+          .set({
+            ...input,
+            ...(input.contact !== undefined
+              ? { contact: normalizeCustomerContact(input.contact) }
+              : {}),
+            updatedAt: new Date(),
+          })
           .where(eq(customers.id, id))
           .returning();
         if (!updated) throw new CustomerNotFound({ id });
@@ -172,7 +183,13 @@ export const updateCustomerWithTxid = (
 
         const [customer] = await tx
           .update(customers)
-          .set({ ...input, updatedAt: new Date() })
+          .set({
+            ...input,
+            ...(input.contact !== undefined
+              ? { contact: normalizeCustomerContact(input.contact) }
+              : {}),
+            updatedAt: new Date(),
+          })
           .where(eq(customers.id, id))
           .returning();
         if (!customer) throw new CustomerNotFound({ id });
@@ -222,17 +239,26 @@ export const searchCustomers = (
   Effect.tryPromise({
     try: async () => {
       const conditions = [];
-      if (params.name)
-        conditions.push(
-          ilike(customers.fullName, `%${escapeLikePattern(params.name)}%`),
-        );
+      if (params.name) {
+        const term = params.name.trim();
+        const escapedTerm = `%${escapeLikePattern(term)}%`;
+        const normalizedPhone = normalizeUgandanPhone(term);
+        const upperTerm = term.toUpperCase();
+        const searchConditions = [
+          ilike(customers.fullName, escapedTerm),
+          ilike(customers.nin, `%${escapeLikePattern(upperTerm)}%`),
+          ilike(customers.contact, escapedTerm),
+        ];
+        if (normalizedPhone) searchConditions.push(eq(customers.contact, normalizedPhone));
+        conditions.push(or(...searchConditions));
+      }
       if (params.status?.length)
         conditions.push(inArray(customers.status, params.status));
 
       const whereClause = conditions.length ? and(...conditions) : undefined;
 
       const pageSize = params.pageSize ?? 20;
-      const page = params.page ?? 1;
+      const page = params.page ?? 0;
 
       if (params.daysRemainingFilter && params.daysRemainingFilter !== "any") {
         const allRows = await db

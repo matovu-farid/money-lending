@@ -1,6 +1,13 @@
 import { describe, it, expect } from "vitest"
 import fc from "fast-check"
-import { validateNIN, validateUgandanPhone, validateFullName, validateRequired, validatePositiveDecimal } from "../validators"
+import {
+  validateNIN,
+  validateUgandanPhone,
+  normalizeUgandanPhone,
+  validateFullName,
+  validateRequired,
+  validatePositiveDecimal,
+} from "../validators"
 
 describe("validateNIN", () => {
   it("accepts real-world NIN with mixed alphanumerics (CF83037108RLLK)", () => {
@@ -47,6 +54,20 @@ describe("validateUgandanPhone", () => {
   })
   it("rejects too short", () => {
     expect(validateUgandanPhone("07712")).not.toBeNull()
+  })
+})
+
+describe("normalizeUgandanPhone", () => {
+  it("converts +2567XXXXXXXX to 07XXXXXXXX", () => {
+    expect(normalizeUgandanPhone("+256771234567")).toBe("0771234567")
+  })
+
+  it("removes spaces before normalizing", () => {
+    expect(normalizeUgandanPhone(" +256 771 234 567 ")).toBe("0771234567")
+  })
+
+  it("returns null for invalid input", () => {
+    expect(normalizeUgandanPhone("123")).toBeNull()
   })
 })
 

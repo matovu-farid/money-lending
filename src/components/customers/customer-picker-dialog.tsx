@@ -89,7 +89,7 @@ export function CustomerPickerDialog({ open, onOpenChange }: CustomerPickerDialo
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
               ref={inputRef}
-              placeholder="Search by name..."
+              placeholder="Search by name, NIN, or phone..."
               value={query}
               onChange={(e) => handleChange(e.target.value)}
               className="pl-9"

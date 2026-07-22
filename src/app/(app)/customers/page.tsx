@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PageHeader } from "@/components/ui/page-header"
 import { customerStatusVariant, customerStatusLabel } from "@/lib/status"
+import { normalizeUgandanPhone } from "@/lib/validators"
 
 const PAGE_SIZE = 20
 
@@ -41,9 +42,13 @@ export default function CustomersPage() {
   const filtered = useMemo(() => {
     let result = allCustomers ?? []
     if (searchParams.name) {
-      const term = searchParams.name.toLowerCase()
+      const term = searchParams.name.trim().toLowerCase()
+      const normalizedPhone = normalizeUgandanPhone(searchParams.name)
       result = result.filter((c) =>
-        c.fullName.toLowerCase().includes(term)
+        c.fullName.toLowerCase().includes(term) ||
+        c.nin.toLowerCase().includes(term) ||
+        c.contact.toLowerCase().includes(term) ||
+        (normalizedPhone ? c.contact === normalizedPhone : false)
       )
     }
     if (searchParams.status?.length) {

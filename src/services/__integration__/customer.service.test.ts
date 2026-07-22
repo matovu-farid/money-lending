@@ -16,6 +16,7 @@ import { eq } from "drizzle-orm"
 import crypto from "node:crypto"
 
 const TEST_TIMEOUT = 30_000
+const makeNin = (n: number) => `C${n.toString().padStart(13, "0")}`
 
 describe("Customer Service (integration)", () => {
   beforeEach(async () => {
@@ -27,15 +28,15 @@ describe("Customer Service (integration)", () => {
     const customer = await Effect.runPromise(
       createCustomer({
         fullName: "Alice Nakato",
-        nin: "C0000000000000",
-        contact: "0771000001",
+        nin: makeNin(0),
+        contact: "+256771000001",
         address: "Kampala, Uganda",
       })
     )
 
     expect(customer.id).toBeDefined()
     expect(customer.fullName).toBe("Alice Nakato")
-    expect(customer.nin).toBe("C0000000000000")
+    expect(customer.nin).toBe(makeNin(0))
     expect(customer.contact).toBe("0771000001")
     expect(customer.address).toBe("Kampala, Uganda")
     expect(customer.status).toBe("active")
@@ -49,7 +50,7 @@ describe("Customer Service (integration)", () => {
       createCustomerWithTxid({
         id: crypto.randomUUID(),
         fullName: "Txid Tester",
-        nin: "C0000000000099",
+        nin: makeNin(99),
         contact: "0771234567",
         address: "Kampala, Uganda",
       })
@@ -57,7 +58,7 @@ describe("Customer Service (integration)", () => {
 
     expect(result.customer.id).toBeDefined()
     expect(result.customer.fullName).toBe("Txid Tester")
-    expect(result.customer.nin).toBe("C0000000000099")
+    expect(result.customer.nin).toBe(makeNin(99))
     expect(typeof result.txid).toBe("number")
     expect(Number.isFinite(result.txid)).toBe(true)
     expect(result.txid).toBeGreaterThan(0)
@@ -72,8 +73,8 @@ describe("Customer Service (integration)", () => {
     const created = await Effect.runPromise(
       createCustomer({
         fullName: "Bob Ssempa",
-        nin: "C0000000000000",
-        contact: "0772000002",
+        nin: makeNin(1),
+        contact: "+256772000002",
         address: "Entebbe, Uganda",
       })
     )
@@ -108,14 +109,14 @@ describe("Customer Service (integration)", () => {
     const created = await Effect.runPromise(
       createCustomer({
         fullName: "Carol Apio",
-        nin: "C0000000000000",
-        contact: "0773000003",
+        nin: makeNin(2),
+        contact: "+256773000003",
         address: "Gulu, Uganda",
       })
     )
 
     const updated = await Effect.runPromise(
-      updateCustomer(created.id, { fullName: "Carol Apio-Okello" }, "admin-7")
+      updateCustomer(created.id, { fullName: "Carol Apio-Okello" }, "admin-1")
     )
 
     expect(updated.fullName).toBe("Carol Apio-Okello")
@@ -132,16 +133,16 @@ describe("Customer Service (integration)", () => {
 
     expect(logs).toHaveLength(1)
     expect(logs[0].action).toBe("customer.update")
-    expect(logs[0].actorId).toBe("admin-7")
+    expect(logs[0].actorId).toBe("admin-1")
     expect(JSON.parse(logs[0].beforeValue!)).toEqual({
       fullName: "Carol Apio",
-      nin: "C0000000000000",
+      nin: makeNin(2),
       contact: "0773000003",
       address: "Gulu, Uganda",
     })
     expect(JSON.parse(logs[0].afterValue!)).toEqual({
       fullName: "Carol Apio-Okello",
-      nin: "C0000000000000",
+      nin: makeNin(2),
       contact: "0773000003",
       address: "Gulu, Uganda",
     })
@@ -151,7 +152,7 @@ describe("Customer Service (integration)", () => {
   it("returns CustomerNotFound when updating a non-existent customer", async () => {
     const fakeId = crypto.randomUUID()
     const exit = await Effect.runPromiseExit(
-      updateCustomer(fakeId, { fullName: "Nobody" }, "admin-7")
+      updateCustomer(fakeId, { fullName: "Nobody" }, "admin-1")
     )
 
     expect(Exit.isFailure(exit)).toBe(true)
@@ -168,13 +169,13 @@ describe("Customer Service (integration)", () => {
   // ── 6. listCustomers ────────────────────────────────────────────────
   it("lists all customers", async () => {
     await Effect.runPromise(
-      createCustomer({ fullName: "Dan Obol", nin: "C0000000000000", contact: "0774000004", address: "Lira" })
+      createCustomer({ fullName: "Dan Obol", nin: makeNin(10), contact: "0774000004", address: "Lira" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Eva Kizza", nin: "C0000000000000", contact: "0775000005", address: "Jinja" })
+      createCustomer({ fullName: "Eva Kizza", nin: makeNin(11), contact: "0775000005", address: "Jinja" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Frank Mwebe", nin: "C0000000000000", contact: "0776000006", address: "Mbale" })
+      createCustomer({ fullName: "Frank Mwebe", nin: makeNin(12), contact: "0776000006", address: "Mbale" })
     )
 
     const list = await Effect.runPromise(listCustomers())
@@ -184,16 +185,16 @@ describe("Customer Service (integration)", () => {
     expect(names).toEqual(["Dan Obol", "Eva Kizza", "Frank Mwebe"])
   }, TEST_TIMEOUT)
 
-  // ── 7. searchCustomers by name ──────────────────────────────────────
-  it("filters customers by partial name match", async () => {
+  // ── 7. searchCustomers by query ──────────────────────────────────────
+  it("filters customers by name, NIN, and phone number", async () => {
     await Effect.runPromise(
-      createCustomer({ fullName: "Grace Atim", nin: "C0000000000000", contact: "0777000007", address: "Soroti" })
+      createCustomer({ fullName: "Grace Atim", nin: makeNin(20), contact: "0777000007", address: "Soroti" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Grace Nambi", nin: "C0000000000000", contact: "0778000008", address: "Masaka" })
+      createCustomer({ fullName: "Grace Nambi", nin: makeNin(21), contact: "0778000008", address: "Masaka" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "Henry Kato", nin: "C0000000000000", contact: "0779000009", address: "Mbarara" })
+      createCustomer({ fullName: "Henry Kato", nin: makeNin(22), contact: "0779000009", address: "Mbarara" })
     )
 
     const result = await Effect.runPromise(searchCustomers({ name: "Grace" }))
@@ -201,15 +202,25 @@ describe("Customer Service (integration)", () => {
     expect(result.rows).toHaveLength(2)
     expect(result.total).toBe(2)
     expect(result.rows.every((c) => c.fullName.includes("Grace"))).toBe(true)
+
+    const ninResult = await Effect.runPromise(searchCustomers({ name: makeNin(21) }))
+    expect(ninResult.rows).toHaveLength(1)
+    expect(ninResult.total).toBe(1)
+    expect(ninResult.rows[0].fullName).toBe("Grace Nambi")
+
+    const phoneResult = await Effect.runPromise(searchCustomers({ name: "+256779000009" }))
+    expect(phoneResult.rows).toHaveLength(1)
+    expect(phoneResult.total).toBe(1)
+    expect(phoneResult.rows[0].fullName).toBe("Henry Kato")
   }, TEST_TIMEOUT)
 
   // ── 8. searchCustomers by status ────────────────────────────────────
   it("filters customers by status", async () => {
     await Effect.runPromise(
-      createCustomer({ fullName: "Irene Nanteza", nin: "C0000000000000", contact: "0780000010", address: "Wakiso" })
+      createCustomer({ fullName: "Irene Nanteza", nin: makeNin(30), contact: "0780000010", address: "Wakiso" })
     )
     await Effect.runPromise(
-      createCustomer({ fullName: "James Lwanga", nin: "C0000000000000", contact: "0781000011", address: "Mukono" })
+      createCustomer({ fullName: "James Lwanga", nin: makeNin(31), contact: "0781000011", address: "Mukono" })
     )
 
     // All customers default to "active"
@@ -230,9 +241,14 @@ describe("Customer Service (integration)", () => {
   // ── 9. searchCustomers pagination ───────────────────────────────────
   it("paginates search results", async () => {
     const names = ["Alpha", "Bravo", "Charlie", "Delta", "Echo"]
-    for (const name of names) {
+    for (const [index, name] of names.entries()) {
       await Effect.runPromise(
-        createCustomer({ fullName: name, nin: "C0000000000000", contact: `077-${name}`, address: "Kampala" })
+        createCustomer({
+          fullName: name,
+          nin: makeNin(40 + index),
+          contact: `07700000${index + 10}`,
+          address: "Kampala",
+        })
       )
     }
 
@@ -266,11 +282,11 @@ describe("Customer Service (integration)", () => {
   // ── 10. changeCustomerStatus + audit log ────────────────────────────
   it("changes status to blacklisted and writes an audit log entry", async () => {
     const customer = await Effect.runPromise(
-      createCustomer({ fullName: "Kevin Opoka", nin: "C0000000000000", contact: "0782000012", address: "Arua" })
+      createCustomer({ fullName: "Kevin Opoka", nin: makeNin(50), contact: "0782000012", address: "Arua" })
     )
 
     const updated = await Effect.runPromise(
-      changeCustomerStatus(customer.id, "blacklisted", "Repeated defaults", "admin-42")
+      changeCustomerStatus(customer.id, "blacklisted", "Repeated defaults", "admin-1")
     )
 
     expect(updated.status).toBe("blacklisted")
@@ -287,7 +303,7 @@ describe("Customer Service (integration)", () => {
 
     expect(logs).toHaveLength(1)
     expect(logs[0].action).toBe("status_change")
-    expect(logs[0].actorId).toBe("admin-42")
+    expect(logs[0].actorId).toBe("admin-1")
     expect(logs[0].entityType).toBe("customer")
     // writeAuditLog double-stringifies: changeCustomerStatus passes a
     // JSON.stringify'd string, and writeAuditLog calls JSON.stringify again.

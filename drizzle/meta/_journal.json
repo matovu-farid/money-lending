@@ -183,6 +183,13 @@
       "when": 1781002551000,
       "tag": "0025_loan_balances_projection",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1783956493762,
+      "tag": "0026_powerful_retro_girl",
+      "breakpoints": true
     }
   ]
 }

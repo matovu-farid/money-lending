@@ -1,4 +1,5 @@
-import { pgTable, uuid, text, timestamp, pgEnum, index, unique } from "drizzle-orm/pg-core"
+import { pgTable, uuid, text, timestamp, pgEnum, index, unique, uniqueIndex } from "drizzle-orm/pg-core"
+import { sql } from "drizzle-orm"
 
 export const customerStatusEnum = pgEnum("customer_status", [
   "active",
@@ -19,4 +20,7 @@ export const customers = pgTable("customers", {
   index("idx_customers_full_name").on(table.fullName),
   index("idx_customers_status").on(table.status),
   unique("uq_customers_nin").on(table.nin),
+  uniqueIndex("uq_customers_contact")
+    .on(table.contact)
+    .where(sql`${table.contact} <> ''`),
 ])

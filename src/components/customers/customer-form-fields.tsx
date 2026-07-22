@@ -1,14 +1,17 @@
 "use client";
 
 import type {
+  Control,
   UseFormRegister,
   UseFormSetValue,
   FieldErrors,
 } from "react-hook-form";
+import { useWatch } from "react-hook-form";
 import { useLiveQuery } from "@tanstack/react-db";
 import { customerCollection } from "@/collections/customers";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { normalizeUgandanPhone, validateUgandanPhone } from "@/lib/validators";
 
 export interface CustomerFormValues {
   fullName: string;
@@ -24,16 +27,18 @@ function autoCapitalize(value: string): string {
 interface CustomerFormFieldsProps {
   register: UseFormRegister<CustomerFormValues>;
   setValue: UseFormSetValue<CustomerFormValues>;
+  control: Control<CustomerFormValues>;
   errors: FieldErrors<CustomerFormValues>;
   disabled?: boolean;
   idPrefix?: string;
-  /** Customer ID to exclude from NIN duplicate check (for edit mode). */
+  /** Customer ID to exclude from phone duplicate check (for edit mode). */
   excludeCustomerId?: string;
 }
 
 export function CustomerFormFields({
   register,
   setValue,
+  control,
   errors,
   disabled,
   idPrefix = "",
@@ -44,10 +49,16 @@ export function CustomerFormFields({
     (q) =>
       q
         .from({ c: customerCollection })
-        .select(({ c }) => ({ id: c.id, nin: c.nin })),
+        .select(({ c }) => ({ id: c.id, contact: c.contact })),
     [excludeCustomerId],
   );
-  void existingCustomers;
+  const contactValue = useWatch({ control, name: "contact" }) ?? "";
+  const normalizedContact = normalizeUgandanPhone(contactValue);
+  const duplicateCustomer = existingCustomers?.find((customer) => {
+    if (customer.id === excludeCustomerId) return false;
+    if (!normalizedContact) return false;
+    return normalizeUgandanPhone(customer.contact) === normalizedContact;
+  });
 
   return (
     <>
@@ -113,11 +124,30 @@ export function CustomerFormFields({
             required: "Contact is required",
             validate: {
               notEmpty: (v) => v.trim() !== "" || "Contact is required",
+              format: (v) =>
+                validateUgandanPhone(v) === null ||
+                "Valid Ugandan mobile number is required (e.g. 0771234567)",
+              unique: (v) => {
+                const normalized = normalizeUgandanPhone(v);
+                if (!normalized) return true;
+                const duplicate = existingCustomers?.some((customer) => {
+                  if (customer.id === excludeCustomerId) return false;
+                  return normalizeUgandanPhone(customer.contact) === normalized;
+                });
+                return (
+                  !duplicate || "This phone number is already registered to another customer."
+                );
+              },
             },
           })}
         />
         {errors.contact && (
           <p className="text-sm text-destructive">{errors.contact.message}</p>
+        )}
+        {!errors.contact && duplicateCustomer && normalizedContact && (
+          <p className="text-xs text-amber-600">
+            This phone number is already registered to another customer.
+          </p>
         )}
       </div>
 

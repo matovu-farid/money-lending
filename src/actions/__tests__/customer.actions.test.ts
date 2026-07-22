@@ -221,6 +221,21 @@ describe("Customer Actions", () => {
       expect(result).toEqual({ error: "Database error — check server logs for details" })
     })
 
+    it("returns a phone duplicate error when the unique contact index rejects the insert", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const uniqueError = Object.assign(new Error("duplicate"), {
+        code: "23505",
+        constraint_name: "uq_customers_contact",
+      })
+      mockCreateCustomer.mockReturnValue(
+        Effect.fail(uniqueError as any) as any,
+      )
+
+      const result = await createCustomerAction(validInput)
+
+      expect(result).toEqual({ error: "A customer with this phone number already exists" })
+    })
+
     it("returns generic error for unknown service failure", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockCreateCustomer.mockReturnValue(Effect.fail(new Error("wat")) as any)
@@ -289,6 +304,21 @@ describe("Customer Actions", () => {
       )
       const result = await updateCustomerAction("c1", { fullName: "New" })
       expect(result).toEqual({ error: "Customer not found" })
+    })
+
+    it("returns a phone duplicate error when the unique contact index rejects the update", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const uniqueError = Object.assign(new Error("duplicate"), {
+        code: "23505",
+        constraint_name: "uq_customers_contact",
+      })
+      mockUpdateCustomerWithTxid.mockReturnValue(
+        Effect.fail(uniqueError as any) as any,
+      )
+
+      const result = await updateCustomerAction("c1", { contact: "+256771234567" })
+
+      expect(result).toEqual({ error: "A customer with this phone number already exists" })
     })
   })
 

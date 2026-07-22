@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "uq_customers_contact" ON "customers" USING btree ("contact") WHERE "customers"."contact" <> '';

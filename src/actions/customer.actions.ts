@@ -26,6 +26,7 @@ import type {
 import { VALID_CUSTOMER_STATUSES } from "@/lib/constants";
 import {
   getUniqueConstraintName,
+  getUniqueConstraintNameDeep,
   isUniqueConstraintError,
 } from "@/lib/db-errors";
 
@@ -63,7 +64,17 @@ export const createCustomerAction = withAction<CreateCustomerInput, any>({
         if (constraint === "uq_customers_nin") {
           return { error: "A customer with this NIN already exists" };
         }
+        if (constraint === "uq_customers_contact") {
+          return { error: "A customer with this phone number already exists" };
+        }
         return { error: "A customer with these details already exists" };
+      }
+      const deepConstraint = getUniqueConstraintNameDeep(cause);
+      if (deepConstraint === "uq_customers_nin") {
+        return { error: "A customer with this NIN already exists" };
+      }
+      if (deepConstraint === "uq_customers_contact") {
+        return { error: "A customer with this phone number already exists" };
       }
       console.error("[createCustomerAction] Database error:", cause);
       if (getErrorTag(error) === "DatabaseError") {
@@ -103,6 +114,25 @@ const updateCustomerWrapped = withAction<
     } catch (error) {
       if (getErrorTag(error) === "CustomerNotFound") {
         return { error: "Customer not found" };
+      }
+      const cause =
+        (error as any)?.cause?.cause ?? (error as any)?.cause ?? error;
+      if (isUniqueConstraintError(cause)) {
+        const constraint = getUniqueConstraintName(cause);
+        if (constraint === "uq_customers_nin") {
+          return { error: "A customer with this NIN already exists" };
+        }
+        if (constraint === "uq_customers_contact") {
+          return { error: "A customer with this phone number already exists" };
+        }
+        return { error: "A customer with these details already exists" };
+      }
+      const deepConstraint = getUniqueConstraintNameDeep(cause);
+      if (deepConstraint === "uq_customers_nin") {
+        return { error: "A customer with this NIN already exists" };
+      }
+      if (deepConstraint === "uq_customers_contact") {
+        return { error: "A customer with this phone number already exists" };
       }
       console.error("[updateCustomerAction]", error);
       return { error: "Internal server error" };

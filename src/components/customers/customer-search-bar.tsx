@@ -99,7 +99,7 @@ export function CustomerSearchBar({ onSearch, loading }: CustomerSearchBarProps)
         <div className="relative max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by name..."
+            placeholder="Search by name, NIN, or phone..."
             value={name}
             onChange={(e) => handleNameChange(e.target.value)}
             className="pl-9 max-w-sm"

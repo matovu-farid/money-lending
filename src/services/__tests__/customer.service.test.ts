@@ -33,6 +33,7 @@ describe("Customer Service", () => {
     const { db } = await import("@/lib/db")
     const { createCustomer } = await import("@/services/customer.service")
     const mockedDb = vi.mocked(db)
+    const valuesSpy = vi.fn()
 
     const mockCustomer = {
       id: "cust-1",
@@ -45,8 +46,11 @@ describe("Customer Service", () => {
     }
 
     mockedDb.insert.mockReturnValue({
-      values: vi.fn().mockReturnValue({
+      values: vi.fn().mockImplementation((payload) => {
+        valuesSpy(payload)
+        return {
         returning: vi.fn().mockResolvedValue([mockCustomer]),
+        }
       }),
     } as any)
 
@@ -54,12 +58,17 @@ describe("Customer Service", () => {
       createCustomer({
         fullName: "John Doe",
         nin: "CF83037108RLLK",
-        contact: "0771234567",
+        contact: "+256771234567",
         address: "Kampala, Uganda",
       })
     )
 
     expect(result).toEqual(mockCustomer)
+    expect(valuesSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contact: "0771234567",
+      }),
+    )
     expect(mockedDb.insert).toHaveBeenCalledTimes(1)
   })
 
@@ -109,12 +118,13 @@ describe("Customer Service", () => {
     const result = await Effect.runPromise(
       updateCustomer(
         "cust-1",
-        { fullName: "John Doe Jr", contact: "0779999999" },
+        { fullName: "John Doe Jr", contact: "+256779999999" },
         "admin-1",
       ),
     )
 
     expect(result).toEqual(updatedCustomer)
+    expect(tx.update).toHaveBeenCalled()
     expect(mockedWriteAuditLog).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({

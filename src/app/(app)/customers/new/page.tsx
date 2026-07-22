@@ -13,11 +13,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 import { CustomerFormFields, type CustomerFormValues } from "@/components/customers/customer-form-fields"
+import { normalizeUgandanPhone } from "@/lib/validators"
 
 export default function NewCustomerPage() {
   const router = useRouter()
   const [isPending, setIsPending] = useState(false)
-  const { register, handleSubmit, setValue, formState: { errors } } = useForm<CustomerFormValues>({
+  const { register, handleSubmit, setValue, control, formState: { errors } } = useForm<CustomerFormValues>({
+    mode: "onChange",
     defaultValues: { fullName: "", nin: "", contact: "", address: "" },
   })
 
@@ -25,14 +27,14 @@ export default function NewCustomerPage() {
     setIsPending(true)
     try {
       const id = generateClientId()
-      const tx = customerCollection.insert({
-        id,
-        fullName: data.fullName.trim(),
-        nin: data.nin.trim(),
-        contact: data.contact.trim(),
-        address: data.address.trim(),
-        status: "active",
-        createdAt: new Date(),
+        const tx = customerCollection.insert({
+          id,
+          fullName: data.fullName.trim(),
+          nin: data.nin.trim(),
+          contact: normalizeUgandanPhone(data.contact) ?? data.contact.trim(),
+          address: data.address.trim(),
+          status: "active",
+          createdAt: new Date(),
         updatedAt: new Date(),
       })
       await tx.isPersisted.promise
@@ -61,6 +63,7 @@ export default function NewCustomerPage() {
             <CustomerFormFields
               register={register}
               setValue={setValue}
+              control={control}
               errors={errors}
               disabled={isPending}
             />

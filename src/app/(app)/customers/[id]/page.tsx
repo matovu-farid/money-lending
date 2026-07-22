@@ -29,6 +29,7 @@ import {
   CustomerFormFields,
   type CustomerFormValues,
 } from "@/components/customers/customer-form-fields";
+import { normalizeUgandanPhone } from "@/lib/validators";
 import {
   Select,
   SelectContent,
@@ -301,8 +302,11 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
     handleSubmit,
     reset,
     setValue,
+    control,
     formState: { errors },
-  } = useForm<EditFormValues>();
+  } = useForm<EditFormValues>({
+    mode: "onChange",
+  });
   const [isEditPending, startEditTransition] = useTransition();
 
   const [statusDialogOpen, setStatusDialogOpen] = useState(false);
@@ -336,7 +340,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
         customerCollection.update(customerId, (draft) => {
           draft.fullName = data.fullName.trim();
           draft.nin = data.nin.trim();
-          draft.contact = data.contact.trim();
+          draft.contact = normalizeUgandanPhone(data.contact) ?? data.contact.trim();
           draft.address = data.address.trim();
         });
         setEditing(false);
@@ -469,6 +473,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
                 <CustomerFormFields
                   register={register}
                   setValue={setValue}
+                  control={control}
                   errors={errors}
                   disabled={isEditPending}
                   idPrefix="edit"
