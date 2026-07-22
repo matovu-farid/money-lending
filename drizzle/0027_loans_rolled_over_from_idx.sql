@@ -1,1 +1,1 @@
-CREATE INDEX "idx_loans_rolled_over_from" ON "loans" USING btree ("rolled_over_from");
+CREATE INDEX IF NOT EXISTS "idx_loans_rolled_over_from" ON "loans" USING btree ("rolled_over_from");

@@ -18,6 +18,7 @@
 // cheap insurance — every deploy verifies the invariant and screams if it's
 // gone.
 
+import "dotenv/config"
 import postgres from "postgres"
 
 const DATABASE_URL = process.env.DATABASE_URL
