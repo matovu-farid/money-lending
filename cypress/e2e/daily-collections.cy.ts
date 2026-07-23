@@ -125,10 +125,9 @@ describe("Daily Collections Tab", () => {
 
     it("date picker opens calendar popup", () => {
       cy.visit("/payments?tab=daily")
-      // Click the date display button (shows "Today" text)
       cy.contains("Today", { timeout: 15000 }).click()
-      // Calendar popup should appear with month navigation
       cy.get('[data-slot="calendar"]', { timeout: 10000 }).should("be.visible")
+      cy.get('[data-slot="calendar"] select').should("have.length.at.least", 2)
     })
   })
 

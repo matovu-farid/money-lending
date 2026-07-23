@@ -12,12 +12,17 @@ import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon } from "lucide-react"
 
+/**
+ * Styled react-day-picker primitive. App code should use {@link DatePicker}
+ * from `./date-picker.tsx` so month/year dropdowns and bounds stay consistent.
+ */
 function Calendar({
   className,
   classNames,
   showOutsideDays = true,
   captionLayout = "dropdown",
   reverseYears = true,
+  hideNavigation = captionLayout !== "label",
   buttonVariant = "ghost",
   locale,
   formatters,
@@ -39,6 +44,7 @@ function Calendar({
       )}
       captionLayout={captionLayout}
       reverseYears={reverseYears}
+      hideNavigation={hideNavigation}
       locale={locale}
       formatters={{
         formatMonthDropdown: (date) =>

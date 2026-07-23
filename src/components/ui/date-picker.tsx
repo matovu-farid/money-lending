@@ -13,6 +13,44 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
+/** How many years back month/year dropdowns reach when no min is set. */
+export const DATE_PICKER_YEARS_BACK = 100
+
+export function parseDateString(value: string | undefined): Date | undefined {
+  if (!value) return undefined
+  const date = new Date(value + "T12:00:00")
+  return isNaN(date.getTime()) ? undefined : date
+}
+
+function dayStartMs(date: Date): number {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+}
+
+export function getDatePickerMonthBounds(min?: string, max?: string) {
+  const minDate = parseDateString(min)
+  const maxDate = parseDateString(max)
+  const now = new Date()
+
+  return {
+    minDate,
+    maxDate,
+    startMonth:
+      minDate ?? new Date(now.getFullYear() - DATE_PICKER_YEARS_BACK, 0, 1),
+    endMonth: maxDate ?? now,
+  }
+}
+
+function isDateOutOfRange(
+  date: Date,
+  minDate: Date | undefined,
+  maxDate: Date | undefined
+) {
+  const day = dayStartMs(date)
+  if (minDate && day < dayStartMs(minDate)) return true
+  if (maxDate && day > dayStartMs(maxDate)) return true
+  return false
+}
+
 export interface DatePickerProps {
   /** yyyy-MM-dd string, or empty string when unset. */
   value: string | undefined
@@ -33,13 +71,9 @@ export interface DatePickerProps {
   align?: "start" | "center" | "end"
   /** Display format for the trigger label. Defaults to "PP" (e.g. "May 7, 2026"). */
   displayFormat?: string
+  /** Override the trigger label (e.g. show "Today" for the current date). */
+  formatLabel?: (value: string, date: Date) => string
   "aria-label"?: string
-}
-
-function parseDateString(value: string | undefined): Date | undefined {
-  if (!value) return undefined
-  const date = new Date(value + "T12:00:00")
-  return isNaN(date.getTime()) ? undefined : date
 }
 
 export function DatePicker({
@@ -55,16 +89,27 @@ export function DatePicker({
   size = "default",
   align = "start",
   displayFormat = "PP",
+  formatLabel,
   "aria-label": ariaLabel,
 }: DatePickerProps) {
   const [open, setOpen] = React.useState(false)
   const selected = parseDateString(value)
-  const minDate = parseDateString(min)
-  const maxDate = parseDateString(max)
-  const now = new Date()
-  const startMonth =
-    minDate ?? new Date(now.getFullYear() - 100, 0, 1)
-  const endMonth = maxDate ?? now
+  const { minDate, maxDate, startMonth, endMonth } = getDatePickerMonthBounds(
+    min,
+    max
+  )
+  const [month, setMonth] = React.useState<Date>(selected ?? endMonth)
+
+  React.useEffect(() => {
+    if (selected) {
+      setMonth(selected)
+    }
+  }, [selected])
+
+  React.useEffect(() => {
+    if (!open) return
+    setMonth(selected ?? endMonth)
+  }, [open, selected, endMonth])
 
   function handleSelect(date: Date | undefined) {
     if (!date) {
@@ -75,13 +120,11 @@ export function DatePicker({
     setOpen(false)
   }
 
-  function isDisabled(date: Date) {
-    if (minDate && date < minDate) return true
-    if (maxDate && date > maxDate) return true
-    return false
-  }
-
   const heightClass = size === "sm" ? "h-8" : "h-9"
+  const triggerLabel =
+    selected && value
+      ? (formatLabel?.(value, selected) ?? format(selected, displayFormat))
+      : placeholder
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -104,19 +147,22 @@ export function DatePicker({
         }
       >
         <CalendarIcon className="h-4 w-4 shrink-0 opacity-70" />
-        <span className="truncate">
-          {selected ? format(selected, displayFormat) : placeholder}
-        </span>
+        <span className="truncate">{triggerLabel}</span>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align={align}>
         <Calendar
           mode="single"
           selected={selected}
-          defaultMonth={selected ?? endMonth}
+          month={month}
+          onMonthChange={setMonth}
           startMonth={startMonth}
           endMonth={endMonth}
           onSelect={handleSelect}
-          disabled={minDate || maxDate ? isDisabled : undefined}
+          disabled={
+            minDate || maxDate
+              ? (date) => isDateOutOfRange(date, minDate, maxDate)
+              : undefined
+          }
           autoFocus
         />
       </PopoverContent>

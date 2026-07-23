@@ -3,10 +3,9 @@
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { format, addDays, subDays } from "date-fns"
-import { ChevronLeft, ChevronRight, CalendarIcon, Banknote, FileText, BarChart3 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Banknote, FileText, BarChart3 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { DatePicker } from "@/components/ui/date-picker"
 import {
   Table,
   TableBody,
@@ -28,7 +27,6 @@ export function DailyCollectionsTab() {
   const todayStr = format(new Date(), "yyyy-MM-dd")
   const dateParam = searchParams.get("date") ?? todayStr
   const [selectedDate, setSelectedDate] = useState(dateParam)
-  const [calendarOpen, setCalendarOpen] = useState(false)
 
   // Sync selectedDate with URL param on browser back/forward navigation
   useEffect(() => { setSelectedDate(dateParam) }, [dateParam])
@@ -41,12 +39,9 @@ export function DailyCollectionsTab() {
     updateUrl(nextStr)
   }
 
-  function handleCalendarSelect(date: Date | undefined) {
-    if (!date) return
-    const dateStr = format(date, "yyyy-MM-dd")
+  function handleDateChange(dateStr: string) {
     setSelectedDate(dateStr)
     updateUrl(dateStr)
-    setCalendarOpen(false)
   }
 
   function updateUrl(date: string) {
@@ -69,30 +64,17 @@ export function DailyCollectionsTab() {
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-          <PopoverTrigger
-            render={
-              <Button
-                variant="outline"
-                className="min-w-[180px] justify-start gap-2 font-normal"
-              />
-            }
-          >
-            <CalendarIcon className="h-4 w-4" />
-            {selectedDate === todayStr
-              ? "Today"
-              : format(new Date(selectedDate + "T12:00:00"), "EEE, MMM d")}
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={new Date(selectedDate + "T12:00:00")}
-              onSelect={handleCalendarSelect}
-              disabled={(date) => date > new Date()}
-              endMonth={new Date()}
-            />
-          </PopoverContent>
-        </Popover>
+        <DatePicker
+          value={selectedDate}
+          onChange={handleDateChange}
+          max={todayStr}
+          className="min-w-[180px]"
+          displayFormat="EEE, MMM d"
+          formatLabel={(value, date) =>
+            value === todayStr ? "Today" : format(date, "EEE, MMM d")
+          }
+          aria-label="Select collection date"
+        />
         <Button
           variant="outline"
           size="icon"
