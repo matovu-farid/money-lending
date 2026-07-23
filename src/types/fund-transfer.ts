@@ -13,6 +13,8 @@ export interface CreateFundTransferInput {
   toSubLocationId?: string
   amount: string       // NUMERIC string
   note?: string
+  transferredAt?: string
+  backdateNote?: string
 }
 
 export interface CreateCapitalInjectionInput {
@@ -21,4 +23,6 @@ export interface CreateCapitalInjectionInput {
   toSubLocationId?: string
   amount: string       // NUMERIC string
   note?: string
+  transferredAt?: string
+  backdateNote?: string
 }

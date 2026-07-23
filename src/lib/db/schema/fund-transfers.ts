@@ -25,6 +25,11 @@ export const fundTransfers = pgTable(
     amount: numeric("amount", { precision: 15, scale: 2 }).notNull(),
     transferredBy: text("transferred_by").notNull(),
     note: text("note"),
+    transferredAt: timestamp("transferred_at", { withTimezone: true }).defaultNow().notNull(),
+    backdatedFrom: timestamp("backdated_from", { withTimezone: true }),
+    backdatedBy: text("backdated_by"),
+    backdatedAt: timestamp("backdated_at", { withTimezone: true }),
+    backdateNote: text("backdate_note"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

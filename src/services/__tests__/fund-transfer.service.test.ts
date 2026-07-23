@@ -28,6 +28,11 @@ const mockTransfer = {
   amount: "500000",
   transferredBy: "actor-1",
   note: "Test transfer",
+  transferredAt: new Date("2026-04-10T10:00:00.000Z"),
+  backdatedFrom: null,
+  backdatedBy: null,
+  backdatedAt: null,
+  backdateNote: null,
   createdAt: new Date("2026-04-10T10:00:00.000Z"),
 }
 
@@ -39,6 +44,11 @@ const mockCapitalInjection = {
   amount: "1000000",
   transferredBy: "actor-1",
   note: "Owner deposit",
+  transferredAt: new Date("2026-04-10T10:00:00.000Z"),
+  backdatedFrom: null,
+  backdatedBy: null,
+  backdatedAt: null,
+  backdateNote: null,
   createdAt: new Date("2026-04-10T10:00:00.000Z"),
 }
 
@@ -98,7 +108,7 @@ describe("Fund Transfer Service", () => {
       transferId: "transfer-1",
       fromLocation: "cash",
       toLocation: "bank",
-      transactionDate: mockTransfer.createdAt.toISOString(),
+      transactionDate: mockTransfer.transferredAt.toISOString(),
       actorId: "actor-1",
     })
   })
@@ -243,7 +253,7 @@ describe("Fund Transfer Service", () => {
       amount: "1000000",
       transferId: "transfer-2",
       toLocation: "cash",
-      transactionDate: mockCapitalInjection.createdAt.toISOString(),
+      transactionDate: mockCapitalInjection.transferredAt.toISOString(),
       actorId: "actor-1",
     })
   })

@@ -110,7 +110,7 @@ describe("Fund Transfers (/fund-transfers)", () => {
       cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
     })
 
-    it("shows From, To, Amount, and Note fields", () => {
+    it("shows From, To, Transfer Date, Amount, and Note fields", () => {
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
       cy.contains("button", "New Transfer").click()
@@ -118,16 +118,30 @@ describe("Fund Transfers (/fund-transfers)", () => {
 
       cy.contains("label", "From").should("be.visible")
       cy.contains("label", "To").should("be.visible")
+      cy.contains("label", "Transfer Date").should("be.visible")
       cy.contains("label", "Amount (UGX)").should("be.visible")
       cy.contains("label", "Note (optional)").should("be.visible")
     })
 
-    it("shows Record Transfer submit button", () => {
+    it("shows Review submit button", () => {
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
       cy.contains("button", "New Transfer").click()
       cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
-      cy.contains("button", "Record Transfer").should("be.visible")
+      cy.contains("button", "Review").should("be.visible")
+    })
+
+    it("requires backdate reason when transfer date is in the past", () => {
+      cy.visit("/fund-transfers")
+      cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
+      cy.contains("button", "New Transfer").click()
+      cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
+
+      cy.get("#transferDate").type("{selectall}{backspace}")
+      cy.get("#transferDate").type("2026-01-01")
+      cy.get("#transferAmount").type("250000")
+      cy.contains("button", "Review").click()
+      cy.contains("A reason is required when backdating", { timeout: 5000 }).should("be.visible")
     })
 
     it("creates a fund transfer successfully and shows success toast", () => {
@@ -140,7 +154,8 @@ describe("Fund Transfers (/fund-transfers)", () => {
       // Type amount
       cy.get("#transferAmount").type("500000")
       cy.get("#transferNote").type("Deposit to bank")
-      cy.contains("button", "Record Transfer").click()
+      cy.contains("button", "Review").click()
+      cy.contains("button", "Transfer funds", { timeout: 5000 }).click()
 
       cy.contains("Fund transfer recorded", { timeout: 10000 }).should("be.visible")
     })
@@ -153,7 +168,8 @@ describe("Fund Transfers (/fund-transfers)", () => {
 
       cy.get("#transferAmount").type("750000")
       cy.get("#transferNote").type("Weekly bank deposit")
-      cy.contains("button", "Record Transfer").click()
+      cy.contains("button", "Review").click()
+      cy.contains("button", "Transfer funds", { timeout: 5000 }).click()
       cy.contains("Fund transfer recorded", { timeout: 10000 }).should("be.visible")
 
       // Table should now show the transfer
@@ -177,13 +193,14 @@ describe("Fund Transfers (/fund-transfers)", () => {
       cy.contains("Record Capital Injection", { timeout: 5000 }).should("be.visible")
     })
 
-    it("shows Deposit To, Amount, and Note fields", () => {
+    it("shows Deposit To, Transfer Date, Amount, and Note fields", () => {
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
       cy.contains("button", "Capital Injection").click()
       cy.contains("Record Capital Injection", { timeout: 5000 }).should("be.visible")
 
       cy.contains("label", "Deposit To").should("be.visible")
+      cy.contains("label", "Transfer Date").should("be.visible")
       cy.contains("label", "Amount (UGX)").should("be.visible")
       cy.contains("label", "Note (optional)").should("be.visible")
     })
@@ -197,12 +214,12 @@ describe("Fund Transfers (/fund-transfers)", () => {
       }).should("be.visible")
     })
 
-    it("shows Record Injection submit button", () => {
+    it("shows Review submit button", () => {
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
       cy.contains("button", "Capital Injection").click()
       cy.contains("Record Capital Injection", { timeout: 5000 }).should("be.visible")
-      cy.contains("button", "Record Injection").should("be.visible")
+      cy.contains("button", "Review").should("be.visible")
     })
 
     it("creates a capital injection successfully and shows success toast", () => {
@@ -213,7 +230,8 @@ describe("Fund Transfers (/fund-transfers)", () => {
 
       cy.get("#injectionAmount").type("2000000")
       cy.get("#injectionNote").type("Shareholder contribution Q1")
-      cy.contains("button", "Record Injection").click()
+      cy.contains("button", "Review").click()
+      cy.contains("button", "Inject capital", { timeout: 5000 }).click()
 
       cy.contains("Capital injection recorded", { timeout: 10000 }).should("be.visible")
     })
@@ -226,7 +244,8 @@ describe("Fund Transfers (/fund-transfers)", () => {
 
       cy.get("#injectionAmount").type("1500000")
       cy.get("#injectionNote").type("Owner capital")
-      cy.contains("button", "Record Injection").click()
+      cy.contains("button", "Review").click()
+      cy.contains("button", "Inject capital", { timeout: 5000 }).click()
       cy.contains("Capital injection recorded", { timeout: 10000 }).should("be.visible")
 
       cy.contains("1,500,000", { timeout: 10000 }).should("be.visible")
@@ -248,7 +267,8 @@ describe("Fund Transfers (/fund-transfers)", () => {
       cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
       cy.get("#transferAmount").type("1000000")
       cy.get("#transferNote").type("Initial transfer")
-      cy.contains("button", "Record Transfer").click()
+      cy.contains("button", "Review").click()
+      cy.contains("button", "Transfer funds", { timeout: 5000 }).click()
       cy.contains("Fund transfer recorded", { timeout: 10000 }).should("be.visible")
     })
 

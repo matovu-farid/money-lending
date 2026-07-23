@@ -149,12 +149,14 @@ async function buildFundTransferReceipt(transferId: string): Promise<ReceiptResu
   if (t.toLocation) breakdown.push({ label: "To", value: formatLocation(t.toLocation, toBankName) ?? t.toLocation })
   return {
     receiptNumber: `${isCapitalInjection ? "INJ" : "FT"}-${shortId(t.id).toUpperCase()}`,
-    date: t.createdAt.toISOString(),
+    date: t.transferredAt.toISOString(),
     headerTitle: isCapitalInjection ? "Capital Injection" : "Fund Transfer",
     amount: t.amount,
     breakdownLines: breakdown,
     actorName: actor,
-    notes: t.note ?? undefined,
+    notes: [t.note, t.backdateNote ? `Backdate reason: ${t.backdateNote}` : null]
+      .filter(Boolean)
+      .join(" — ") || undefined,
   }
 }
 

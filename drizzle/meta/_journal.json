@@ -204,6 +204,13 @@
       "when": 1784700000000,
       "tag": "0028_loan_waivers",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1784795373858,
+      "tag": "0029_fund_transfer_backdating",
+      "breakpoints": true
     }
   ]
 }

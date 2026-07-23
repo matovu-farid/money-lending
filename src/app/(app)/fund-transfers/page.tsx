@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { fundTransferCollection } from "@/collections/fund-transfers"
 import { bankAccountCollection } from "@/collections/bank-accounts"
@@ -16,6 +16,7 @@ import { generateClientId } from "@/lib/client-id"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { MoneyInput } from "@/components/ui/money-input"
@@ -56,24 +57,29 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { formatCurrency, formatDate } from "@/lib/utils"
+import { formatCurrency, formatDate, todayDateString } from "@/lib/utils"
+import type { FundTransferInsertMetadata } from "@/collections/fund-transfers"
 import type { DepositLocation, BankAccount } from "@/types"
 import type { FundTransfer } from "@/types/fund-transfer"
 
 interface TransferFormValues {
+  transferDate: string
   fromLocation: DepositLocation
   toLocation: DepositLocation
   fromSubLocationId: string
   toSubLocationId: string
   amount: string
   note: string
+  backdateNote: string
 }
 
 interface InjectionFormValues {
+  transferDate: string
   toLocation: DepositLocation
   toSubLocationId: string
   amount: string
   note: string
+  backdateNote: string
 }
 
 function LoadingSkeleton() {
@@ -140,28 +146,55 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
     handleSubmit,
     reset,
     watch,
+    register,
     formState: { errors },
   } = useForm<TransferFormValues>({
     defaultValues: {
+      transferDate: todayDateString(),
       fromLocation: "cash",
       toLocation: "bank",
       fromSubLocationId: "",
       toSubLocationId: "",
       amount: "",
       note: "",
+      backdateNote: "",
     },
   })
 
   const fromLocation = watch("fromLocation")
+  const watchedTransferDate = watch("transferDate")
+
+  const transferBackdateDays = useMemo(() => {
+    if (!watchedTransferDate) return 0
+    const selected = new Date(watchedTransferDate)
+    const today = new Date()
+    selected.setHours(0, 0, 0, 0)
+    today.setHours(0, 0, 0, 0)
+    return Math.round((today.getTime() - selected.getTime()) / (1000 * 60 * 60 * 24))
+  }, [watchedTransferDate])
+  const isTransferBackdated = transferBackdateDays > 0
 
   const injectionForm = useForm<InjectionFormValues>({
     defaultValues: {
+      transferDate: todayDateString(),
       toLocation: "cash",
       toSubLocationId: "",
       amount: "",
       note: "",
+      backdateNote: "",
     },
   })
+
+  const watchedInjectionDate = injectionForm.watch("transferDate")
+  const injectionBackdateDays = useMemo(() => {
+    if (!watchedInjectionDate) return 0
+    const selected = new Date(watchedInjectionDate)
+    const today = new Date()
+    selected.setHours(0, 0, 0, 0)
+    today.setHours(0, 0, 0, 0)
+    return Math.round((today.getTime() - selected.getTime()) / (1000 * 60 * 60 * 24))
+  }, [watchedInjectionDate])
+  const isInjectionBackdated = injectionBackdateDays > 0
 
   // NOTE: We deliberately do NOT wrap these handlers in useTransition. The
   // optimistic insert from TanStack DB renders the new row immediately, so the
@@ -207,12 +240,21 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       amount: data.amount.trim(),
       transferredBy: session.user.id,
       note: data.note.trim() || null,
+      transferredAt: new Date(data.transferDate),
+      backdatedFrom: null,
+      backdatedBy: null,
+      backdatedAt: null,
+      backdateNote: null,
       createdAt: new Date(),
+    }
+    const metadata: FundTransferInsertMetadata = {
+      transferredAt: new Date(data.transferDate).toISOString(),
+      backdateNote: data.backdateNote?.trim() || undefined,
     }
 
     try {
       setIsConfirmingInjection(true)
-      const tx = fundTransferCollection.insert(optimistic)
+      const tx = fundTransferCollection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
       await tx.isPersisted.promise
       toast.success("Capital injection recorded")
       setPendingInjection(null)
@@ -248,12 +290,21 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       amount: data.amount.trim(),
       transferredBy: session.user.id,
       note: data.note.trim() || null,
+      transferredAt: new Date(data.transferDate),
+      backdatedFrom: null,
+      backdatedBy: null,
+      backdatedAt: null,
+      backdateNote: null,
       createdAt: new Date(),
+    }
+    const metadata: FundTransferInsertMetadata = {
+      transferredAt: new Date(data.transferDate).toISOString(),
+      backdateNote: data.backdateNote?.trim() || undefined,
     }
 
     try {
       setIsConfirmingTransfer(true)
-      const tx = fundTransferCollection.insert(optimistic)
+      const tx = fundTransferCollection.insert(optimistic, { metadata: metadata as unknown as Record<string, unknown> })
       await tx.isPersisted.promise
       toast.success("Fund transfer recorded")
       setPendingTransfer(null)
@@ -269,6 +320,10 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
 
   const transferSummaryLines: SummaryLine[] = pendingTransfer
     ? [
+        {
+          label: "Date",
+          value: formatDate(new Date(pendingTransfer.transferDate)),
+        },
         {
           label: "From",
           value: locationLabel(
@@ -291,11 +346,18 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
         ...(pendingTransfer.note?.trim()
           ? [{ label: "Note", value: pendingTransfer.note.trim() }]
           : []),
+        ...(pendingTransfer.backdateNote?.trim()
+          ? [{ label: "Backdate reason", value: pendingTransfer.backdateNote.trim() }]
+          : []),
       ]
     : []
 
   const injectionSummaryLines: SummaryLine[] = pendingInjection
     ? [
+        {
+          label: "Date",
+          value: formatDate(new Date(pendingInjection.transferDate)),
+        },
         {
           label: "Deposit to",
           value: locationLabel(
@@ -310,6 +372,9 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
         },
         ...(pendingInjection.note?.trim()
           ? [{ label: "Note", value: pendingInjection.note.trim() }]
+          : []),
+        ...(pendingInjection.backdateNote?.trim()
+          ? [{ label: "Backdate reason", value: pendingInjection.backdateNote.trim() }]
           : []),
       ]
     : []
@@ -358,6 +423,57 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               Bring money into the business from shareholders or owners.
             </p>
             <form onSubmit={injectionForm.handleSubmit(onInjectionSubmit)} className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="injectionTransferDate">Transfer Date</Label>
+                <Controller
+                  name="transferDate"
+                  control={injectionForm.control}
+                  rules={{ required: "Transfer date is required" }}
+                  render={({ field }) => (
+                    <DatePicker
+                      id="injectionTransferDate"
+                      value={field.value}
+                      onChange={field.onChange}
+                      max={todayDateString()}
+                    />
+                  )}
+                />
+                {injectionForm.formState.errors.transferDate && (
+                  <p className="text-sm text-destructive">{injectionForm.formState.errors.transferDate.message}</p>
+                )}
+              </div>
+
+              {isInjectionBackdated && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                  <p className="text-sm text-amber-800">
+                    This injection is backdated by <strong>{injectionBackdateDays} day{injectionBackdateDays > 1 ? "s" : ""}</strong>.
+                    {injectionBackdateDays > 3 && " Supervisor permission required."}
+                  </p>
+                  <div className="space-y-1">
+                    <Label htmlFor="injectionBackdateNote" className="font-semibold text-sm">Backdate Reason</Label>
+                    <Textarea
+                      id="injectionBackdateNote"
+                      placeholder="Explain why this injection is being backdated..."
+                      maxLength={500}
+                      {...injectionForm.register("backdateNote", {
+                        validate: (v) => {
+                          if (!watchedInjectionDate) return true
+                          const sel = new Date(watchedInjectionDate)
+                          const now = new Date()
+                          sel.setHours(0, 0, 0, 0)
+                          now.setHours(0, 0, 0, 0)
+                          if (sel < now && !v?.trim()) return "A reason is required when backdating"
+                          return true
+                        },
+                      })}
+                    />
+                    {injectionForm.formState.errors.backdateNote && (
+                      <p className="text-sm text-destructive">{injectionForm.formState.errors.backdateNote.message}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <Label htmlFor="injectionToLocation">Deposit To</Label>
                 <Controller
@@ -437,6 +553,57 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
               <DialogTitle>Record Fund Transfer</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+              <div className="space-y-1">
+                <Label htmlFor="transferDate">Transfer Date</Label>
+                <Controller
+                  name="transferDate"
+                  control={control}
+                  rules={{ required: "Transfer date is required" }}
+                  render={({ field }) => (
+                    <DatePicker
+                      id="transferDate"
+                      value={field.value}
+                      onChange={field.onChange}
+                      max={todayDateString()}
+                    />
+                  )}
+                />
+                {errors.transferDate && (
+                  <p className="text-sm text-destructive">{errors.transferDate.message}</p>
+                )}
+              </div>
+
+              {isTransferBackdated && (
+                <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 space-y-2">
+                  <p className="text-sm text-amber-800">
+                    This transfer is backdated by <strong>{transferBackdateDays} day{transferBackdateDays > 1 ? "s" : ""}</strong>.
+                    {transferBackdateDays > 3 && " Supervisor permission required."}
+                  </p>
+                  <div className="space-y-1">
+                    <Label htmlFor="transferBackdateNote" className="font-semibold text-sm">Backdate Reason</Label>
+                    <Textarea
+                      id="transferBackdateNote"
+                      placeholder="Explain why this transfer is being backdated..."
+                      maxLength={500}
+                      {...register("backdateNote", {
+                        validate: (v) => {
+                          if (!watchedTransferDate) return true
+                          const sel = new Date(watchedTransferDate)
+                          const now = new Date()
+                          sel.setHours(0, 0, 0, 0)
+                          now.setHours(0, 0, 0, 0)
+                          if (sel < now && !v?.trim()) return "A reason is required when backdating"
+                          return true
+                        },
+                      })}
+                    />
+                    {errors.backdateNote && (
+                      <p className="text-sm text-destructive">{errors.backdateNote.message}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-1">
                 <Label htmlFor="fromLocation">From</Label>
                 <Controller
@@ -698,7 +865,10 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                   return (
                   <TableRow key={t.id}>
                     <TableCell className="font-mono tabular-nums text-sm">
-                      {formatDate(t.createdAt)}
+                      <div>{formatDate(t.transferredAt)}</div>
+                      {t.backdateNote && (
+                        <p className="text-xs text-amber-600 mt-0.5">Backdated</p>
+                      )}
                     </TableCell>
                     <TableCell>
                       {isInjection ? (

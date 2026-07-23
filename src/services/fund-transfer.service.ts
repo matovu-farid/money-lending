@@ -8,6 +8,81 @@ import { writeAuditLog } from "./audit.service"
 import { autoPostFundTransfer, autoPostCapitalInjection } from "./auto-post.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput, FundTransfer } from "@/types"
 
+function resolveTransferTiming(
+  input: { transferredAt?: string; backdateNote?: string },
+  actorId: string,
+): {
+  transferredAt: Date
+  backdatedFrom?: Date
+  backdatedBy?: string
+  backdatedAt?: Date
+  backdateNote?: string
+} {
+  const transferredAt = input.transferredAt ? new Date(input.transferredAt) : new Date()
+  if (!input.backdateNote?.trim()) {
+    return { transferredAt }
+  }
+  return {
+    transferredAt,
+    backdatedFrom: new Date(),
+    backdatedBy: actorId,
+    backdatedAt: new Date(),
+    backdateNote: input.backdateNote.trim(),
+  }
+}
+
+function buildTransferValues(
+  input: CreateFundTransferInput,
+  actorId: string,
+) {
+  const timing = resolveTransferTiming(input, actorId)
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    fromLocation: input.fromLocation,
+    toLocation: input.toLocation,
+    amount: input.amount,
+    transferredBy: actorId,
+    note: input.note?.trim() || null,
+    fromSubLocationId: input.fromSubLocationId ?? null,
+    toSubLocationId: input.toSubLocationId ?? null,
+    transferredAt: timing.transferredAt,
+    ...(timing.backdateNote
+      ? {
+          backdatedFrom: timing.backdatedFrom,
+          backdatedBy: timing.backdatedBy,
+          backdatedAt: timing.backdatedAt,
+          backdateNote: timing.backdateNote,
+        }
+      : {}),
+  }
+}
+
+function buildInjectionValues(
+  input: CreateCapitalInjectionInput,
+  actorId: string,
+) {
+  const timing = resolveTransferTiming(input, actorId)
+  return {
+    ...(input.id ? { id: input.id } : {}),
+    transferType: "capital_injection" as const,
+    fromLocation: null,
+    toLocation: input.toLocation,
+    amount: input.amount,
+    transferredBy: actorId,
+    note: input.note?.trim() || null,
+    toSubLocationId: input.toSubLocationId ?? null,
+    transferredAt: timing.transferredAt,
+    ...(timing.backdateNote
+      ? {
+          backdatedFrom: timing.backdatedFrom,
+          backdatedBy: timing.backdatedBy,
+          backdatedAt: timing.backdatedAt,
+          backdateNote: timing.backdateNote,
+        }
+      : {}),
+  }
+}
+
 export const createFundTransfer = (
   input: CreateFundTransferInput,
   actorId: string
@@ -17,16 +92,7 @@ export const createFundTransfer = (
       return await db.transaction(async (tx) => {
         const [transfer] = await tx
           .insert(fundTransfers)
-          .values({
-            ...(input.id ? { id: input.id } : {}),
-            fromLocation: input.fromLocation,
-            toLocation: input.toLocation,
-            amount: input.amount,
-            transferredBy: actorId,
-            note: input.note?.trim() || null,
-            fromSubLocationId: input.fromSubLocationId ?? null,
-            toSubLocationId: input.toSubLocationId ?? null,
-          })
+          .values(buildTransferValues(input, actorId))
           .returning()
 
         await writeAuditLog(tx, {
@@ -44,7 +110,7 @@ export const createFundTransfer = (
           transferId: transfer.id,
           fromLocation: input.fromLocation,
           toLocation: input.toLocation,
-          transactionDate: transfer.createdAt.toISOString(),
+          transactionDate: transfer.transferredAt.toISOString(),
           actorId,
           fromSubLocationId: input.fromSubLocationId,
           toSubLocationId: input.toSubLocationId,
@@ -70,16 +136,7 @@ export const createCapitalInjection = (
       return await db.transaction(async (tx) => {
         const [transfer] = await tx
           .insert(fundTransfers)
-          .values({
-            ...(input.id ? { id: input.id } : {}),
-            transferType: "capital_injection",
-            fromLocation: null,
-            toLocation: input.toLocation,
-            amount: input.amount,
-            transferredBy: actorId,
-            note: input.note?.trim() || null,
-            toSubLocationId: input.toSubLocationId ?? null,
-          })
+          .values(buildInjectionValues(input, actorId))
           .returning()
 
         await writeAuditLog(tx, {
@@ -95,7 +152,7 @@ export const createCapitalInjection = (
           amount: input.amount,
           transferId: transfer.id,
           toLocation: input.toLocation,
-          transactionDate: transfer.createdAt.toISOString(),
+          transactionDate: transfer.transferredAt.toISOString(),
           actorId,
           subLocationId: input.toSubLocationId,
         })
@@ -126,16 +183,7 @@ export const createFundTransferWithTxid = (
       return await db.transaction(async (tx) => {
         const [transfer] = await tx
           .insert(fundTransfers)
-          .values({
-            ...(input.id ? { id: input.id } : {}),
-            fromLocation: input.fromLocation,
-            toLocation: input.toLocation,
-            amount: input.amount,
-            transferredBy: actorId,
-            note: input.note?.trim() || null,
-            fromSubLocationId: input.fromSubLocationId ?? null,
-            toSubLocationId: input.toSubLocationId ?? null,
-          })
+          .values(buildTransferValues(input, actorId))
           .returning()
 
         await writeAuditLog(tx, {
@@ -153,7 +201,7 @@ export const createFundTransferWithTxid = (
           transferId: transfer.id,
           fromLocation: input.fromLocation,
           toLocation: input.toLocation,
-          transactionDate: transfer.createdAt.toISOString(),
+          transactionDate: transfer.transferredAt.toISOString(),
           actorId,
           fromSubLocationId: input.fromSubLocationId,
           toSubLocationId: input.toSubLocationId,
@@ -189,16 +237,7 @@ export const createCapitalInjectionWithTxid = (
       return await db.transaction(async (tx) => {
         const [transfer] = await tx
           .insert(fundTransfers)
-          .values({
-            ...(input.id ? { id: input.id } : {}),
-            transferType: "capital_injection",
-            fromLocation: null,
-            toLocation: input.toLocation,
-            amount: input.amount,
-            transferredBy: actorId,
-            note: input.note?.trim() || null,
-            toSubLocationId: input.toSubLocationId ?? null,
-          })
+          .values(buildInjectionValues(input, actorId))
           .returning()
 
         await writeAuditLog(tx, {
@@ -214,7 +253,7 @@ export const createCapitalInjectionWithTxid = (
           amount: input.amount,
           transferId: transfer.id,
           toLocation: input.toLocation,
-          transactionDate: transfer.createdAt.toISOString(),
+          transactionDate: transfer.transferredAt.toISOString(),
           actorId,
           subLocationId: input.toSubLocationId,
         })
@@ -240,7 +279,7 @@ export const listFundTransfers = (): Effect.Effect<FundTransfer[], DatabaseError
       return await db
         .select()
         .from(fundTransfers)
-        .orderBy(desc(fundTransfers.createdAt))
+        .orderBy(desc(fundTransfers.transferredAt))
         .limit(200)
     },
     catch: (e) => new DatabaseError({ cause: e }),

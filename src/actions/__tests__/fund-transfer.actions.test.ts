@@ -19,6 +19,8 @@ vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   requireRole: vi.fn(),
   checkPermission: vi.fn().mockResolvedValue(null),
+  getSessionPermissions: vi.fn().mockResolvedValue(new Set(["fund-transfer:create", "backdate:beyond-3-days"])),
+  validateBackdating: vi.fn().mockReturnValue(null),
 }))
 
 vi.mock("next/cache", () => ({

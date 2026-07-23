@@ -2,6 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
+import { getSessionPermissions, validateBackdating } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { createFundTransferWithTxid, createCapitalInjectionWithTxid, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
@@ -37,8 +38,21 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
     const amountErr = validatePositiveDecimal(input.amount, "Amount")
     if (amountErr) return { error: amountErr }
 
+    const transferredAt = input.transferredAt?.trim() || new Date().toISOString()
+    if (isNaN(Date.parse(transferredAt))) {
+      return { error: "A valid transfer date is required" }
+    }
+    const perms = await getSessionPermissions(session)
+    const backdateErr = validateBackdating(transferredAt, perms, {
+      noteValue: input.backdateNote,
+      noteErrorMessage: "A note is required when backdating to explain the reason",
+    })
+    if (backdateErr) return { error: backdateErr }
+
     try {
-      const { transfer, txid } = await Effect.runPromise(createFundTransferWithTxid(input, session.user.id))
+      const { transfer, txid } = await Effect.runPromise(
+        createFundTransferWithTxid({ ...input, transferredAt }, session.user.id),
+      )
       void sendAdminNotification("fund.transfer.created", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,
@@ -68,8 +82,21 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
     const amountErr = validatePositiveDecimal(input.amount, "Amount")
     if (amountErr) return { error: amountErr }
 
+    const transferredAt = input.transferredAt?.trim() || new Date().toISOString()
+    if (isNaN(Date.parse(transferredAt))) {
+      return { error: "A valid transfer date is required" }
+    }
+    const perms = await getSessionPermissions(session)
+    const backdateErr = validateBackdating(transferredAt, perms, {
+      noteValue: input.backdateNote,
+      noteErrorMessage: "A note is required when backdating to explain the reason",
+    })
+    if (backdateErr) return { error: backdateErr }
+
     try {
-      const { transfer, txid } = await Effect.runPromise(createCapitalInjectionWithTxid(input, session.user.id))
+      const { transfer, txid } = await Effect.runPromise(
+        createCapitalInjectionWithTxid({ ...input, transferredAt }, session.user.id),
+      )
       void sendAdminNotification("capital.injection.created", {
         actorName: session.user.name ?? "Unknown",
         actorEmail: session.user.email,

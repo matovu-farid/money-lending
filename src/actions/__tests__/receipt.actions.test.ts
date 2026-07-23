@@ -241,6 +241,7 @@ describe("getTransactionReceiptDataAction", () => {
           id: "ft1",
           amount: "3000",
           createdAt: DATE,
+          transferredAt: DATE,
           transferType: "transfer",
           transferredBy: "u1",
           fromSubLocationId: null,
@@ -248,6 +249,7 @@ describe("getTransactionReceiptDataAction", () => {
           fromLocation: "cash",
           toLocation: "bank",
           note: "Move funds",
+          backdateNote: null,
         },
       ])
       rowsByTable.set(user, [{ name: "Jane" }])
@@ -263,6 +265,7 @@ describe("getTransactionReceiptDataAction", () => {
           id: "ft2",
           amount: "5000",
           createdAt: DATE,
+          transferredAt: DATE,
           transferType: "capital_injection",
           transferredBy: null,
           fromSubLocationId: null,
@@ -270,6 +273,7 @@ describe("getTransactionReceiptDataAction", () => {
           fromLocation: null,
           toLocation: null,
           note: null,
+          backdateNote: null,
         },
       ])
       const result = await getTransactionReceiptDataAction({ kind: "fund_transfer", transferId: "ft2" })
