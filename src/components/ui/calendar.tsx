@@ -16,7 +16,8 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
-  captionLayout = "label",
+  captionLayout = "dropdown",
+  reverseYears = true,
   buttonVariant = "ghost",
   locale,
   formatters,
@@ -37,6 +38,7 @@ function Calendar({
         className
       )}
       captionLayout={captionLayout}
+      reverseYears={reverseYears}
       locale={locale}
       formatters={{
         formatMonthDropdown: (date) =>

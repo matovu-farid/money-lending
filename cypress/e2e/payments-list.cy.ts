@@ -110,6 +110,7 @@ describe("Global Payments List (/payments)", () => {
       cy.contains("label", "From").parent().find('[data-slot="popover-trigger"]').click()
       cy.get('[data-slot="popover-content"] [data-slot="calendar"]', { timeout: 5000 })
         .should("be.visible")
+      cy.get('[data-slot="calendar"] select').should("have.length.at.least", 2)
     })
   })
 

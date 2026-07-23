@@ -61,6 +61,10 @@ export function DatePicker({
   const selected = parseDateString(value)
   const minDate = parseDateString(min)
   const maxDate = parseDateString(max)
+  const now = new Date()
+  const startMonth =
+    minDate ?? new Date(now.getFullYear() - 100, 0, 1)
+  const endMonth = maxDate ?? now
 
   function handleSelect(date: Date | undefined) {
     if (!date) {
@@ -108,7 +112,9 @@ export function DatePicker({
         <Calendar
           mode="single"
           selected={selected}
-          defaultMonth={selected}
+          defaultMonth={selected ?? endMonth}
+          startMonth={startMonth}
+          endMonth={endMonth}
           onSelect={handleSelect}
           disabled={minDate || maxDate ? isDisabled : undefined}
           autoFocus

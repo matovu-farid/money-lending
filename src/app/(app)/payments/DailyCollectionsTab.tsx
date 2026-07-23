@@ -89,6 +89,7 @@ export function DailyCollectionsTab() {
               selected={new Date(selectedDate + "T12:00:00")}
               onSelect={handleCalendarSelect}
               disabled={(date) => date > new Date()}
+              endMonth={new Date()}
             />
           </PopoverContent>
         </Popover>
