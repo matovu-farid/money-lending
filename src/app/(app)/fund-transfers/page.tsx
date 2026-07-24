@@ -269,7 +269,11 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
   }
 
   function onSubmit(data: TransferFormValues) {
-    if (data.fromLocation === data.toLocation) {
+    const sameBankAccount =
+      data.fromLocation === "bank" &&
+      data.fromSubLocationId &&
+      data.fromSubLocationId === data.toSubLocationId
+    if (data.fromLocation === data.toLocation && (data.fromLocation !== "bank" || sameBankAccount)) {
       toast.error("Source and destination must be different")
       return
     }
@@ -644,7 +648,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
                   control={control}
                   rules={{
                     required: "Destination is required",
-                    validate: (v) => v !== fromLocation || "Source and destination must be different",
+                    validate: (v) => v !== fromLocation || v === "bank" || "Source and destination must be different",
                   }}
                   render={({ field }) => (
                     <Select value={field.value} onValueChange={field.onChange}>

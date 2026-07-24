@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect } from "effect"
+import { InsufficientFundsError } from "@/lib/errors"
 
 // ---------- Mocks ----------
 
@@ -19,6 +20,14 @@ vi.mock("@/lib/action-utils", () => ({
   getSession: vi.fn(),
   requireRole: vi.fn(),
   checkPermission: vi.fn().mockResolvedValue(null),
+  getErrorTag: vi.fn((error: any) => {
+    const cause = error?.[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? error?.cause
+    return error?._tag ?? cause?.failure?._tag ?? cause?.error?._tag
+  }),
+  getErrorField: vi.fn((error: any, field: string) => {
+    const cause = error?.[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? error?.cause
+    return error?.[field] ?? cause?.failure?.[field] ?? cause?.error?.[field]
+  }),
   getSessionPermissions: vi.fn().mockResolvedValue(new Set(["fund-transfer:create", "backdate:beyond-3-days"])),
   validateBackdating: vi.fn().mockReturnValue(null),
 }))
@@ -103,6 +112,63 @@ describe("Fund Transfer Actions", () => {
       mockCheckPermission.mockResolvedValue(null)
       const result = await createFundTransferAction({ ...validInput, toLocation: "cash" } as any)
       expect(result).toEqual({ error: "Source and destination must be different" })
+    })
+
+    it("allows transfers between two different bank accounts", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+      const created = { id: "bank-to-bank-1" }
+      mockCreateFundTransferWithTxid.mockReturnValue(Effect.succeed({ transfer: created, txid: "tx_bank" }) as any)
+
+      const result = await createFundTransferAction({
+        fromLocation: "bank",
+        fromSubLocationId: "bank-acc-1",
+        toLocation: "bank",
+        toSubLocationId: "bank-acc-2",
+        amount: "500000",
+      } as any)
+
+      expect(result).toEqual({ data: created, txid: "tx_bank" })
+    })
+
+    it("rejects a transfer from a bank account to itself", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+
+      const result = await createFundTransferAction({
+        fromLocation: "bank",
+        fromSubLocationId: "bank-acc-1",
+        toLocation: "bank",
+        toSubLocationId: "bank-acc-1",
+        amount: "500000",
+      } as any)
+
+      expect(result).toEqual({ error: "Source and destination must be different" })
+    })
+
+    it("returns a user-facing error when the source lacks funds", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+      mockCreateFundTransferWithTxid.mockReturnValue(
+        Effect.fail(
+          new InsufficientFundsError({
+            location: "the selected bank account",
+            available: "100000.00",
+            required: "500000.00",
+          }),
+        ) as any,
+      )
+
+      const result = await createFundTransferAction({
+        fromLocation: "bank",
+        fromSubLocationId: "bank-acc-1",
+        toLocation: "cash",
+        amount: "500000",
+      } as any)
+
+      expect(result).toEqual({
+        error: "Insufficient funds in the selected bank account. Available: 100000.00, required: 500000.00. Transfer or inject funds first.",
+      })
     })
 
     it("returns error for invalid amount", async () => {

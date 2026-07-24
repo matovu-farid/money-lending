@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSessionPermissions, validateBackdating } from "@/lib/action-utils"
+import { getErrorField, getErrorTag, getSessionPermissions, validateBackdating } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { createFundTransferWithTxid, createCapitalInjectionWithTxid, listFundTransfers } from "@/services/fund-transfer.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput } from "@/types"
@@ -26,7 +26,11 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
     if (!input.toLocation || !VALID_DEPOSIT_LOCATIONS.includes(input.toLocation)) {
       return { error: "Invalid destination location" }
     }
-    if (input.fromLocation === input.toLocation) {
+    const sameBankAccount =
+      input.fromLocation === "bank" &&
+      input.fromSubLocationId &&
+      input.fromSubLocationId === input.toSubLocationId
+    if (input.fromLocation === input.toLocation && (input.fromLocation !== "bank" || sameBankAccount)) {
       return { error: "Source and destination must be different" }
     }
     if (input.fromLocation === "bank" && !input.fromSubLocationId) {
@@ -63,7 +67,15 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
         notes: `From ${input.fromLocation} to ${input.toLocation}${input.note ? ` — ${input.note}` : ""}`,
       })
       return { data: transfer, txid }
-    } catch {
+    } catch (error) {
+      if (getErrorTag(error) === "InsufficientFundsError") {
+        const location = String(getErrorField(error, "location") ?? "the source location")
+        const available = String(getErrorField(error, "available") ?? "0.00")
+        const required = String(getErrorField(error, "required") ?? input.amount)
+        return {
+          error: `Insufficient funds in ${location}. Available: ${available}, required: ${required}. Transfer or inject funds first.`,
+        }
+      }
       return { error: "Internal server error" }
     }
   },

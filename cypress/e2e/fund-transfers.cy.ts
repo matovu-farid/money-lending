@@ -6,6 +6,15 @@
  */
 
 describe("Fund Transfers (/fund-transfers)", () => {
+  function seedCashBalance(amount = "2000000") {
+    cy.contains("button", "Capital Injection").click()
+    cy.contains("Record Capital Injection", { timeout: 5000 }).should("be.visible")
+    cy.get("#injectionAmount").type(amount)
+    cy.contains("button", "Review").click()
+    cy.contains("button", "Inject capital", { timeout: 5000 }).click()
+    cy.contains("Capital injection recorded", { timeout: 10000 }).should("be.visible")
+  }
+
   describe("Access control", () => {
     it("shows access denied for loanOfficer role", () => {
       cy.task("db:reset")
@@ -147,6 +156,7 @@ describe("Fund Transfers (/fund-transfers)", () => {
     it("creates a fund transfer successfully and shows success toast", () => {
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
+      seedCashBalance()
       cy.contains("button", "New Transfer").click()
       cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
 
@@ -163,6 +173,7 @@ describe("Fund Transfers (/fund-transfers)", () => {
     it("shows transfer in the table after creation", () => {
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
+      seedCashBalance()
       cy.contains("button", "New Transfer").click()
       cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
 
@@ -263,6 +274,7 @@ describe("Fund Transfers (/fund-transfers)", () => {
       // Create a transfer so the table has data
       cy.visit("/fund-transfers")
       cy.contains("Fund Transfers", { timeout: 15000 }).should("be.visible")
+      seedCashBalance()
       cy.contains("button", "New Transfer").click()
       cy.contains("Record Fund Transfer", { timeout: 5000 }).should("be.visible")
       cy.get("#transferAmount").type("1000000")

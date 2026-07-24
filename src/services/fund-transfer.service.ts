@@ -1,12 +1,17 @@
 import { Effect } from "effect"
+import BigNumber from "bignumber.js"
 import { db } from "@/lib/db"
 import { fundTransfers } from "@/lib/db/schema/fund-transfers"
+import { transactionCategories } from "@/lib/db/schema/transaction-categories"
+import { transactions } from "@/lib/db/schema/transactions"
 import { desc, sql } from "drizzle-orm"
-import { DatabaseError } from "@/lib/errors"
+import { DatabaseError, InsufficientFundsError } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
 import { writeAuditLog } from "./audit.service"
 import { autoPostFundTransfer, autoPostCapitalInjection } from "./auto-post.service"
 import type { CreateFundTransferInput, CreateCapitalInjectionInput, FundTransfer } from "@/types"
+
+type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
 function resolveTransferTiming(
   input: { transferredAt?: string; backdateNote?: string },
@@ -83,13 +88,60 @@ function buildInjectionValues(
   }
 }
 
+async function assertSufficientSourceFunds(
+  tx: DrizzleTransaction,
+  input: Pick<CreateFundTransferInput, "fromLocation" | "fromSubLocationId" | "amount">,
+): Promise<void> {
+  // Serialize fund transfers spending from the same source. The balance read
+  // and the journal insert happen in the same transaction, so concurrent
+  // transfers cannot both spend the same available funds.
+  const lockKey = `fund-transfer:${input.fromLocation}:${input.fromSubLocationId ?? ""}`
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`)
+
+  const rows = await tx.execute<{ available: string }>(sql`
+    SELECT COALESCE(
+      SUM(CASE WHEN t.type = 'debit' THEN t.amount ELSE -t.amount END),
+      0
+    )::text AS available
+    FROM ${transactions} t
+    INNER JOIN ${transactionCategories} c ON c.id = t.category_id
+    WHERE c.name = 'Cash'
+      AND t.deposit_location = ${input.fromLocation}::deposit_location
+      AND t.sub_location_id IS NOT DISTINCT FROM ${input.fromSubLocationId ?? null}::uuid
+  `)
+  const available = new BigNumber(
+    (rows as unknown as Array<{ available: string }>)[0]?.available ?? "0",
+  )
+  const required = new BigNumber(input.amount)
+
+  if (available.isLessThan(required)) {
+    throw new InsufficientFundsError({
+      location:
+        input.fromLocation === "bank"
+          ? "the selected bank account"
+          : input.fromLocation === "strong_room"
+            ? "Strong Room"
+            : "Cash on Hand",
+      available: available.toFixed(2),
+      required: required.toFixed(2),
+    })
+  }
+}
+
+function toFundTransferError(error: unknown): InsufficientFundsError | DatabaseError {
+  return error instanceof InsufficientFundsError
+    ? error
+    : new DatabaseError({ cause: error })
+}
+
 export const createFundTransfer = (
   input: CreateFundTransferInput,
   actorId: string
-): Effect.Effect<FundTransfer, DatabaseError> =>
+): Effect.Effect<FundTransfer, InsufficientFundsError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
+        await assertSufficientSourceFunds(tx, input)
         const [transfer] = await tx
           .insert(fundTransfers)
           .values(buildTransferValues(input, actorId))
@@ -119,7 +171,7 @@ export const createFundTransfer = (
         return transfer
       })
     },
-    catch: (e) => new DatabaseError({ cause: e }),
+    catch: toFundTransferError,
   }).pipe(
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),
@@ -177,10 +229,11 @@ export const createCapitalInjection = (
 export const createFundTransferWithTxid = (
   input: CreateFundTransferInput,
   actorId: string
-): Effect.Effect<{ transfer: FundTransfer; txid: number }, DatabaseError> =>
+): Effect.Effect<{ transfer: FundTransfer; txid: number }, InsufficientFundsError | DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
+        await assertSufficientSourceFunds(tx, input)
         const [transfer] = await tx
           .insert(fundTransfers)
           .values(buildTransferValues(input, actorId))
@@ -214,7 +267,7 @@ export const createFundTransferWithTxid = (
         return { transfer, txid }
       })
     },
-    catch: (e) => new DatabaseError({ cause: e }),
+    catch: toFundTransferError,
   }).pipe(
     Effect.catchIf(
       (e) => !!input.id && isUniqueConstraintError(e.cause),

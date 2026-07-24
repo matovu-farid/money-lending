@@ -68,6 +68,9 @@ describe("Fund Transfer Service", () => {
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
+          execute: vi.fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ available: "1000000" }]),
           insert: vi.fn().mockReturnValue({
             values: vi.fn().mockReturnValue({
               returning: vi.fn().mockResolvedValue([mockTransfer]),
@@ -113,6 +116,58 @@ describe("Fund Transfer Service", () => {
     })
   })
 
+  it("rejects a transfer when the source location lacks sufficient funds", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+
+    let insertCalled = false
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        const mockTx = {
+          execute: vi.fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ available: "100000" }]),
+          insert: vi.fn().mockImplementation(() => {
+            insertCalled = true
+            return {
+              values: vi.fn().mockReturnValue({
+                returning: vi.fn().mockResolvedValue([mockTransfer]),
+              }),
+            }
+          }),
+        }
+        return callback(mockTx)
+      },
+    )
+
+    const { createFundTransfer } = await import("@/services/fund-transfer.service")
+    const exit = await Effect.runPromiseExit(
+      createFundTransfer(
+        {
+          fromLocation: "bank",
+          fromSubLocationId: "bank-acc-1",
+          toLocation: "bank",
+          toSubLocationId: "bank-acc-2",
+          amount: "500000",
+        },
+        "actor-1",
+      ),
+    )
+
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(insertCalled).toBe(false)
+    if (Exit.isFailure(exit)) {
+      const error = Cause.failureOption(exit.cause)
+      expect(error._tag).toBe("Some")
+      if (error._tag === "Some") {
+        expect(error.value._tag).toBe("InsufficientFundsError")
+        if (error.value._tag === "InsufficientFundsError") {
+          expect(error.value.available).toBe("100000.00")
+          expect(error.value.required).toBe("500000.00")
+        }
+      }
+    }
+  })
+
   it("trims whitespace from note in fund transfer", async () => {
     const { db: mockedDb } = await import("@/lib/db")
 
@@ -120,6 +175,9 @@ describe("Fund Transfer Service", () => {
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
+          execute: vi.fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ available: "1000000" }]),
           insert: vi.fn().mockImplementation(() => ({
             values: vi.fn().mockImplementation((vals: any) => {
               capturedValues = vals
@@ -151,6 +209,9 @@ describe("Fund Transfer Service", () => {
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
+          execute: vi.fn()
+            .mockResolvedValueOnce([])
+            .mockResolvedValueOnce([{ available: "1000000" }]),
           insert: vi.fn().mockImplementation(() => ({
             values: vi.fn().mockImplementation((vals: any) => {
               capturedValues = vals
