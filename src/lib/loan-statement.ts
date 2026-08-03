@@ -7,6 +7,7 @@
 // What "events" are captured:
 //   - issuance (day 0)
 //   - each payment (interest/principal allocation, balance before/after)
+//   - each waiver (interest/principal allocation, balance before/after)
 //   - approved rate-change effective dates (rate transitions)
 //   - the day penalty became active (when daysOverdue first hit the threshold)
 //   - the day penalty was waived (from loan.penaltyWaivedAt, if set)
@@ -50,6 +51,17 @@ export type StatementEvent =
       balanceBefore: string
       balanceAfter: string
       recordedBy: string
+    }
+  | {
+      kind: "waiver"
+      day: number
+      date: Date
+      amount: string
+      interestPortion: string
+      principalPortion: string
+      balanceBefore: string
+      balanceAfter: string
+      reason: string
     }
   | {
       kind: "penalty_active"
@@ -145,6 +157,13 @@ export interface BuildStatementInput {
     principalPortion: string
     recorderName: string
   }>
+  waivers?: Array<{
+    waiverDate: Date
+    amount: string
+    interestPortion: string
+    principalPortion: string
+    reason: string
+  }>
   /** Approved rate-change history (optional). If omitted, the current rate is treated as in effect since day 0. */
   rateChanges?: Array<{
     effectiveDate: Date
@@ -163,7 +182,7 @@ function addDays(d: Date, n: number): Date {
 }
 
 export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
-  const { loan, payments, rateChanges = [], today } = input
+  const { loan, payments, waivers = [], rateChanges = [], today } = input
 
   const principalBN = new BigNumber(loan.principalAmount)
   const initialBaseRate = loan.interestRateOverride ?? loan.interestRate
@@ -189,12 +208,16 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   const sortedPayments = [...payments].sort(
     (a, b) => a.paymentDate.getTime() - b.paymentDate.getTime(),
   )
+  const sortedWaivers = [...waivers].sort(
+    (a, b) => a.waiverDate.getTime() - b.waiverDate.getTime(),
+  )
   const sortedRateChanges = [...rateChanges].sort(
     (a, b) => a.effectiveDate.getTime() - b.effectiveDate.getTime(),
   )
 
   // Index into events as we walk forward.
   let nextPaymentIdx = 0
+  let nextWaiverIdx = 0
   let nextRateChangeIdx = 0
 
   // Running state.
@@ -296,6 +319,34 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
         recordedBy: p.recorderName,
       })
       nextPaymentIdx += 1
+    }
+
+    // 2b) Waivers settle interest and reduce principal without collecting
+    // cash. They follow the same allocation that was posted to the ledger.
+    while (
+      nextWaiverIdx < sortedWaivers.length &&
+      daysBetween(loan.startDate, sortedWaivers[nextWaiverIdx].waiverDate) <= day
+    ) {
+      const w = sortedWaivers[nextWaiverIdx]
+      const wDay = daysBetween(loan.startDate, w.waiverDate)
+      const balanceBefore = balance
+      balance = BigNumber.max(
+        balance.minus(new BigNumber(w.principalPortion)),
+        0,
+      )
+      cumulativePaid = cumulativePaid.plus(new BigNumber(w.interestPortion))
+      events.push({
+        kind: "waiver",
+        day: wDay,
+        date: w.waiverDate,
+        amount: w.amount,
+        interestPortion: w.interestPortion,
+        principalPortion: w.principalPortion,
+        balanceBefore: balanceBefore.toFixed(0),
+        balanceAfter: balance.toFixed(0),
+        reason: w.reason,
+      })
+      nextWaiverIdx += 1
     }
 
     // 3) Determine if penalty is active for this day, based on days-overdue

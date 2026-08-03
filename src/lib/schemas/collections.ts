@@ -19,6 +19,7 @@
  */
 
 import { createSchemaFactory } from "drizzle-zod"
+import { z } from "zod"
 import {
   payments,
   customers,
@@ -75,7 +76,15 @@ export type TransactionRow = typeof transactionSchema._zod.output
 
 export const rateChangeRequestSchema = createSelectSchema(rateChangeRequests)
 
-export const loanWaiverSchema = createSelectSchema(loanWaivers)
+// Waiver amounts are allocated to interest first and principal second when
+// they are posted to the ledger. These derived fields are returned by the
+// waiver history action so statement calculations can replay the same
+// settlement as the ledger. Optional fields keep optimistic inserts valid
+// before the server response is reconciled.
+export const loanWaiverSchema = createSelectSchema(loanWaivers).extend({
+  interestPortion: z.string().optional(),
+  principalPortion: z.string().optional(),
+})
 export type LoanWaiverRow = typeof loanWaiverSchema._zod.output
 export type RateChangeRequestRow = typeof rateChangeRequestSchema._zod.output
 

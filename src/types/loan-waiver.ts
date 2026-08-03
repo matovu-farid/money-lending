@@ -11,3 +11,9 @@ export interface WaiveLoanAmountInput {
 }
 
 export type LoanWaiver = InferSelectModel<typeof loanWaivers>
+
+/** Ledger allocation attached when waiver history is read for calculations. */
+export type LoanWaiverWithPortions = LoanWaiver & {
+  interestPortion: string
+  principalPortion: string
+}

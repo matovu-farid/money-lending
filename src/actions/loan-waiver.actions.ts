@@ -14,7 +14,11 @@ import {
   listLoanWaiversForLoan,
 } from "@/services/loan-waiver.service";
 import { notifyAdmin, resolveLoanContext } from "@/lib/email";
-import type { WaiveLoanAmountInput, LoanWaiver } from "@/types";
+import type {
+  LoanWaiver,
+  LoanWaiverWithPortions,
+  WaiveLoanAmountInput,
+} from "@/types";
 
 export const waiveLoanAmountAction = withAction<
   WaiveLoanAmountInput,
@@ -64,7 +68,7 @@ export const waiveLoanAmountAction = withAction<
 
 export const listLoanWaiversAction = withAction<
   string,
-  { data: LoanWaiver[] } | { error: string }
+  { data: LoanWaiverWithPortions[] } | { error: string }
 >({
   permission: "loan:waiver",
   forbiddenMessage: "Only admins can view loan waivers",

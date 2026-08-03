@@ -153,6 +153,8 @@ export function WaiveLoanDialog({
           recordedBy: "pending",
           createdAt: new Date(),
           deletedAt: null,
+          interestPortion: "0",
+          principalPortion: "0",
         },
         input,
       );

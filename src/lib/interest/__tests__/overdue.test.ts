@@ -33,6 +33,7 @@ function makeParams(overrides: Partial<{
   loanType: "perpetual" | "fixed_rate" | "reducing_balance";
   termMonths: number | null;
   totalInterestPaid: string;
+  totalInterestAccrued: string;
   paymentCount: number;
   totalBalanceOwed: string;
   penaltyWaived: boolean;
@@ -50,6 +51,7 @@ function makeParams(overrides: Partial<{
     loanType,
     termMonths: loanType === "perpetual" ? null : 6,
     totalInterestPaid: "0",
+    totalInterestAccrued: undefined,
     paymentCount: 0,
     totalBalanceOwed: "1000000",
     penaltyWaived: false,
@@ -157,6 +159,23 @@ describe("computeLoanOverdueInfo", () => {
     );
 
     expect(Number(result.unpaidInterest)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("uses cumulative accrued interest when the balance feed has historical accruals", () => {
+    const result = computeLoanOverdueInfo(
+      makeParams({
+        principalAmount: "6000000",
+        totalBalanceOwed: "4849841",
+        totalInterestPaid: "5149841",
+        totalInterestAccrued: "11275634",
+        lastPaymentDate: new Date("2026-05-30T12:00:00.000Z"),
+        asOf: new Date("2026-08-03T00:00:00.000Z"),
+      }),
+    );
+
+    expect(result.unpaidInterest).toBe("6125793");
+    expect(result.daysOverdue).toBe(378);
+    expect(result.penaltyActive).toBe(true);
   });
 });
 

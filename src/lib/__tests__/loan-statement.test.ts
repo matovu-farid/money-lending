@@ -105,6 +105,55 @@ describe("buildLoanStatement — payments", () => {
   })
 })
 
+describe("buildLoanStatement — waivers", () => {
+  it("settles waiver allocations and matches the ledger-backed total due", () => {
+    const stmt = buildLoanStatement({
+      loan: {
+        ...baseLoan,
+        id: "loan-with-waivers",
+        principalAmount: "10000000",
+        startDate: new Date("2025-11-12T00:00:00Z"),
+        createdAt: new Date("2026-07-22T12:03:55.601Z"),
+      },
+      payments: [],
+      waivers: [
+        {
+          waiverDate: new Date("2026-07-22T12:36:52.130Z"),
+          amount: "4000000",
+          interestPortion: "4000000",
+          principalPortion: "0",
+          reason: "Moved from old system",
+        },
+        {
+          waiverDate: new Date("2026-07-22T12:37:51.228Z"),
+          amount: "100000",
+          interestPortion: "0",
+          principalPortion: "100000",
+          reason: "Old loan amount",
+        },
+        {
+          waiverDate: new Date("2026-07-22T12:58:16.899Z"),
+          amount: "100000",
+          interestPortion: "0",
+          principalPortion: "100000",
+          reason: "Moving to new system",
+        },
+      ],
+      today: new Date("2026-08-03T00:00:00Z"),
+    })
+
+    expect(stmt.events.filter((event) => event.kind === "waiver")).toHaveLength(3)
+    expect(stmt.finalState.principalBalance).toBe("9800000")
+    // The two UGX 100,000 principal waivers stop interest accruing on that
+    // principal from their settlement date onward.
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("9470467")
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("4000000")
+    expect(stmt.finalState.netUnpaidInterest).toBe("5470467")
+    expect(stmt.finalState.totalDue).toBe("15270467")
+    expect(stmt.finalState.daysOverdue).toBe(167)
+  })
+})
+
 describe("buildLoanStatement — penalty activation", () => {
   it("emits a penalty_active event when daysOverdue crosses the 60-day threshold", () => {
     // 90 days, no payments → daysOverdue hits 60 around day 60

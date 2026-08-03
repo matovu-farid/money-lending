@@ -22,6 +22,7 @@ import {
   unpinCollectionKey,
 } from "@/collections/loan-extras";
 import { loanBalanceCollection } from "@/collections/loan-balances";
+import { getLoanWaiversCollection } from "@/collections/loan-waivers";
 import { rateChangeRequestCollection } from "@/collections/rate-change-requests";
 import { loanCollection } from "@/collections/loans";
 import {
@@ -131,6 +132,29 @@ export function LoanDetailClient({
     [loanPaymentsColl],
   );
   const rawPaymentsArr = Array.isArray(rawPayments) ? rawPayments : [];
+
+  const loanWaiversColl = useMemo(
+    () => getLoanWaiversCollection(loan.id),
+    [loan.id],
+  );
+  const { data: rawWaivers } = useLiveQuery(
+    (q) => q.from({ w: loanWaiversColl }).select(({ w }) => w),
+    [loanWaiversColl],
+  );
+  const waivers = useMemo(
+    () =>
+      (Array.isArray(rawWaivers) ? rawWaivers : []).map((w) => ({
+        waiverDate:
+          w.waiverDate instanceof Date
+            ? w.waiverDate
+            : new Date(w.waiverDate as unknown as string),
+        amount: w.amount,
+        interestPortion: w.interestPortion ?? "0",
+        principalPortion: w.principalPortion ?? "0",
+        reason: w.reason,
+      })),
+    [rawWaivers],
+  );
 
   // Resolve recordedBy user IDs to names.
   // Memoize on the joined-id signature so the array identity only changes
@@ -337,6 +361,7 @@ export function LoanDetailClient({
         principalPortion: p.principalPortion,
         recorderName: p.recorderName,
       })),
+      waivers,
       rateChanges: rateChangeList
         .filter((r: RateChangeRequest) => r.status === "approved")
         .map((r: RateChangeRequest) => ({
@@ -346,7 +371,7 @@ export function LoanDetailClient({
         })),
       today: new Date(),
     });
-  }, [statementOpen, loan, payments, rateChangeList]);
+  }, [statementOpen, loan, payments, waivers, rateChangeList]);
 
   // Initialize penalty multiplier on mount and reset on unmount
   useEffect(() => {

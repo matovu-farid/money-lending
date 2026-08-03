@@ -31,12 +31,14 @@ export function LoanStatementDialog({
     <DrawerDialog open={open} onOpenChange={onOpenChange}>
       <DrawerDialogContent
         className={cn(
+          "loan-statement-dialog-content",
           // Generous desktop width so the 10-column cycle table fits without
           // horizontal scrolling. Mobile uses the drawer fallback.
           "sm:max-w-5xl w-[95vw] max-h-[90vh] overflow-y-auto p-6",
           // Strip dialog chrome when printing — just the statement body.
-          "print:max-h-none print:overflow-visible print:max-w-none print:w-auto print:shadow-none print:border-none print:p-0",
+          "print:static print:translate-x-0 print:translate-y-0 print:block print:max-h-none print:overflow-visible print:max-w-none print:w-auto print:shadow-none print:border-none print:p-0",
         )}
+        data-testid="loan-statement-dialog-content"
       >
         <DialogHeader>
           <DialogTitle className="flex items-center justify-between gap-3">
@@ -178,6 +180,22 @@ function EventRow({ event }: { event: StatementEvent }) {
             <div>Principal portion: {formatCurrency(event.principalPortion)}</div>
             <div>Balance: {formatCurrency(event.balanceBefore)} → {formatCurrency(event.balanceAfter)}</div>
             {event.recordedBy && <div>Recorded by: {event.recordedBy}</div>}
+          </div>
+        </div>
+      )
+    case "waiver":
+      return (
+        <div className="border-l-2 border-yellow-500/40 pl-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-semibold">{dayLabel} · {dateLabel}</span>
+            <span className="text-[10px] uppercase tracking-wider text-yellow-600">Waiver</span>
+          </div>
+          <div className="text-muted-foreground space-y-0.5 mt-1">
+            <div>Amount waived: {formatCurrency(event.amount)}</div>
+            <div>Interest portion: {formatCurrency(event.interestPortion)}</div>
+            <div>Principal portion: {formatCurrency(event.principalPortion)}</div>
+            <div>Balance: {formatCurrency(event.balanceBefore)} → {formatCurrency(event.balanceAfter)}</div>
+            <div>Reason: {event.reason}</div>
           </div>
         </div>
       )

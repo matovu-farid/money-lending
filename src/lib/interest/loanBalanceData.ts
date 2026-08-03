@@ -2,7 +2,7 @@
 
 import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "../db";
-import { loans, payments } from "../db/schema";
+import { loans, loanWaivers, payments } from "../db/schema";
 import { computeLoanOverdueInfo } from "./overdue";
 import { getBaseRate } from "./effective-rate";
 import { toLoanType } from "@/types";
@@ -10,11 +10,14 @@ import { formatAmount } from "./engine";
 import {
   getInterestEarnedFromLedger,
   getLoanBalancesFromLedger,
+  getPaymentPortionsFromLedger,
+  getWaiverPortionsFromLedger,
   getRemainingPrincipalFromLedger,
 } from "@/services/ledger-queries.service";
 import BigNumber from "bignumber.js";
 import { getLastSettlementEventsForLoans } from "@/services/settlement.service";
 import { isOperationalLoan } from "@/lib/loan-visibility";
+import { buildLoanStatement } from "@/lib/loan-statement";
 
 type QueryDb = Pick<typeof db, "select">;
 
@@ -110,6 +113,7 @@ export async function computeLoanBalanceData(
     interestEarnedMap,
     settlementEvents,
     allPayments,
+    allWaivers,
   ] = await Promise.all([
     getRemainingPrincipalFromLedger(operationalIds, asOf, queryDb),
     getLoanBalancesFromLedger(operationalIds, asOf, queryDb),
@@ -127,6 +131,17 @@ export async function computeLoanBalanceData(
         ),
       )
       .orderBy(asc(payments.paymentDate), asc(payments.createdAt)),
+    queryDb
+      .select()
+      .from(loanWaivers)
+      .where(
+        and(
+          inArray(loanWaivers.loanId, operationalIds),
+          isNull(loanWaivers.deletedAt),
+          lte(loanWaivers.waiverDate, asOf),
+        ),
+      )
+      .orderBy(asc(loanWaivers.waiverDate)),
   ]);
 
   const paymentsByLoanId = new Map<string, typeof allPayments>();
@@ -136,8 +151,33 @@ export async function computeLoanBalanceData(
     paymentsByLoanId.set(p.loanId, list);
   }
 
+  // Payment allocations are the cash interest actually paid. The balance
+  // feed needs them to distinguish cumulative accrued interest from interest
+  // settled by payments; using only the latest payment date drops older
+  // unpaid interest from the amount due.
+  const paymentPortions = getPaymentPortionsFromLedger
+    ? await getPaymentPortionsFromLedger(
+        allPayments.map((p) => p.id),
+        queryDb,
+      )
+    : new Map<string, { interestPortion: string; principalPortion: string }>();
+  const waiverPortions = getWaiverPortionsFromLedger
+    ? await getWaiverPortionsFromLedger(
+        allWaivers.map((w) => w.id),
+        queryDb,
+      )
+    : new Map<string, { interestPortion: string; principalPortion: string }>();
+
+  const waiversByLoanId = new Map<string, typeof allWaivers>();
+  for (const w of allWaivers) {
+    const list = waiversByLoanId.get(w.loanId) ?? [];
+    list.push(w);
+    waiversByLoanId.set(w.loanId, list);
+  }
+
   for (const loan of operational) {
     const activePayments = paymentsByLoanId.get(loan.id) ?? [];
+    const activeWaivers = waiversByLoanId.get(loan.id) ?? [];
     const hasLedgerEntries = balanceMap.has(loan.id);
     const ledgerBalance = balanceMap.get(loan.id) ?? new BigNumber(0);
     if (!hasLedgerEntries) {
@@ -156,6 +196,50 @@ export async function computeLoanBalanceData(
     const totalInterestPaid = formatAmount(
       interestEarnedMap.get(loan.id) ?? new BigNumber(0),
     );
+    const hasAllPaymentPortions = activePayments.every((payment) =>
+      paymentPortions.has(payment.id),
+    );
+    const statement =
+      loanType === "perpetual" && hasAllPaymentPortions
+        ? buildLoanStatement({
+            loan: {
+              id: loan.id,
+              principalAmount: loan.principalAmount,
+              interestRate: loan.interestRate,
+              interestRateOverride: loan.interestRateOverride,
+              penaltyMultiplier: loan.penaltyMultiplier,
+              penaltyWaived: loan.penaltyWaived,
+              penaltyWaivedAt: loan.penaltyWaivedAt,
+              penaltyWaivedBy: loan.penaltyWaivedBy,
+              minInterestDays: loan.minInterestDays,
+              issuanceFee: loan.issuanceFee,
+              loanType: loan.loanType,
+              startDate: new Date(loan.startDate),
+              createdAt: new Date(loan.createdAt),
+            },
+            payments: activePayments.map((payment) => {
+              const portion = paymentPortions.get(payment.id);
+              return {
+                paymentDate: new Date(payment.paymentDate),
+                amount: payment.amount,
+                interestPortion: portion?.interestPortion ?? "0",
+                principalPortion: portion?.principalPortion ?? "0",
+                recorderName: "",
+              };
+            }),
+            waivers: activeWaivers.map((waiver) => {
+              const portion = waiverPortions.get(waiver.id);
+              return {
+                waiverDate: new Date(waiver.waiverDate),
+                amount: waiver.amount,
+                interestPortion: portion?.interestPortion ?? "0",
+                principalPortion: portion?.principalPortion ?? "0",
+                reason: waiver.reason,
+              };
+            }),
+            today: asOf,
+          })
+        : null;
     const lastPaymentDate =
       settlementEvents.get(loan.id)?.date ?? new Date(loan.startDate);
 
@@ -172,6 +256,7 @@ export async function computeLoanBalanceData(
       loan,
       lastPaymentDate,
       asOf,
+      totalInterestAccrued: statement?.finalState.cumulativeInterestAccrued,
     });
 
     results.set(loan.id, {

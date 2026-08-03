@@ -22,6 +22,7 @@ export function computeLoanOverdueInfo(params: {
   loanType: LoanType;
   termMonths: number | null;
   totalInterestPaid: string;
+  totalInterestAccrued?: string | BigNumber;
   paymentCount: number;
   totalBalanceOwed: string;
   penaltyWaived: boolean;
@@ -41,6 +42,7 @@ export function computeLoanOverdueInfo(params: {
     baseRate,
     loanType,
     totalInterestPaid,
+    totalInterestAccrued,
     totalBalanceOwed: outstandingBalance,
     penaltyWaived,
     loan,
@@ -56,6 +58,7 @@ export function computeLoanOverdueInfo(params: {
       penaltyWaived,
       loan,
       totalInterestPaid,
+      totalInterestAccrued,
       asOf,
     });
   } else {
@@ -66,6 +69,7 @@ export function computeLoanOverdueInfo(params: {
 
       loanType,
       totalInterestPaid,
+      totalInterestAccrued,
       outstandingBalance,
       penaltyWaived,
       loan,
@@ -99,6 +103,7 @@ export function computeFixedLoanOverdueInfo(params: {
     startDate: Date;
   };
   lastPaymentDate: Date;
+  totalInterestAccrued?: string | BigNumber;
   asOf?: Date;
 }) {
   const {
@@ -108,6 +113,7 @@ export function computeFixedLoanOverdueInfo(params: {
     loanType,
 
     totalInterestPaid,
+    totalInterestAccrued,
     outstandingBalance,
     penaltyWaived,
     loan,
@@ -138,6 +144,7 @@ export function computeFixedLoanOverdueInfo(params: {
     loan,
     asOf: now,
     interestAccrued,
+    totalInterestAccrued,
   });
 }
 
@@ -156,6 +163,7 @@ export function computePerpetualOverdueInfo(params: {
     startDate: Date;
   };
   totalInterestPaid: string;
+  totalInterestAccrued?: string | BigNumber;
   asOf: Date;
 }) {
   const {
@@ -166,6 +174,7 @@ export function computePerpetualOverdueInfo(params: {
     penaltyWaived,
     loan,
     totalInterestPaid,
+    totalInterestAccrued,
     asOf,
   } = params;
   const now = asOf ?? new Date();
@@ -192,6 +201,7 @@ export function computePerpetualOverdueInfo(params: {
     totalInterestPaid,
     asOf,
     interestAccrued,
+    totalInterestAccrued,
   });
 }
 
@@ -210,6 +220,7 @@ export function computeOverdueInfoFromInterestAccrued(params: {
     startDate: Date;
   };
   totalInterestPaid: string;
+  totalInterestAccrued?: string | BigNumber;
   asOf: Date;
 }) {
   const {
@@ -222,6 +233,7 @@ export function computeOverdueInfoFromInterestAccrued(params: {
     totalInterestPaid,
     asOf,
     interestAccrued,
+    totalInterestAccrued,
   } = params;
   const now = asOf ?? new Date();
 
@@ -234,8 +246,15 @@ export function computeOverdueInfoFromInterestAccrued(params: {
     dailyRateBN,
   );
 
+  const accruedInterest = totalInterestAccrued ?? interestAccrued;
+  const unpaidAccruedInterest = totalInterestAccrued
+    ? BigNumber.max(
+        new BigNumber(accruedInterest).minus(new BigNumber(totalInterestPaid)),
+        0,
+      )
+    : accruedInterest;
   const daysOverdueBN = calculateDaysOverdueFromInterestAccrued(
-    interestAccrued,
+    unpaidAccruedInterest,
     dailyInterestAmount,
   );
 
@@ -252,7 +271,7 @@ export function computeOverdueInfoFromInterestAccrued(params: {
     minimumDefaultInterest.minus(BigNumber(totalInterestPaid)),
   );
   const unpaidInterest = BigNumber.max(
-    interestAccrued,
+    unpaidAccruedInterest,
     0,
     remainingMinimumDefaultInterest,
   ).toFixed(0);

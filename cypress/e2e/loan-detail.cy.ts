@@ -67,6 +67,21 @@ describe("Loan Detail Page (/loans/[loanId])", () => {
       cy.get(".inline-flex, [data-slot='badge']").should("have.length.gte", 1)
     })
 
+    it("shows the complete Show Math document and uses the print action", () => {
+      cy.visit(`/loans/${loanId}`)
+      cy.contains("Detail Test Customer", { timeout: 15000 }).should("be.visible")
+      cy.window().then((win) => cy.stub(win, "print").as("printDocument"))
+
+      cy.contains("button", "Show Math").click()
+      cy.get("[data-testid='loan-statement-dialog-content']").should("be.visible")
+      cy.contains("Chronological Events").should("be.visible")
+      cy.contains("Monthly Interest Cycles").should("be.visible")
+      cy.contains("As Of").should("be.visible")
+
+      cy.contains("button", "Print").click()
+      cy.get("@printDocument").should("have.been.calledOnce")
+    })
+
     it("shows Back to Loans link", () => {
       cy.visit(`/loans/${loanId}`)
       cy.contains("Detail Test Customer", { timeout: 15000 }).should("be.visible")

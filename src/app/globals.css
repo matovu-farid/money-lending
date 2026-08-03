@@ -244,6 +244,25 @@
     display: none !important;
   }
 
+  /* Dialogs are fixed and scrollable on screen. Let the full loan statement
+     return to normal document flow so the browser can paginate every event
+     and interest-cycle row. */
+  .loan-statement-dialog-content {
+    position: static !important;
+    transform: none !important;
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  [data-slot="dialog-overlay"] {
+    display: none !important;
+  }
+
   /* Receipt container */
   .receipt-body {
     max-width: 500px;
@@ -295,4 +314,3 @@
   }
 
 }
-

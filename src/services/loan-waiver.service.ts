@@ -18,7 +18,12 @@ import {
 } from "./payment.service";
 import { reverseInterestAccrual } from "./transaction.service";
 import { formatAmount } from "@/lib/interest/engine";
-import type { WaiveLoanAmountInput, LoanWaiver } from "@/types";
+import { getWaiverPortionsFromLedger } from "./ledger-queries.service";
+import type {
+  LoanWaiverWithPortions,
+  WaiveLoanAmountInput,
+  LoanWaiver,
+} from "@/types";
 
 export async function waiveLoanAmount(
   input: WaiveLoanAmountInput,
@@ -158,10 +163,23 @@ export async function waiveLoanAmount(
 export async function listLoanWaiversForLoan(
   loanId: string,
   queryDb: Pick<typeof db, "select"> = db,
-): Promise<LoanWaiver[]> {
-  return queryDb
+): Promise<LoanWaiverWithPortions[]> {
+  const rows = await queryDb
     .select()
     .from(loanWaivers)
     .where(and(eq(loanWaivers.loanId, loanId), isNull(loanWaivers.deletedAt)))
     .orderBy(asc(loanWaivers.waiverDate));
+
+  const portions = await getWaiverPortionsFromLedger(
+    rows.map((row) => row.id),
+    queryDb,
+  );
+  return rows.map((row): LoanWaiverWithPortions => {
+    const portion = portions.get(row.id);
+    return {
+      ...row,
+      interestPortion: portion?.interestPortion ?? "0",
+      principalPortion: portion?.principalPortion ?? "0",
+    };
+  });
 }
