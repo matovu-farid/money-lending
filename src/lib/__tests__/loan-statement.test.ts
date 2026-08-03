@@ -105,6 +105,82 @@ describe("buildLoanStatement — payments", () => {
   })
 })
 
+describe("buildLoanStatement — rollover settlement", () => {
+  it("counts rollover interest as settled at the opening of the new loan", () => {
+    const stmt = buildLoanStatement({
+      loan: baseLoan,
+      payments: [],
+      openingInterestSettled: "100000",
+      today: new Date("2026-01-31T00:00:00Z"),
+    })
+
+    expect(stmt.events.some((event) => event.kind === "rollover_settled")).toBe(true)
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("100000")
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("100000")
+    expect(stmt.finalState.netUnpaidInterest).toBe("0")
+    expect(stmt.finalState.totalDue).toBe("1000000")
+  })
+
+  it("matches the production rollover loan after recognizing opening interest", () => {
+    const stmt = buildLoanStatement({
+      loan: {
+        ...baseLoan,
+        id: "loan-production-rollover",
+        principalAmount: "15358484",
+        interestRate: "0.12",
+        startDate: new Date("2025-02-21T00:00:00Z"),
+        createdAt: new Date("2026-08-03T13:12:05.926Z"),
+      },
+      openingInterestSettled: "3636606.34",
+      payments: [
+        {
+          paymentDate: new Date("2025-04-15T12:00:00Z"),
+          amount: "1350000",
+          interestPortion: "0",
+          principalPortion: "1350000",
+          recorderName: "",
+        },
+        {
+          paymentDate: new Date("2025-08-07T12:00:00Z"),
+          amount: "1500000",
+          interestPortion: "0",
+          principalPortion: "1500000",
+          recorderName: "",
+        },
+        {
+          paymentDate: new Date("2025-09-12T12:00:00Z"),
+          amount: "3000000",
+          interestPortion: "1513221.69",
+          principalPortion: "1486778.31",
+          recorderName: "",
+        },
+        {
+          paymentDate: new Date("2025-11-07T12:00:00Z"),
+          amount: "2000000",
+          interestPortion: "2000000",
+          principalPortion: "0",
+          recorderName: "",
+        },
+        {
+          paymentDate: new Date("2026-03-31T12:00:00Z"),
+          amount: "1000000",
+          interestPortion: "1000000",
+          principalPortion: "0",
+          recorderName: "",
+        },
+      ],
+      today: new Date("2026-08-03T00:00:00Z"),
+    })
+
+    expect(stmt.finalState.principalBalance).toBe("11021706")
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("27995289")
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("8149828")
+    expect(stmt.finalState.netUnpaidInterest).toBe("19845461")
+    expect(stmt.finalState.totalDue).toBe("30867167")
+    expect(stmt.finalState.daysOverdue).toBe(450)
+  })
+})
+
 describe("buildLoanStatement — waivers", () => {
   it("settles waiver allocations and matches the ledger-backed total due", () => {
     const stmt = buildLoanStatement({

@@ -181,6 +181,7 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getPaymentPortionsFromLedger: vi.fn(),
   getLoanBalancesFromLedger: vi.fn(),
   getInterestEarnedFromLedger: vi.fn(),
+  getRolloverInterestSettledFromLedger: vi.fn(),
   getWaiverPortionsFromLedger: vi.fn(),
 }))
 

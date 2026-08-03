@@ -33,6 +33,7 @@ import {
   adjustLoanInterestRateAction,
   listLoanRateHistoryAction,
 } from "@/actions/rate-change-request.actions";
+import { getLoanRolloverInterestAction } from "@/actions/loan.actions";
 import { invalidateLendingProjections } from "@/lib/cache-invalidation";
 import { emitTableChange } from "@/lib/table-events";
 import { getQueryClient } from "@/lib/query-client";
@@ -336,8 +337,22 @@ export function LoanDetailClient({
 
   // Show Math dialog — built lazily so opening is instant.
   const [statementOpen, setStatementOpen] = useState(false);
+  const {
+    data: rolloverInterestSettled,
+    isLoading: rolloverInterestLoading,
+  } = useQuery({
+    queryKey: [...queryKeys.loans.detail(loan.id), "rollover-interest"],
+    queryFn: async () => {
+      const result = await getLoanRolloverInterestAction(loan.id);
+      if ("error" in result) throw new Error(result.error);
+      return result.data;
+    },
+    enabled: statementOpen && !!loan.rolledOverFrom,
+    staleTime: 30_000,
+  });
   const statement = useMemo(() => {
     if (!statementOpen) return null;
+    if (loan.rolledOverFrom && rolloverInterestLoading) return null;
     return buildLoanStatement({
       loan: {
         id: loan.id,
@@ -361,6 +376,7 @@ export function LoanDetailClient({
         principalPortion: p.principalPortion,
         recorderName: p.recorderName,
       })),
+      openingInterestSettled: rolloverInterestSettled ?? "0",
       waivers,
       rateChanges: rateChangeList
         .filter((r: RateChangeRequest) => r.status === "approved")
@@ -371,7 +387,15 @@ export function LoanDetailClient({
         })),
       today: new Date(),
     });
-  }, [statementOpen, loan, payments, waivers, rateChangeList]);
+  }, [
+    statementOpen,
+    loan,
+    payments,
+    rolloverInterestSettled,
+    rolloverInterestLoading,
+    waivers,
+    rateChangeList,
+  ]);
 
   // Initialize penalty multiplier on mount and reset on unmount
   useEffect(() => {

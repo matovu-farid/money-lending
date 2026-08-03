@@ -8,6 +8,7 @@ const mockGetLoanBalancesFromLedger = vi.fn()
 const mockGetInterestEarnedFromLedger = vi.fn()
 const mockGetPaymentPortionsFromLedger = vi.fn()
 const mockGetWaiverPortionsFromLedger = vi.fn()
+const mockGetRolloverInterestSettledFromLedger = vi.fn()
 const mockGetLastSettlementEventsForLoans = vi.fn()
 const mockComputeLoanOverdueInfo = vi.fn()
 
@@ -43,6 +44,8 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getLoanBalancesFromLedger: mockGetLoanBalancesFromLedger,
   getInterestEarnedFromLedger: mockGetInterestEarnedFromLedger,
   getPaymentPortionsFromLedger: mockGetPaymentPortionsFromLedger,
+  getRolloverInterestSettledFromLedger:
+    mockGetRolloverInterestSettledFromLedger,
   getWaiverPortionsFromLedger: mockGetWaiverPortionsFromLedger,
 }))
 
@@ -106,6 +109,7 @@ describe("loanBalanceData", () => {
       new Map([["loan-1", new BigNumber("150000")]]),
     )
     mockGetPaymentPortionsFromLedger.mockResolvedValue(new Map())
+    mockGetRolloverInterestSettledFromLedger.mockResolvedValue(new Map())
     mockGetWaiverPortionsFromLedger.mockResolvedValue(new Map())
     mockGetLastSettlementEventsForLoans.mockResolvedValue(
       new Map([

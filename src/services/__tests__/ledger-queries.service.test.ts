@@ -577,6 +577,25 @@ describe("ledger-queries.service", () => {
     })
   })
 
+  describe("getRolloverInterestSettledFromLedger", () => {
+    it("returns rollover interest credited into the current loan principal", async () => {
+      const { getRolloverInterestSettledFromLedger } = await import(
+        "@/services/ledger-queries.service"
+      )
+      const qdb = mockQueryDb([
+        { loanId: "loan-1", total: "3636606.34" },
+      ])
+
+      const result = await getRolloverInterestSettledFromLedger(
+        ["loan-1"],
+        undefined,
+        qdb as any,
+      )
+
+      expect(result.get("loan-1")?.toFixed(2)).toBe("3636606.34")
+    })
+  })
+
   // ── getCreditorRepaymentPortionsFromLedger ──────────────────────────
 
   describe("getCreditorRepaymentPortionsFromLedger", () => {

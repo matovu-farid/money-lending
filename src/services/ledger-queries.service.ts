@@ -135,6 +135,47 @@ export async function getInterestEarnedFromLedger(
 }
 
 /**
+ * Derive interest settled from a predecessor loan at rollover time.
+ * Rollover interest is credited to Interest Earned and capitalized into the
+ * new loan's Loans Receivable balance, so Show Math must count it as an
+ * opening settlement rather than current-loan unpaid interest.
+ */
+export async function getRolloverInterestSettledFromLedger(
+  loanIds: string[],
+  asOf?: Date,
+  queryDb: Pick<typeof db, "select"> = db,
+): Promise<Map<string, BigNumber>> {
+  if (loanIds.length === 0) return new Map();
+
+  const conditions = [
+    eq(transactionCategories.name, "Interest Earned"),
+    eq(transactions.type, "credit"),
+    eq(transactions.referenceType, "rollover"),
+    inArray(transactions.loanId, loanIds),
+  ];
+  if (asOf) conditions.push(lte(transactions.transactionDate, asOf));
+
+  const rows = await queryDb
+    .select({
+      loanId: transactions.loanId,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id),
+    )
+    .where(and(...conditions))
+    .groupBy(transactions.loanId);
+
+  const result = new Map<string, BigNumber>();
+  for (const row of rows) {
+    if (row.loanId) result.set(row.loanId, new BigNumber(row.total));
+  }
+  return result;
+}
+
+/**
  * Derive per-investment total interest payable from the ledger.
  * Queries "Interest Payable" entries grouped by referenceId.
  * Liability account: CR adds, DR subtracts.

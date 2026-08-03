@@ -169,6 +169,7 @@ vi.mock("@/services/export/excel.service", () => ({
 vi.mock("@/services/ledger-queries.service", () => ({
   getLoanBalancesFromLedger: vi.fn(),
   getInterestEarnedFromLedger: vi.fn(),
+  getRolloverInterestSettledFromLedger: vi.fn(),
 }))
 
 vi.mock("@/services/report.service", () => ({
@@ -189,6 +190,7 @@ import { revalidatePath } from "next/cache"
 import { createLoan, listLoans, getLoansForExport } from "@/services/loan.service"
 import { generateLoansExcel } from "@/services/export/excel.service"
 import { getLocationBalances } from "@/services/report.service"
+import { getRolloverInterestSettledFromLedger } from "@/services/ledger-queries.service"
 import { CustomerNotFound, IncompleteLoanRequirements } from "@/lib/errors"
 import type { Loan, LoanListEntry } from "@/types"
 import type { LoanPaymentContext, LoanReceiptData } from "@/services/loan.service"
@@ -207,6 +209,7 @@ import {
   exportLoansExcelAction,
   waivePenaltyAction,
   adjustPenaltyMultiplierAction,
+  getLoanRolloverInterestAction,
 } from "../loan.actions"
 
 // ---------- Type snapshots (lock the now-explicit return types; no more `any`) ----------
@@ -258,6 +261,9 @@ const mockListLoans = vi.mocked(listLoans)
 const mockGetLoansForExport = vi.mocked(getLoansForExport)
 const mockGenerateLoansExcel = vi.mocked(generateLoansExcel)
 const mockGetLocationBalances = vi.mocked(getLocationBalances)
+const mockGetRolloverInterestSettledFromLedger = vi.mocked(
+  getRolloverInterestSettledFromLedger,
+)
 
 const fakeSession = {
   user: { id: "u1", name: "Test User", email: "t@t.com", role: "admin" },
@@ -315,6 +321,23 @@ describe("Loan Actions", () => {
       mockListLoans.mockReturnValue(Effect.fail(new Error("fail")) as any)
       const result = await listLoansAction()
       expect(result).toEqual({ error: "Internal server error" })
+    })
+  })
+
+  describe("getLoanRolloverInterestAction", () => {
+    it("returns the ledger-backed opening interest settlement", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetRolloverInterestSettledFromLedger.mockResolvedValue(
+        new Map([["loan-1", { toFixed: () => "3636606.34" } as any]]),
+      )
+
+      const result = await getLoanRolloverInterestAction("loan-1")
+
+      expect(result).toEqual({ data: "3636606.34" })
+      expect(mockGetRolloverInterestSettledFromLedger).toHaveBeenCalledWith(
+        ["loan-1"],
+        expect.any(Date),
+      )
     })
   })
 

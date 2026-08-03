@@ -42,6 +42,12 @@ export type StatementEvent =
       baseRate: string
     }
   | {
+      kind: "rollover_settled"
+      day: number
+      date: Date
+      amount: string
+    }
+  | {
       kind: "payment"
       day: number
       date: Date
@@ -157,6 +163,8 @@ export interface BuildStatementInput {
     principalPortion: string
     recorderName: string
   }>
+  /** Interest from a predecessor loan settled when this loan was created. */
+  openingInterestSettled?: string
   waivers?: Array<{
     waiverDate: Date
     amount: string
@@ -182,7 +190,14 @@ function addDays(d: Date, n: number): Date {
 }
 
 export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
-  const { loan, payments, waivers = [], rateChanges = [], today } = input
+  const {
+    loan,
+    payments,
+    openingInterestSettled = "0",
+    waivers = [],
+    rateChanges = [],
+    today,
+  } = input
 
   const principalBN = new BigNumber(loan.principalAmount)
   const initialBaseRate = loan.interestRateOverride ?? loan.interestRate
@@ -203,6 +218,15 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       baseRate: initialBaseRate,
     },
   ]
+  const openingInterestSettledBN = new BigNumber(openingInterestSettled)
+  if (openingInterestSettledBN.isGreaterThan(0)) {
+    events.push({
+      kind: "rollover_settled",
+      day: 0,
+      date: loan.startDate,
+      amount: openingInterestSettledBN.toFixed(0),
+    })
+  }
 
   // Sort payments and rate changes by date for chronological iteration.
   const sortedPayments = [...payments].sort(
@@ -224,7 +248,11 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   let balance = principalBN
   let baseRate = new BigNumber(initialBaseRate)
   let cumulativeAccrued = new BigNumber(0)
-  let cumulativePaid = new BigNumber(0)
+  let cumulativePaid = openingInterestSettledBN
+  // Rollover interest is capitalized into the opening principal, while the
+  // successor loan still inherits the predecessor's overdue/penalty state.
+  // Keep that opening settlement out of threshold detection only.
+  let cumulativePaidForPenalty = new BigNumber(0)
   let penaltyActive = false
   let penaltyActivatedDay: number | null = null
 
@@ -307,6 +335,9 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       const balanceBefore = balance
       balance = BigNumber.max(balance.minus(new BigNumber(p.principalPortion)), 0)
       cumulativePaid = cumulativePaid.plus(new BigNumber(p.interestPortion))
+      cumulativePaidForPenalty = cumulativePaidForPenalty.plus(
+        new BigNumber(p.interestPortion),
+      )
       events.push({
         kind: "payment",
         day: pDay,
@@ -335,6 +366,9 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
         0,
       )
       cumulativePaid = cumulativePaid.plus(new BigNumber(w.interestPortion))
+      cumulativePaidForPenalty = cumulativePaidForPenalty.plus(
+        new BigNumber(w.interestPortion),
+      )
       events.push({
         kind: "waiver",
         day: wDay,
@@ -352,7 +386,10 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
     // 3) Determine if penalty is active for this day, based on days-overdue
     //    derived from cumulative base-rate accrual so far.
     const dailyAtBase = balance.multipliedBy(baseRate).dividedBy(30)
-    const netUnpaidBefore = BigNumber.max(cumulativeAccrued.minus(cumulativePaid), 0)
+    const netUnpaidBefore = BigNumber.max(
+      cumulativeAccrued.minus(cumulativePaidForPenalty),
+      0,
+    )
     const daysOverdueBefore = dailyAtBase.isZero()
       ? 0
       : Math.floor(netUnpaidBefore.dividedBy(dailyAtBase).toNumber())
@@ -411,11 +448,15 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   events.sort((a, b) => a.date.getTime() - b.date.getTime() || a.day - b.day)
 
   const netUnpaid = BigNumber.max(cumulativeAccrued.minus(cumulativePaid), 0)
-  const totalDue = balance.plus(netUnpaid)
   const dailyAtBaseEnd = balance.multipliedBy(baseRate).dividedBy(30)
   const daysOverdue = dailyAtBaseEnd.isZero()
     ? 0
     : Math.floor(netUnpaid.dividedBy(dailyAtBaseEnd).toNumber())
+  const principalBalanceRounded = balance.toFixed(0)
+  const netUnpaidRounded = netUnpaid.toFixed(0)
+  const totalDue = new BigNumber(principalBalanceRounded).plus(
+    new BigNumber(netUnpaidRounded),
+  )
 
   // penaltyActivatedDay is captured via the events array — the variable just
   // makes future "since penalty activation" math cheap if we want it.
@@ -441,10 +482,10 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
     events,
     cycles,
     finalState: {
-      principalBalance: balance.toFixed(0),
+      principalBalance: principalBalanceRounded,
       cumulativeInterestAccrued: cumulativeAccrued.toFixed(0),
       cumulativeInterestPaid: cumulativePaid.toFixed(0),
-      netUnpaidInterest: netUnpaid.toFixed(0),
+      netUnpaidInterest: netUnpaidRounded,
       totalDue: totalDue.toFixed(0),
       daysOverdue,
       penaltyActive,

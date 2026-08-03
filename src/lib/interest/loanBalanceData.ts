@@ -11,6 +11,7 @@ import {
   getInterestEarnedFromLedger,
   getLoanBalancesFromLedger,
   getPaymentPortionsFromLedger,
+  getRolloverInterestSettledFromLedger,
   getWaiverPortionsFromLedger,
   getRemainingPrincipalFromLedger,
 } from "@/services/ledger-queries.service";
@@ -114,6 +115,7 @@ export async function computeLoanBalanceData(
     settlementEvents,
     allPayments,
     allWaivers,
+    rolloverInterestMap,
   ] = await Promise.all([
     getRemainingPrincipalFromLedger(operationalIds, asOf, queryDb),
     getLoanBalancesFromLedger(operationalIds, asOf, queryDb),
@@ -142,6 +144,9 @@ export async function computeLoanBalanceData(
         ),
       )
       .orderBy(asc(loanWaivers.waiverDate)),
+    getRolloverInterestSettledFromLedger
+      ? getRolloverInterestSettledFromLedger(operationalIds, asOf, queryDb)
+      : Promise.resolve(new Map<string, BigNumber>()),
   ]);
 
   const paymentsByLoanId = new Map<string, typeof allPayments>();
@@ -227,6 +232,8 @@ export async function computeLoanBalanceData(
                 recorderName: "",
               };
             }),
+            openingInterestSettled:
+              rolloverInterestMap.get(loan.id)?.toFixed(2) ?? "0",
             waivers: activeWaivers.map((waiver) => {
               const portion = waiverPortions.get(waiver.id);
               return {

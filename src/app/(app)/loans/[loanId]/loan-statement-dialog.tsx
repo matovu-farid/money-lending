@@ -167,6 +167,20 @@ function EventRow({ event }: { event: StatementEvent }) {
           </div>
         </div>
       )
+    case "rollover_settled":
+      return (
+        <div className="border-l-2 border-violet-500/40 pl-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-semibold">{dayLabel} · {dateLabel}</span>
+            <span className="text-[10px] uppercase tracking-wider text-violet-600">
+              Rollover Interest Settled
+            </span>
+          </div>
+          <div className="text-muted-foreground mt-1">
+            Interest carried from the predecessor loan: {formatCurrency(event.amount)}
+          </div>
+        </div>
+      )
     case "payment":
       return (
         <div className="border-l-2 border-emerald-500/40 pl-4">

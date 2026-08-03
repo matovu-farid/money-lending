@@ -58,6 +58,7 @@ import { notifyAdmin, resolveLoanContext } from "@/lib/email";
 import BigNumber from "bignumber.js";
 import { generateLoansExcel } from "@/services/export/excel.service";
 import { getLocationBalances } from "@/services/report.service";
+import { getRolloverInterestSettledFromLedger } from "@/services/ledger-queries.service";
 import { formatAmount } from "@/lib/interest/engine";
 import { VALID_DEPOSIT_LOCATIONS, VALID_LOAN_TYPES } from "@/lib/constants";
 
@@ -128,6 +129,22 @@ export const getLoanWithBalanceAction = withAction<
     const entry = await getLoanListEntryById(loanId);
     if (!entry) return { error: "Loan not found" };
     return { data: entry };
+  },
+});
+
+/** Opening interest settled when a predecessor loan was rolled into this loan. */
+export const getLoanRolloverInterestAction = withAction<
+  string,
+  { data: string } | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanId) => {
+    if (!loanId?.trim()) return { error: "Loan ID is required" };
+    const settled = await getRolloverInterestSettledFromLedger(
+      [loanId],
+      new Date(),
+    );
+    return { data: settled.get(loanId)?.toFixed(2) ?? "0" };
   },
 });
 
