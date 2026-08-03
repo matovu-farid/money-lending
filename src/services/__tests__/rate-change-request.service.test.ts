@@ -110,7 +110,134 @@ describe("Rate Change Request Service", () => {
     }
   })
 
-  // ── applyRateChangeImmediately ────────────────────────────────────
+  // ── applied rate changes ──────────────────────────────────────────
+
+  it("applies an admin rate adjustment using the locked loan's effective rate", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const { writeAuditLog } = await import("@/services/audit.service")
+    const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
+
+    let updateSet: ReturnType<typeof vi.fn> | undefined
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => {
+        const mockTx = {
+          select: vi.fn().mockReturnValue({
+            from: vi.fn().mockReturnValue({
+              where: vi.fn().mockReturnValue({
+                for: vi.fn().mockResolvedValue([{ ...mockLoan, interestRateOverride: null }]),
+              }),
+            }),
+          }),
+          update: vi.fn().mockImplementation(() => {
+            updateSet = vi.fn().mockReturnValue({
+              where: vi.fn().mockResolvedValue(undefined),
+            })
+            return { set: updateSet }
+          }),
+        }
+        return callback(mockTx)
+      },
+    )
+
+    const { applyAdminRateAdjustment } = await import("@/services/rate-change-request.service")
+    await Effect.runPromise(
+      applyAdminRateAdjustment({ loanId: "loan-1", newRate: "0.12", actorId: "admin-1" }),
+    )
+
+    expect(updateSet).toHaveBeenCalledWith({ interestRateOverride: "0.1200", updatedAt: expect.any(Date) })
+    expect(autoPostRateChangeAdjustment).toHaveBeenCalledWith(expect.anything(), {
+      loanId: "loan-1",
+      oldRate: "0.10",
+      newRate: "0.1200",
+      actorId: "admin-1",
+    })
+    expect(writeAuditLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      actorId: "admin-1",
+      action: "loan.rate_change.admin_adjusted",
+      entityType: "loan",
+      entityId: "loan-1",
+      beforeValue: { interestRate: "0.10" },
+      afterValue: { interestRateOverride: "0.1200" },
+    }))
+  })
+
+  it("rejects unchanged and out-of-range admin rates before writing", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    const { writeAuditLog } = await import("@/services/audit.service")
+    const update = vi.fn()
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => callback({
+        select: vi.fn().mockReturnValue({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              for: vi.fn().mockResolvedValue([mockLoan]),
+            }),
+          }),
+        }),
+        update,
+      }),
+    )
+
+    const { applyAdminRateAdjustment } = await import("@/services/rate-change-request.service")
+    for (const newRate of ["0", "1", "0.10"]) {
+      const exit = await Effect.runPromiseExit(
+        applyAdminRateAdjustment({ loanId: "loan-1", newRate, actorId: "admin-1" }),
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+    }
+    expect(update).not.toHaveBeenCalled()
+    expect(writeAuditLog).not.toHaveBeenCalled()
+  })
+
+  it("maps only applied loan rate audit rows into newest-first history", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        leftJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([
+              {
+                id: "audit-admin",
+                actorId: "admin-1",
+                actorName: "Admin User",
+                action: "loan.rate_change.admin_adjusted",
+                beforeValue: JSON.stringify({ interestRate: "0.11" }),
+                afterValue: JSON.stringify({ interestRateOverride: "0.12" }),
+                occurredAt: new Date("2026-08-03T12:00:00Z"),
+              },
+              {
+                id: "audit-approved",
+                actorId: "supervisor-1",
+                actorName: "Supervisor User",
+                action: "loan.rate_change.approved",
+                beforeValue: JSON.stringify({ interestRate: "0.10" }),
+                afterValue: JSON.stringify({ interestRateOverride: "0.11" }),
+                occurredAt: new Date("2026-08-02T12:00:00Z"),
+              },
+              {
+                id: "audit-immediate",
+                actorId: "officer-1",
+                actorName: "Loan Officer",
+                action: "loan.rate_change.immediate",
+                beforeValue: JSON.stringify({ interestRateOverride: null, interestRate: "0.09" }),
+                afterValue: JSON.stringify({ interestRateOverride: "0.10" }),
+                occurredAt: new Date("2026-08-01T12:00:00Z"),
+              },
+            ]),
+          }),
+        }),
+      }),
+    })
+
+    const { listLoanRateChangeHistory } = await import("@/services/rate-change-request.service")
+    const result = await Effect.runPromise(listLoanRateChangeHistory("loan-1"))
+
+    expect(result).toEqual([
+      { id: "audit-admin", fromRate: "0.11", toRate: "0.12", actorId: "admin-1", actorName: "Admin User", changedAt: new Date("2026-08-03T12:00:00Z") },
+      { id: "audit-approved", fromRate: "0.10", toRate: "0.11", actorId: "supervisor-1", actorName: "Supervisor User", changedAt: new Date("2026-08-02T12:00:00Z") },
+      { id: "audit-immediate", fromRate: "0.09", toRate: "0.10", actorId: "officer-1", actorName: "Loan Officer", changedAt: new Date("2026-08-01T12:00:00Z") },
+    ])
+  })
 
   it("applies rate change immediately within a transaction", async () => {
     const { db: mockedDb } = await import("@/lib/db")

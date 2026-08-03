@@ -47,6 +47,7 @@ vi.mock("next/cache", () => ({
 }))
 
 vi.mock("@/services/rate-change-request.service", () => ({
+  applyAdminRateAdjustment: vi.fn(),
   applyRateChangeImmediately: vi.fn(),
   listAllRequests: vi.fn(),
   listRequestsForLoan: vi.fn(),
@@ -56,6 +57,7 @@ vi.mock("@/services/rate-change-request.service", () => ({
   getLoanRateForChange: vi.fn(),
   createPendingRateChangeRequest: vi.fn(),
   getRequestForReview: vi.fn(),
+  listLoanRateChangeHistory: vi.fn(),
   DUPLICATE_PENDING_TAG: "DuplicatePending",
 }))
 
@@ -110,8 +112,9 @@ vi.mock("@/lib/ip-allowlist", () => ({
 
 // ---------- Imports ----------
 
-import { getSession, getUserRole, getEffectivePermissions } from "@/lib/action-utils"
+import { getSession, getUserRole, getEffectivePermissions, checkPermission } from "@/lib/action-utils"
 import {
+  applyAdminRateAdjustment,
   applyRateChangeImmediately,
   listAllRequests,
   listRequestsForLoan,
@@ -120,6 +123,7 @@ import {
   createPendingRateChangeRequest,
   getRequestForReview,
   reviewRequest,
+  listLoanRateChangeHistory,
   type RateChangeRequestWithLoan,
 } from "@/services/rate-change-request.service"
 import { getBaseRate } from "@/lib/interest/effective-rate"
@@ -132,6 +136,8 @@ import {
   listRequestsForLoanAction,
   reviewRateChangeRequestAction,
   countPendingRequestsAction,
+  adjustLoanInterestRateAction,
+  listLoanRateHistoryAction,
 } from "../rate-change-request.actions"
 
 // ---------- Type snapshots (protect the action→service refactor) ----------
@@ -171,6 +177,8 @@ import { fakeSession } from "./test-utils"
 const mockGetSession = vi.mocked(getSession)
 const mockGetUserRole = vi.mocked(getUserRole)
 const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
+const mockCheckPermission = vi.mocked(checkPermission)
+const mockApplyAdminRateAdjustment = vi.mocked(applyAdminRateAdjustment)
 const mockApplyRateChange = vi.mocked(applyRateChangeImmediately)
 const mockListAllRequests = vi.mocked(listAllRequests)
 const mockListRequestsForLoan = vi.mocked(listRequestsForLoan)
@@ -180,6 +188,7 @@ const mockGetLoanRateForChange = vi.mocked(getLoanRateForChange)
 const mockCreatePendingRequest = vi.mocked(createPendingRateChangeRequest)
 const mockGetRequestForReview = vi.mocked(getRequestForReview)
 const mockReviewRequest = vi.mocked(reviewRequest)
+const mockListLoanRateChangeHistory = vi.mocked(listLoanRateChangeHistory)
 
 const asRequest = (partial: Partial<RateChangeRequest>): RateChangeRequest =>
   partial as unknown as RateChangeRequest
@@ -189,10 +198,70 @@ const asRequest = (partial: Partial<RateChangeRequest>): RateChangeRequest =>
 describe("Rate Change Request Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockCheckPermission.mockResolvedValue(null)
     // Restore default permission mock after clearAllMocks
     mockGetEffectivePermissions.mockResolvedValue(new Set([
       "loan:create", "rate-change:approve-standard", "rate-change:approve-low",
     ]))
+  })
+
+  // ===== administrator rate adjustment/history =====
+  describe("administrator rate adjustment", () => {
+    it("returns Unauthorized when no session exists", async () => {
+      mockGetSession.mockResolvedValue(null)
+      const result = await adjustLoanInterestRateAction({ loanId: "l1", requestedRate: "0.12" })
+      expect(result).toEqual({ error: "Unauthorized" })
+    })
+
+    it("returns Forbidden when the caller lacks loan:rate-adjust", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue("Forbidden")
+      const result = await adjustLoanInterestRateAction({ loanId: "l1", requestedRate: "0.12" })
+      expect(result).toEqual({ error: "Forbidden" })
+      expect(mockApplyAdminRateAdjustment).not.toHaveBeenCalled()
+    })
+
+    it("validates the loan and decimal rate before applying", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      for (const input of [
+        { loanId: "", requestedRate: "0.12" },
+        { loanId: "l1", requestedRate: "0" },
+        { loanId: "l1", requestedRate: "1" },
+        { loanId: "l1", requestedRate: "abc" },
+      ]) {
+        const result = await adjustLoanInterestRateAction(input)
+        expect(result).toHaveProperty("error")
+      }
+      expect(mockApplyAdminRateAdjustment).not.toHaveBeenCalled()
+    })
+
+    it("applies a valid rate and revalidates the loan pages", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockApplyAdminRateAdjustment.mockReturnValue(Effect.succeed(undefined))
+      const result = await adjustLoanInterestRateAction({ loanId: "l1", requestedRate: "0.12" })
+      expect(result).toEqual({ data: undefined })
+      expect(mockApplyAdminRateAdjustment).toHaveBeenCalledWith({
+        loanId: "l1", newRate: "0.1200", actorId: fakeSession.user.id,
+      })
+    })
+  })
+
+  describe("loan rate history", () => {
+    it("allows loan readers to fetch only the loan's applied rate history", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const history = [{
+        id: "audit-1",
+        fromRate: "0.10",
+        toRate: "0.12",
+        actorId: "admin-1",
+        actorName: "Admin User",
+        changedAt: new Date("2026-08-03T12:00:00Z"),
+      }]
+      mockListLoanRateChangeHistory.mockReturnValue(Effect.succeed(history))
+      const result = await listLoanRateHistoryAction("l1")
+      expect(result).toEqual({ data: history })
+      expect(mockListLoanRateChangeHistory).toHaveBeenCalledWith("l1")
+    })
   })
 
   // ===== requestRateChangeAction =====

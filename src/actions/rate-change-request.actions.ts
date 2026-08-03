@@ -9,10 +9,13 @@ import {
   type CreateRateChangeRequestInput,
   type ReviewRateChangeRequestInput,
   type RateChangeRequest,
+  type AdminRateAdjustmentInput,
+  type LoanRateChangeHistoryEntry,
 } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
 import {
   applyRateChangeImmediately,
+  applyAdminRateAdjustment,
   listAllRequests,
   listRateChangeRequests,
   listRequestsForLoan,
@@ -22,6 +25,7 @@ import {
   createPendingRateChangeRequest,
   getRequestForReview,
   DUPLICATE_PENDING_TAG,
+  listLoanRateChangeHistory,
   type RateChangeRequestWithLoan,
 } from "@/services/rate-change-request.service"
 
@@ -29,6 +33,57 @@ type RequestRateChangeResult =
   | { error: string }
   | { data: { applied: true; message: string } }
   | { data: { applied: false; request: RateChangeRequest; message: string } }
+
+function normalizeAdminRate(input: string): string | { error: string } {
+  if (!input?.trim()) return { error: "Requested rate is required" }
+  const rate = Number(input)
+  if (!Number.isFinite(rate) || rate <= 0 || rate >= 1) {
+    return { error: "Rate must be a decimal between 0 and 1 (e.g., 0.10 for 10%)" }
+  }
+  return rate.toFixed(4)
+}
+
+export const adjustLoanInterestRateAction = withAction<
+  AdminRateAdjustmentInput,
+  { data: undefined } | { error: string }
+>({
+  permission: "loan:rate-adjust",
+  action: async (session, input) => {
+    if (!input.loanId?.trim()) return { error: "Loan ID is required" }
+    const normalizedRate = normalizeAdminRate(input.requestedRate)
+    if (typeof normalizedRate !== "string") return normalizedRate
+
+    try {
+      await Effect.runPromise(
+        applyAdminRateAdjustment({
+          loanId: input.loanId,
+          newRate: normalizedRate,
+          actorId: session.user.id,
+        }),
+      )
+      revalidatePath("/loans")
+      revalidatePath(`/loans/${input.loanId}`)
+      return { data: undefined }
+    } catch (error) {
+      const tag = getErrorTag(error)
+      if (tag === "LoanNotFound") return { error: "Loan not found" }
+      if (tag === "ValidationError") {
+        const message = error instanceof Error ? error.message : "Unable to adjust interest rate"
+        return { error: message }
+      }
+      return { error: "Internal server error" }
+    }
+  },
+})
+
+export const listLoanRateHistoryAction = withAction<
+  string,
+  LoanRateChangeHistoryEntry[]
+>({
+  permission: "loan:read",
+  effect: (_session, loanId) => listLoanRateChangeHistory(loanId),
+  errors: { DatabaseError: "Internal server error" },
+})
 
 // This action has complex permission-based branching that doesn't fit withAction cleanly
 export async function requestRateChangeAction(

@@ -17,3 +17,17 @@ export interface ReviewRateChangeRequestInput {
   action: "approved" | "rejected"
   reviewNote?: string
 }
+
+export type AdminRateAdjustmentInput = {
+  loanId: string
+  requestedRate: string
+}
+
+export type LoanRateChangeHistoryEntry = {
+  id: string
+  fromRate: string
+  toRate: string
+  actorId: string | null
+  actorName: string | null
+  changedAt: Date
+}

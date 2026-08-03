@@ -21,6 +21,8 @@ import { PageHeader } from "@/components/ui/page-header";
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
 import { LoanSearchBar } from "@/components/loans/loan-search-bar";
 import { filterLoansByCustomerName } from "@/lib/loan-filters";
+import { getBaseRate } from "@/lib/interest/effective-rate";
+import { LoanInterestRateCell } from "@/components/loans/loan-interest-rate-cell";
 
 type FilterCategory = "all" | "critical" | "at-risk" | "early";
 const EMPTY_LOAN_ENTRIES: LoanListEntry[] = [];
@@ -296,6 +298,17 @@ export default function LoansPage() {
       ),
       cardLabel: "Principal",
       render: (e) => formatCurrency(e.principalAmount),
+    },
+    {
+      key: "interestRate",
+      header: "Interest Rate",
+      cardLabel: "Rate",
+      render: (e) => (
+        <LoanInterestRateCell
+          rate={getBaseRate(e)}
+          rateChanged={e.interestRateOverride !== null}
+        />
+      ),
     },
     {
       key: "outstandingBalance",

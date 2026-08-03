@@ -21,6 +21,7 @@ export const queryKeys = {
     /** Prefix for all active-loan-check keys — invalidate on loan lifecycle writes. */
     activeLoanCheckAll: ["active-loan-check"] as const,
     detail: (loanId: string) => ["loans", "detail", loanId] as const,
+    rateHistory: (loanId: string) => ["loans", "rate-history", loanId] as const,
     customerLoans: (customerId: string) => ["loans", "customer", customerId] as const,
     dueToday: ["loans-due-today"] as const,
   },

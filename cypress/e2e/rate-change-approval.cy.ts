@@ -93,6 +93,37 @@ describe("Rate Change Approval Flow", () => {
 
       // Verify the rate card shows the new rate
       cy.contains("9.0%")
+      cy.contains("Rate changed").should("be.visible")
+      cy.contains("View rate history").click()
+      cy.contains("Interest Rate History").should("be.visible")
+      cy.contains("Super Admin").should("be.visible")
+    })
+
+    it("admin can adjust the rate directly and loan-read users can view history", () => {
+      cy.visit(`/loans/${loanId}`)
+      cy.contains("Adjust Interest Rate").click()
+      cy.get("#admin-new-rate").clear().type("11")
+      cy.contains("button", "Save Rate").click()
+      cy.contains("Interest rate adjusted", { timeout: 10000 }).should("be.visible")
+      cy.contains("Rate changed").should("be.visible")
+
+      cy.clearCookies()
+      loanOfficerEmail = `lo-history-${Date.now()}@fidexa.org`
+      cy.visit("/register")
+      cy.get("#name").type("History Reader")
+      cy.get("#email").type(loanOfficerEmail)
+      cy.get("#password").type(password)
+      cy.get("#confirmPassword").type(password)
+      cy.get("button[type=submit]").click()
+      cy.url({ timeout: 15000 }).should("include", "/pending-approval")
+
+      cy.task("db:promoteUser", { email: loanOfficerEmail, role: "loanOfficer" })
+      cy.clearCookies()
+      cy.login(loanOfficerEmail, password)
+      cy.visit(`/loans/${loanId}`)
+      cy.contains("View rate history").should("be.visible").click()
+      cy.contains("Interest Rate History").should("be.visible")
+      cy.contains("Adjust Interest Rate").should("not.exist")
     })
   })
 

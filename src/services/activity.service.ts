@@ -67,6 +67,7 @@ export function formatActivityDescription(
       return "Loan rate change rejected"
 
     case "loan.rate_change.immediate":
+    case "loan.rate_change.admin_adjusted":
       return "Loan rate changed"
 
     case "loan.update":

@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { PermissionInfo } from "@/components/ui/permission-info"
-import type { UserRole, RateChangeRequest, Loan } from "@/types"
+import type { UserRole, RateChangeRequest, Loan, LoanRateChangeHistoryEntry } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
 import { formatDate, formatCurrency, formatRate } from "@/lib/utils"
 import { getBaseRate, getEffectiveRate } from "@/lib/interest/effective-rate"
@@ -36,6 +36,9 @@ export interface LoanInfoCardsProps {
   onClosePenaltyAdjust: () => void
   // Rate change
   onOpenRateChange: (currentRate: string) => void
+  rateHistory: LoanRateChangeHistoryEntry[]
+  onOpenRateHistory: () => void
+  onOpenAdminRateAdjustment: () => void
 }
 
 export function LoanInfoCards({
@@ -54,6 +57,9 @@ export function LoanInfoCards({
   onOpenPenaltyAdjust,
   onClosePenaltyAdjust,
   onOpenRateChange,
+  rateHistory,
+  onOpenRateHistory,
+  onOpenAdminRateAdjustment,
 }: LoanInfoCardsProps) {
   const { has } = usePermissions()
 
@@ -96,6 +102,14 @@ export function LoanInfoCards({
           {formatRate(getBaseRate(loan), 1)}
           <span className="text-sm font-normal text-muted-foreground ml-1">/ month</span>
         </p>
+        {rateHistory.length > 0 && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Badge variant="secondary" className="text-xs">Rate changed</Badge>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onOpenRateHistory}>
+              View rate history
+            </Button>
+          </div>
+        )}
         {penaltyActive && (
           <div className="mt-2 rounded-md bg-destructive/10 border border-destructive/20 px-3 py-2">
             <div className="flex items-center gap-2 mb-1">
@@ -190,6 +204,13 @@ export function LoanInfoCards({
               action="Request rate change"
               detail="Any loan officer can request a rate change. Rates >=10% apply immediately. Rates 8-10% need supervisor approval. Rates below 8% need admin approval."
             />
+          </div>
+        )}
+        {loan.status === "active" && has("loan:rate-adjust") && (
+          <div className="mt-2">
+            <Button variant="outline" size="sm" onClick={onOpenAdminRateAdjustment}>
+              Adjust Interest Rate
+            </Button>
           </div>
         )}
       </div>

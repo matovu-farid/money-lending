@@ -88,6 +88,11 @@ describe("formatActivityDescription", () => {
     expect(result).toBe("Loan rate changed")
   })
 
+  it("formats loan.rate_change.admin_adjusted", () => {
+    const result = formatActivityDescription("loan.rate_change.admin_adjusted", "loan", null, {}, new Map())
+    expect(result).toBe("Loan rate changed")
+  })
+
   it("formats payment.delete", () => {
     const result = formatActivityDescription("payment.delete", "payment", null, {}, new Map())
     expect(result).toBe("Payment deleted")

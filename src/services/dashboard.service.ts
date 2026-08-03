@@ -321,7 +321,8 @@ export const getRecentActivity = (
           description = "Loan deleted";
         } else if (
           entry.entityType === "loan" &&
-          entry.action === "loan.rate_change.immediate"
+          (entry.action === "loan.rate_change.immediate" ||
+            entry.action === "loan.rate_change.admin_adjusted")
         ) {
           type = "loan_issued";
           loanId = entry.entityId;

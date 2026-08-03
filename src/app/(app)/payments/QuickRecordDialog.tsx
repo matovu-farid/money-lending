@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { useForm, Controller } from "react-hook-form";
 import { useLiveQuery, eq } from "@tanstack/react-db";
@@ -66,7 +66,8 @@ export function QuickRecordDialog({
     receiptNumber: string;
     totalBalanceBefore?: string;
   } | null>(null);
-  const [isPending] = useTransition();
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
   const [confirmStep, setConfirmStep] = useState(false);
   const [pendingData, setPendingData] = useState<QuickRecordFormValues | null>(
     null,
@@ -129,6 +130,8 @@ export function QuickRecordDialog({
     : null;
 
   function resetForm() {
+    isRecordingRef.current = false;
+    setIsRecording(false);
     setSelectedLoan(null);
     reset({
       amount: "",
@@ -142,6 +145,7 @@ export function QuickRecordDialog({
   }
 
   function handleOpenChange(nextOpen: boolean) {
+    if (!nextOpen && isRecordingRef.current) return;
     if (!nextOpen) {
       resetForm();
     }
@@ -159,14 +163,15 @@ export function QuickRecordDialog({
   }
 
   function onFormSubmit(data: QuickRecordFormValues) {
-    if (!selectedLoan) return;
+    if (!selectedLoan || isRecordingRef.current) return;
     setPendingData(data);
     setConfirmStep(true);
   }
 
   async function handleConfirmedSubmit() {
-    if (!selectedLoan || !pendingData) return;
-    setConfirmStep(false);
+    if (!selectedLoan || !pendingData || isRecordingRef.current) return;
+    isRecordingRef.current = true;
+    setIsRecording(true);
 
     const id = generateClientId();
     const now = new Date();
@@ -205,36 +210,38 @@ export function QuickRecordDialog({
           : undefined,
     };
 
-    // Compute receipt allocation from available balance data
-    const allocation = computeReceiptAllocation(
-      pendingData.amount,
-      balanceData,
-    );
-    const totalBalanceBefore = balanceData?.totalBalance;
-
-    const tx = insertPaymentWithInput(id, optimistic, input);
     try {
+      // Compute receipt allocation from available balance data
+      const allocation = computeReceiptAllocation(
+        pendingData.amount,
+        balanceData,
+      );
+      const totalBalanceBefore = balanceData?.totalBalance;
+      const tx = insertPaymentWithInput(id, optimistic, input);
       await tx.isPersisted.promise;
+      toast.success("Payment recorded successfully");
+
+      setReceiptData({
+        payment: {
+          ...optimistic,
+          depositLocationValue: pendingData.depositLocation,
+          allocation,
+        } as unknown as ReceiptPaymentData,
+        receiptNumber: generateReceiptNumber(),
+        totalBalanceBefore,
+      });
+      setConfirmStep(false);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to record payment";
       toast.error(message);
-      return;
+    } finally {
+      isRecordingRef.current = false;
+      setIsRecording(false);
     }
-    toast.success("Payment recorded successfully");
-
-    setReceiptData({
-      payment: {
-        ...optimistic,
-        depositLocationValue: pendingData.depositLocation,
-        allocation,
-      } as unknown as ReceiptPaymentData,
-      receiptNumber: generateReceiptNumber(),
-      totalBalanceBefore,
-    });
   }
 
-  const isSubmitDisabled = !selectedLoan || isPending;
+  const isSubmitDisabled = !selectedLoan || isRecording;
 
   const loanRef = selectedLoan
     ? `LOAN-${shortId(selectedLoan.loanId).toUpperCase()}`
@@ -294,11 +301,15 @@ export function QuickRecordDialog({
                 </Card>
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setConfirmStep(false)}>
+                <Button
+                  variant="outline"
+                  disabled={isRecording}
+                  onClick={() => setConfirmStep(false)}
+                >
                   Back
                 </Button>
-                <Button onClick={handleConfirmedSubmit} disabled={isPending}>
-                  {isPending ? (
+                <Button onClick={handleConfirmedSubmit} disabled={isRecording}>
+                  {isRecording ? (
                     <Spinner>Recording...</Spinner>
                   ) : (
                     "Confirm & Record"
@@ -376,7 +387,7 @@ export function QuickRecordDialog({
                     control={control}
                     label="Amount (UGX)"
                     required="Amount is required"
-                    disabled={!selectedLoan}
+                    disabled={!selectedLoan || isRecording}
                     id="quick-record-amount"
                     presets={selectedLoan ? AMOUNT_PRESETS : undefined}
                   />
@@ -386,7 +397,7 @@ export function QuickRecordDialog({
                     name="depositLocation"
                     control={control}
                     label="Deposit Location"
-                    disabled={!selectedLoan || isPending}
+                    disabled={!selectedLoan || isRecording}
                     id="quick-record-deposit-location"
                     subLocationName="subLocationId"
                   />
@@ -403,6 +414,7 @@ export function QuickRecordDialog({
                           id="quick-record-date"
                           value={field.value}
                           onChange={field.onChange}
+                          disabled={isRecording}
                         />
                       )}
                     />
@@ -418,6 +430,7 @@ export function QuickRecordDialog({
                   <Button
                     type="button"
                     variant="outline"
+                    disabled={isRecording}
                     onClick={() => handleOpenChange(false)}
                   >
                     Close
@@ -427,7 +440,7 @@ export function QuickRecordDialog({
                     variant="default"
                     disabled={isSubmitDisabled}
                   >
-                    {isPending ? (
+                    {isRecording ? (
                       <Spinner>Recording...</Spinner>
                     ) : (
                       "Record Payment"

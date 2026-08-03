@@ -28,16 +28,24 @@ import {
   editPaymentAction,
   deletePaymentAction,
 } from "@/actions/payment.actions";
+import {
+  adjustLoanInterestRateAction,
+  listLoanRateHistoryAction,
+} from "@/actions/rate-change-request.actions";
 import { invalidateLendingProjections } from "@/lib/cache-invalidation";
+import { emitTableChange } from "@/lib/table-events";
 import { getQueryClient } from "@/lib/query-client";
-import { isPenaltyActive } from "@/lib/interest/effective-rate";
+import { queryKeys } from "@/lib/query-keys";
+import { getBaseRate, isPenaltyActive } from "@/lib/interest/effective-rate";
 import { generateClientId } from "@/lib/client-id";
 import { useLiveQuery, eq } from "@tanstack/react-db";
+import { useQuery } from "@tanstack/react-query";
 import type {
   UserRole,
   RateChangeRequest,
   LoanListEntry,
   PaymentWithCustomer,
+  LoanRateChangeHistoryEntry,
 } from "@/types";
 import { usePermissions } from "@/hooks/use-permissions";
 import type { Loan, PaymentPortionsMap } from "@/types";
@@ -62,6 +70,8 @@ import { PaymentTable } from "./payment-table";
 import { EditPaymentDialog } from "./edit-payment-dialog";
 import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { RateChangeDialog } from "./rate-change-dialog";
+import { LoanRateHistoryDialog } from "./loan-rate-history-dialog";
+import { AdminRateAdjustmentDialog } from "./admin-rate-adjustment-dialog";
 import { LoanStatementDialog } from "./loan-statement-dialog";
 import { buildLoanStatement } from "@/lib/loan-statement";
 import { LoanRolloverHistoryBanner } from "@/components/loans/loan-rollover-history";
@@ -257,6 +267,10 @@ export function LoanDetailClient({
   const isWaivingPenalty = false;
   const isAdjustingPenalty = false;
 
+  const [rateHistoryOpen, setRateHistoryOpen] = useState(false);
+  const [adminRateAdjustmentOpen, setAdminRateAdjustmentOpen] = useState(false);
+  const [isAdminRateAdjusting, setIsAdminRateAdjusting] = useState(false);
+
   // Fetch rate change requests for this loan from collection
   const { data: rateChangeRequests = [] } = useLiveQuery(
     (q) =>
@@ -285,6 +299,16 @@ export function LoanDetailClient({
   const pendingRateRequest = rateChangeList.find(
     (r: RateChangeRequest) => r.status === "pending",
   );
+
+  const { data: rateHistory = [] } = useQuery<LoanRateChangeHistoryEntry[]>({
+    queryKey: queryKeys.loans.rateHistory(loan.id),
+    queryFn: async () => {
+      const result = await listLoanRateHistoryAction(loan.id);
+      if ("error" in result) throw new Error(result.error);
+      return result.data;
+    },
+    staleTime: 30_000,
+  });
 
   // Show Math dialog — built lazily so opening is instant.
   const [statementOpen, setStatementOpen] = useState(false);
@@ -498,6 +522,31 @@ export function LoanDetailClient({
     }
   }
 
+  async function handleAdminRateAdjustment(newRate: string) {
+    setIsAdminRateAdjusting(true);
+    try {
+      const result = await adjustLoanInterestRateAction({
+        loanId: loan.id,
+        requestedRate: newRate,
+      });
+      if ("error" in result) {
+        toast.error(result.error);
+        return;
+      }
+      await getQueryClient().invalidateQueries({
+        queryKey: queryKeys.loans.rateHistory(loan.id),
+      });
+      invalidateLendingProjections(getQueryClient());
+      emitTableChange("loans");
+      toast.success("Interest rate adjusted");
+      setAdminRateAdjustmentOpen(false);
+    } catch {
+      toast.error("Failed to adjust interest rate");
+    } finally {
+      setIsAdminRateAdjusting(false);
+    }
+  }
+
   function handleWaivePenalty() {
     try {
       loanCollection.update(
@@ -684,6 +733,9 @@ export function LoanDetailClient({
         onOpenPenaltyAdjust={openPenaltyAdjust}
         onClosePenaltyAdjust={closePenaltyAdjust}
         onOpenRateChange={openRateChange}
+        rateHistory={rateHistory}
+        onOpenRateHistory={() => setRateHistoryOpen(true)}
+        onOpenAdminRateAdjustment={() => setAdminRateAdjustmentOpen(true)}
       />
 
       {/* Principal Balance Card */}
@@ -946,6 +998,18 @@ export function LoanDetailClient({
         onNewRateChange={setNewRate}
         onSubmit={handleRateChangeSubmit}
         onClose={closeRateChange}
+      />
+      <LoanRateHistoryDialog
+        open={rateHistoryOpen}
+        history={rateHistory}
+        onClose={() => setRateHistoryOpen(false)}
+      />
+      <AdminRateAdjustmentDialog
+        open={adminRateAdjustmentOpen}
+        currentRate={getBaseRate(loan)}
+        isPending={isAdminRateAdjusting}
+        onSubmit={handleAdminRateAdjustment}
+        onClose={() => setAdminRateAdjustmentOpen(false)}
       />
 
       {canWaiveAmount && (

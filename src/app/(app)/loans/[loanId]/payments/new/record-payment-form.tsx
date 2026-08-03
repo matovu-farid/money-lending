@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { ArrowLeft } from "lucide-react";
@@ -90,6 +90,8 @@ export function RecordPaymentForm({
   const [pendingData, setPendingData] = useState<PaymentFormValues | null>(
     null,
   );
+  const [isRecording, setIsRecording] = useState(false);
+  const isRecordingRef = useRef(false);
 
   const {
     register,
@@ -107,14 +109,16 @@ export function RecordPaymentForm({
   });
 
   function onFormSubmit(data: PaymentFormValues) {
+    if (isRecordingRef.current) return;
     // Show confirmation dialog instead of submitting directly
     setPendingData(data);
     setConfirmOpen(true);
   }
 
   async function handleConfirmedSubmit() {
-    if (!pendingData) return;
-    setConfirmOpen(false);
+    if (!pendingData || isRecordingRef.current) return;
+    isRecordingRef.current = true;
+    setIsRecording(true);
 
     const id = generateClientId();
     const now = new Date();
@@ -154,37 +158,37 @@ export function RecordPaymentForm({
       note: pendingData.note.trim() || undefined,
     };
 
-    // Compute receipt allocation from available balance data
-    // const allocation = computeReceiptAllocation(pendingData.amount.trim(), balanceData)
-    const allocation = await allocateLoanPayment({
-      asOf: endOfDay(new Date(pendingData.paymentDate)),
-      loanId,
-      paymentAmount: pendingData.amount.trim(),
-    });
-    const totalBalanceBefore = balanceData?.totalBalance;
-
-    const tx = insertPaymentWithInput(id, optimistic, input);
     try {
+      // Compute receipt allocation from available balance data
+      const allocation = await allocateLoanPayment({
+        asOf: endOfDay(new Date(pendingData.paymentDate)),
+        loanId,
+        paymentAmount: pendingData.amount.trim(),
+      });
+      const totalBalanceBefore = balanceData?.totalBalance;
+      const tx = insertPaymentWithInput(id, optimistic, input);
       await tx.isPersisted.promise;
+      toast.success("Payment recorded successfully");
+
+      setReceiptData({
+        payment: {
+          ...optimistic,
+          depositLocationValue: pendingData.depositLocation,
+          allocation,
+        } as unknown as ReceiptPaymentData,
+        receiptNumber: generateReceiptNumber(),
+        totalBalanceBefore,
+      });
+      setConfirmOpen(false);
+      setPendingData(null);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Failed to record payment";
       toast.error(message);
-      setPendingData(null);
-      return;
+    } finally {
+      isRecordingRef.current = false;
+      setIsRecording(false);
     }
-    toast.success("Payment recorded successfully");
-
-    setReceiptData({
-      payment: {
-        ...optimistic,
-        depositLocationValue: pendingData.depositLocation,
-        allocation,
-      } as unknown as ReceiptPaymentData,
-      receiptNumber: generateReceiptNumber(),
-      totalBalanceBefore,
-    });
-    setPendingData(null);
   }
 
   return (
@@ -193,6 +197,7 @@ export function RecordPaymentForm({
         <Button
           variant="outline"
           className="mb-4"
+          disabled={isRecording}
           onClick={() => router.back()}
         >
           <ArrowLeft className="h-4 w-4" />
@@ -300,6 +305,7 @@ export function RecordPaymentForm({
                     onChange={field.onChange}
                     min={loanStartDate}
                     max={todayDateString()}
+                    disabled={isRecording}
                   />
                 )}
               />
@@ -317,6 +323,7 @@ export function RecordPaymentForm({
               required="Amount must be a valid number (e.g. 150000 or 150000.50)"
               id="amount"
               presets={AMOUNT_PRESETS}
+              disabled={isRecording}
             />
 
             <DepositLocationSelect
@@ -325,6 +332,7 @@ export function RecordPaymentForm({
               label="Deposit Location"
               id="depositLocation"
               subLocationName="subLocationId"
+              disabled={isRecording}
             />
 
             <div className="space-y-1">
@@ -333,12 +341,13 @@ export function RecordPaymentForm({
                 id="note"
                 placeholder="Optional note"
                 maxLength={2500}
+                disabled={isRecording}
                 {...register("note")}
               />
             </div>
 
             <div className="pt-2">
-              <Button type="submit" className="w-full sm:w-auto">
+              <Button type="submit" className="w-full sm:w-auto" disabled={isRecording}>
                 Record Payment
               </Button>
             </div>
@@ -347,7 +356,13 @@ export function RecordPaymentForm({
       </Card>
 
       {/* Confirmation Dialog */}
-      <DrawerDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+      <DrawerDialog
+        open={confirmOpen}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen && isRecordingRef.current) return;
+          setConfirmOpen(nextOpen);
+        }}
+      >
         <DrawerDialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Confirm Payment</DialogTitle>
@@ -403,11 +418,11 @@ export function RecordPaymentForm({
             </div>
           )}
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)} disabled={isRecording}>
               Cancel
             </Button>
-            <Button onClick={handleConfirmedSubmit}>
-              Confirm &amp; Record
+            <Button onClick={handleConfirmedSubmit} disabled={isRecording}>
+              {isRecording ? "Recording..." : "Confirm & Record"}
             </Button>
           </DialogFooter>
         </DrawerDialogContent>

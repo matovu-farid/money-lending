@@ -94,6 +94,18 @@ describe("Quick-Record Payment Workflow", () => {
     cy.contains("View receipt").should("have.attr", "target", "_blank")
   })
 
+  it("disables confirmation and prevents a duplicate payment submission", () => {
+    cy.visit(`/loans/${loanId}/payments/new`)
+    cy.get("#amount").type("50000")
+    cy.contains("button", "Record Payment").click()
+
+    cy.contains("button", "Confirm & Record").click().should("be.disabled")
+    cy.contains("button", "Confirm & Record").click({ force: true })
+
+    cy.contains("Payment recorded successfully", { timeout: 15000 }).should("be.visible")
+    cy.task("db:getPayments").should("have.length", 1)
+  })
+
   it("Record another resets form after success (QREC-01)", () => {
     cy.visit("/payments")
     cy.contains("button", "Record Payment").first().click()
