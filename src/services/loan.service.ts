@@ -59,6 +59,7 @@ import {
   computeSingleLoanBalanceData,
 } from "@/lib/interest/loanBalanceData";
 import { assertLoanOperational } from "@/lib/loan-visibility";
+import { filterLoansForExport } from "@/lib/loan-filters";
 import { cancelPendingRateChangeRequestsForLoan } from "./rate-change-request.service";
 
 const checkCustomerCompleteness = (customer: {
@@ -1531,25 +1532,18 @@ export type LoanExportFilter =
   | "early"
   | undefined;
 
+export interface LoanExportOptions {
+  filter?: LoanExportFilter;
+  customerName?: string;
+}
+
 /** Loan entries for Excel export, with optional overdue-bucket filter applied. */
 export async function getLoansForExport(
-  filter: LoanExportFilter,
+  options: LoanExportOptions = {},
 ): Promise<LoanListEntry[]> {
   const operational = await Effect.runPromise(listOperationalLoans());
-  let entries = await computeOverdue(operational);
-
-  if (filter && filter !== "all") {
-    entries = entries.filter((entry) => {
-      if (entry.daysOverdue < 0) return false;
-      if (filter === "critical") return entry.daysOverdue >= 30;
-      if (filter === "at-risk")
-        return entry.daysOverdue >= 25 && entry.daysOverdue < 30;
-      if (filter === "early")
-        return entry.daysOverdue >= 0 && entry.daysOverdue < 25;
-      return true;
-    });
-  }
-  return entries;
+  const entries = await computeOverdue(operational);
+  return filterLoansForExport(entries, options);
 }
 
 /**

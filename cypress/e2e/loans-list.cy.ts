@@ -1,46 +1,41 @@
-function createCustomerAndLoan(customerName: string, contact: string, amount: string) {
-  cy.visit("/customers/new")
-  cy.get("#fullName").type(customerName)
-  cy.get("#contact").type(contact)
-  cy.get("#address").type("Kampala, Uganda")
-  cy.contains("button", "Register Customer").click()
-  cy.url({ timeout: 10000 }).should("match", /\/customers\/[0-9a-f-]{36}/)
-
-  return cy.url().then((url) => {
-    const cid = url.split("/customers/")[1]
-    cy.visit(`/loans/new?customerId=${cid}`)
-    cy.get("#principalAmount").type(amount)
-    cy.get("#issuanceFee").type("50000")
-    cy.get("#description").type("Test loan")
-    cy.contains("button", "Next").click()
-    cy.get("#collateralNature").type("Land Title")
-    cy.contains("button", "Next").click()
-    cy.contains("button", "Issue Loan").click()
-    cy.dismissReceiptModal()
-    cy.url({ timeout: 10000 }).should("include", `/customers/${cid}`)
-    return cy.wrap(cid)
-  })
+function seedCustomerAndLoan(customerName: string, contact: string, amount: string) {
+  return cy.get<string>("@testUserId").then((issuedBy) =>
+    cy
+      .task("db:seedCustomerAndLoan", {
+        customerName,
+        contact,
+        nin: `CF${contact.slice(-10)}RL`,
+        principalAmount: amount,
+        issuedBy,
+      })
+      .then(({ customerId }) => cy.wrap(customerId))
+  )
 }
 
 describe("Loans List (Unified)", () => {
   beforeEach(() => {
     cy.task("db:reset")
-    cy.registerAndLogin({ name: "Loan Officer" })
-    cy.url({ timeout: 15000 }).should("include", "/dashboard")
+    cy.clearAppPersistence()
+    const email = `loans-list-${Date.now()}@fidexa.org`
+    cy.createTestUser({ name: "Loan Officer", email, role: "loanOfficer" }).then((user) => {
+      cy.wrap(user.userId).as("testUserId")
+      cy.visit("/dashboard")
+      cy.url({ timeout: 15000 }).should("include", "/dashboard")
+    })
   })
 
   context("empty state", () => {
     it("shows empty state when no loans exist", () => {
       cy.visit("/loans")
       cy.contains("h2", "No loans yet.", { timeout: 10000 }).should("be.visible")
-      cy.contains("Issue a loan to get started.").should("be.visible")
-      cy.contains("button", "New Loan").should("be.visible")
+      cy.contains("Issue your first loan by selecting a customer.").should("be.visible")
+      cy.contains("button", "Issue Loan").should("be.visible")
     })
   })
 
   context("with loan data", () => {
     beforeEach(() => {
-      createCustomerAndLoan("Test Borrower", "0700000001", "1000000")
+      seedCustomerAndLoan("Test Borrower", "0700000001", "1000000")
     })
 
     it("shows page heading and subtitle", () => {
@@ -53,17 +48,17 @@ describe("Loans List (Unified)", () => {
     it("displays stat cards with correct labels", () => {
       cy.visit("/loans")
       cy.contains("Critical (30+ days)", { timeout: 10000 }).should("be.visible")
-      cy.contains("At Risk (15-29 days)").should("be.visible")
-      cy.contains("Early (1-14 days)").should("be.visible")
-      cy.contains("Total Overdue").should("be.visible")
+      cy.contains("At Risk (25-29 days)").should("be.visible")
+      cy.contains("Early (0-24 days)").should("be.visible")
+      cy.contains("All Loans").should("be.visible")
     })
 
     it("displays filter tabs with counts", () => {
       cy.visit("/loans")
-      cy.contains("button", /^All \(/, { timeout: 10000 }).should("be.visible")
-      cy.contains("button", /^Critical \(30\+\)/).should("be.visible")
-      cy.contains("button", /^At Risk \(15-29\)/).should("be.visible")
-      cy.contains("button", /^Early \(1-14\)/).should("be.visible")
+      cy.contains("button", "All Loans", { timeout: 10000 }).should("be.visible")
+      cy.contains("button", "Critical (30+ days)").should("be.visible")
+      cy.contains("button", "At Risk (25-29 days)").should("be.visible")
+      cy.contains("button", "Early (0-24 days)").should("be.visible")
     })
 
     it("clicking stat card activates matching filter", () => {
@@ -75,10 +70,20 @@ describe("Loans List (Unified)", () => {
       cy.contains("button", /^Critical \(30\+\)/).should("not.have.attr", "data-state", "inactive")
     })
 
-    it("New Loan button navigates to /loans/new", () => {
+    it("Issue Loan button navigates to /loans/new", () => {
       cy.visit("/loans")
-      cy.contains("button", "New Loan", { timeout: 10000 }).first().click()
+      cy.contains("button", "Issue Loan", { timeout: 10000 }).first().click()
       cy.url().should("include", "/loans/new")
+    })
+
+    it("filters loans by matching customer name", () => {
+      cy.visit("/loans")
+      cy.contains("Test Borrower", { timeout: 10000 }).should("be.visible")
+
+      cy.get("input[placeholder='Search by customer name...']").type("Test")
+
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length", 1)
+      cy.get("[data-testid='data-row']").filter(":visible").first().should("contain", "Test Borrower")
     })
 
     it("Print button exists", () => {
@@ -106,6 +111,27 @@ describe("Loans List (Unified)", () => {
       cy.contains("button", "Show all loans").should("be.visible")
       cy.contains("button", "Show all loans").click()
       cy.get("[data-testid='data-row']", { timeout: 10000 }).should("exist")
+    })
+
+    it("shows a no-match state and clears the customer-name search", () => {
+      cy.visit("/loans")
+      cy.get("input[placeholder='Search by customer name...']").type("No Such Borrower")
+      cy.contains("No loans match your search.", { timeout: 10000 }).should("be.visible")
+
+      cy.contains("button", "Clear filters").first().click()
+      cy.get("input[placeholder='Search by customer name...']").should("have.value", "")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length", 1)
+    })
+
+    it("composes customer-name search with the selected risk category", () => {
+      cy.visit("/loans")
+      cy.contains("button", "Early (0-24 days)", { timeout: 10000 }).click()
+      cy.get("input[placeholder='Search by customer name...']").type("Test")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length", 1)
+
+      cy.contains("button", "Clear filters").click()
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length", 1)
+      cy.contains("Early (0-24 days)").closest("button").should("have.attr", "aria-pressed", "true")
     })
 
     // Regression: a same-day payment must not flip a brand-new loan to Critical.
@@ -140,7 +166,7 @@ describe("Loans List (Unified)", () => {
 
   context("navigation", () => {
     beforeEach(() => {
-      createCustomerAndLoan("Nav Test Borrower", "0700000002", "500000")
+      seedCustomerAndLoan("Nav Test Borrower", "0700000002", "500000")
     })
 
     it("row click navigates to loan detail", () => {
@@ -173,13 +199,45 @@ describe("Loans List (Unified)", () => {
     })
   })
 
+  context("customer-name filter with multiple loans", () => {
+    beforeEach(() => {
+      seedCustomerAndLoan("Alice Filter Borrower", "0700000011", "500000")
+      seedCustomerAndLoan("Bob Filter Borrower", "0700000012", "600000")
+    })
+
+    it("shows only the matching customer loan", () => {
+      cy.visit("/loans")
+      cy.contains("Alice Filter Borrower", { timeout: 10000 }).should("be.visible")
+      cy.contains("Bob Filter Borrower").should("be.visible")
+
+      cy.get("input[placeholder='Search by customer name...']").type("alice")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length", 1)
+      cy.get("[data-testid='data-row']").filter(":visible").should("contain", "Alice Filter Borrower")
+      cy.get("[data-testid='data-row']").filter(":visible").should("not.contain", "Bob Filter Borrower")
+    })
+
+    it("uses the filtered rows in the print document", () => {
+      cy.visit("/loans")
+      cy.get("input[placeholder='Search by customer name...']").type("Alice")
+      cy.get("[data-testid='data-row']").filter(":visible").should("have.length", 1)
+      cy.get("[data-testid='data-row']").filter(":visible").should("contain", "Alice Filter Borrower")
+      cy.contains("button", "Print").click()
+
+      cy.get("iframe", { timeout: 10000 }).should("exist").then(($iframe) => {
+        const bodyText = $iframe.contents().find("body").text()
+        expect(bodyText).to.contain("Alice Filter Borrower")
+        expect(bodyText).not.to.contain("Bob Filter Borrower")
+      })
+    })
+  })
+
   context("at mobile viewport (390x844)", () => {
     beforeEach(() => {
       cy.viewport(390, 844)
     })
 
     it("renders card layout at mobile", () => {
-      createCustomerAndLoan("Mobile Borrower", "0700000003", "750000")
+      seedCustomerAndLoan("Mobile Borrower", "0700000003", "750000")
       cy.visit("/loans")
       cy.get("[data-slot='table-container']", { timeout: 10000 }).should("not.be.visible")
       cy.get("[data-testid='data-row']").filter(":visible").should("have.length.gte", 1)
@@ -189,6 +247,14 @@ describe("Loans List (Unified)", () => {
       cy.visit("/loans")
       cy.get("[data-testid='bottom-tab-bar']", { timeout: 10000 }).should("exist")
         .and("have.css", "display", "flex")
+    })
+
+    it("reveals the customer-name filter from the mobile filter toggle", () => {
+      cy.visit("/loans")
+      cy.get("[aria-label='Toggle filters']", { timeout: 10000 }).should("be.visible")
+      cy.get("[data-slot='filter-panel-content']").should("not.be.visible")
+      cy.get("[aria-label='Toggle filters']").click()
+      cy.get("input[placeholder='Search by customer name...']").should("be.visible")
     })
   })
 })

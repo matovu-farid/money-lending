@@ -30,6 +30,7 @@ import {
   getLoanPredecessorChain,
   getLoanSuccessor,
   getRolloverAuditEntries,
+  type LoanExportOptions,
   waivePenalty,
   adjustPenaltyMultiplier,
 } from "@/services/loan.service";
@@ -443,13 +444,13 @@ export const getLoanStatusCountsAction = withAction({
 });
 
 export const exportLoansExcelAction = withAction<
-  "all" | "critical" | "at-risk" | "early" | undefined,
+  LoanExportOptions,
   { data: string } | { error: string }
 >({
   permission: "reports:read",
-  action: async (_session, filter) => {
+  action: async (_session, options) => {
     try {
-      const entries = await getLoansForExport(filter);
+      const entries = await getLoansForExport(options);
       if (entries.length === 0) {
         return { error: "No loans to export" };
       }

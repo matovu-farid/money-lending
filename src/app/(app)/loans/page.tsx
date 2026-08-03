@@ -19,8 +19,11 @@ import { downloadBase64 } from "@/lib/download";
 import { InfoPopover } from "@/components/ui/info-popover";
 import { PageHeader } from "@/components/ui/page-header";
 import { LoanTypeBadge } from "@/components/loans/loan-type-badge";
+import { LoanSearchBar } from "@/components/loans/loan-search-bar";
+import { filterLoansByCustomerName } from "@/lib/loan-filters";
 
 type FilterCategory = "all" | "critical" | "at-risk" | "early";
+const EMPTY_LOAN_ENTRIES: LoanListEntry[] = [];
 
 function categorize(daysOverdue: number): Exclude<FilterCategory, "all"> {
   if (daysOverdue >= 30) return "critical";
@@ -139,7 +142,7 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
 export default function LoansPage() {
   const router = useRouter();
   const { data, isLoading } = useOperationalLoansWithBalances();
-  const entries = data ?? [];
+  const entries = data ?? EMPTY_LOAN_ENTRIES;
   const error: string | null = null;
   const calculatedAt = new Date();
 
@@ -147,11 +150,23 @@ export default function LoansPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [navigatingTo, setNavigatingTo] = useState<string | null>(null);
+  const [customerNameDraft, setCustomerNameDraft] = useState("");
+  const [customerNameQuery, setCustomerNameQuery] = useState("");
+  const [customerNameResetKey, setCustomerNameResetKey] = useState(0);
+
+  const clearCustomerNameFilter = useCallback(() => {
+    setCustomerNameDraft("");
+    setCustomerNameQuery("");
+    setCustomerNameResetKey((key) => key + 1);
+  }, []);
 
   const handleExportExcel = useCallback(async () => {
     setIsExporting(true);
     try {
-      const result = await exportLoansExcelAction(activeFilter);
+      const result = await exportLoansExcelAction({
+        filter: activeFilter,
+        customerName: customerNameQuery,
+      });
       if ("error" in result) {
         toast.error(result.error);
         return;
@@ -170,15 +185,20 @@ export default function LoansPage() {
     } finally {
       setIsExporting(false);
     }
-  }, [activeFilter]);
+  }, [activeFilter, customerNameQuery]);
+
+  const nameFilteredEntries = useMemo(
+    () => filterLoansByCustomerName(entries, customerNameQuery),
+    [entries, customerNameQuery],
+  );
 
   const sortedEntries = useMemo(() => {
-    return [...entries].sort((a, b) => {
+    return [...nameFilteredEntries].sort((a, b) => {
       const rankDiff = criticalityRank(a) - criticalityRank(b);
       if (rankDiff !== 0) return rankDiff;
       return b.daysOverdue - a.daysOverdue;
     });
-  }, [entries]);
+  }, [nameFilteredEntries]);
 
   const { critical, atRisk, early } = useMemo(() => {
     const groups = {
@@ -430,6 +450,13 @@ export default function LoansPage() {
         </p>
       </div>
 
+      <LoanSearchBar
+        value={customerNameDraft}
+        onChange={setCustomerNameDraft}
+        onSearch={setCustomerNameQuery}
+        resetKey={customerNameResetKey}
+      />
+
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       {isLoading ? (
@@ -624,7 +651,37 @@ export default function LoansPage() {
           </div>
 
           {/* Filter empty state */}
-          {filteredEntries.length === 0 && activeFilter !== "all" ? (
+          {filteredEntries.length === 0 && customerNameQuery.trim() ? (
+            <div className="py-12 text-center">
+              <h2 className="text-lg font-semibold">
+                {activeFilter === "all"
+                  ? "No loans match your search."
+                  : "No loans match your filters."}
+              </h2>
+              <p className="text-sm text-muted-foreground mt-2">
+                Try adjusting the customer name or risk category.
+              </p>
+              <div className="mt-4 flex justify-center gap-2">
+                <Button
+                  variant="outline"
+                  onClick={clearCustomerNameFilter}
+                >
+                  Clear filters
+                </Button>
+                {activeFilter !== "all" && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      clearCustomerNameFilter();
+                      setActiveFilter("all");
+                    }}
+                  >
+                    Show all loans
+                  </Button>
+                )}
+              </div>
+            </div>
+          ) : filteredEntries.length === 0 && activeFilter !== "all" ? (
             <div className="py-12 text-center">
               <h2 className="text-lg font-semibold">
                 No loans in this category.

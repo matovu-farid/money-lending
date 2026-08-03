@@ -87,6 +87,7 @@ vi.mock("next/cache", () => ({
 vi.mock("@/services/loan.service", () => ({
   createLoan: vi.fn(),
   listLoans: vi.fn(),
+  getLoansForExport: vi.fn(),
   updateLoan: vi.fn(),
   deleteLoan: vi.fn(),
 }))
@@ -185,7 +186,8 @@ vi.mock("@/lib/interest/engine", () => ({
 import { getSession, getUserRole, checkPermission, getEffectivePermissions } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { revalidatePath } from "next/cache"
-import { createLoan, listLoans } from "@/services/loan.service"
+import { createLoan, listLoans, getLoansForExport } from "@/services/loan.service"
+import { generateLoansExcel } from "@/services/export/excel.service"
 import { getLocationBalances } from "@/services/report.service"
 import { CustomerNotFound, IncompleteLoanRequirements } from "@/lib/errors"
 import type { Loan, LoanListEntry } from "@/types"
@@ -253,6 +255,8 @@ const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
 const mockRevalidatePath = vi.mocked(revalidatePath)
 const mockCreateLoan = vi.mocked(createLoan)
 const mockListLoans = vi.mocked(listLoans)
+const mockGetLoansForExport = vi.mocked(getLoansForExport)
+const mockGenerateLoansExcel = vi.mocked(generateLoansExcel)
 const mockGetLocationBalances = vi.mocked(getLocationBalances)
 
 const fakeSession = {
@@ -311,6 +315,27 @@ describe("Loan Actions", () => {
       mockListLoans.mockReturnValue(Effect.fail(new Error("fail")) as any)
       const result = await listLoansAction()
       expect(result).toEqual({ error: "Internal server error" })
+    })
+  })
+
+  describe("exportLoansExcelAction", () => {
+    it("passes the customer-name filter to the export service", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetLoansForExport.mockResolvedValue([
+        { customerName: "Alice Filter Borrower" } as LoanListEntry,
+      ])
+      mockGenerateLoansExcel.mockResolvedValue(Buffer.from("xlsx"))
+
+      const result = await exportLoansExcelAction({
+        filter: "all",
+        customerName: "Alice",
+      })
+
+      expect(result).toHaveProperty("data")
+      expect(mockGetLoansForExport).toHaveBeenCalledWith({
+        filter: "all",
+        customerName: "Alice",
+      })
     })
   })
 
