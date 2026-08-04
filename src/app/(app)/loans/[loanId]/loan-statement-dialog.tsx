@@ -322,6 +322,12 @@ function FinalStateBlock({ statement }: { statement: LoanStatement }) {
       <Row label="Cumulative Interest Accrued" value={formatCurrency(f.cumulativeInterestAccrued)} />
       <Row label="Cumulative Interest Paid" value={formatCurrency(f.cumulativeInterestPaid)} />
       <Row label="Net Unpaid Interest" value={formatCurrency(f.netUnpaidInterest)} />
+      {f.minimumInterestAdjustment !== "0" && (
+        <Row
+          label="Minimum Interest Adjustment"
+          value={formatCurrency(f.minimumInterestAdjustment)}
+        />
+      )}
       <div className="border-t border-border my-2" />
       <Row
         label="Total Due to Settle"

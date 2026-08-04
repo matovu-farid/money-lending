@@ -217,6 +217,7 @@ export async function computeLoanBalanceData(
               penaltyWaivedAt: loan.penaltyWaivedAt,
               penaltyWaivedBy: loan.penaltyWaivedBy,
               minInterestDays: loan.minInterestDays,
+              minPeriodOverride: loan.minPeriodOverride,
               issuanceFee: loan.issuanceFee,
               loanType: loan.loanType,
               startDate: new Date(loan.startDate),

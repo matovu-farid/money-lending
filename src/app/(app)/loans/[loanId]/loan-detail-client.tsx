@@ -364,6 +364,7 @@ export function LoanDetailClient({
         penaltyWaivedAt: loan.penaltyWaivedAt ?? null,
         penaltyWaivedBy: loan.penaltyWaivedBy ?? null,
         minInterestDays: loan.minInterestDays,
+        minPeriodOverride: loan.minPeriodOverride ?? null,
         issuanceFee: loan.issuanceFee,
         loanType: loan.loanType ?? "perpetual",
         startDate: loan.startDate,

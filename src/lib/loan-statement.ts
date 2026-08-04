@@ -133,6 +133,7 @@ export interface LoanStatement {
     principalBalance: string
     cumulativeInterestAccrued: string
     cumulativeInterestPaid: string
+    minimumInterestAdjustment: string
     netUnpaidInterest: string
     totalDue: string
     daysOverdue: number
@@ -151,6 +152,7 @@ export interface BuildStatementInput {
     penaltyWaivedAt: Date | null
     penaltyWaivedBy: string | null
     minInterestDays: number
+    minPeriodOverride?: number | null
     issuanceFee: string
     loanType: string
     startDate: Date
@@ -200,6 +202,8 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   } = input
 
   const principalBN = new BigNumber(loan.principalAmount)
+  const minimumInterestDays =
+    loan.minPeriodOverride ?? loan.minInterestDays
   const initialBaseRate = loan.interestRateOverride ?? loan.interestRate
   const multiplier = new BigNumber(loan.penaltyMultiplier ?? "0.1000")
   const initialEffective = new BigNumber(initialBaseRate)
@@ -452,8 +456,28 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   const daysOverdue = dailyAtBaseEnd.isZero()
     ? 0
     : Math.floor(netUnpaid.dividedBy(dailyAtBaseEnd).toNumber())
+  // The first payment is charged at least the configured minimum interest
+  // period, even when the loan is settled before that period has elapsed.
+  // Keep actual accrual separate for the statement history, but include the
+  // remaining minimum in the amount required to settle the loan.
+  const effectiveRateAtEnd = penaltyActive
+    ? baseRate.plus(baseRate.multipliedBy(multiplier))
+    : baseRate
+  const minimumInterestDue = principalBN
+    .multipliedBy(effectiveRateAtEnd)
+    .multipliedBy(Math.max(minimumInterestDays, 0))
+    .dividedBy(30)
+  const remainingMinimumInterest = BigNumber.max(
+    minimumInterestDue.minus(cumulativePaid),
+    0,
+  )
+  const settlementUnpaid = BigNumber.max(netUnpaid, remainingMinimumInterest)
+  const minimumInterestAdjustment = BigNumber.max(
+    remainingMinimumInterest.minus(netUnpaid),
+    0,
+  )
   const principalBalanceRounded = balance.toFixed(0)
-  const netUnpaidRounded = netUnpaid.toFixed(0)
+  const netUnpaidRounded = settlementUnpaid.toFixed(0)
   const totalDue = new BigNumber(principalBalanceRounded).plus(
     new BigNumber(netUnpaidRounded),
   )
@@ -474,7 +498,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       penaltyMultiplier: loan.penaltyMultiplier,
       effectiveRate: initialEffective,
       penaltyThresholdDays: PENALTY_THRESHOLD_DAYS,
-      minInterestDays: loan.minInterestDays,
+      minInterestDays: minimumInterestDays,
       loanType: loan.loanType,
       issuanceFee: loan.issuanceFee,
       backdated: loan.startDate.getTime() < loan.createdAt.getTime(),
@@ -485,6 +509,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       principalBalance: principalBalanceRounded,
       cumulativeInterestAccrued: cumulativeAccrued.toFixed(0),
       cumulativeInterestPaid: cumulativePaid.toFixed(0),
+      minimumInterestAdjustment: minimumInterestAdjustment.toFixed(0),
       netUnpaidInterest: netUnpaidRounded,
       totalDue: totalDue.toFixed(0),
       daysOverdue,

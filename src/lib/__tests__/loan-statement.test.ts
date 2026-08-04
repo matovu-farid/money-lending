@@ -301,6 +301,25 @@ describe("buildLoanStatement — rate changes", () => {
 })
 
 describe("buildLoanStatement — finalState", () => {
+  it("includes the first-payment minimum in settlement due before any payment", () => {
+    const stmt = buildLoanStatement({
+      loan: {
+        ...baseLoan,
+        id: "loan-production-minimum-interest",
+        principalAmount: "19000000",
+        startDate: new Date("2026-07-14T00:00:00Z"),
+        createdAt: new Date("2026-07-14T12:39:24.996659Z"),
+      },
+      payments: [],
+      today: new Date("2026-08-04T00:00:00Z"),
+    })
+
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("1330000")
+    expect(stmt.finalState.minimumInterestAdjustment).toBe("570000")
+    expect(stmt.finalState.netUnpaidInterest).toBe("1900000")
+    expect(stmt.finalState.totalDue).toBe("20900000")
+  })
+
   it("totalDue = principalBalance + netUnpaidInterest", () => {
     const stmt = buildLoanStatement({
       loan: baseLoan,

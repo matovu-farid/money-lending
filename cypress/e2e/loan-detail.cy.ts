@@ -77,6 +77,9 @@ describe("Loan Detail Page (/loans/[loanId])", () => {
       cy.contains("Chronological Events").should("be.visible")
       cy.contains("Monthly Interest Cycles").should("be.visible")
       cy.contains("As Of").should("be.visible")
+      cy.contains("Total Due to Settle")
+        .parent()
+        .should("contain.text", "UGX 2,200,000")
 
       cy.contains("button", "Print").click()
       cy.get("@printDocument").should("have.been.calledOnce")
