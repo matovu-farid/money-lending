@@ -2,9 +2,8 @@ import { db } from "@/lib/db";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
-import { eq, and, or, lte, sql, inArray, isNull } from "drizzle-orm";
+import { eq, and, or, lte, sql, inArray } from "drizzle-orm";
 import BigNumber from "bignumber.js";
-import { loans } from "@/lib/db/schema";
 
 /**
  * Derive per-loan outstanding principal from the ledger.
@@ -370,6 +369,55 @@ export async function getPaymentPortionsFromLedger(
     });
   }
   return result;
+}
+
+/**
+ * Derive the net overpayment revenue posted for each payment. Credits to the
+ * revenue category are original overpayments; debits are payment reversals.
+ */
+export async function getPaymentOverpaymentFromLedger(
+  paymentIds: string[],
+  queryDb: Pick<typeof db, "select"> = db,
+): Promise<Map<string, string>> {
+  if (paymentIds.length === 0) return new Map()
+
+  const rows = await queryDb
+    .select({
+      referenceId: transactions.referenceId,
+      txType: transactions.type,
+      total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id),
+    )
+    .where(
+      and(
+        inArray(transactions.referenceId, paymentIds),
+        inArray(transactions.referenceType, ["payment", "payment_reversal"]),
+        eq(transactionCategories.name, "Overpayment Revenue"),
+      ),
+    )
+    .groupBy(transactions.referenceId, transactions.type)
+
+  const totals = new Map<string, BigNumber>()
+  for (const row of rows) {
+    if (!row.referenceId) continue
+    const current = totals.get(row.referenceId) ?? new BigNumber(0)
+    const amount = new BigNumber(row.total)
+    totals.set(
+      row.referenceId,
+      row.txType === "credit" ? current.plus(amount) : current.minus(amount),
+    )
+  }
+
+  return new Map(
+    [...totals.entries()].map(([paymentId, amount]) => [
+      paymentId,
+      amount.toFixed(2),
+    ]),
+  )
 }
 
 /**

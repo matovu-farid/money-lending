@@ -617,8 +617,12 @@ export function allocatePayment(params: {
 }
 
 /**
- * When engine interest exceeds accrual unpaid interest, re-split interest-first
- * with interest capped at the accrual figure (R14-H2).
+ * Re-split the payment against the full outstanding interest balance.
+ *
+ * The allocation engine calculates the current period's interest, while the
+ * balance feed also includes previously unpaid interest and any minimum
+ * interest adjustment. Interest-first repayment must settle that accumulated
+ * amount before applying cash to principal.
  */
 export function clampAllocationToUnpaidInterest(
   allocation: PaymentAllocation,
@@ -627,15 +631,20 @@ export function clampAllocationToUnpaidInterest(
   principalBalanceBefore: string,
   monthlyRateDecimal: string,
 ): PaymentAllocation {
-  const unpaidCap = new BigNumber(unpaidInterest);
+  const unpaidInterestBN = BigNumber.max(new BigNumber(unpaidInterest), 0);
   const interestBN = new BigNumber(allocation.interestPortion);
-  if (interestBN.isLessThanOrEqualTo(unpaidCap)) return allocation;
-
   const payment = new BigNumber(paymentAmount);
   const balance = new BigNumber(principalBalanceBefore);
-  const interest = BigNumber.min(interestBN, unpaidCap);
+  const interest = BigNumber.min(payment, unpaidInterestBN);
   const principal = BigNumber.min(payment.minus(interest), balance);
   const principalAfter = BigNumber.max(balance.minus(principal), 0);
+
+  if (
+    interestBN.isEqualTo(interest) &&
+    new BigNumber(allocation.principalPortion).isEqualTo(principal)
+  ) {
+    return allocation;
+  }
 
   return {
     ...allocation,
@@ -645,7 +654,7 @@ export function clampAllocationToUnpaidInterest(
     outstandingBalanceAfter: formatAmount(
       principalAfter.multipliedBy(new BigNumber(monthlyRateDecimal)).dividedBy(30),
     ),
-    loanFullyPaid: principalAfter.isZero(),
+    loanFullyPaid: principalAfter.isZero() && interest.isGreaterThanOrEqualTo(unpaidInterestBN),
   };
 }
 

@@ -31,8 +31,8 @@ describe("Category Service (integration)", () => {
 
     const categories = await Effect.runPromise(listCategories())
 
-    // 3 asset + 1 liability + 1 equity + 3 revenue + 5 expense = 13 defaults
-    expect(categories).toHaveLength(13)
+    // 3 asset + 1 liability + 1 equity + 4 revenue + 5 expense = 14 defaults
+    expect(categories).toHaveLength(14)
 
     const expenseNames = categories
       .filter((c) => c.type === "expense")
@@ -54,6 +54,7 @@ describe("Category Service (integration)", () => {
       "Bonuses",
       "Interest Earned",
       "Issuance Fees",
+      "Overpayment Revenue",
     ])
 
     // All should be marked as default
@@ -66,7 +67,7 @@ describe("Category Service (integration)", () => {
     await Effect.runPromise(seedDefaultCategories())
 
     const categories = await Effect.runPromise(listCategories())
-    expect(categories).toHaveLength(13)
+    expect(categories).toHaveLength(14)
   }, TEST_TIMEOUT)
 
   // ── 3. listCategories filters by type ──────────────────────────────
@@ -82,7 +83,7 @@ describe("Category Service (integration)", () => {
     await Effect.runPromise(seedDefaultCategories())
 
     const revenues = await Effect.runPromise(listCategories("revenue"))
-    expect(revenues).toHaveLength(3)
+    expect(revenues).toHaveLength(4)
     expect(revenues.every((c) => c.type === "revenue")).toBe(true)
   }, TEST_TIMEOUT)
 

@@ -69,6 +69,7 @@ export interface ReceiptPaymentData extends Payment {
     principalPortion: string
     principalBalanceAfter: string
     outstandingBalanceAfter: string
+    overpaymentAmount?: string
   }
 }
 

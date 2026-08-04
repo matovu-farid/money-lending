@@ -17,6 +17,20 @@ vi.mock("@/services/audit.service", () => ({
   writeAuditLog: vi.fn().mockResolvedValue(undefined),
 }))
 
+vi.mock("@/services/rate-change-request.service", () => ({
+  cancelPendingRateChangeRequestsForLoan: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock("@/services/settlement.service", () => ({
+  getLastSettlementDate: vi.fn().mockResolvedValue(new Date("2026-02-20T00:00:00.000Z")),
+  getLastSettlementEventsForLoans: vi.fn().mockResolvedValue(new Map()),
+  getLastSettlementEvent: vi.fn().mockResolvedValue(null),
+  getLastPaymentDate: vi.fn().mockResolvedValue(null),
+  reconstructPrincipalBalanceBefore: vi.fn().mockResolvedValue("500000"),
+  sumInterestAlreadyPaidInPeriod: vi.fn().mockResolvedValue("0"),
+  getPriorSettlementDate: vi.fn().mockResolvedValue(new Date("2026-02-20T00:00:00.000Z")),
+}))
+
 vi.mock("@/services/transaction.service", () => ({
   postJournalEntry: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
   reverseInterestAccrual: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
@@ -25,15 +39,20 @@ vi.mock("@/services/transaction.service", () => ({
 vi.mock("@/services/auto-post.service", () => ({
   autoPostInterestEarned: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
   autoPostPrincipalRepayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
+  autoPostPaymentOverpayment: vi.fn((_tx: any, _params: any) => Promise.resolve(undefined)),
 }))
 
 vi.mock("@/services/ledger-queries.service", () => {
   const BigNumber = require("bignumber.js").default
   return {
     getLoanBalanceFromLedger: vi.fn((_loanId: string) => Promise.resolve(new BigNumber(0))),
-    getLoanBalancesFromLedger: vi.fn((_loanIds: string[]) => Promise.resolve(new Map())),
+    getLoanBalancesFromLedger: vi.fn((_loanIds: string[]) => Promise.resolve(new Map([["loan-1", new BigNumber("500000")]]))),
+    getRemainingPrincipalFromLedger: vi.fn().mockResolvedValue(new Map()),
     getInterestEarnedFromLedger: vi.fn().mockResolvedValue(new Map()),
     getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
+    getWaiverPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
+    getRolloverInterestSettledFromLedger: vi.fn().mockResolvedValue(new Map()),
+    getPaymentOverpaymentFromLedger: vi.fn().mockResolvedValue(new Map()),
   }
 })
 
@@ -109,6 +128,10 @@ describe("Payment Service", () => {
     it("recordPayment: inserts payment + audit log in single transaction (mocked)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
       const { writeAuditLog } = await import("@/services/audit.service")
+      const { getLoanBalanceFromLedger } = await import("@/services/ledger-queries.service")
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new BigNumber("500000"),
+      )
 
       let txSelectCount = 0
       const mockTx = {
@@ -119,7 +142,8 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([mockLoan]) } // loan lookup
-                return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) } // active payments
+                if (call === 2 || call === 3 || call === 7) return Object.assign([mockLoan], { orderBy: vi.fn().mockResolvedValue([]) }) // allocator/balance loan lookup
+                return Object.assign([], { orderBy: vi.fn().mockResolvedValue([]), for: vi.fn().mockResolvedValue([]) }) // payment/waiver queries
               }),
             }),
           }
@@ -188,7 +212,8 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([{ ...mockLoan, status: "active" }]) } // loan lookup
-                return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) } // active payments
+                if (call === 2 || call === 3 || call === 7) return Object.assign([{ ...mockLoan, status: "active" }], { orderBy: vi.fn().mockResolvedValue([]) }) // allocator/balance loan lookup
+                return Object.assign([], { orderBy: vi.fn().mockResolvedValue([]), for: vi.fn().mockResolvedValue([]) }) // payment/waiver queries
               }),
             }),
           }
@@ -231,11 +256,13 @@ describe("Payment Service", () => {
 
     it("recordPayment: transitions loan status to fully_paid when balance reaches zero (LOAN-08)", async () => {
       const { db: mockedDb } = await import("@/lib/db")
-      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger } = await import("@/services/ledger-queries.service")
+      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger, getRemainingPrincipalFromLedger } = await import("@/services/ledger-queries.service")
 
       // Mock ledger to return actual balance (ledger path, not fallback)
       ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce(new Map([["loan-1", new BigNumber("100000")]]))
+      ;(getRemainingPrincipalFromLedger as ReturnType<typeof vi.fn>)
+        .mockResolvedValue(new Map([["loan-1", new BigNumber("100000")]]))
       // Post-payment balance is zero → triggers fully_paid
       ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>)
         .mockResolvedValueOnce(new BigNumber(0))
@@ -259,7 +286,8 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([smallLoan]) } // loan lookup
-                return { orderBy: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }) } // active payments
+                if (call === 2 || call === 3 || call === 7) return Object.assign([smallLoan], { orderBy: vi.fn().mockResolvedValue([]) }) // allocator/balance loan lookup
+                return Object.assign([], { orderBy: vi.fn().mockResolvedValue([]), for: vi.fn().mockResolvedValue([]) }) // payment/waiver queries
               }),
             }),
           }
@@ -423,14 +451,25 @@ describe("Payment Service", () => {
       }
     })
 
-    it("recordPayment: rejects overpayment exceeding total owed (M2)", async () => {
+    it("recordPayment: accepts overpayment and returns the excess allocation", async () => {
       const { db: mockedDb } = await import("@/lib/db")
+      const { getLoanBalanceFromLedger, getLoanBalancesFromLedger, getRemainingPrincipalFromLedger } = await import("@/services/ledger-queries.service")
+      ;(getLoanBalanceFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new BigNumber("500000"),
+      )
 
       // Loan: 100,000 principal at 10%/month
       // After 30 days: interest = 100000 * 0.10/30 * 30 ≈ 10,000
-      // Total owed = 110,000
-      // Payment of 200,000 should be rejected
+      // Payment of 200,000 leaves 100,000 as business overpayment revenue in
+      // this mocked allocation (the overdue-interest mock returns zero).
       const smallLoan = { ...mockLoan, principalAmount: "100000" }
+      const overpaymentPayment = { ...mockPayment, amount: "200000" }
+      ;(getLoanBalancesFromLedger as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Map([["loan-1", new BigNumber("100000")]]),
+      )
+      ;(getRemainingPrincipalFromLedger as ReturnType<typeof vi.fn>).mockResolvedValue(
+        new Map([["loan-1", new BigNumber("100000")]]),
+      )
 
       let txSelectCount = 0
       const mockTx = {
@@ -441,36 +480,34 @@ describe("Payment Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockImplementation(() => {
                 if (call === 1) return { for: vi.fn().mockResolvedValue([smallLoan]) }
-                return {
-                  orderBy: vi.fn().mockReturnValue({
-                    for: vi.fn().mockResolvedValue([]),
-                  }),
-                }
+                if (call === 2 || call === 3 || call === 7) return Object.assign([smallLoan], { orderBy: vi.fn().mockResolvedValue([]) })
+                return Object.assign([], { orderBy: vi.fn().mockResolvedValue([]), for: vi.fn().mockResolvedValue([]) })
               }),
             }),
           }
         }),
-        insert: vi.fn(),
+        insert: vi.fn().mockReturnValue({
+          values: vi.fn().mockReturnValue({
+            returning: vi.fn().mockResolvedValue([overpaymentPayment]),
+          }),
+        }),
         update: vi.fn(),
+        execute: vi.fn().mockResolvedValue([{ txid: "12345" }]),
       }
       ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
         async (cb: any) => cb(mockTx)
       )
 
       const { recordPayment } = await import("@/services/payment.service")
-      const exit = await Effect.runPromiseExit(
+      const result = await Effect.runPromise(
         recordPayment(
           { loanId: "loan-1", paymentDate: "2026-03-22T00:00:00.000Z", amount: "200000", depositLocation: "cash" },
           "actor-1"
         )
       )
 
-      expect(Exit.isFailure(exit)).toBe(true)
-      if (exit._tag === "Failure") {
-        const error = (exit.cause as any).error ?? (exit.cause as any)
-        expect(error._tag).toBe("ValidationError")
-        expect(error.message).toContain("exceeds total owed")
-      }
+      expect(result.amount).toBe("200000")
+      expect(result.allocation.overpaymentAmount).toBe("100000.00")
     })
 
     it("editPayment: fails with PaymentNotFound if payment is soft-deleted (LOAN-07)", async () => {

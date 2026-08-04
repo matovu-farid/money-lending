@@ -433,7 +433,8 @@ export function RecordPaymentForm({
         open={receiptData !== null}
         onClose={() => {
           setReceiptData(null);
-          router.push(`/loans/${loanId}`);
+          // Do not leave the now-fully-paid payment form in browser history.
+          router.replace(`/loans/${loanId}`);
         }}
         title="Payment Receipt"
         autoActions

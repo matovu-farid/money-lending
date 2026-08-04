@@ -1,4 +1,10 @@
 describe("Quick-Record Payment Workflow", () => {
+  type PaymentTransactionRow = {
+    amount: string
+    type: string
+    category_name: string
+  }
+
   let customerId: string
   let loanId: string
 
@@ -92,6 +98,32 @@ describe("Quick-Record Payment Workflow", () => {
       .should("have.attr", "href")
       .and("include", "/receipts/repayment/")
     cy.contains("View receipt").should("have.attr", "target", "_blank")
+  })
+
+  it("accepts an overpayment and records the excess as revenue", () => {
+    cy.visit("/payments")
+    cy.contains("button", "Record Payment").first().click()
+    cy.get('[role="dialog"]', { timeout: 5000 }).should("be.visible")
+
+    cy.get('input[placeholder="Search customer name..."]').type("Quick Record")
+    cy.contains("Quick Record Borrower", { timeout: 10000 }).click()
+    cy.get('input[type="number"]').should("not.be.disabled").type("1000000")
+    cy.get('[role="dialog"]').contains("button", "Record Payment").click()
+
+    cy.contains("Payment Recorded", { timeout: 15000 }).should("be.visible")
+    cy.task("db:getPayments").then((payments: Array<{ id: string }>) => {
+      expect(payments.length).to.equal(1)
+      cy.task("db:getPaymentTransactions", { paymentId: payments[0].id }).then(
+        (transactions: PaymentTransactionRow[]) => {
+          const overpaymentRevenue = transactions.find(
+            (transaction) => transaction.category_name === "Overpayment Revenue",
+          )
+          if (!overpaymentRevenue) throw new Error("Overpayment Revenue journal entry was not posted")
+          expect(overpaymentRevenue.type).to.equal("credit")
+          expect(Number(overpaymentRevenue.amount)).to.be.greaterThan(0)
+        },
+      )
+    })
   })
 
   it("disables confirmation and prevents a duplicate payment submission", () => {

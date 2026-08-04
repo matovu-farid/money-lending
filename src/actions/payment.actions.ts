@@ -75,6 +75,9 @@ export const recordPaymentAction = withAction<
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
+      if (getErrorTag(error) === "ValidationError") {
+        return { error: error instanceof Error ? error.message : "Invalid payment" }
+      }
       return { error: "Internal server error" }
     }
   },

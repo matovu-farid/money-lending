@@ -147,7 +147,7 @@ export function PaymentTable({
                                 officerName: userNameMap[payment.recordedBy] ?? "Officer",
                               }}
                             />
-                            {loanStatus === "active" && (
+                            {(loanStatus === "active" || loanStatus === "fully_paid") && (
                               <>
                                 <DropdownMenuItem
                                   onClick={() => onEditPayment(payment)}

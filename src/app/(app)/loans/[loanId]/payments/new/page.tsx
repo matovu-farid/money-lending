@@ -1,6 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useLiveQuery, eq } from "@tanstack/react-db";
 import { loanBalanceCollection } from "@/collections/loan-balances";
@@ -66,6 +67,25 @@ export default function RecordPaymentPage() {
   }
 
   if (!isOperationalLoan(ctx.status)) {
+    if (ctx.status === "fully_paid") {
+      return (
+        <div className="p-4 md:p-6 max-w-xl space-y-3">
+          <p className="font-medium">This loan is fully paid.</p>
+          <p className="text-sm text-muted-foreground">
+            The payment was recorded successfully and the loan has no remaining
+            balance. Any amount above the balance was recorded as overpayment
+            revenue.
+          </p>
+          <Link
+            href={`/loans/${loanId}`}
+            className="text-sm underline underline-offset-4"
+          >
+            View loan details
+          </Link>
+        </div>
+      );
+    }
+
     return (
       <div className="p-4 md:p-6 max-w-xl space-y-3">
         <p className="text-destructive font-medium">

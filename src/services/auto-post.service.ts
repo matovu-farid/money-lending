@@ -152,6 +152,47 @@ export async function autoPostPrincipalRepayment(
   })
 }
 
+/**
+ * Post the portion of a payment that exceeds the loan's interest and
+ * principal balance as business revenue, or reverse that entry.
+ */
+export async function autoPostPaymentOverpayment(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    loanId: string
+    paymentId: string
+    paymentDate: string
+    actorId: string
+    depositLocation?: "cash" | "bank" | "strong_room"
+    subLocationId?: string
+    reversal?: boolean
+  },
+): Promise<void> {
+  const reversal = params.reversal === true
+  await postJournalEntry(tx, {
+    debitCategory: reversal
+      ? { name: "Overpayment Revenue", type: "revenue" }
+      : { name: "Cash", type: "asset" },
+    creditCategory: reversal
+      ? { name: "Cash", type: "asset" }
+      : { name: "Overpayment Revenue", type: "revenue" },
+    amount: params.amount,
+    referenceType: reversal ? "payment_reversal" : "payment",
+    referenceId: params.paymentId,
+    description: reversal
+      ? `Reversal - payment overpayment ${params.paymentId}`
+      : `Payment overpayment revenue - ${params.paymentId}`,
+    transactionDate: new Date(params.paymentDate),
+    recordedBy: params.actorId,
+    debitDepositLocation: reversal ? undefined : params.depositLocation,
+    debitSubLocationId: reversal ? undefined : params.subLocationId,
+    creditDepositLocation: reversal ? params.depositLocation : undefined,
+    creditSubLocationId: reversal ? params.subLocationId : undefined,
+    loanId: params.loanId,
+  })
+}
+
 export async function autoPostPrincipalRecovery(
   tx: DrizzleTransaction,
   params: { amount: string; loanId: string; transactionDate: string; actorId: string }

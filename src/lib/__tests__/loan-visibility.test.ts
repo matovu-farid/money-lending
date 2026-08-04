@@ -6,6 +6,8 @@ import {
   isTerminalLoanStatus,
   isLoanReadOnly,
   assertLoanOperational,
+  assertLoanPaymentCorrectionAllowed,
+  isPaymentCorrectionAllowed,
 } from "../loan-visibility"
 import { ValidationError } from "../errors"
 import type { LoanStatus } from "@/types/loan"
@@ -71,6 +73,20 @@ describe("loan-visibility", () => {
           expect((e as ValidationError).message).toBe("Loan is not active")
         }
       }
+    })
+  })
+
+  describe("payment corrections", () => {
+    it("allows corrections on active and fully-paid loans only", () => {
+      for (const status of ALL_STATUSES) {
+        expect(isPaymentCorrectionAllowed(status)).toBe(
+          status === "active" || status === "fully_paid",
+        )
+      }
+      expect(() => assertLoanPaymentCorrectionAllowed({ status: "active" })).not.toThrow()
+      expect(() => assertLoanPaymentCorrectionAllowed({ status: "fully_paid" })).not.toThrow()
+      expect(() => assertLoanPaymentCorrectionAllowed({ status: "rolled_over" })).toThrow(ValidationError)
+      expect(() => assertLoanPaymentCorrectionAllowed({ status: "settled_with_collateral" })).toThrow(ValidationError)
     })
   })
 })

@@ -42,3 +42,23 @@ export function assertLoanOperational(loan: { status: LoanStatus }): void {
     })
   }
 }
+
+/**
+ * Payment corrections may repair a fully-paid loan. They must still be
+ * blocked once the loan has been rolled over or settled with collateral,
+ * because those workflows create a separate historical record.
+ */
+export function assertLoanPaymentCorrectionAllowed(loan: {
+  status: LoanStatus
+}): void {
+  if (!isPaymentCorrectionAllowed(loan.status)) {
+    throw new ValidationError({
+      message: "Payments can only be corrected on active or fully paid loans",
+      field: "status",
+    })
+  }
+}
+
+export function isPaymentCorrectionAllowed(status: LoanStatus): boolean {
+  return status === "active" || status === "fully_paid"
+}

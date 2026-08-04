@@ -17,6 +17,7 @@ import {
   calculateDaysOverdueFromInterestAccrued,
   formatAmount,
   allocatePayment,
+  clampAllocationToUnpaidInterest,
   calculateSchedule,
   allocateFixedRatePayment,
   allocateReducingBalancePayment,
@@ -167,6 +168,29 @@ describe("Interest Engine", () => {
 });
 
 describe("allocatePayment", () => {
+  it("later payoff allocates accumulated unpaid interest before principal", () => {
+    const currentPeriodAllocation = allocatePayment({
+      paymentAmount: "7000000",
+      principalBalanceBefore: "5000000",
+      monthlyRateDecimal: "0.11",
+      daysElapsed: 1,
+      minInterestDays: 30,
+      paymentNumber: 2,
+    })
+
+    const allocation = clampAllocationToUnpaidInterest(
+      currentPeriodAllocation,
+      "7000000",
+      "481667",
+      "5000000",
+      "0.11",
+    )
+
+    expect(allocation.interestPortion).toBe("481667.00")
+    expect(allocation.principalPortion).toBe("5000000.00")
+    expect(allocation.principalBalanceAfter).toBe("0.00")
+  })
+
   // Test 1: Payment < interest owed — all goes to interest, principal unchanged (LOAN-08, LOAN-09)
   it("payment of 50000 against balance 1000000 at 10%/month after 30 days: all to interest, zero principal reduction (LOAN-08)", () => {
     // interest = 1000000 * (0.10/30) * 30 = 100000; payment 50000 < 100000

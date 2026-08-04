@@ -4,7 +4,6 @@ import { payments } from "@/lib/db/schema/payments";
 import { loans } from "@/lib/db/schema/loans";
 import { customers } from "@/lib/db/schema/customers";
 import { user } from "@/lib/db/schema/auth";
-import { getEffectiveRate } from "@/lib/interest/effective-rate";
 import {
   eq,
   asc,
@@ -26,17 +25,19 @@ import {
 } from "@/lib/errors";
 import { isUniqueConstraintError } from "@/lib/db-errors";
 import { writeAuditLog } from "./audit.service";
-import { allocateLoanPayment, formatAmount } from "@/lib/interest/engine";
+import { allocateLoanPayment } from "@/lib/interest/engine";
 import {
   postJournalEntry,
   reverseInterestAccrual,
 } from "./transaction.service";
 import {
   autoPostInterestEarned,
+  autoPostPaymentOverpayment,
   autoPostPrincipalRepayment,
 } from "./auto-post.service";
 import {
   getLoanBalanceFromLedger,
+  getPaymentOverpaymentFromLedger,
   getPaymentPortionsFromLedger,
 } from "./ledger-queries.service";
 import BigNumber from "bignumber.js";
@@ -44,6 +45,7 @@ import { escapeLikePattern } from "@/lib/db/utils";
 import { localDateString } from "@/lib/utils";
 import {
   assertLoanOperational,
+  assertLoanPaymentCorrectionAllowed,
   isOperationalLoan,
   isTerminalLoanStatus,
 } from "@/lib/loan-visibility";
@@ -64,7 +66,6 @@ import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { endOfDay } from "date-fns";
 import { allocateLoanPaymentServerSide } from "@/lib/interest/engine-server";
 import {
-  getLastSettlementDate,
   reconstructPrincipalBalanceBefore,
   sumInterestAlreadyPaidInPeriod,
   getPriorSettlementDate,
@@ -78,12 +79,51 @@ export {
 } from "@/services/settlement.service";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type RecordedPaymentAllocation = Awaited<
+  ReturnType<typeof allocateLoanPaymentServerSide>
+> & { overpaymentAmount: string }
+
+function calculateOverpaymentAmount(
+  paymentAmount: string,
+  interestPortion: string,
+  principalPortion: string,
+): string {
+  return BigNumber.max(
+    new BigNumber(paymentAmount).minus(
+      new BigNumber(interestPortion).plus(principalPortion),
+    ),
+    0,
+  ).toFixed(2)
+}
+
+async function postOverpaymentJournal(
+  tx: DrizzleTransaction,
+  params: {
+    amount: string
+    loanId: string
+    paymentId: string
+    paymentDate: Date | string
+    actorId: string
+    depositLocation?: "cash" | "bank" | "strong_room"
+    subLocationId?: string
+    reversal?: boolean
+  },
+): Promise<void> {
+  if (!new BigNumber(params.amount).isGreaterThan(0)) return
+  await autoPostPaymentOverpayment(tx, {
+    ...params,
+    paymentDate:
+      params.paymentDate instanceof Date
+        ? params.paymentDate.toISOString()
+        : params.paymentDate,
+  })
+}
 
 /**
- * Skip automatic status transitions on terminal lifecycle loans
- * (never flip rolled_over / settled / fully_paid via payment side effects
- * when those statuses are already terminal — entry guards block mutations
- * on non-active loans; this is defense in depth).
+ * Skip automatic status transitions on terminal lifecycle loans, except when
+ * a correction makes a fully-paid loan active again. Rolled-over and
+ * collateral-settled loans remain historical records and cannot be reopened
+ * by payment mutations.
  */
 export async function maybeUpdateLoanStatusAfterPayment(
   tx: DrizzleTransaction,
@@ -91,8 +131,13 @@ export async function maybeUpdateLoanStatusAfterPayment(
   next: "fully_paid" | "active",
   actorId?: string,
 ): Promise<void> {
-  if (isTerminalLoanStatus(loan.status)) return;
   if (loan.status === next) return;
+  if (
+    isTerminalLoanStatus(loan.status) &&
+    !(loan.status === "fully_paid" && next === "active")
+  ) {
+    return;
+  }
 
   await tx
     .update(loans)
@@ -174,7 +219,7 @@ export const recordPaymentWithTxid = (
 ): Effect.Effect<
   {
     payment: Payment & {
-      allocation: Awaited<ReturnType<typeof allocateLoanPaymentServerSide>>;
+      allocation: RecordedPaymentAllocation;
     };
     txid: number;
   },
@@ -229,65 +274,14 @@ export const recordPaymentWithTxid = (
           queryDb: tx,
         });
 
-        const activePayments = await tx
-          .select()
-          .from(payments)
-          .where(
-            and(
-              eq(payments.loanId, input.loanId),
-              isNull(payments.deletedAt),
-              eq(payments.markedWrong, false),
-            ),
-          )
-          .orderBy(asc(payments.paymentDate), asc(payments.createdAt))
-          .for("update");
-
-        const principalBalanceBefore = allocation.principalBalanceBefore;
-        const monthlyRateDecimal = getEffectiveRate(
-          loan,
-          allocation.penaltyActive,
-        );
-        const loanType = loan.loanType ?? "perpetual";
-        const paymentNumber = activePayments.length + 1;
-
         const principalPortion = allocation.principalPortion;
         const interestPortion = allocation.interestPortion;
 
-        // M2: Reject overpayments that exceed total owed
-        let totalOwed: BigNumber;
-        if (loanType === "fixed_rate") {
-          // Fixed rate: remaining principal + all remaining term interest
-          const monthlyInterest = new BigNumber(
-            principalBalanceBefore,
-          ).multipliedBy(new BigNumber(monthlyRateDecimal));
-          const remainingMonths = Math.max(
-            (loan.termMonths ?? 0) - paymentNumber + 1,
-            1,
-          );
-          totalOwed = new BigNumber(principalBalanceBefore).plus(
-            monthlyInterest.multipliedBy(remainingMonths),
-          );
-        } else if (loanType === "reducing_balance") {
-          // Reducing balance: remaining principal + current period interest
-          const currentInterest = new BigNumber(
-            principalBalanceBefore,
-          ).multipliedBy(new BigNumber(monthlyRateDecimal));
-          totalOwed = new BigNumber(principalBalanceBefore).plus(
-            currentInterest,
-          );
-        } else {
-          // Perpetual: interest + principal (existing logic)
-          totalOwed = new BigNumber(interestPortion).plus(
-            new BigNumber(principalBalanceBefore),
-          );
-        }
-        if (new BigNumber(input.amount).isGreaterThan(totalOwed)) {
-          throw {
-            _tag: "ValidationError",
-            message: `Payment amount ${input.amount} exceeds total owed ${formatAmount(totalOwed)}`,
-            field: "amount",
-          };
-        }
+        const overpaymentAmount = calculateOverpaymentAmount(
+          input.amount,
+          interestPortion,
+          principalPortion,
+        )
 
         const [newPayment] = await tx
           .insert(payments)
@@ -341,6 +335,16 @@ export const recordPaymentWithTxid = (
           });
         }
 
+        await postOverpaymentJournal(tx, {
+          amount: overpaymentAmount,
+          loanId: input.loanId,
+          paymentId: newPayment.id,
+          paymentDate: input.paymentDate,
+          actorId,
+          depositLocation: input.depositLocation,
+          subLocationId: input.subLocationId,
+        })
+
         // Check fully-paid status after posting journals
         if (
           await isLoanEconomicallyFullyPaid(input.loanId, endOfDay(new Date(input.paymentDate)), tx)
@@ -359,7 +363,13 @@ export const recordPaymentWithTxid = (
         const txid = Number(
           (txidRows as unknown as Array<{ txid: string }>)[0].txid,
         );
-        return { payment: { ...newPayment, allocation }, txid };
+        return {
+          payment: {
+            ...newPayment,
+            allocation: { ...allocation, overpaymentAmount },
+          },
+          txid,
+        };
       });
     },
     catch: (e: any) => {
@@ -416,7 +426,7 @@ export const editPaymentWithTxid = (
           .for("update");
         if (!loan || loan.deletedAt)
           throw { _tag: "LoanNotFound", id: payment.loanId };
-        assertLoanOperational(loan);
+        assertLoanPaymentCorrectionAllowed(loan);
 
         const newAmount = input.amount ?? payment.amount;
         const newPaymentDate = input.paymentDate
@@ -458,6 +468,10 @@ export const editPaymentWithTxid = (
           tx,
         );
         const oldPortion = oldPortions.get(input.paymentId);
+        const oldOverpayment =
+          (await getPaymentOverpaymentFromLedger([input.paymentId], tx)).get(
+            input.paymentId,
+          ) ?? "0";
 
         if (
           oldPortion &&
@@ -497,6 +511,17 @@ export const editPaymentWithTxid = (
           });
         }
 
+        await postOverpaymentJournal(tx, {
+          amount: oldOverpayment,
+          loanId: payment.loanId,
+          paymentId: input.paymentId,
+          paymentDate: payment.paymentDate,
+          actorId,
+          depositLocation: payment.depositLocation ?? undefined,
+          subLocationId: payment.subLocationId ?? undefined,
+          reversal: true,
+        })
+
         // 2. Update the payment row
         const beforeValue = { ...payment };
         const updates: {
@@ -520,9 +545,6 @@ export const editPaymentWithTxid = (
         // 3. Recompute allocation with new amount/date
         // BUG-8 fix: compute overdue info to get effective rate (with penalty if applicable),
         // consistent with recordPayment which uses getEffectiveRate via overdueInfo.
-        const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
-        const loanType = loan.loanType ?? "perpetual";
-
         const activePayments = await tx
           .select()
           .from(payments)
@@ -554,16 +576,6 @@ export const editPaymentWithTxid = (
           },
         );
 
-        const overdueInfo = await computeSingleLoanBalanceData(
-          loan.id,
-          endOfDay(newPaymentDate),
-        );
-
-        const monthlyRateDecimal = getEffectiveRate(
-          loan,
-          overdueInfo.penaltyActive,
-        );
-
         const prevSettlementDate = await getPriorSettlementDate(
           loan,
           newPaymentDate,
@@ -590,38 +602,11 @@ export const editPaymentWithTxid = (
           queryDb: tx,
         });
 
-        // M2: Reject overpayments that exceed total owed
-        let totalOwed: BigNumber;
-        if (loanType === "fixed_rate") {
-          const monthlyInterest = new BigNumber(
-            principalBalanceBefore,
-          ).multipliedBy(new BigNumber(monthlyRateDecimal));
-          const remainingMonths = Math.max(
-            (loan.termMonths ?? 0) - paymentNumber + 1,
-            1,
-          );
-          totalOwed = new BigNumber(principalBalanceBefore).plus(
-            monthlyInterest.multipliedBy(remainingMonths),
-          );
-        } else if (loanType === "reducing_balance") {
-          const currentInterest = new BigNumber(
-            principalBalanceBefore,
-          ).multipliedBy(new BigNumber(monthlyRateDecimal));
-          totalOwed = new BigNumber(principalBalanceBefore).plus(
-            currentInterest,
-          );
-        } else {
-          totalOwed = new BigNumber(allocation.interestPortion).plus(
-            new BigNumber(principalBalanceBefore),
-          );
-        }
-        if (new BigNumber(newAmount).isGreaterThan(totalOwed)) {
-          throw {
-            _tag: "ValidationError",
-            message: `Payment amount ${newAmount} exceeds total owed ${formatAmount(totalOwed)}`,
-            field: "amount",
-          };
-        }
+        const overpaymentAmount = calculateOverpaymentAmount(
+          newAmount,
+          allocation.interestPortion,
+          allocation.principalPortion,
+        )
 
         // 4. Post new journals
         if (new BigNumber(allocation.interestPortion).isGreaterThan(0)) {
@@ -637,6 +622,7 @@ export const editPaymentWithTxid = (
             paymentDate: newPaymentDate.toISOString(),
             actorId,
             depositLocation: payment.depositLocation ?? undefined,
+            subLocationId: payment.subLocationId ?? undefined,
           });
         }
 
@@ -648,8 +634,19 @@ export const editPaymentWithTxid = (
             paymentDate: newPaymentDate.toISOString(),
             actorId,
             depositLocation: payment.depositLocation ?? undefined,
+            subLocationId: payment.subLocationId ?? undefined,
           });
         }
+
+        await postOverpaymentJournal(tx, {
+          amount: overpaymentAmount,
+          loanId: payment.loanId,
+          paymentId: input.paymentId,
+          paymentDate: newPaymentDate,
+          actorId,
+          depositLocation: payment.depositLocation ?? undefined,
+          subLocationId: payment.subLocationId ?? undefined,
+        })
 
         // 5. Check fully-paid status (economic, not ledger-principal-only)
         if (
@@ -741,7 +738,7 @@ export const deletePaymentWithTxid = (
           .for("update");
         if (!loan || loan.deletedAt)
           throw { _tag: "LoanNotFound", id: payment.loanId };
-        assertLoanOperational(loan);
+        assertLoanPaymentCorrectionAllowed(loan);
 
         // 1. Get portions from ledger before soft-deleting
         const portions = await getPaymentPortionsFromLedger(
@@ -749,6 +746,10 @@ export const deletePaymentWithTxid = (
           tx,
         );
         const portion = portions.get(input.paymentId);
+        const overpayment =
+          (await getPaymentOverpaymentFromLedger([input.paymentId], tx)).get(
+            input.paymentId,
+          ) ?? "0";
 
         // 2. Soft-delete the payment
         const now = new Date();
@@ -815,6 +816,17 @@ export const deletePaymentWithTxid = (
             loanId: payment.loanId,
           });
         }
+
+        await postOverpaymentJournal(tx, {
+          amount: overpayment,
+          loanId: payment.loanId,
+          paymentId: input.paymentId,
+          paymentDate: payment.paymentDate,
+          actorId,
+          depositLocation: payment.depositLocation ?? undefined,
+          subLocationId: payment.subLocationId ?? undefined,
+          reversal: true,
+        })
 
         // 4. Check loan status (economic fully paid, not ledger-principal-only)
         if (
@@ -1181,7 +1193,7 @@ export async function markPaymentWrong(
       .where(eq(loans.id, payment.loanId))
       .for("update");
     if (!loan || loan.deletedAt) throw { _tag: "LoanNotFound", id: payment.loanId };
-    assertLoanOperational(loan);
+    assertLoanPaymentCorrectionAllowed(loan);
 
     const [updatedPayment] = await tx
       .update(payments)
@@ -1197,6 +1209,9 @@ export async function markPaymentWrong(
     // Derive portions from ledger (not cached columns)
     const portions = await getPaymentPortionsFromLedger([paymentId], tx);
     const portion = portions.get(paymentId);
+    const overpayment =
+      (await getPaymentOverpaymentFromLedger([paymentId], tx)).get(paymentId) ??
+      "0";
 
     // Reverse interest journal entry
     if (portion && new BigNumber(portion.interestPortion).isGreaterThan(0)) {
@@ -1210,6 +1225,7 @@ export async function markPaymentWrong(
         transactionDate: new Date(payment.paymentDate),
         recordedBy: actorId,
         creditDepositLocation: payment.depositLocation ?? undefined,
+        creditSubLocationId: payment.subLocationId ?? undefined,
         loanId: payment.loanId,
       });
     }
@@ -1226,9 +1242,21 @@ export async function markPaymentWrong(
         transactionDate: new Date(payment.paymentDate),
         recordedBy: actorId,
         creditDepositLocation: payment.depositLocation ?? undefined,
+        creditSubLocationId: payment.subLocationId ?? undefined,
         loanId: payment.loanId,
       });
     }
+
+    await postOverpaymentJournal(tx, {
+      amount: overpayment,
+      loanId: payment.loanId,
+      paymentId,
+      paymentDate: payment.paymentDate,
+      actorId,
+      depositLocation: payment.depositLocation ?? undefined,
+      subLocationId: payment.subLocationId ?? undefined,
+      reversal: true,
+    })
 
     // Check if loan should revert from fully_paid to active
     if (
@@ -1271,7 +1299,7 @@ export async function unmarkPaymentWrong(
       .where(eq(loans.id, payment.loanId))
       .for("update");
     if (!loan || loan.deletedAt) throw { _tag: "LoanNotFound", id: payment.loanId };
-    assertLoanOperational(loan);
+    assertLoanPaymentCorrectionAllowed(loan);
 
     const [updatedPayment] = await tx
       .update(payments)
@@ -1351,6 +1379,7 @@ export async function unmarkPaymentWrong(
         paymentDate: payment.paymentDate.toISOString(),
         actorId,
         depositLocation: payment.depositLocation ?? undefined,
+        subLocationId: payment.subLocationId ?? undefined,
       });
     }
 
@@ -1363,8 +1392,24 @@ export async function unmarkPaymentWrong(
         paymentDate: payment.paymentDate.toISOString(),
         actorId,
         depositLocation: payment.depositLocation ?? undefined,
+        subLocationId: payment.subLocationId ?? undefined,
       });
     }
+
+    const overpaymentAmount = calculateOverpaymentAmount(
+      payment.amount,
+      allocation.interestPortion,
+      allocation.principalPortion,
+    )
+    await postOverpaymentJournal(tx, {
+      amount: overpaymentAmount,
+      loanId: payment.loanId,
+      paymentId,
+      paymentDate: payment.paymentDate,
+      actorId,
+      depositLocation: payment.depositLocation ?? undefined,
+      subLocationId: payment.subLocationId ?? undefined,
+    })
 
     // Check if loan should be marked fully_paid (economic, not allocator-only)
     if (

@@ -119,6 +119,62 @@ describe("Auto-Post Service", () => {
     })
   })
 
+  describe("autoPostPaymentOverpayment", () => {
+    it("posts excess cash as Overpayment Revenue", async () => {
+      const { autoPostPaymentOverpayment } = await import(
+        "@/services/auto-post.service"
+      )
+      await autoPostPaymentOverpayment(mockTx, {
+        amount: "15000.00",
+        loanId: "loan-1",
+        paymentId: "pay-1",
+        paymentDate: "2026-04-01",
+        actorId: "actor-1",
+        depositLocation: "bank",
+        subLocationId: "dfcu-main",
+      })
+
+      expect(mockPostJournalEntry).toHaveBeenCalledWith(mockTx, {
+        debitCategory: { name: "Cash", type: "asset" },
+        creditCategory: { name: "Overpayment Revenue", type: "revenue" },
+        amount: "15000.00",
+        referenceType: "payment",
+        referenceId: "pay-1",
+        description: "Payment overpayment revenue - pay-1",
+        transactionDate: new Date("2026-04-01"),
+        recordedBy: "actor-1",
+        debitDepositLocation: "bank",
+        debitSubLocationId: "dfcu-main",
+        creditDepositLocation: undefined,
+        creditSubLocationId: undefined,
+        loanId: "loan-1",
+      })
+    })
+
+    it("reverses excess cash and preserves its deposit location", async () => {
+      const { autoPostPaymentOverpayment } = await import(
+        "@/services/auto-post.service"
+      )
+      await autoPostPaymentOverpayment(mockTx, {
+        amount: "15000.00",
+        loanId: "loan-1",
+        paymentId: "pay-1",
+        paymentDate: "2026-04-01",
+        actorId: "actor-1",
+        depositLocation: "strong_room",
+        subLocationId: "safe-1",
+        reversal: true,
+      })
+
+      const call = mockPostJournalEntry.mock.calls[0][1]
+      expect(call.debitCategory).toEqual({ name: "Overpayment Revenue", type: "revenue" })
+      expect(call.creditCategory).toEqual({ name: "Cash", type: "asset" })
+      expect(call.referenceType).toBe("payment_reversal")
+      expect(call.creditDepositLocation).toBe("strong_room")
+      expect(call.creditSubLocationId).toBe("safe-1")
+    })
+  })
+
   // ── autoPostInterestExpense ─────────────────────────────────────────
 
   describe("autoPostInterestExpense", () => {

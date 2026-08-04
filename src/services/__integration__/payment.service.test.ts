@@ -7,6 +7,8 @@ import {
   recordPayment,
   editPayment,
   deletePayment,
+  markPaymentWrong,
+  unmarkPaymentWrong,
   getPaymentsForLoan,
   listPayments,
   searchActiveLoans,
@@ -133,6 +135,179 @@ describe("Payment Service — Integration", { timeout: TEST_TIMEOUT, sequential:
       expect(payment.allocation.interestPortion).toBe("100000.00")
       expect(payment.allocation.principalPortion).toBe("100000.00")
       expect(payment.allocation.principalBalanceAfter).toBe("900000.00")
+    })
+
+    it("accepts overpayment and posts the excess to Overpayment Revenue", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "100000.00", "0.10")
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          {
+            loanId: loan.id,
+            paymentDate: "2025-01-31",
+            amount: "125000",
+            depositLocation: "cash",
+          },
+          "test-actor",
+        ),
+      )
+
+      expect(payment.allocation.interestPortion).toBe("10000.00")
+      expect(payment.allocation.principalPortion).toBe("100000.00")
+      expect(payment.allocation.overpaymentAmount).toBe("15000.00")
+
+      const overpaymentEntries = await testDb
+        .select({ type: transactions.type, amount: transactions.amount })
+        .from(transactions)
+        .innerJoin(
+          transactionCategories,
+          eq(transactions.categoryId, transactionCategories.id),
+        )
+        .where(
+          and(
+            eq(transactions.referenceId, payment.id),
+            eq(transactionCategories.name, "Overpayment Revenue"),
+          ),
+        )
+
+      expect(overpaymentEntries).toEqual([
+        { type: "credit", amount: "15000.00" },
+      ])
+    })
+
+    it("applies the remaining minimum-interest adjustment before principal on payoff", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "5000000.00", "0.11")
+
+      await Effect.runPromise(
+        recordPayment(
+          {
+            loanId: loan.id,
+            paymentDate: "2025-01-13",
+            amount: "50000",
+            depositLocation: "cash",
+          },
+          "test-actor",
+        ),
+      )
+
+      const payoff = await Effect.runPromise(
+        recordPayment(
+          {
+            loanId: loan.id,
+            paymentDate: "2025-01-14",
+            amount: "7000000",
+            depositLocation: "cash",
+          },
+          "test-actor",
+        ),
+      )
+
+      expect(payoff.allocation.interestPortion).toBe("500000.00")
+      expect(payoff.allocation.principalPortion).toBe("5000000.00")
+      expect(payoff.allocation.overpaymentAmount).toBe("1500000.00")
+      expect(payoff.allocation.principalBalanceAfter).toBe("0.00")
+    })
+
+    it("reverses overpayment revenue when an overpaid payment is edited and deleted", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "100000.00", "0.10")
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          {
+            loanId: loan.id,
+            paymentDate: "2025-01-31",
+            amount: "125000",
+            depositLocation: "cash",
+          },
+          "test-actor",
+        ),
+      )
+
+      const netOverpayment = async () => {
+        const rows = await testDb
+          .select({ type: transactions.type, amount: transactions.amount })
+          .from(transactions)
+          .innerJoin(
+            transactionCategories,
+            eq(transactions.categoryId, transactionCategories.id),
+          )
+          .where(
+            and(
+              eq(transactions.referenceId, payment.id),
+              eq(transactionCategories.name, "Overpayment Revenue"),
+            ),
+          )
+        return rows.reduce(
+          (total, row) =>
+            total.plus(row.type === "credit" ? row.amount : `-${row.amount}`),
+          new BigNumber(0),
+        )
+      }
+
+      expect((await netOverpayment()).toFixed(2)).toBe("15000.00")
+
+      await Effect.runPromise(
+        editPayment(
+          { paymentId: payment.id, amount: "110000", reason: "Corrected amount" },
+          "test-actor",
+        ),
+      )
+      expect((await netOverpayment()).toFixed(2)).toBe("0.00")
+
+      await Effect.runPromise(
+        deletePayment(
+          { paymentId: payment.id, reason: "Recorded in error" },
+          "test-actor",
+        ),
+      )
+      expect((await netOverpayment()).toFixed(2)).toBe("0.00")
+    })
+
+    it("reverses and re-posts overpayment revenue when a payment is marked wrong", async () => {
+      const customer = await makeCustomer()
+      const loan = await makeLoan(customer.id, "100000.00", "0.10")
+
+      const payment = await Effect.runPromise(
+        recordPayment(
+          {
+            loanId: loan.id,
+            paymentDate: "2025-01-31",
+            amount: "125000",
+            depositLocation: "cash",
+          },
+          "test-actor",
+        ),
+      )
+
+      const netOverpayment = async () => {
+        const rows = await testDb
+          .select({ type: transactions.type, amount: transactions.amount })
+          .from(transactions)
+          .innerJoin(
+            transactionCategories,
+            eq(transactions.categoryId, transactionCategories.id),
+          )
+          .where(
+            and(
+              eq(transactions.referenceId, payment.id),
+              eq(transactionCategories.name, "Overpayment Revenue"),
+            ),
+          )
+        return rows.reduce(
+          (total, row) =>
+            total.plus(row.type === "credit" ? row.amount : `-${row.amount}`),
+          new BigNumber(0),
+        )
+      }
+
+      await markPaymentWrong(payment.id, "Duplicate payment", "test-actor")
+      expect((await netOverpayment()).toFixed(2)).toBe("0.00")
+
+      await unmarkPaymentWrong(payment.id, "test-actor")
+      expect((await netOverpayment()).toFixed(2)).toBe("15000.00")
     })
 
     it("4. full repayment marks loan fully_paid", async () => {

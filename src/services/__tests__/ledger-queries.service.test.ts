@@ -577,6 +577,48 @@ describe("ledger-queries.service", () => {
     })
   })
 
+  describe("getPaymentOverpaymentFromLedger", () => {
+    it("returns empty Map for empty paymentIds", async () => {
+      const { getPaymentOverpaymentFromLedger } = await import(
+        "@/services/ledger-queries.service"
+      )
+      const result = await getPaymentOverpaymentFromLedger([])
+      expect(result).toEqual(new Map())
+      expect(mockedDb.select).not.toHaveBeenCalled()
+    })
+
+    it("nets revenue credits against payment-reversal debits", async () => {
+      const { getPaymentOverpaymentFromLedger } = await import(
+        "@/services/ledger-queries.service"
+      )
+      const qdb = mockQueryDb([
+        {
+          referenceId: "pay-1",
+          txType: "credit",
+          total: "125000",
+        },
+        {
+          referenceId: "pay-1",
+          txType: "debit",
+          total: "25000",
+        },
+        {
+          referenceId: "pay-2",
+          txType: "credit",
+          total: "50000.5",
+        },
+      ])
+
+      const result = await getPaymentOverpaymentFromLedger(
+        ["pay-1", "pay-2"],
+        qdb as any,
+      )
+
+      expect(result.get("pay-1")).toBe("100000.00")
+      expect(result.get("pay-2")).toBe("50000.50")
+    })
+  })
+
   describe("getRolloverInterestSettledFromLedger", () => {
     it("returns rollover interest credited into the current loan principal", async () => {
       const { getRolloverInterestSettledFromLedger } = await import(

@@ -172,7 +172,7 @@ import {
   markPaymentWrong,
   unmarkPaymentWrong,
 } from "@/services/payment.service"
-import { LoanNotFound, PaymentNotFound } from "@/lib/errors"
+import { LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
 import type { Payment, PaymentWithCustomer, ActiveLoanSearchResult } from "@/types"
 import type { Equals, Expect } from "@/test-utils/type-assert"
 
@@ -340,6 +340,22 @@ describe("Payment Actions", () => {
       mockRecordPayment.mockReturnValue(Effect.fail(new Error("boom")) as any)
       const result = await recordPaymentAction(validInput)
       expect(result).toEqual({ error: "Internal server error" })
+    })
+
+    it("returns the user-facing message for expected validation failures", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockRecordPayment.mockReturnValue(
+        Effect.fail(
+          new ValidationError({
+            message: "Payment amount exceeds total owed",
+            field: "amount",
+          }),
+        ) as any,
+      )
+
+      const result = await recordPaymentAction(validInput)
+
+      expect(result).toEqual({ error: "Payment amount exceeds total owed" })
     })
   })
 

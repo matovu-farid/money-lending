@@ -14,7 +14,10 @@ import {
 } from "@/collections/loan-extras";
 import { getLoanListEntriesByIdsAction } from "@/actions/loan.actions";
 import { queryKeys } from "@/lib/query-keys";
-import { isOperationalLoan } from "@/lib/loan-visibility";
+import {
+  isOperationalLoan,
+  isPaymentCorrectionAllowed,
+} from "@/lib/loan-visibility";
 import BigNumber from "bignumber.js";
 import { toast } from "sonner";
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react";
@@ -627,7 +630,7 @@ function PaymentsContent({
             hideInCard: false,
             render: (row: PaymentWithCustomer) => {
               // Fail closed: unknown status must not unlock mutations (R5-4)
-              if (!row.loanStatus || !isOperationalLoan(row.loanStatus)) {
+              if (!row.loanStatus || !isPaymentCorrectionAllowed(row.loanStatus)) {
                 return null;
               }
               return (

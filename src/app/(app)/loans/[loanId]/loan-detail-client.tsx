@@ -474,29 +474,26 @@ export function LoanDetailClient({
       ...(nextDate ? { paymentDate: nextDate.toISOString() } : {}),
     };
     try {
-      // Prefer capped collection for optimistic sync when the row is present;
-      // fall back to the server action so uncapped history rows still mutate.
-      try {
-        paymentCollection.update(
+      // Await persistence so a rejected correction cannot be presented as
+      // successful (especially important when correcting a fully-paid loan).
+      const tx = (() => {
+        try {
+          return paymentCollection.update(
           editingPayment.id,
           { metadata: { intent: "edit", reason } },
           (draft) => {
             if (nextAmount) draft.amount = nextAmount;
             if (nextDate) draft.paymentDate = nextDate;
           },
-        );
-        // Keep uncapped detail table in sync immediately (display source)
-        try {
-          getLoanPaymentsCollection(loan.id).utils.writeUpdate({
-            _key: editingPayment.id,
-            id: editingPayment.id,
-            ...(nextAmount ? { amount: nextAmount } : {}),
-            ...(nextDate ? { paymentDate: nextDate } : {}),
-          });
+          );
         } catch {
-          // Row may not be in synced store yet
+          return null;
         }
-      } catch {
+      })();
+
+      if (tx) {
+        await tx.isPersisted.promise;
+      } else {
         const result = await editPaymentAction(editInput);
         if ("error" in result) {
           toast.error(result.error);
@@ -504,10 +501,22 @@ export function LoanDetailClient({
         }
         invalidateLendingProjections(getQueryClient());
       }
+
+      // Keep uncapped detail table in sync after the server accepts the edit.
+      try {
+        getLoanPaymentsCollection(loan.id).utils.writeUpdate({
+          _key: editingPayment.id,
+          id: editingPayment.id,
+          ...(nextAmount ? { amount: nextAmount } : {}),
+          ...(nextDate ? { paymentDate: nextDate } : {}),
+        });
+      } catch {
+        // Row may not be in synced store yet
+      }
       toast.success("Payment updated");
       closePaymentEdit();
-    } catch {
-      toast.error("Failed to update payment");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update payment");
     }
   }
 
@@ -515,18 +524,21 @@ export function LoanDetailClient({
     if (!deletingPayment) return;
     const reason = deleteReason.trim();
     try {
-      try {
-        paymentCollection.delete(deletingPayment.id, {
-          metadata: { reason },
-        });
+      // Await persistence so a rejected correction cannot be presented as
+      // successful while the loan remains fully_paid on the server.
+      const tx = (() => {
         try {
-          getLoanPaymentsCollection(loan.id).utils.writeDelete(
-            deletingPayment.id,
-          );
+          return paymentCollection.delete(deletingPayment.id, {
+            metadata: { reason },
+          });
         } catch {
-          // Row may not be in synced store yet
+          return null;
         }
-      } catch {
+      })();
+
+      if (tx) {
+        await tx.isPersisted.promise;
+      } else {
         const result = await deletePaymentAction({
           paymentId: deletingPayment.id,
           reason,
@@ -537,10 +549,18 @@ export function LoanDetailClient({
         }
         invalidateLendingProjections(getQueryClient());
       }
+
+      try {
+        getLoanPaymentsCollection(loan.id).utils.writeDelete(
+          deletingPayment.id,
+        );
+      } catch {
+        // Row may not be in synced store yet
+      }
       toast.success("Payment deleted");
       closePaymentDelete();
-    } catch {
-      toast.error("Failed to delete payment");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete payment");
     }
   }
 

@@ -30,6 +30,7 @@ const DEFAULT_REVENUE_CATEGORIES = [
   "Interest Earned",
   "Interest Receivable",
   "Issuance Fees",
+  "Overpayment Revenue",
   // Sentinel category for user-typed manual income entries (mirrors User Expense).
   "User Revenue",
 ]
