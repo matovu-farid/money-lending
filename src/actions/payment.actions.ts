@@ -32,6 +32,11 @@ import {
 import { VALID_DEPOSIT_LOCATIONS } from "@/lib/constants"
 import { notifyAdmin, resolveLoanContext } from "@/lib/email"
 import { getPaymentPortionsFromLedger } from "@/services/ledger-queries.service"
+import { captureServerError } from "@/lib/sentry"
+import {
+  getDiagnosticErrorCause,
+  getDiagnosticErrorMessage,
+} from "@/lib/error-diagnostics"
 
 type RecordPaymentSuccess = Effect.Effect.Success<ReturnType<typeof recordPaymentWithTxid>>
 type LoanBalanceSummary = Awaited<ReturnType<typeof getLoanBalanceSummary>>
@@ -78,7 +83,13 @@ export const recordPaymentAction = withAction<
       if (getErrorTag(error) === "ValidationError") {
         return { error: error instanceof Error ? error.message : "Invalid payment" }
       }
-      return { error: "Internal server error" }
+      const diagnosticError = getDiagnosticErrorCause(error)
+      captureServerError(diagnosticError, {
+        source: "recordPaymentAction",
+        loanId: input.loanId,
+        userId: session.user.id,
+      })
+      return { error: getDiagnosticErrorMessage(diagnosticError) }
     }
   },
 })

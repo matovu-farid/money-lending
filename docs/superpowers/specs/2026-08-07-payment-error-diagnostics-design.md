@@ -4,7 +4,7 @@
 
 When recording a payment fails unexpectedly, the existing payment toast should
 show a useful, sanitized diagnostic message instead of only `Internal server
-error`. The original exception must also be captured by Sentry with enough
+error`. Every unexpected payment error must also be sent to Sentry with enough
 context to identify the failing action without including credentials or
 customer-identifying data.
 
@@ -18,14 +18,16 @@ page does not identify the payment failure.
 
 ## Design
 
-1. Add a small error-message sanitizer for server-action diagnostics. It will
+1. Add a small error-diagnostics helper for server-action diagnostics. It will
+   unwrap the Effect and `DatabaseError` layers to reach the underlying cause,
    preserve the useful exception message, remove connection strings and
    credential-like values, collapse excessive whitespace, and cap the output
    length. If no safe message is available, it will use a stable fallback.
 2. In `recordPaymentAction`, preserve the existing user-facing messages for
    validation and missing-loan errors. For unexpected errors, capture the
-   original error through `captureServerError` with the action name, loan ID,
-   and authenticated user ID, then return the sanitized message to the toast.
+   original error through `captureServerError` so it is sent to Sentry with the
+   action name, loan ID, and authenticated user ID, then return the sanitized
+   message to the toast.
 3. Keep the existing fire-and-forget notification behavior unchanged. Email
    failures are already swallowed and are not the cause of the action result.
 4. Add focused unit tests for the sanitizer and unexpected-payment error
@@ -37,6 +39,8 @@ page does not identify the payment failure.
   secrets, or full customer records to the browser.
 - Do not change successful payment behavior or expected validation messages.
 - Do not expose raw Sentry configuration values in the response.
+- Sentry capture is best-effort and must never replace or mask the user-facing
+  diagnostic response.
 - The existing toast consumer already renders the returned `error` string, so
   no UI contract change is required.
 

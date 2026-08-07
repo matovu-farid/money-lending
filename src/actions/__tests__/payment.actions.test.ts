@@ -122,6 +122,10 @@ vi.mock("@/lib/email", () => ({
   }),
 }))
 
+vi.mock("@/lib/sentry", () => ({
+  captureServerError: vi.fn(),
+}))
+
 vi.mock("next/headers", () => ({
   headers: vi.fn().mockResolvedValue(new Map()),
 }))
@@ -172,7 +176,8 @@ import {
   markPaymentWrong,
   unmarkPaymentWrong,
 } from "@/services/payment.service"
-import { LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
+import { DatabaseError, LoanNotFound, PaymentNotFound, ValidationError } from "@/lib/errors"
+import { captureServerError } from "@/lib/sentry"
 import type { Payment, PaymentWithCustomer, ActiveLoanSearchResult } from "@/types"
 import type { Equals, Expect } from "@/test-utils/type-assert"
 
@@ -255,6 +260,7 @@ const mockGetActivePaymentById = vi.mocked(getActivePaymentById)
 const mockListActivePaymentsByLoan = vi.mocked(listActivePaymentsByLoan)
 const mockMarkPaymentWrong = vi.mocked(markPaymentWrong)
 const mockUnmarkPaymentWrong = vi.mocked(unmarkPaymentWrong)
+const mockCaptureServerError = vi.mocked(captureServerError)
 
 const asPayment = (partial: Partial<Payment>): Payment => partial as unknown as Payment
 
@@ -335,11 +341,25 @@ describe("Payment Actions", () => {
       expect(result).toEqual({ error: "Loan not found" })
     })
 
-    it("returns generic error for unknown service failure", async () => {
+    it("returns a sanitized diagnostic and captures unknown service failures in Sentry", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
-      mockRecordPayment.mockReturnValue(Effect.fail(new Error("boom")) as any)
+      const failure = new Error(
+        "database connection failed postgres://owner:secret@db.example/neondb",
+      )
+      const databaseError = new DatabaseError({ cause: failure })
+      mockRecordPayment.mockReturnValue(Effect.fail(databaseError) as any)
+
       const result = await recordPaymentAction(validInput)
-      expect(result).toEqual({ error: "Internal server error" })
+
+      expect(result).toEqual({ error: "database connection failed [redacted]" })
+      expect(mockCaptureServerError).toHaveBeenCalledWith(
+        failure,
+        {
+          source: "recordPaymentAction",
+          loanId: validInput.loanId,
+          userId: fakeSession.user.id,
+        },
+      )
     })
 
     it("returns the user-facing message for expected validation failures", async () => {
