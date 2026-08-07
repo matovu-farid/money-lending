@@ -10,6 +10,7 @@ import { getPaymentPortionsCollection } from "@/collections/loan-extras";
 import { useForm } from "react-hook-form";
 import Link from "next/link";
 import { toast } from "sonner";
+import { captureClientError } from "@/lib/sentry";
 import { Banknote, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { OverdueBadge } from "@/components/watchlist/overdue-badge";
 import { getBaseRate } from "@/lib/interest/effective-rate";
@@ -346,6 +347,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
         setEditing(false);
         toast.success("Customer updated successfully");
       } catch (err: any) {
+        captureClientError(err, { source: "customers.update" });
         toast.error(err?.message ?? "Failed to update customer");
       }
     });
@@ -379,6 +381,7 @@ function CustomerProfileContent({ customerId }: { customerId: string }) {
         setPendingStatus(null);
         setStatusReason("");
       } catch (err: unknown) {
+        captureClientError(err, { source: "customers.status-update" });
         const message =
           err instanceof Error ? err.message : "Failed to update status";
         toast.error(message);

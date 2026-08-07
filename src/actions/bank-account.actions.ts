@@ -2,6 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import { getSessionPermissions } from "@/lib/action-utils"
 import { createBankAccountWithTxid, updateBankAccountWithTxid, listBankAccounts } from "@/services/bank-account.service"
 import type { CreateBankAccountInput, UpdateBankAccountInput } from "@/types"
@@ -20,7 +21,8 @@ export const createBankAccountAction = withAction<CreateBankAccountInput, any>({
     try {
       const { account, txid } = await Effect.runPromise(createBankAccountWithTxid(input, session.user.id))
       return { data: account, txid }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "createBankAccountAction", userId: session.user.id })
       return { error: "Failed to create bank account. Name may already be in use." }
     }
   },
@@ -49,7 +51,12 @@ export const updateBankAccountAction = withAction<UpdateBankAccountInput, any>({
     try {
       const { account, txid } = await Effect.runPromise(updateBankAccountWithTxid(input, session.user.id))
       return { data: account, txid }
-    } catch {
+    } catch (error) {
+      captureServerError(error, {
+        source: "updateBankAccountAction",
+        userId: session.user.id,
+        bankAccountId: input.id,
+      })
       return { error: "Failed to update bank account" }
     }
   },

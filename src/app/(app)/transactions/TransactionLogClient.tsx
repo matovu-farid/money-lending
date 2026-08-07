@@ -29,6 +29,7 @@ interface TransactionLogClientProps {
 
 import { formatDate } from "@/lib/utils"
 import { CurrencyCell } from "@/components/ui/currency-cell"
+import { captureClientError } from "@/lib/sentry"
 
 export function TransactionLogClient({
   transactions,
@@ -54,7 +55,8 @@ export function TransactionLogClient({
         const buffer = await generateTransactionsExcel(reportData.transactions, categoryMap)
         downloadBlob(new Blob([buffer as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "transaction-log.xlsx")
       }
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "transaction-log.export" })
       toast.error("Export failed. Please try again.")
     } finally {
       setExporting(null)

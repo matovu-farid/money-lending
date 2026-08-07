@@ -14,6 +14,7 @@ import {
   listLoanWaiversForLoan,
 } from "@/services/loan-waiver.service";
 import { notifyAdmin, resolveLoanContext } from "@/lib/email";
+import { captureServerError } from "@/lib/sentry";
 import type {
   LoanWaiver,
   LoanWaiverWithPortions,
@@ -61,6 +62,11 @@ export const waiveLoanAmountAction = withAction<
             (error as { message?: string }).message ?? "Validation error",
         };
       }
+      captureServerError(error, {
+        source: "waiveLoanAmountAction",
+        userId: session.user.id,
+        loanId: input.loanId,
+      });
       return { error: "Internal server error" };
     }
   },
@@ -76,7 +82,8 @@ export const listLoanWaiversAction = withAction<
     if (!loanId?.trim()) return { error: "Loan ID is required" };
     try {
       return { data: await listLoanWaiversForLoan(loanId) };
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "listLoanWaiversAction", loanId });
       return { error: "Internal server error" };
     }
   },
@@ -118,7 +125,8 @@ export const previewWaiverAllocationAction = withAction<
           totalDue: allocation.totalBalanceOwedAfter,
         },
       };
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "previewWaiverAllocationAction", loanId: input.loanId });
       return { error: "Internal server error" };
     }
   },

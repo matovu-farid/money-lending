@@ -23,6 +23,7 @@ import {
   computeSingleLoanBalanceData,
 } from "@/lib/interest/loanBalanceData";
 import { normalizeUgandanPhone } from "@/lib/validators";
+import { captureServerWarning } from "@/lib/sentry";
 
 function normalizeCustomerContact(contact: string): string {
   return normalizeUgandanPhone(contact) ?? contact.trim();
@@ -348,6 +349,9 @@ export const searchCustomers = (
           for (const loan of activeLoans) {
             const ledgerBalance = allLedgerBalances.get(loan.id);
             if (ledgerBalance === undefined) {
+              captureServerWarning("Customer search loan ledger entry missing; using principal fallback", {
+                source: "customer-search.missing-ledger",
+              });
               console.warn(
                 `[searchCustomers] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
               );

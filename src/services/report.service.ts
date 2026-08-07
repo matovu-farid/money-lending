@@ -27,6 +27,7 @@ import {
   type CashflowMonth,
 } from "@/types";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
+import { captureServerWarning } from "@/lib/sentry";
 
 export const getPnlData = (
   period: string,
@@ -473,6 +474,9 @@ export const getBalanceSheetData = (
       const totalLiabilities = totalCreditorBalances.plus(interestPayable);
       const liabilitiesPlusEquity = totalLiabilities.plus(totalEquity);
       if (!totalAssets.isEqualTo(liabilitiesPlusEquity)) {
+        captureServerWarning("Balance sheet is out of balance", {
+          source: "report.balance-sheet-imbalance",
+        });
         console.warn(
           `Balance sheet imbalance: Assets=${formatAmount(totalAssets)}, ` +
             `Liabilities+Equity=${formatAmount(liabilitiesPlusEquity)} ` +
@@ -536,6 +540,9 @@ export const getPortfolioData = (): Effect.Effect<
         // Use ledger-derived balance
         const ledgerBalance = ledgerBalances.get(loan.id);
         if (!ledgerBalance) {
+          captureServerWarning("Portfolio loan ledger entry missing; using principal fallback", {
+            source: "report.portfolio-missing-ledger",
+          });
           console.warn(
             `[getPortfolioData] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
           );

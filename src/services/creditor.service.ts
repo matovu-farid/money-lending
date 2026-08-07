@@ -26,6 +26,7 @@ import {
 import { reverseCreditorInterestAccrual } from "@/services/transaction.service";
 import { allocatePayment, formatAmount } from "@/lib/interest/engine";
 import BigNumber from "bignumber.js";
+import { captureServerWarning } from "@/lib/sentry";
 import type {
   Creditor,
   CreditorInvestment,
@@ -405,6 +406,9 @@ export const recordCreditorRepayment = (
         const principalBalance =
           ledgerBalances.get(input.investmentId) ??
           (() => {
+            captureServerWarning("Creditor repayment ledger entry missing; using amount fallback", {
+              source: "creditor-repayment.missing-ledger",
+            });
             console.warn(
               `[recordCreditorRepayment] No ledger entries for investment ${input.investmentId}, using amount as fallback`,
             );
@@ -549,6 +553,9 @@ export const getCreditorDashboard = (
 
       for (const investment of investments) {
         if (!ledgerBalances.has(investment.id)) {
+          captureServerWarning("Creditor dashboard ledger entry missing; using amount fallback", {
+            source: "creditor-dashboard.missing-ledger",
+          });
           console.warn(
             `[getCreditorDashboard] No ledger entries for investment ${investment.id}, using amount as fallback`,
           );

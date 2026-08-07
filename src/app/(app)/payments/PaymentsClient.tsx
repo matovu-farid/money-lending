@@ -20,6 +20,7 @@ import {
 } from "@/lib/loan-visibility";
 import BigNumber from "bignumber.js";
 import { toast } from "sonner";
+import { captureClientError } from "@/lib/sentry";
 import { AlertTriangle, Download, MoreHorizontal } from "lucide-react";
 import { PaymentReceiptButton } from "@/components/receipts/payment-receipt-button";
 import { ResponsiveTable, type Column } from "@/components/ui/responsive-table";
@@ -470,7 +471,8 @@ function PaymentsContent({
       );
       toast.success("Payment updated");
       closeEdit();
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "payments.edit" });
       toast.error("Failed to update payment");
     } finally {
       setIsEditPending(false);
@@ -499,6 +501,7 @@ function PaymentsContent({
         toast.success("Payment marked as wrong");
         closeMarkWrong();
       } catch (e) {
+        captureClientError(e, { source: "payments.mark-wrong" });
         toast.error(
           e instanceof Error ? e.message : "Failed to mark payment as wrong",
         );

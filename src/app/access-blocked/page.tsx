@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { signOut } from "@/lib/auth-client"
 import { Button } from "@/components/ui/button"
+import { captureClientError } from "@/lib/sentry"
 import {
   Card,
   CardContent,
@@ -21,7 +22,10 @@ export default function AccessBlockedPage() {
     fetch("https://api.ipify.org?format=json")
       .then((r) => r.json())
       .then((j) => setIp(j.ip ?? null))
-      .catch(() => setIp(null))
+      .catch((error) => {
+        captureClientError(error, { source: "access-blocked.ip-lookup" })
+        setIp(null)
+      })
   }, [])
 
   async function handleSignOut() {

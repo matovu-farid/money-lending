@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select"
 import { getMonthOptions } from "@/lib/utils"
 import { downloadBlob } from "@/lib/download"
+import { captureClientError } from "@/lib/sentry"
 
 interface ReportToolbarProps {
   period?: string
@@ -48,7 +49,8 @@ export function ReportToolbar({
     try {
       const { blob, filename } = await onExport(format)
       downloadBlob(blob, filename)
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "report-toolbar.export" })
       toast.error("Export failed. Please try again.")
     } finally {
       setDownloading(null)

@@ -25,6 +25,7 @@ import { formatCurrency, formatDate, todayDateString } from "@/lib/utils"
 import { CurrencyCell } from "@/components/ui/currency-cell"
 import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
 import type { CreditorInvestmentSummary } from "@/types"
+import { captureClientError } from "@/lib/sentry"
 
 interface Props {
   creditorId: string
@@ -90,6 +91,7 @@ export function RecordRepaymentDialog({ creditorId, investment }: Props) {
         })
         if ("data" in result) setReceipt(result.data)
       } catch (err: any) {
+        captureClientError(err, { source: "creditors.repayment-create" })
         toast.error(err?.message ?? "Failed to record repayment")
       }
     })

@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
 import { getTransactionReceiptDataAction } from "@/actions/receipt.actions"
+import { captureClientError } from "@/lib/sentry"
 
 interface SettleCollateralDialogProps {
   open: boolean
@@ -79,6 +80,7 @@ export function SettleCollateralDialog({
       })
       if ("data" in result) setReceipt(result.data)
     } catch (err) {
+      captureClientError(err, { source: "settle-collateral.submit" })
       // Restore watchlist if settle failed after optimistic writeDelete
       invalidateLendingProjections(getQueryClient())
       toast.error(err instanceof Error ? err.message : "Failed to settle loan")

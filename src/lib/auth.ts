@@ -5,6 +5,7 @@ import { Resend } from "resend"
 import { db } from "./db"
 import { ac, superAdminRole, adminRole, supervisorRole, loanOfficerRole, unassignedRole } from "./permissions"
 import { VerifyEmailTemplate, ResetPasswordTemplate } from "@/lib/emails"
+import { captureServerWarning } from "@/lib/sentry"
 
 // In-memory store for Cypress E2E tests: maps email -> verification URL
 // Only populated when NODE_ENV=test (sendVerificationEmail stores URL here instead of emailing)
@@ -76,6 +77,9 @@ export const auth = betterAuth({
         })
         console.log("[Email Debug] Resend response:", JSON.stringify(result))
       } catch (err) {
+        captureServerWarning("Verification email delivery failed", {
+          source: "auth.verification-email",
+        })
         console.error("[Email Debug] Resend error:", err)
       }
     },
@@ -135,6 +139,9 @@ export const auth = betterAuth({
             const { recordAdminLoginIp } = await import("@/lib/ip-allowlist")
             await recordAdminLoginIp(session.userId, session.ipAddress)
           } catch (err) {
+            captureServerWarning("Admin login IP capture failed", {
+              source: "auth.session-create-ip-capture",
+            })
             console.warn("[auth] session.create.after IP capture failed", err)
           }
         },

@@ -27,6 +27,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import { todayDateString } from "@/lib/utils"
 import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
+import { captureClientError } from "@/lib/sentry"
 
 interface Props {
   creditorId: string
@@ -99,6 +100,7 @@ export function AddInvestmentDialog({ creditorId }: Props) {
         })
         if ("data" in result) setReceipt(result.data)
       } catch (err: any) {
+        captureClientError(err, { source: "creditors.investment-create" })
         toast.error(err?.message ?? "Failed to add investment")
       }
     })

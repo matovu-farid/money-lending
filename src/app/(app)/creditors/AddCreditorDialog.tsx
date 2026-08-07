@@ -28,6 +28,7 @@ import { InfoPopover } from "@/components/ui/info-popover"
 import { BankAccountSelect } from "@/components/ui/bank-account-select"
 import { todayDateString } from "@/lib/utils"
 import { PRINCIPAL_AMOUNT_PRESETS } from "@/lib/constants"
+import { captureClientError } from "@/lib/sentry"
 
 interface CreditorFormValues {
   name: string
@@ -123,6 +124,7 @@ export function AddCreditorDialog({ open, onOpenChange }: AddCreditorDialogProps
         }
       }
     } catch (err) {
+      captureClientError(err, { source: "creditors.create" })
       const msg = err instanceof Error ? err.message : "Failed to register creditor"
       console.error("[AddCreditorDialog] register failed", err)
       toast.error(msg)

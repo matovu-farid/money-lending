@@ -1,4 +1,5 @@
 import { seedDefaultCategories } from "@/services/category.service"
+import { captureServerError } from "@/lib/sentry"
 import { Effect } from "effect"
 
 async function main() {
@@ -8,6 +9,7 @@ async function main() {
 }
 
 main().catch((err) => {
+  captureServerError(err, { source: "db.seed-categories" })
   console.error("Failed to seed categories:", err)
   process.exit(1)
 })

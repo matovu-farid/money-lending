@@ -11,6 +11,7 @@ import {
   type PaymentRow,
 } from "@/collections/payments";
 import { toast } from "sonner";
+import { captureClientError } from "@/lib/sentry";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   DrawerDialog,
@@ -232,6 +233,7 @@ export function QuickRecordDialog({
       });
       setConfirmStep(false);
     } catch (err) {
+      captureClientError(err, { source: "payments.quick-record" });
       const message =
         err instanceof Error ? err.message : "Failed to record payment";
       toast.error(message);

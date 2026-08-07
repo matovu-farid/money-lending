@@ -24,6 +24,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { captureClientError } from "@/lib/sentry";
 
 interface WaiveLoanDialogProps {
   open: boolean;
@@ -162,6 +163,7 @@ export function WaiveLoanDialog({
       toast.success("Loan amount waived");
       onOpenChange(false);
     } catch (err) {
+      captureClientError(err, { source: "waive-loan-dialog.submit" });
       toast.error(err instanceof Error ? err.message : "Failed to waive amount");
     } finally {
       setIsPending(false);

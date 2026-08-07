@@ -2,6 +2,7 @@
 "use server"
 
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import { revalidatePath } from "next/cache"
 import { getUserRole } from "@/lib/action-utils"
 import { ROLE_LEVELS, type UserRole } from "@/types"
@@ -45,8 +46,14 @@ export const createInviteAction = withAction<
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {
+      const expected = new Set([
+        "This user already has an account",
+        "A pending invite already exists for this email — use resend instead",
+      ])
+      if (expected.has(e?.message)) return { error: e.message }
+      captureServerError(e, { source: "createInviteAction", userId: session.user.id })
       console.error("[createInviteAction] Failed:", e)
-      return { error: e.message ?? "Failed to send invitation" }
+      return { error: "Failed to send invitation" }
     }
   },
 })
@@ -62,8 +69,10 @@ export const revokeInviteAction = withAction<{ invitationId: string }, any>({
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {
+      if (e?.message === "Pending invitation not found") return { error: e.message }
+      captureServerError(e, { source: "revokeInviteAction", invitationId: input.invitationId })
       console.error("[revokeInviteAction] Failed:", e)
-      return { error: e.message ?? "Failed to revoke invitation" }
+      return { error: "Failed to revoke invitation" }
     }
   },
 })
@@ -82,8 +91,12 @@ export const resendInviteAction = withAction<{ invitationId: string }, any>({
       revalidatePath("/admin")
       return { data }
     } catch (e: any) {
+      if (e?.message === "Invitation not found" || e?.message === "Can only resend pending or expired invitations") {
+        return { error: e.message }
+      }
+      captureServerError(e, { source: "resendInviteAction", invitationId: input.invitationId })
       console.error("[resendInviteAction] Failed:", e)
-      return { error: e.message ?? "Failed to resend invitation" }
+      return { error: "Failed to resend invitation" }
     }
   },
 })
@@ -95,6 +108,7 @@ export const listInvitationsAction = withAction({
       const data = await listInvitations()
       return { data }
     } catch (e) {
+      captureServerError(e, { source: "listInvitationsAction" })
       console.error("[listInvitationsAction] Failed:", e)
       return { error: "Failed to load invitations" }
     }

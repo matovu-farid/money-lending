@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { useAdminUsers } from "@/hooks/use-admin-users"
 import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
 import { usePermissions } from "@/hooks/use-permissions"
+import { captureClientError } from "@/lib/sentry"
 import {
   Table,
   TableBody,
@@ -129,7 +130,8 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
         revokedBy: null,
       })
       toast.success("Delegation created")
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "admin.delegation-create" })
       toast.error("Failed to create delegation")
     } finally {
       setIsDelegating(false)
@@ -141,7 +143,8 @@ function AdminContent({ has, session, actorRole, actorLevel }: AdminContentProps
       setIsRevoking(true)
       delegationCollection.delete(delegationId)
       toast.success("Delegation revoked")
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "admin.delegation-revoke" })
       toast.error("Failed to revoke delegation")
     } finally {
       setIsRevoking(false)
@@ -416,6 +419,7 @@ function InvitationsSection({
       setInviteeName("")
       setInviteRole("")
     } catch (err: any) {
+      captureClientError(err, { source: "admin.invitation-send" })
       toast.error(err.message ?? "Failed to send invitation")
     } finally {
       setIsSending(false)
@@ -428,6 +432,7 @@ function InvitationsSection({
       await tx.isPersisted.promise
       toast.success("Invitation revoked")
     } catch (err: any) {
+      captureClientError(err, { source: "admin.invitation-revoke" })
       toast.error(err.message ?? "Failed to revoke invitation")
     }
   }

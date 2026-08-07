@@ -6,6 +6,7 @@ import { getErrorTag } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { settleWithCollateral, getCustomerActiveLoan } from "@/services/collateral-settlement.service"
 import { type SettleWithCollateralInput } from "@/types"
+import { captureServerError } from "@/lib/sentry"
 
 export const settleWithCollateralAction = withAction<SettleWithCollateralInput, any>({
   permission: "loan:settle",
@@ -27,6 +28,11 @@ export const settleWithCollateralAction = withAction<SettleWithCollateralInput, 
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
+      captureServerError(error, {
+        source: "settleWithCollateralAction",
+        userId: session.user.id,
+        loanId: input.loanId,
+      })
       return { error: "Internal server error" }
     }
   },
@@ -42,7 +48,8 @@ export const checkCustomerActiveLoanAction = withAction<string, any>({
     try {
       const result = await getCustomerActiveLoan(customerId)
       return { data: result }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "checkCustomerActiveLoanAction", customerId })
       return { error: "Internal server error" }
     }
   },

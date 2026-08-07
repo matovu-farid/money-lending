@@ -1,4 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
+const { captureServerWarning } = vi.hoisted(() => ({ captureServerWarning: vi.fn() }))
+
+vi.mock("@/lib/sentry", () => ({ captureServerWarning }))
+
 import {
   getClientIp,
   isIpAllowlistEnabled,
@@ -36,7 +40,10 @@ describe("getClientIp", () => {
 })
 
 describe("isIpAllowlistEnabled", () => {
-  beforeEach(() => clearCaches())
+  beforeEach(() => {
+    clearCaches()
+    captureServerWarning.mockReset()
+  })
 
   it("returns false when system_settings has no row", async () => {
     __setIpAllowlistDepsForTests({
@@ -74,11 +81,18 @@ describe("isIpAllowlistEnabled", () => {
       readSetting: vi.fn().mockRejectedValue(new Error("db down")),
     })
     expect(await isIpAllowlistEnabled()).toBe(false)
+    expect(captureServerWarning).toHaveBeenCalledWith(
+      "IP allowlist toggle read failed; failing open",
+      { source: "ip-allowlist.toggle" },
+    )
   })
 })
 
 describe("isIpAllowed", () => {
-  beforeEach(() => clearCaches())
+  beforeEach(() => {
+    clearCaches()
+    captureServerWarning.mockReset()
+  })
 
   it("returns true when IP exists in any admin queue", async () => {
     __setIpAllowlistDepsForTests({
@@ -107,11 +121,18 @@ describe("isIpAllowed", () => {
       ipExists: vi.fn().mockRejectedValue(new Error("db down")),
     })
     expect(await isIpAllowed("203.0.113.7")).toBe(false)
+    expect(captureServerWarning).toHaveBeenCalledWith(
+      "IP allowlist lookup failed; failing closed",
+      { source: "ip-allowlist.lookup" },
+    )
   })
 })
 
 describe("recordAdminLoginIp", () => {
-  beforeEach(() => clearCaches())
+  beforeEach(() => {
+    clearCaches()
+    captureServerWarning.mockReset()
+  })
 
   it("upserts and bumps last_seen_at on duplicate", async () => {
     const upsert = vi.fn().mockResolvedValue({ inserted: false })
@@ -141,6 +162,10 @@ describe("recordAdminLoginIp", () => {
       upsertAllowlist: vi.fn().mockRejectedValue(new Error("db down")),
     })
     await expect(recordAdminLoginIp("user-1", "203.0.113.7")).resolves.toBeUndefined()
+    expect(captureServerWarning).toHaveBeenCalledWith(
+      "Admin login IP recording failed",
+      { source: "ip-allowlist.record-login-ip" },
+    )
   })
 
   it("invalidates the IP cache after a new insert", async () => {
@@ -160,6 +185,8 @@ describe("recordAdminLoginIp", () => {
 })
 
 describe("recordBlock", () => {
+  beforeEach(() => captureServerWarning.mockReset())
+
   it("inserts and never throws", async () => {
     const insert = vi.fn().mockResolvedValue(undefined)
     __setIpAllowlistDepsForTests({ insertBlock: insert })
@@ -172,5 +199,9 @@ describe("recordBlock", () => {
       insertBlock: vi.fn().mockRejectedValue(new Error("db down")),
     })
     await expect(recordBlock("u", "ip", "/x")).resolves.toBeUndefined()
+    expect(captureServerWarning).toHaveBeenCalledWith(
+      "IP allowlist block logging failed",
+      { source: "ip-allowlist.record-block" },
+    )
   })
 })

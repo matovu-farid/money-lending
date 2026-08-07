@@ -134,6 +134,11 @@ export const editPaymentAction = withAction<EditPaymentInput, PaymentMutationRes
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
+      captureServerError(error, {
+        source: "editPaymentAction",
+        userId: session.user.id,
+        paymentId: input.paymentId,
+      })
       return { error: "Internal server error" }
     }
   },
@@ -179,6 +184,11 @@ export const deletePaymentAction = withAction<DeletePaymentInput, PaymentMutatio
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
+      captureServerError(error, {
+        source: "deletePaymentAction",
+        userId: session.user.id,
+        paymentId: input.paymentId,
+      })
       return { error: "Internal server error" }
     }
   },
@@ -202,7 +212,8 @@ export const getPaymentsByLoanAction = withAction<string, { data: Payment[] } | 
     try {
       const rows = await listActivePaymentsByLoan(loanId)
       return { data: rows }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getPaymentsByLoanAction", loanId })
       return { error: "Internal server error" }
     }
   },
@@ -217,7 +228,8 @@ export const getPaymentsForLoanIdsAction = withAction<
     try {
       const rows = await listPaymentsForLoanIds(loanIds ?? [])
       return { data: rows }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getPaymentsForLoanIdsAction" })
       return { error: "Internal server error" }
     }
   },
@@ -237,7 +249,8 @@ export const searchActiveLoansAction = withAction<
     try {
       const data = await Effect.runPromise(searchActiveLoans(trimmed))
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "searchActiveLoansAction" })
       return { error: "Internal server error" }
     }
   },
@@ -258,7 +271,8 @@ export const getLoanBalanceAction = withAction<string, { data: LoanBalanceSummar
     try {
       const data = await getLoanBalanceSummary(loanId)
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getLoanBalanceAction", loanId })
       return { error: "Internal server error" }
     }
   },
@@ -299,6 +313,11 @@ const markPaymentWrongWrapped = withAction<
       if (tag === "ValidationError") {
         return { error: (e as { message?: string }).message ?? "Loan is not active" }
       }
+      captureServerError(e, {
+        source: "markPaymentWrongAction",
+        userId: session.user.id,
+        paymentId,
+      })
       return { error: "Internal server error" }
     }
   },
@@ -327,6 +346,11 @@ export const unmarkPaymentWrongAction = withAction<string, PaymentMutationResult
       if (tag === "ValidationError") {
         return { error: (e as { message?: string }).message ?? "Loan is not active" }
       }
+      captureServerError(e, {
+        source: "unmarkPaymentWrongAction",
+        userId: session.user.id,
+        paymentId,
+      })
       return { error: "Internal server error" }
     }
   },
@@ -345,7 +369,8 @@ export const getPaymentPortionsAction = withAction<
     try {
       const portions = await getPaymentPortionsFromLedger(paymentIds)
       return { data: Object.fromEntries(portions) }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getPaymentPortionsAction" })
       return { error: "Internal server error" }
     }
   },

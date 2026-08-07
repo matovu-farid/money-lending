@@ -1,6 +1,7 @@
 "use server"
 
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import { getAllSettings, upsertSetting, type SystemSetting } from "@/services/settings.service"
 
 const VALID_SETTING_KEYS = ["default_interest_rate", "default_min_interest_days"] as const
@@ -19,7 +20,8 @@ export const getSettingsAction = withAction({
   action: async (): Promise<GetSettingsResult> => {
     try {
       return { data: await getAllSettings() }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getSettingsAction" })
       return { error: "Failed to load settings" }
     }
   },
@@ -43,7 +45,12 @@ export const updateSettingAction = withAction<UpdateSettingInput, UpdateSettingR
         updatedBy: session.user.id,
       })
       return { data: result }
-    } catch {
+    } catch (error) {
+      captureServerError(error, {
+        source: "updateSettingAction",
+        userId: session.user.id,
+        settingKey: input.key,
+      })
       return { error: "Failed to update setting" }
     }
   },

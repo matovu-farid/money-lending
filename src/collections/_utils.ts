@@ -19,7 +19,12 @@ export function throwIfActionError<T>(
   result: T,
 ): Exclude<T, { error: string }> {
   if (result && typeof result === "object" && "error" in result) {
-    throw new Error((result as { error: string }).error)
+    const message = (result as { error: string }).error
+    const error = new Error(message)
+    if (message !== "Internal server error" && message !== "Database error") {
+      Object.assign(error, { _tag: "ExpectedActionError" })
+    }
+    throw error
   }
   return result as Exclude<T, { error: string }>
 }

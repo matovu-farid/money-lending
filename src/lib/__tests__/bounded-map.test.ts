@@ -1,7 +1,13 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, beforeEach, vi } from "vitest"
+const { captureClientError } = vi.hoisted(() => ({ captureClientError: vi.fn() }))
+
+vi.mock("@/lib/sentry", () => ({ captureClientError }))
+
 import { boundedSet, boundedTouch } from "../bounded-map"
 
 describe("boundedSet / boundedTouch", () => {
+  beforeEach(() => captureClientError.mockReset())
+
   it("evicts the oldest unpinned key when full", () => {
     const map = new Map<string, number>()
     const evicted: number[] = []
@@ -38,5 +44,17 @@ describe("boundedSet / boundedTouch", () => {
     expect(map.has("b")).toBe(false)
     expect(map.has("c")).toBe(true)
     expect(map.has("d")).toBe(true)
+  })
+
+  it("reports rejected asynchronous eviction cleanup", async () => {
+    const map = new Map<string, number>()
+    const error = new Error("cleanup failed")
+    boundedSet(map, "a", 1, 1)
+    boundedSet(map, "b", 2, 1, () => Promise.reject(error))
+
+    await Promise.resolve()
+    expect(captureClientError).toHaveBeenCalledWith(error, {
+      source: "bounded-map.on-evict",
+    })
   })
 })

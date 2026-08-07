@@ -23,6 +23,7 @@ import { MoneyInput } from "@/components/ui/money-input"
 import { PageHeader } from "@/components/ui/page-header"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { BankAccountSelect } from "@/components/ui/bank-account-select"
+import { captureClientError } from "@/lib/sentry"
 import { TransactionReceiptButton } from "@/components/receipts/transaction-receipt-button"
 import { PosReceiptModal } from "@/components/receipts/pos-receipt-modal"
 import { PosReceiptTransaction, type TransactionReceiptData } from "@/components/receipts/pos-receipt-transaction"
@@ -218,6 +219,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       bankAccountForm.reset()
       setBankAccountDialogOpen(false)
     } catch (err) {
+      captureClientError(err, { source: "fund-transfers.bank-account-create" })
       toast.error(err instanceof Error ? err.message : "Failed to create bank account")
     }
   }
@@ -262,6 +264,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       setInjectionDialogOpen(false)
       await openTransferReceipt(id)
     } catch (err) {
+      captureClientError(err, { source: "fund-transfers.capital-injection" })
       toast.error(err instanceof Error ? err.message : "Failed to record injection")
     } finally {
       setIsConfirmingInjection(false)
@@ -316,6 +319,7 @@ function FundTransfersContent({ session }: { session: { user: { id: string } } }
       setDialogOpen(false)
       await openTransferReceipt(id)
     } catch (err) {
+      captureClientError(err, { source: "fund-transfers.transfer" })
       toast.error(err instanceof Error ? err.message : "Failed to record transfer")
     } finally {
       setIsConfirmingTransfer(false)

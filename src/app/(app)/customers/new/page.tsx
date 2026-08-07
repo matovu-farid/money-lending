@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils"
 import { PageHeader } from "@/components/ui/page-header"
 import { CustomerFormFields, type CustomerFormValues } from "@/components/customers/customer-form-fields"
 import { normalizeUgandanPhone } from "@/lib/validators"
+import { captureClientError } from "@/lib/sentry"
 
 export default function NewCustomerPage() {
   const router = useRouter()
@@ -41,6 +42,7 @@ export default function NewCustomerPage() {
       toast.success("Customer registered successfully")
       router.push(`/customers/${id}`)
     } catch (err: any) {
+      captureClientError(err, { source: "customers.create" })
       toast.error(err?.message ?? "Failed to create customer")
       setIsPending(false)
     }

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Data } from "effect"
+import { DatabaseError } from "@/lib/errors"
 
 // ---------- Mocks ----------
 
@@ -8,6 +9,9 @@ const mockCheckPermission = vi.fn()
 const mockGetErrorTag = vi.fn()
 const mockRevalidatePath = vi.fn()
 const mockGetUserRole = vi.fn()
+const mockCaptureServerError = vi.fn()
+const mockCaptureServerWarning = vi.fn()
+const mockIsExpectedDomainError = vi.fn()
 
 vi.mock("@/lib/action-utils", () => ({
   getSession: () => mockGetSession(),
@@ -18,6 +22,12 @@ vi.mock("@/lib/action-utils", () => ({
 
 vi.mock("next/cache", () => ({
   revalidatePath: (path: string) => mockRevalidatePath(path),
+}))
+
+vi.mock("@/lib/sentry", () => ({
+  captureServerError: (...args: unknown[]) => mockCaptureServerError(...args),
+  captureServerWarning: (...args: unknown[]) => mockCaptureServerWarning(...args),
+  isExpectedDomainError: (error: unknown) => mockIsExpectedDomainError(error),
 }))
 
 // Import after mocks
@@ -46,6 +56,7 @@ describe("withAction", () => {
     mockGetSession.mockResolvedValue(fakeSession)
     mockCheckPermission.mockResolvedValue(null) // no forbidden
     mockGetUserRole.mockReturnValue(fakeSession.user.role ?? "unassigned")
+    mockIsExpectedDomainError.mockReturnValue(true)
   })
 
   // ---------------------------------------------------------------
@@ -78,6 +89,20 @@ describe("withAction", () => {
       expect(result).toEqual({ error: "Unauthorized" })
     })
 
+    it("captures technical session lookup failures", async () => {
+      const failure = new Error("session database unavailable")
+      mockGetSession.mockRejectedValueOnce(failure)
+
+      const action = withAction({
+        action: async () => ({ data: "ok" }),
+      })
+
+      await expect(action()).resolves.toEqual({ error: "Internal server error" })
+      expect(mockCaptureServerError).toHaveBeenCalledWith(failure, {
+        source: "withAction:session",
+      })
+    })
+
     it("returns forbidden when permission check fails", async () => {
       mockCheckPermission.mockResolvedValue("Forbidden")
       const action = withAction({
@@ -102,6 +127,23 @@ describe("withAction", () => {
         "Custom forbidden message",
       )
       expect(result).toEqual({ error: "Custom forbidden message" })
+    })
+
+    it("captures technical permission lookup failures", async () => {
+      const failure = new Error("permission database unavailable")
+      mockCheckPermission.mockRejectedValueOnce(failure)
+
+      const action = withAction({
+        permission: "loan:create" as any,
+        action: async () => ({ data: "ok" }),
+      })
+
+      await expect(action()).resolves.toEqual({ error: "Internal server error" })
+      expect(mockCaptureServerError).toHaveBeenCalledWith(failure, {
+        source: "withAction:permission",
+        permission: "loan:create",
+        userId: fakeSession.user.id,
+      })
     })
 
     it("does not call checkPermission when no permission is specified", async () => {
@@ -172,6 +214,37 @@ describe("withAction", () => {
 
       const result = await action()
       expect(result).toEqual({ error: "Internal server error" })
+    })
+
+    it("captures technical DatabaseError while preserving its configured message", async () => {
+      const failure = new DatabaseError({ cause: new Error("database down") })
+      mockGetErrorTag.mockReturnValue("DatabaseError")
+      mockIsExpectedDomainError.mockReturnValue(false)
+
+      const action = withAction({
+        effect: () => Effect.fail(failure),
+        errors: { DatabaseError: "Database error" },
+      })
+
+      await expect(action()).resolves.toEqual({ error: "Database error" })
+      expect(mockCaptureServerError).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ source: "withAction:effect" }),
+      )
+    })
+
+    it("does not capture a declared expected domain failure", async () => {
+      const failure = new ValidationError({ message: "invalid" })
+      mockGetErrorTag.mockReturnValue("ValidationError")
+      mockIsExpectedDomainError.mockReturnValue(true)
+
+      const action = withAction({
+        effect: () => Effect.fail(failure),
+        errors: { ValidationError: "Invalid input" },
+      })
+
+      await expect(action()).resolves.toEqual({ error: "Invalid input" })
+      expect(mockCaptureServerError).not.toHaveBeenCalled()
     })
 
     it("revalidates static paths on success", async () => {

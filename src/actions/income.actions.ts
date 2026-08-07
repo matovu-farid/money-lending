@@ -2,6 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import { getUserRole, getSessionPermissions, validateBackdating } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordIncome, deleteTransaction, listTransactions } from "@/services/transaction.service"
@@ -69,6 +70,7 @@ export const recordIncomeAction = withAction<
       }
       return { success: true as const }
     } catch (err) {
+      captureServerError(err, { source: "recordIncomeAction", userId: session.user.id })
       console.error("[recordIncomeAction]", err)
       return { error: "Internal server error" }
     }

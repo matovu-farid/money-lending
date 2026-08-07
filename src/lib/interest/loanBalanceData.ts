@@ -19,6 +19,7 @@ import BigNumber from "bignumber.js";
 import { getLastSettlementEventsForLoans } from "@/services/settlement.service";
 import { isOperationalLoan } from "@/lib/loan-visibility";
 import { buildLoanStatement } from "@/lib/loan-statement";
+import { captureServerWarning } from "@/lib/sentry";
 
 type QueryDb = Pick<typeof db, "select">;
 
@@ -186,6 +187,9 @@ export async function computeLoanBalanceData(
     const hasLedgerEntries = balanceMap.has(loan.id);
     const ledgerBalance = balanceMap.get(loan.id) ?? new BigNumber(0);
     if (!hasLedgerEntries) {
+      captureServerWarning("Loan balance ledger entries missing; using principal fallback", {
+        source: "loan-balance.missing-ledger",
+      });
       console.warn(
         `[getLoanBalanceSummary] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
       );

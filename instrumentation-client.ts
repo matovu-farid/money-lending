@@ -87,13 +87,31 @@ const PII_KEYS = new Set([
   "outstandingBalance",
 ]);
 
+const POSTGRES_URL_PATTERN = /\bpostgres(?:ql)?:\/\/[^\s"'<>]+/gi;
+const CREDENTIAL_ASSIGNMENT_PATTERN =
+  /\b(?:DATABASE_URL|POSTGRES_URL|password|token|secret|api[_-]?key)\s*=\s*[^\s"'<>]+/gi;
+const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
+const PHONE_PATTERN = /(?<!\w)\+?[0-9][0-9 .()\-]{6,}[0-9](?!\w)/g;
+const FINANCIAL_VALUE_PATTERN =
+  /\b(?:amount|principal(?:amount)?|investment(?:amount)?|outstanding(?:balance)?|available|required)\s*[:=]?\s*(?:UGX\s*)?[0-9][0-9,._\s-]*/gi;
+
+function scrubText(value: string): string {
+  return value
+    .replace(POSTGRES_URL_PATTERN, "[redacted-url]")
+    .replace(CREDENTIAL_ASSIGNMENT_PATTERN, "[redacted-credential]")
+    .replace(EMAIL_PATTERN, "[redacted-email]")
+    .replace(PHONE_PATTERN, "[redacted-phone]")
+    .replace(FINANCIAL_VALUE_PATTERN, "[redacted-financial]")
+    .slice(0, 1000);
+}
+
 function scrubValue(value: unknown): unknown {
   if (value === null || value === undefined) return value;
   if (Array.isArray(value)) return value.map(scrubValue);
   if (typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      out[k] = PII_KEYS.has(k.toLowerCase()) ? "[redacted]" : scrubValue(v);
+      out[k] = PII_KEYS.has(k) || PII_KEYS.has(k.toLowerCase()) ? "[redacted]" : scrubValue(v);
     }
     return out;
   }
@@ -101,8 +119,25 @@ function scrubValue(value: unknown): unknown {
 }
 
 function scrubEvent<
-  T extends { request?: unknown; extra?: unknown; contexts?: unknown },
+  T extends {
+    request?: unknown;
+    extra?: unknown;
+    contexts?: unknown;
+    message?: unknown;
+    exception?: unknown;
+  },
 >(event: T): T {
+  if (typeof event.message === "string") event.message = scrubText(event.message);
+  if (event.exception && typeof event.exception === "object") {
+    const values = (event.exception as { values?: unknown }).values;
+    if (Array.isArray(values)) {
+      for (const value of values) {
+        if (value && typeof value === "object" && typeof (value as { value?: unknown }).value === "string") {
+          (value as { value: string }).value = scrubText((value as { value: string }).value);
+        }
+      }
+    }
+  }
   if (event.request && typeof event.request === "object") {
     const req = event.request as Record<string, unknown>;
     // Drop request bodies entirely — they can contain loan amounts, NINs, etc.

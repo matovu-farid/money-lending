@@ -72,7 +72,7 @@ describe("createDelegationAction", () => {
     vi.mocked(createDelegation).mockRejectedValue(new Error("DB error"))
 
     const result = await createDelegationAction({ id: "del-1", userId: "user-1" })
-    expect(result).toEqual({ error: "DB error" })
+    expect(result).toEqual({ error: "Failed to create delegation" })
   })
 })
 
@@ -99,7 +99,7 @@ describe("revokeDelegationAction", () => {
     vi.mocked(revokeDelegation).mockRejectedValue(new Error("Not found"))
 
     const result = await revokeDelegationAction({ delegationId: "del-1" })
-    expect(result).toEqual({ error: "Not found" })
+    expect(result).toEqual({ error: "Failed to revoke delegation" })
   })
 })
 

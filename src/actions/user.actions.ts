@@ -10,6 +10,7 @@ import {
   invalidateUserPermissions,
 } from "@/lib/action-utils"
 import { ROLE_LEVELS, type UserRole, type Permission } from "@/types"
+import { captureServerError, captureServerWarning } from "@/lib/sentry"
 
 const VALID_ROLES: UserRole[] = ["unassigned", "loanOfficer", "supervisor", "admin", "superAdmin"]
 
@@ -92,6 +93,10 @@ export async function assignRole(
         const { clearAllowlistForUser } = await import("@/services/ip-allowlist.service")
         await clearAllowlistForUser(userId)
       } catch (err) {
+        captureServerWarning("Failed to clear IP allowlist after role demotion", {
+          source: "assignRole:clear-allowlist",
+          userId,
+        })
         console.warn("[assignRole] Failed to clear IP allowlist on demotion", err)
       }
     }
@@ -106,12 +111,17 @@ export async function assignRole(
         body: { userId },
         headers: await headers(),
       })
-    } catch (err) {
-      console.warn("[assignRole] Failed to revoke sessions after role change", { userId, err })
+      } catch (err) {
+        captureServerWarning("Failed to revoke sessions after role change", {
+          source: "assignRole:revoke-sessions",
+          userId,
+        })
+        console.warn("[assignRole] Failed to revoke sessions after role change", { userId, err })
     }
 
     return { data: { role: targetRole } }
-  } catch {
+  } catch (error) {
+    captureServerError(error, { source: "assignRole", userId: session.user.id, targetUserId: userId })
     return { error: "Failed to update role" }
   }
 }

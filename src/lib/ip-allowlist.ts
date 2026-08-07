@@ -1,6 +1,7 @@
 import { db } from "@/lib/db"
 import { adminIpAllowlist, ipBlockLog } from "@/lib/db/schema/ip-allowlist"
 import { systemSettings } from "@/lib/db/schema/settings"
+import { captureServerWarning } from "@/lib/sentry"
 import { eq, sql } from "drizzle-orm"
 
 const TOGGLE_KEY = "ip_allowlist_enabled"
@@ -105,6 +106,9 @@ export async function isIpAllowlistEnabled(): Promise<boolean> {
     toggleCache = { value, expiresAt: Date.now() + TOGGLE_TTL_MS }
     return value
   } catch (err) {
+    captureServerWarning("IP allowlist toggle read failed; failing open", {
+      source: "ip-allowlist.toggle",
+    })
     console.warn("[ip-allowlist] toggle read failed; failing open", err)
     return false
   }
@@ -118,6 +122,9 @@ export async function isIpAllowed(ip: string): Promise<boolean> {
     ipCacheSet(ip, value)
     return value
   } catch (err) {
+    captureServerWarning("IP allowlist lookup failed; failing closed", {
+      source: "ip-allowlist.lookup",
+    })
     console.warn("[ip-allowlist] ip lookup failed; failing closed", err)
     return false
   }
@@ -131,6 +138,9 @@ export async function recordAdminLoginIp(userId: string, ip: string): Promise<vo
       await deps.trimAllowlist(userId, 100)
     }
   } catch (err) {
+    captureServerWarning("Admin login IP recording failed", {
+      source: "ip-allowlist.record-login-ip",
+    })
     console.warn("[ip-allowlist] record login ip failed", { userId, ip, err })
   }
 }
@@ -139,6 +149,9 @@ export async function recordBlock(userId: string, ip: string, path: string): Pro
   try {
     await deps.insertBlock(userId, ip, path)
   } catch (err) {
+    captureServerWarning("IP allowlist block logging failed", {
+      source: "ip-allowlist.record-block",
+    })
     console.warn("[ip-allowlist] block log insert failed", err)
   }
 }

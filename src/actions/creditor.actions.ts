@@ -20,6 +20,7 @@ import {
 } from "@/services/creditor.service"
 import { getCreditorRepaymentPortionsFromLedger } from "@/services/ledger-queries.service"
 import { getErrorTag } from "@/lib/action-utils"
+import { captureServerError } from "@/lib/sentry"
 import {
   notifyAdmin,
   resolveCreditorContext,
@@ -76,7 +77,8 @@ export const createCreditorAction = withAction<CreateCreditorInput, any>({
       const data = await Effect.runPromise(createCreditor(input, session.user.id))
       revalidatePath("/creditors")
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "createCreditorAction", userId: session.user.id })
       return { error: "Internal server error" }
     }
   },
@@ -103,6 +105,11 @@ const updateCreditorWrapped = withAction<{ id: string; input: UpdateCreditorInpu
       if (getErrorTag(error) === "CreditorNotFound") {
         return { error: "Creditor not found" }
       }
+      captureServerError(error, {
+        source: "updateCreditorAction",
+        userId: session.user.id,
+        creditorId: id,
+      })
       console.error("[updateCreditorAction]", error)
       return { error: "Internal server error" }
     }
@@ -148,8 +155,12 @@ export const createCreditorWithInvestmentAction = withAction<CreateCreditorWithI
       revalidatePath("/creditors")
       return { data: creditor, txid, investmentId: investment.id }
     } catch (err) {
+      captureServerError(err, {
+        source: "createCreditorWithInvestmentAction",
+        userId: session.user.id,
+      })
       console.error("[createCreditorWithInvestmentAction] failed", err)
-      return { error: err instanceof Error ? err.message : "Internal server error" }
+      return { error: "Internal server error" }
     }
   },
 })
@@ -176,7 +187,8 @@ export const addInvestmentAction = withAction<AddInvestmentInput, any>({
         entityRef: `INV-${shortId((data as { id: string }).id).toUpperCase()}`,
       })
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "addInvestmentAction", userId: session.user.id })
       return { error: "Internal server error" }
     }
   },
@@ -202,7 +214,8 @@ export const recordCreditorRepaymentAction = withAction<RecordCreditorRepaymentI
         amount: input.amount,
       })
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "recordCreditorRepaymentAction", userId: session.user.id })
       return { error: "Internal server error" }
     }
   },
@@ -221,7 +234,8 @@ export const getCreditorMonthlyInterestDueAction = withAction({
       const data: Record<string, string> = {}
       for (const [k, v] of map) data[k] = v
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getCreditorMonthlyInterestDueAction" })
       return { error: "Internal server error" }
     }
   },
@@ -233,7 +247,8 @@ export const getCreditorMonthlySummaryAction = withAction<string, any>({
     try {
       const data = await Effect.runPromise(getCreditorMonthlySummary(creditorId))
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getCreditorMonthlySummaryAction", creditorId })
       return { error: "Internal server error" }
     }
   },
@@ -248,6 +263,7 @@ export const getCreditorDashboardAction = withAction<string, any>({
     } catch (e) {
       const tag = getErrorTag(e)
       if (tag === "CreditorNotFound") return { error: "Creditor not found" }
+      captureServerError(e, { source: "getCreditorDashboardAction", creditorId })
       return { error: "Internal server error" }
     }
   },
@@ -262,7 +278,8 @@ export const getCreditorRepaymentPortionsAction = withAction<string[], any>({
       const data: Record<string, { interestPortion: string; principalPortion: string }> = {}
       for (const [k, v] of map) data[k] = v
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getCreditorRepaymentPortionsAction" })
       return { error: "Internal server error" }
     }
   },

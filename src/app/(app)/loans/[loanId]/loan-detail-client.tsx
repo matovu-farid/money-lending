@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { captureClientError } from "@/lib/sentry";
 import {
   ArrowLeft,
   Banknote,
@@ -516,6 +517,7 @@ export function LoanDetailClient({
       toast.success("Payment updated");
       closePaymentEdit();
     } catch (error) {
+      captureClientError(error, { source: "loan-detail.payment-update" });
       toast.error(error instanceof Error ? error.message : "Failed to update payment");
     }
   }
@@ -560,6 +562,7 @@ export function LoanDetailClient({
       toast.success("Payment deleted");
       closePaymentDelete();
     } catch (error) {
+      captureClientError(error, { source: "loan-detail.payment-delete" });
       toast.error(error instanceof Error ? error.message : "Failed to delete payment");
     }
   }
@@ -587,7 +590,8 @@ export function LoanDetailClient({
       rateChangeRequestCollection.insert(optimistic);
       toast.success("Rate change request submitted");
       closeRateChange();
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "loan-detail.rate-change-request" });
       toast.error("Failed to submit rate change request");
     }
   }
@@ -610,7 +614,8 @@ export function LoanDetailClient({
       emitTableChange("loans");
       toast.success("Interest rate adjusted");
       setAdminRateAdjustmentOpen(false);
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "loan-detail.rate-adjust" });
       toast.error("Failed to adjust interest rate");
     } finally {
       setIsAdminRateAdjusting(false);
@@ -629,6 +634,7 @@ export function LoanDetailClient({
       );
       toast.success("Penalty waived");
     } catch (err) {
+      captureClientError(err, { source: "loan-detail.penalty-waive" });
       toast.error(
         err instanceof Error ? err.message : "Failed to waive penalty",
       );
@@ -648,6 +654,7 @@ export function LoanDetailClient({
       toast.success("Penalty rate adjusted");
       closePenaltyAdjust();
     } catch (err) {
+      captureClientError(err, { source: "loan-detail.penalty-adjust" });
       toast.error(
         err instanceof Error ? err.message : "Failed to adjust penalty",
       );

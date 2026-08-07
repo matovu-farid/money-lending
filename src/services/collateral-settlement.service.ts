@@ -20,6 +20,7 @@ import { autoPostPrincipalRecovery } from "@/services/auto-post.service";
 import { getLoanBalancesFromLedger } from "@/services/ledger-queries.service";
 import { cancelPendingRateChangeRequestsForLoan } from "@/services/rate-change-request.service";
 import type { SettleWithCollateralInput, Loan } from "@/types";
+import { captureServerWarning } from "@/lib/sentry";
 
 /**
  * Computes accrued interest for a loan given its active payments.
@@ -134,6 +135,9 @@ export const settleWithCollateral = (
         const settleLedgerBalance =
           settleBalanceMap.get(input.loanId) ?? new BigNumber(0);
         if (!settleHasLedger) {
+          captureServerWarning("Collateral settlement ledger entry missing; using principal fallback", {
+            source: "collateral-settlement.missing-ledger",
+          });
           console.warn(
             `[settleWithCollateral] No ledger entries for loan ${input.loanId}, using principalAmount as fallback`,
           );
@@ -290,6 +294,9 @@ export async function getCustomerActiveLoan(customerId: string): Promise<{
   const custHasLedger = custBalanceMap.has(loan.id);
   const custLedgerBalance = custBalanceMap.get(loan.id) ?? new BigNumber(0);
   if (!custHasLedger) {
+    captureServerWarning("Customer active loan ledger entry missing; using principal fallback", {
+      source: "customer-active-loan.missing-ledger",
+    });
     console.warn(
       `[getCustomerActiveLoan] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
     );

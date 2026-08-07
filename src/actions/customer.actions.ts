@@ -29,6 +29,7 @@ import {
   getUniqueConstraintNameDeep,
   isUniqueConstraintError,
 } from "@/lib/db-errors";
+import { captureServerError } from "@/lib/sentry";
 
 export const listCustomersAction = withAction({
   permission: "customer:read",
@@ -76,6 +77,7 @@ export const createCustomerAction = withAction<CreateCustomerInput, any>({
       if (deepConstraint === "uq_customers_contact") {
         return { error: "A customer with this phone number already exists" };
       }
+      captureServerError(error, { source: "createCustomerAction" });
       console.error("[createCustomerAction] Database error:", cause);
       if (getErrorTag(error) === "DatabaseError") {
         return { error: "Database error — check server logs for details" };
@@ -134,6 +136,11 @@ const updateCustomerWrapped = withAction<
       if (deepConstraint === "uq_customers_contact") {
         return { error: "A customer with this phone number already exists" };
       }
+      captureServerError(error, {
+        source: "updateCustomerAction",
+        userId: session.user.id,
+        customerId: id,
+      });
       console.error("[updateCustomerAction]", error);
       return { error: "Internal server error" };
     }
@@ -178,6 +185,11 @@ export const changeCustomerStatusAction = withAction<ChangeStatusInput, any>({
       if (getErrorTag(error) === "CustomerNotFound") {
         return { error: "Customer not found" };
       }
+      captureServerError(error, {
+        source: "changeCustomerStatusAction",
+        userId: session.user.id,
+        customerId: input.customerId,
+      });
       return { error: "Internal server error" };
     }
   },

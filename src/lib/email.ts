@@ -10,6 +10,7 @@ import { customers } from "@/lib/db/schema/customers"
 import { creditors } from "@/lib/db/schema/creditors"
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments"
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
+import { captureServerWarning } from "@/lib/sentry"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
 
@@ -174,6 +175,9 @@ export function notifyAdmin(opts: {
       } as NotificationPayload)
     )
     .catch((error) => {
+      captureServerWarning("Admin notification preparation failed", {
+        source: "email.notify-admin",
+      })
       console.error("[Email] notifyAdmin failed:", error)
     })
 }
@@ -191,6 +195,9 @@ export async function sendAdminNotification(
       .filter(Boolean)
 
     if (adminEmails.length === 0) {
+      captureServerWarning("No administrator recipients found for notification", {
+        source: "email.no-admin-recipients",
+      })
       console.warn("[Email] No admin users found to notify")
       return
     }
@@ -232,6 +239,9 @@ export async function sendAdminNotification(
     })
   } catch (error) {
     // Fire-and-forget: log but never throw
+    captureServerWarning("Admin notification delivery failed", {
+      source: "email.send-admin-notification",
+    })
     console.error("[Email] Failed to send admin notification:", error)
   }
 }

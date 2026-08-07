@@ -2,6 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import { getErrorField, getErrorTag, getSessionPermissions, validateBackdating } from "@/lib/action-utils"
 import { validatePositiveDecimal } from "@/lib/validators"
 import { createFundTransferWithTxid, createCapitalInjectionWithTxid, listFundTransfers } from "@/services/fund-transfer.service"
@@ -76,6 +77,7 @@ export const createFundTransferAction = withAction<CreateFundTransferInput, any>
           error: `Insufficient funds in ${location}. Available: ${available}, required: ${required}. Transfer or inject funds first.`,
         }
       }
+      captureServerError(error, { source: "createFundTransferAction", userId: session.user.id })
       return { error: "Internal server error" }
     }
   },
@@ -119,7 +121,8 @@ export const createCapitalInjectionAction = withAction<CreateCapitalInjectionInp
         notes: `Injected to ${input.toLocation}${input.note ? ` — ${input.note}` : ""}`,
       })
       return { data: transfer, txid }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "createCapitalInjectionAction", userId: session.user.id })
       return { error: "Internal server error" }
     }
   },

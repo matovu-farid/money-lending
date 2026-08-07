@@ -5,6 +5,7 @@ import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp, clearCache
 import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
+import { captureServerWarning } from "@/lib/sentry"
 
 const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
 
@@ -54,6 +55,9 @@ export async function proxy(request: NextRequest) {
   try {
     session = await auth.api.getSession({ headers: request.headers })
   } catch (err) {
+    captureServerWarning("Proxy session lookup failed; treating request as unauthenticated", {
+      source: "proxy.session-lookup",
+    })
     console.error("[proxy] auth.api.getSession failed:", err)
   }
 
@@ -89,6 +93,9 @@ export async function proxy(request: NextRequest) {
         if (dbUser.role && dbUser.role !== "unassigned") role = dbUser.role
       }
     } catch (err) {
+      captureServerWarning("Proxy user role lookup failed; using cached session values", {
+        source: "proxy.user-lookup",
+      })
       // Fall through with whatever the session already has — better to send
       // the user to verify-email or pending-approval than to 500 the request.
       console.error("[proxy] user role lookup failed:", err)

@@ -14,6 +14,7 @@ import { writeAuditLog } from "./audit.service"
 import { autoPostRateChangeAdjustment } from "./auto-post.service"
 import { shortId } from "@/lib/utils"
 import { assertLoanOperational } from "@/lib/loan-visibility"
+import { captureServerWarning } from "@/lib/sentry"
 import type {
   CreateRateChangeRequestInput,
   ReviewRateChangeRequestInput,
@@ -90,6 +91,9 @@ function parseRateAuditValue(value: string | null): Record<string, unknown> {
     const parsed: unknown = JSON.parse(value)
     return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {}
   } catch {
+    captureServerWarning("Rate-change audit value could not be parsed", {
+      source: "rate-change.audit-parse",
+    })
     return {}
   }
 }

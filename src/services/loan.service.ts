@@ -61,6 +61,7 @@ import {
 import { assertLoanOperational } from "@/lib/loan-visibility";
 import { filterLoansForExport } from "@/lib/loan-filters";
 import { cancelPendingRateChangeRequestsForLoan } from "./rate-change-request.service";
+import { captureServerWarning } from "@/lib/sentry";
 
 const checkCustomerCompleteness = (customer: {
   fullName: string | null;
@@ -597,6 +598,9 @@ export async function getRolloverAuditEntries(
       try {
         afterValue = JSON.parse(row.afterValue) as typeof afterValue;
       } catch {
+        captureServerWarning("Loan rollover audit value could not be parsed", {
+          source: "loan-rollover.audit-parse",
+        });
         afterValue = null;
       }
     }
@@ -1455,6 +1459,9 @@ export async function computeOverdue(
     if (loan.status === "active") {
       const ledgerBalance = ledgerBalances.get(loan.id);
       if (ledgerBalance === undefined) {
+        captureServerWarning("Overdue calculation ledger entry missing; using principal fallback", {
+          source: "overdue-calculation.missing-ledger",
+        });
         console.warn(
           `[computeOverdue] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
         );

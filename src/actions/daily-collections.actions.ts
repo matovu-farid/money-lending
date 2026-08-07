@@ -2,6 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import {
   getDailyCollections,
   getLoansDueToday,
@@ -17,7 +18,8 @@ export const getDailyCollectionsAction = withAction<string, any>({
     try {
       const data = await Effect.runPromise(getDailyCollections(date))
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getDailyCollectionsAction", date })
       return { error: "Internal server error" }
     }
   },

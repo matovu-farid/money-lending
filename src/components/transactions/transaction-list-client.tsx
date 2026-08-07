@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/dialog"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { MoneyInput } from "@/components/ui/money-input"
+import { captureClientError } from "@/lib/sentry"
 import { DepositLocationSelect } from "@/components/ui/deposit-location-select"
 import { formatDate, formatCurrency, todayDateString } from "@/lib/utils"
 import { usePermissions } from "@/hooks/use-permissions"
@@ -238,6 +239,7 @@ export function TransactionListClient({
       })
       if ("data" in result) setReceipt(result.data)
     } catch (err) {
+      captureClientError(err, { source: "transaction-list.record" })
       const msg = err instanceof Error ? err.message : labels.failRecord
       toast.error(msg)
     } finally {
@@ -273,7 +275,8 @@ export function TransactionListClient({
       collection.delete(deleteTarget)
       toast.success(labels.successDelete)
       setDeleteTarget(null)
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "transaction-list.delete" })
       toast.error(labels.failDelete)
     } finally {
       setIsDeletePending(false)

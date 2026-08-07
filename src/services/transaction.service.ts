@@ -42,6 +42,7 @@ import {
   getPaymentPortionsFromLedger,
 } from "./ledger-queries.service";
 import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
+import { captureServerWarning } from "@/lib/sentry";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -713,6 +714,9 @@ export const accrueInterestForLoans = (
         );
 
       if (!receivableCat || !earnedCat) {
+        captureServerWarning("Interest accrual categories missing; skipping loan accrual", {
+          source: "interest-accrual.loan-categories-missing",
+        });
         console.warn(
           "[accrueInterestForLoans] Required categories not found — skipping",
         );
@@ -927,6 +931,9 @@ export const accrueInterestForCreditors = (
         );
 
       if (!payableCat || !expenseCat) {
+        captureServerWarning("Interest accrual categories missing; skipping creditor accrual", {
+          source: "interest-accrual.creditor-categories-missing",
+        });
         console.warn(
           "[accrueInterestForCreditors] Required categories not found — skipping",
         );
@@ -964,6 +971,9 @@ export const accrueInterestForCreditors = (
         const principalBalance =
           ledgerBalances.get(investment.id) ??
           (() => {
+            captureServerWarning("Creditor interest ledger entry missing; using amount fallback", {
+              source: "interest-accrual.creditor-missing-ledger",
+            });
             console.warn(
               `[accrueInterestForCreditors] No ledger entries for investment ${investment.id}, using amount as fallback`,
             );

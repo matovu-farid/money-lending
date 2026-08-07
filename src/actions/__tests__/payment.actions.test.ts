@@ -427,6 +427,20 @@ describe("Payment Actions", () => {
       const result = await editPaymentAction(validInput)
       expect(result).toEqual({ error: "Payment not found" })
     })
+
+    it("reports unexpected service failures", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetUserRole.mockReturnValue("admin")
+      mockEditPayment.mockReturnValue(Effect.fail(new Error("db down")) as any)
+
+      const result = await editPaymentAction(validInput)
+
+      expect(result).toEqual({ error: "Internal server error" })
+      expect(mockCaptureServerError).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ source: "editPaymentAction" }),
+      )
+    })
   })
 
   // ===== deletePaymentAction =====
@@ -519,6 +533,10 @@ describe("Payment Actions", () => {
       mockListActivePaymentsByLoan.mockRejectedValue(new Error("db down"))
       const result = await getPaymentsByLoanAction("loan-1")
       expect(result).toEqual({ error: "Internal server error" })
+      expect(mockCaptureServerError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ source: "getPaymentsByLoanAction" }),
+      )
     })
   })
 

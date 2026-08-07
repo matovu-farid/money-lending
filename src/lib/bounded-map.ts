@@ -9,6 +9,8 @@
  * call sites use this to call `collection.cleanup()`.
  */
 
+import { captureClientError } from "@/lib/sentry"
+
 export function boundedTouch<K, V>(map: Map<K, V>, key: K): void {
   if (!map.has(key)) return
   const value = map.get(key)!
@@ -46,7 +48,9 @@ export function boundedSet<K, V>(
           "catch" in result &&
           typeof (result as { catch: unknown }).catch === "function"
         ) {
-          ;(result as Promise<unknown>).catch(() => {})
+          ;(result as Promise<unknown>).catch((error) => {
+            captureClientError(error, { source: "bounded-map.on-evict" })
+          })
         }
       }
     }

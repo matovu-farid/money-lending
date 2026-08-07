@@ -42,6 +42,7 @@ import {
   type Loan,
 } from "@/types";
 import { revalidatePath } from "next/cache";
+import { captureServerError } from "@/lib/sentry";
 
 type LoanPaymentContextData = NonNullable<
   Awaited<ReturnType<typeof getLoanPaymentContext>>
@@ -341,7 +342,8 @@ export async function createLoanAction(input: CreateLoanInput) {
           error: `Insufficient funds in ${loc}. Available: ${formatAmount(available)}, required: ${formatAmount(freshAmount)}. ${action}`,
         };
       }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "createLoanAction:fund-check", userId: session.user.id })
       return { error: "Unable to verify fund balances. Please try again." };
     }
   }
@@ -431,6 +433,11 @@ export async function createLoanAction(input: CreateLoanInput) {
         error: `Missing fields: ${missing?.join(", ") ?? "unknown"}`,
       };
     }
+    captureServerError(error, {
+      source: "createLoanAction",
+      userId: session.user.id,
+      customerId: input.customerId,
+    });
     return { error: "Internal server error" };
   }
 }
@@ -443,7 +450,8 @@ export const getCustomerLoansWithOverdueAction = withAction<
   action: async (_session, customerId) => {
     try {
       return { data: await getCustomerLoansWithOverdue(customerId) };
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getCustomerLoansWithOverdueAction", customerId });
       return { error: "Internal server error" };
     }
   },
@@ -454,7 +462,8 @@ export const getLoanStatusCountsAction = withAction({
   action: async () => {
     try {
       return { data: await getLoanStatusCounts() };
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "getLoanStatusCountsAction" });
       return { error: "Internal server error" };
     }
   },
@@ -480,7 +489,8 @@ export const exportLoansExcelAction = withAction<
       }
       const base64 = btoa(binary);
       return { data: base64 };
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "exportLoansExcelAction" });
       return { error: "Internal server error" };
     }
   },
@@ -491,7 +501,8 @@ export const listActiveLoansWithOverdueAction = withAction({
   action: async () => {
     try {
       return { data: await listActiveLoansWithOverdue() };
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "listActiveLoansWithOverdueAction" });
       return { error: "Internal server error" };
     }
   },
@@ -519,6 +530,7 @@ export const waivePenaltyAction = withAction<
             (e as { message?: string }).message ?? "Loan is not active",
         };
       }
+      captureServerError(e, { source: "waivePenaltyAction", userId: session.user.id, loanId });
       return { error: "Internal server error" };
     }
   },
@@ -558,6 +570,7 @@ const adjustPenaltyMultiplierWrapped = withAction<
             (e as { message?: string }).message ?? "Loan is not active",
         };
       }
+      captureServerError(e, { source: "adjustPenaltyMultiplierAction", loanId });
       return { error: "Internal server error" };
     }
   },

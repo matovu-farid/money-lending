@@ -23,6 +23,7 @@ import { LoanSearchBar } from "@/components/loans/loan-search-bar";
 import { filterLoansByCustomerName } from "@/lib/loan-filters";
 import { getBaseRate } from "@/lib/interest/effective-rate";
 import { LoanInterestRateCell } from "@/components/loans/loan-interest-rate-cell";
+import { captureClientError } from "@/lib/sentry";
 
 type FilterCategory = "all" | "critical" | "at-risk" | "early";
 const EMPTY_LOAN_ENTRIES: LoanListEntry[] = [];
@@ -182,7 +183,8 @@ export default function LoansPage() {
         `sovereign-ledger-loans-${dateStr}.xlsx`,
       );
       toast.success("Excel file downloaded");
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "loans.export" });
       toast.error("Failed to export loans");
     } finally {
       setIsExporting(false);

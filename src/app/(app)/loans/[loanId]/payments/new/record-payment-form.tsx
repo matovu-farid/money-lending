@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
+import { captureClientError } from "@/lib/sentry";
 import { generateClientId } from "@/lib/client-id";
 import {
   insertPaymentWithInput,
@@ -182,6 +183,7 @@ export function RecordPaymentForm({
       setConfirmOpen(false);
       setPendingData(null);
     } catch (err) {
+      captureClientError(err, { source: "payments.record" });
       const message =
         err instanceof Error ? err.message : "Failed to record payment";
       toast.error(message);

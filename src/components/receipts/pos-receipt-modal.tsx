@@ -10,6 +10,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { captureClientError } from "@/lib/sentry";
 
 interface PosReceiptModalProps {
   open: boolean;
@@ -111,6 +112,7 @@ export function PosReceiptModal({
       link.href = dataUrl;
       link.click();
     } catch (err) {
+      captureClientError(err, { source: "pos-receipt.capture" });
       console.error("Failed to capture receipt:", err);
     } finally {
       setDownloading(false);
@@ -187,6 +189,7 @@ export function PosReceiptModal({
         }, 100);
       };
     } catch (err) {
+      captureClientError(err, { source: "pos-receipt.print" });
       console.error("Failed to print receipt:", err);
     }
   }, [generateReceiptImage, title]);

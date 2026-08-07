@@ -16,6 +16,7 @@ import {
   type LoanDueToday,
 } from "@/types";
 import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
+import { captureServerWarning } from "@/lib/sentry";
 
 export const getDailyCollections = (
   date: string,
@@ -63,6 +64,9 @@ export const getDailyCollections = (
               .plus(portion.principalPortion);
           }
           // Fallback for payments without ledger entries (should not happen)
+          captureServerWarning("Daily collections payment ledger entry missing; using payment amount fallback", {
+            source: "daily-collections.missing-ledger",
+          });
           console.warn(
             `[getDailyCollections] No ledger entries for payment ${r.paymentId}`,
           );

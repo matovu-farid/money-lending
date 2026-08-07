@@ -17,6 +17,7 @@ import { invalidateLendingProjections } from "@/lib/cache-invalidation"
 import { emitTableChange } from "@/lib/table-events"
 import { throwIfActionError, coerceDates } from "./_utils"
 import { operationalLoanCollection } from "./operational-loans"
+import { captureClientError } from "@/lib/sentry"
 
 /**
  * Row shape synced via HTTP polling — mirrors the `loans` DB table with
@@ -74,6 +75,7 @@ export const loanCollection = createCollection(
       try {
         throwIfActionError(await createLoanAction(meta.input))
       } catch (err) {
+        captureClientError(err, { source: "collections.loans.on-insert" })
         // Restore operational/loan collections after optimistic writeDelete/writeUpdate
         invalidateLendingProjections(getQueryClient())
         throw err
@@ -100,7 +102,8 @@ export const loanCollection = createCollection(
         )
         try {
           operationalLoanCollection.utils.writeDelete(original.id)
-        } catch {
+        } catch (error) {
+          captureClientError(error, { source: "collections.loans.settle.write-delete" })
           // May already be absent from operational sync
         }
         invalidateLendingProjections(getQueryClient())
@@ -155,12 +158,14 @@ export async function insertLoanWithInput(
         id: predecessorId,
         status: "rolled_over",
       })
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "collections.loans.rollover.write-update" })
       // Predecessor may be outside the capped sync window / not yet synced
     }
     try {
       operationalLoanCollection.utils.writeDelete(predecessorId)
-    } catch {
+    } catch (error) {
+      captureClientError(error, { source: "collections.loans.rollover.write-delete" })
       // May already be absent from operational sync
     }
   }
@@ -172,7 +177,8 @@ export async function insertLoanWithInput(
   // New loan is active — keep operational watchlist in sync immediately
   try {
     operationalLoanCollection.utils.writeInsert(optimistic)
-  } catch {
+  } catch (error) {
+    captureClientError(error, { source: "collections.loans.insert.write-insert" })
     // Refetch via invalidateLendingProjections on persist will repair
   }
 }

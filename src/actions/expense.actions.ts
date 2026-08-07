@@ -3,6 +3,7 @@
 import { Effect } from "effect"
 import BigNumber from "bignumber.js"
 import { withAction } from "@/lib/with-action"
+import { captureServerError } from "@/lib/sentry"
 import { getUserRole, getSessionPermissions, validateBackdating } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import { recordExpense, deleteTransaction, listTransactions } from "@/services/transaction.service"
@@ -70,7 +71,8 @@ export const recordExpenseAction = withAction<
           : "Transfer or inject funds first."
         return { error: `Insufficient funds in ${loc}. ${action}` }
       }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "recordExpenseAction:fund-check", userId: session.user.id })
       return { error: "Unable to verify fund balances. Please try again." }
     }
 
@@ -94,6 +96,7 @@ export const recordExpenseAction = withAction<
       }
       return { success: true as const }
     } catch (err) {
+      captureServerError(err, { source: "recordExpenseAction", userId: session.user.id })
       console.error("[recordExpenseAction]", err)
       return { error: "Internal server error" }
     }

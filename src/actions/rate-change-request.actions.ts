@@ -13,6 +13,7 @@ import {
   type LoanRateChangeHistoryEntry,
 } from "@/types"
 import { getBaseRate } from "@/lib/interest/effective-rate"
+import { captureServerError } from "@/lib/sentry"
 import {
   applyRateChangeImmediately,
   applyAdminRateAdjustment,
@@ -71,6 +72,11 @@ export const adjustLoanInterestRateAction = withAction<
         const message = error instanceof Error ? error.message : "Unable to adjust interest rate"
         return { error: message }
       }
+      captureServerError(error, {
+        source: "adjustLoanInterestRateAction",
+        userId: session.user.id,
+        loanId: input.loanId,
+      })
       return { error: "Internal server error" }
     }
   },
@@ -141,6 +147,11 @@ export async function requestRateChangeAction(
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
+      captureServerError(error, {
+        source: "requestRateChangeAction:apply",
+        userId: session.user.id,
+        loanId: input.loanId,
+      })
       return { error: "Internal server error" }
     }
   }
@@ -166,6 +177,11 @@ export async function requestRateChangeAction(
     if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
     }
+    captureServerError(error, {
+      source: "requestRateChangeAction:create",
+      userId: session.user.id,
+      loanId: input.loanId,
+    })
     return { error: "Internal server error" }
   }
 }
@@ -186,7 +202,8 @@ export async function listAllRequestsAction(): Promise<
   try {
     const data = await Effect.runPromise(listAllRequests())
     return { data }
-  } catch {
+  } catch (error) {
+    captureServerError(error, { source: "listAllRequestsAction", userId: session.user.id })
     return { error: "Internal server error" }
   }
 }
@@ -204,7 +221,8 @@ export const listRequestsForLoanAction = withAction<
     try {
       const data = await Effect.runPromise(listRequestsForLoan(loanId))
       return { data }
-    } catch {
+    } catch (error) {
+      captureServerError(error, { source: "listRequestsForLoanAction", loanId })
       return { error: "Internal server error" }
     }
   },
@@ -260,6 +278,11 @@ export async function reviewRateChangeRequestAction(
     if (getErrorTag(error) === "RateChangeRequestNotFound") {
       return { error: "Rate change request not found" }
     }
+    captureServerError(error, {
+      source: "reviewRateChangeRequestAction",
+      userId: session.user.id,
+      requestId: input.requestId,
+    })
     return { error: "Internal server error" }
   }
 }
@@ -283,7 +306,8 @@ export async function countPendingRequestsAction(): Promise<{ data: number } | {
   try {
     const count = await Effect.runPromise(countPendingRequests())
     return { data: count }
-  } catch {
+  } catch (error) {
+    captureServerError(error, { source: "countPendingRequestsAction", userId: session.user.id })
     return { data: 0 }
   }
 }

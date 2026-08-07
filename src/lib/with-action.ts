@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import type { Permission } from "@/types"
 import { headers } from "next/headers"
 import { isIpAllowlistEnabled, isIpAllowed, recordBlock, getClientIp } from "@/lib/ip-allowlist"
-import { captureServerError } from "@/lib/sentry"
+import { captureServerError, isExpectedDomainError } from "@/lib/sentry"
 
 /** The session type returned by getSession() when non-null. */
 export type Session = NonNullable<Awaited<ReturnType<typeof getSession>>>
@@ -75,25 +75,50 @@ export function withAction<TInput, TData>(
 
 export function withAction(opts: any): (input?: any) => Promise<any> {
   return async (input?: any) => {
-    const session = await getSession()
+    let session: Session | null
+    try {
+      session = await getSession()
+    } catch (error) {
+      captureServerError(error, { source: "withAction:session" })
+      return { error: "Internal server error" }
+    }
     if (!session) return { error: "Unauthorized" }
 
     if (opts.permission) {
-      const forbidden = await checkPermission(session, opts.permission, opts.forbiddenMessage)
+      let forbidden: string | null
+      try {
+        forbidden = await checkPermission(session, opts.permission, opts.forbiddenMessage)
+      } catch (error) {
+        captureServerError(error, {
+          source: "withAction:permission",
+          permission: opts.permission,
+          userId: session.user.id,
+        })
+        return { error: "Internal server error" }
+      }
       if (forbidden) return { error: forbidden }
     }
 
     // IP allowlist gate (lower roles only)
     const role = (session.user as Record<string, unknown>).role
     if (role !== "admin" && role !== "superAdmin") {
-      if (await isIpAllowlistEnabled()) {
-        const h = await headers()
-        const clientIp = getClientIp(h)
-        const allowed = clientIp ? await isIpAllowed(clientIp) : false
-        if (!allowed) {
-          void recordBlock(session.user.id, clientIp ?? "unknown", "(server action)")
-          return { error: "Access blocked: this device or network isn't recognized." }
+      try {
+        if (await isIpAllowlistEnabled()) {
+          const h = await headers()
+          const clientIp = getClientIp(h)
+          const allowed = clientIp ? await isIpAllowed(clientIp) : false
+          if (!allowed) {
+            void recordBlock(session.user.id, clientIp ?? "unknown", "(server action)")
+            return { error: "Access blocked: this device or network isn't recognized." }
+          }
         }
+      } catch (error) {
+        captureServerError(error, {
+          source: "withAction:ip-allowlist",
+          userId: session.user.id,
+          role,
+        })
+        return { error: "Internal server error" }
       }
     }
 
@@ -117,12 +142,15 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
         return { data }
       } catch (error) {
         const tag = getErrorTag(error)
-        // Expected, declared failure modes mapped via opts.errors are NOT
-        // reported to Sentry — they are user-facing business errors
-        // (e.g. CustomerNotFound, ValidationError). Anything else is an
-        // unexpected exception and gets forwarded.
-        if (tag && opts.errors && tag in opts.errors) {
-          return { error: opts.errors[tag] }
+        const mappedMessage =
+          tag && opts.errors && tag in opts.errors ? opts.errors[tag] : undefined
+
+        // Expected, declared failure modes mapped via opts.errors are user-
+        // facing business outcomes. Technical failures (including
+        // DatabaseError) are captured even when they have a configured UI
+        // message, so a friendly response cannot hide the incident.
+        if (mappedMessage && isExpectedDomainError(error)) {
+          return { error: mappedMessage }
         }
         captureServerError(error, {
           source: "withAction:effect",
@@ -132,7 +160,7 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
           errorTag: tag,
         })
         console.error("[withAction]", error)
-        return { error: "Internal server error" }
+        return { error: mappedMessage ?? "Internal server error" }
       }
     }
 
@@ -141,28 +169,6 @@ export function withAction(opts: any): (input?: any) => Promise<any> {
     // generic "Server Action error".
     try {
       const result = await opts.action(session, input)
-      // Many classic actions catch their own errors and return a generic
-      // `{ error: "Internal server error" }`. That's the swallow pattern —
-      // by the time we get here, the original error is gone. Forward a
-      // low-fidelity warning to Sentry so the rate of these is visible
-      // (we won't have a stack trace, but we'll see "this action is
-      // failing more than expected" trends).
-      if (
-        result &&
-        typeof result === "object" &&
-        "error" in (result as Record<string, unknown>) &&
-        (result as Record<string, unknown>).error === "Internal server error"
-      ) {
-        captureServerError(
-          new Error("Action returned 'Internal server error' (original swallowed in inner try/catch)"),
-          {
-            source: "withAction:classic:swallowed",
-            permission: opts.permission,
-            userId: session.user.id,
-            role: (session.user as Record<string, unknown>).role,
-          },
-        )
-      }
       return result
     } catch (error) {
       captureServerError(error, {
