@@ -1035,7 +1035,9 @@ export function LoanDetailClient({
         <WaiverHistorySection
           loanId={loan.id}
           userNameMap={userNameMap}
-          canUndo={canViewWaivers}
+          canUndo={
+            loan.status === "active" || loan.status === "fully_paid"
+          }
         />
       )}
 

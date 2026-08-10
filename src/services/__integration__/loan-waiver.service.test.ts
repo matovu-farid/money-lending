@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { Effect, Exit } from "effect";
+import { Effect } from "effect";
+import { endOfDay } from "date-fns";
 import { eq } from "drizzle-orm";
 import BigNumber from "bignumber.js";
 import { resetDb, testDb, seedCategories } from "./setup";
@@ -18,7 +19,7 @@ import {
   getLoanBalancesFromLedger,
   getWaiverPortionsFromLedger,
 } from "@/services/ledger-queries.service";
-import { ValidationError } from "@/lib/errors";
+import { __resetCategoryCacheForTests } from "@/services/transaction.service";
 
 async function makeCustomer() {
   return Effect.runPromise(
@@ -61,12 +62,44 @@ describe(
   () => {
     beforeEach(async () => {
       await resetDb();
+      __resetCategoryCacheForTests();
       await seedCategories();
+      const [cashCategory] = await testDb
+        .select({ id: transactionCategories.id })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.name, "Cash"));
+      const [shareCapitalCategory] = await testDb
+        .select({ id: transactionCategories.id })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.name, "Share Capital"));
+      const journalGroupId = crypto.randomUUID();
+      const transactionDate = new Date();
+      await testDb.insert(transactions).values([
+        {
+          type: "debit",
+          amount: "10000000.00",
+          categoryId: cashCategory.id,
+          description: "Integration-test cash seed",
+          transactionDate,
+          recordedBy: "test-actor",
+          depositLocation: "cash",
+          journalGroupId,
+        },
+        {
+          type: "credit",
+          amount: "10000000.00",
+          categoryId: shareCapitalCategory.id,
+          description: "Integration-test capital seed",
+          transactionDate,
+          recordedBy: "test-actor",
+          journalGroupId,
+        },
+      ]);
     }, TEST_TIMEOUT);
 
     it("partial principal waiver reduces ledger balance", async () => {
       const customer = await makeCustomer();
-      const loan = await makeLoan(customer.id);
+      const loan = await makeLoan(customer.id, "1000000.00", "0");
 
       const before = await getLoanBalancesFromLedger([loan.id]);
       expect(before.get(loan.id)?.toFixed(0)).toBe("1000000");
@@ -99,7 +132,7 @@ describe(
 
       const beforeBalance = await computeSingleLoanBalanceData(
         loan.id,
-        new Date("2025-02-15T12:00:00.000Z"),
+        endOfDay(new Date()),
       );
       expect(new BigNumber(beforeBalance.unpaidInterest).isGreaterThan(0)).toBe(
         true,
