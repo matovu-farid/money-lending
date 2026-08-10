@@ -15,8 +15,9 @@
 - Modify `src/types/loan-waiver.ts`: add the undo input and service result types.
 - Modify `src/services/loan-waiver.service.ts`: add the transactional undo operation and exact ledger reversal.
 - Modify `src/actions/loan-waiver.actions.ts`: expose and authorize undo, validate the undo input, and revalidate the loan route.
-- Modify `src/collections/loan-waivers.ts`: expose shared invalidation and a persisted undo helper for the UI.
+- Modify `src/collections/loan-waivers.ts`: expose the shared waiver-mutation invalidation helper used by the UI.
 - Modify `src/components/loans/waive-loan-dialog.tsx`: split edit/review state, add undo confirmation, and render undo controls in history.
+- Modify `src/components/ui/confirm-summary-dialog.tsx`: support returning to an editor without closing its parent form.
 - Modify `src/app/(app)/loans/[loanId]/loan-detail-client.tsx`: show waiver history for authorized admins on `fully_paid` loans and wire undo/create permissions separately.
 - Modify `src/services/__integration__/loan-waiver.service.test.ts`: add red/green service tests for reversal, status restoration, and rejection cases.
 - Modify `src/actions/__tests__/authorization.test.ts`: add undo permission and validation coverage.
@@ -161,6 +162,7 @@ Expected: the authorization suite passes.
 **Files:**
 - Modify: `src/collections/loan-waivers.ts`
 - Modify: `src/components/loans/waive-loan-dialog.tsx`
+- Modify: `src/components/ui/confirm-summary-dialog.tsx`
 
 - [ ] **Step 1: Export a loan-waiver invalidation helper.**
 
@@ -207,7 +209,9 @@ Add `reviewStep` and `pendingData` state. Replace `handleSubmit` with validation
 
 - [ ] **Step 2: Render the review summary.**
 
-When review state is active, render `ConfirmSummaryDialog` with lines for `Amount Waived`, `Interest Waived`, `Principal Waived`, `Balance After Waiver`, and `Reason`; use `CurrencyCell`/`formatCurrency` for monetary values, emphasize the total amount, and use `Back` to clear review state only. Confirm calls the existing insert flow and closes only after `tx.isPersisted.promise` resolves.
+When review state is active, render `ConfirmSummaryDialog` with lines for `Amount Waived`, `Interest Waived`, `Principal Waived`, `Balance After Waiver`, and `Reason`; use `formatCurrency` for monetary values, emphasize the total amount, and use the dialog’s `onGoBack` callback to clear review state while keeping the editor open. Confirm calls the existing insert flow and closes only after `tx.isPersisted.promise` resolves.
+
+Add an optional `onGoBack?: () => void` prop to `ConfirmSummaryDialog`; the Back button calls it when supplied and otherwise preserves its existing close behavior.
 
 - [ ] **Step 3: Render amount and undo confirmation.**
 

@@ -99,6 +99,78 @@ describe("Loan Detail Page (/loans/[loanId])", () => {
     })
   })
 
+  describe("Loan waiver review and undo", () => {
+    function openWaiverDialog() {
+      cy.visit(`/loans/${loanId}`)
+      cy.contains("Detail Test Customer", { timeout: 15000 }).should("be.visible")
+      cy.contains("button", "Waive Amount").click()
+      cy.contains("Waive Loan Amount").should("be.visible")
+    }
+
+    it("reviews a waiver before saving and allows going back without creating it", () => {
+      openWaiverDialog()
+      cy.get("#waiver-amount").type("100000")
+      cy.get("#waiver-reason").type("Approved hardship reduction for review")
+      cy.contains("button", "Review Waiver").click()
+
+      cy.contains("Amount Waived").should("be.visible")
+      cy.contains("100,000").should("be.visible")
+      cy.contains("button", "Back").click()
+
+      cy.contains("Amount Waived").should("not.exist")
+      cy.contains("Waiver History").should("not.exist")
+    })
+
+    it("shows the waived amount in history only after review confirmation", () => {
+      openWaiverDialog()
+      cy.get("#waiver-amount").type("100000")
+      cy.get("#waiver-reason").type("Approved hardship reduction for history")
+      cy.contains("button", "Review Waiver").click()
+      cy.contains("button", "Confirm & Waive").click()
+      cy.contains("Loan amount waived", { timeout: 15000 }).should("be.visible")
+
+      cy.reload()
+      cy.contains("Waiver History", { timeout: 15000 }).should("be.visible")
+      cy.contains("Amount Waived").should("be.visible")
+      cy.contains("100,000").should("be.visible")
+    })
+
+    it("undoes a full waiver and returns the loan to active loans", () => {
+      openWaiverDialog()
+
+      cy.contains("Total Due")
+        .parent()
+        .find("span")
+        .last()
+        .invoke("text")
+        .then((totalDueText) => {
+          const totalDue = totalDueText.replace(/[^0-9]/g, "")
+          cy.get("#waiver-amount").type(totalDue)
+          cy.get("#waiver-reason").type("Full waiver approved for settlement")
+          cy.contains("button", "Review Waiver").click()
+          cy.contains("button", "Confirm & Waive").click()
+        })
+
+      cy.contains("Loan amount waived", { timeout: 15000 }).should("be.visible")
+      cy.contains("Fully Paid", { timeout: 15000 }).should("be.visible")
+      cy.contains("button", "Undo").click()
+      cy.contains("Undo Waiver").should("be.visible")
+      cy.contains("write-down will be reversed").should("be.visible")
+
+      cy.get("#undo-waiver-reason").type("short")
+      cy.contains("button", "Undo Waiver").click()
+      cy.contains("Reason must be at least 10 characters").should("be.visible")
+
+      cy.get("#undo-waiver-reason").clear().type("Settlement correction approved by management")
+      cy.contains("button", "Undo Waiver").click()
+      cy.contains("Loan waiver undone", { timeout: 15000 }).should("be.visible")
+      cy.contains("Active", { timeout: 15000 }).should("be.visible")
+
+      cy.visit("/loans")
+      cy.contains("Detail Test Customer", { timeout: 15000 }).should("be.visible")
+    })
+  })
+
   describe("Loan info cards", () => {
     it("shows the Principal card with formatted amount", () => {
       cy.visit(`/loans/${loanId}`)

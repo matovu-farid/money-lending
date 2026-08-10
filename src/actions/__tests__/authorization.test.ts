@@ -27,6 +27,9 @@ vi.mock("@/lib/validators", () => ({
   validatePositiveDecimal: vi.fn(() => null),
   validateRequired: vi.fn(),
   validateWaiveLoanAmountInput: vi.fn(() => null),
+  validateWaiveReason: vi.fn((value: string) =>
+    value.trim().length < 10 ? "Reason must be at least 10 characters" : null,
+  ),
   validateUuid: vi.fn(() => null),
 }))
 
@@ -211,6 +214,16 @@ vi.mock("@/services/loan-waiver.service", () => ({
     principalPortion: "500",
     txid: 1,
   }),
+  undoLoanWaiver: vi.fn().mockResolvedValue({
+    loanId: "loan-1",
+    waiverId: "waiver-1",
+    reversedAmount: "1000.00",
+    interestPortion: "500.00",
+    principalPortion: "500.00",
+    previousStatus: "fully_paid",
+    status: "active",
+    txid: 2,
+  }),
   listLoanWaiversForLoan: vi.fn().mockResolvedValue([]),
 }))
 
@@ -248,6 +261,7 @@ vi.mock("@/services/report.service", () => ({
 
 import { getSession, checkPermission, getEffectivePermissions } from "@/lib/action-utils"
 import { editPayment, deletePayment } from "@/services/payment.service"
+import { undoLoanWaiver } from "@/services/loan-waiver.service"
 
 import {
   editPaymentAction,
@@ -264,6 +278,7 @@ import {
 } from "../settings.actions"
 
 import {
+  undoLoanWaiverAction,
   waiveLoanAmountAction,
   listLoanWaiversAction,
   previewWaiverAllocationAction,
@@ -276,6 +291,7 @@ const mockCheckPermission = vi.mocked(checkPermission)
 const mockGetEffectivePermissions = vi.mocked(getEffectivePermissions)
 const mockEditPayment = vi.mocked(editPayment)
 const mockDeletePayment = vi.mocked(deletePayment)
+const mockUndoLoanWaiver = vi.mocked(undoLoanWaiver)
 
 // ---------- Helpers ----------
 
@@ -620,6 +636,59 @@ describe("Authorization regression tests", () => {
       mockGetSession.mockResolvedValue(loanOfficerSession)
       const result = await listLoanWaiversAction("loan-1")
       expect(result).toEqual({ error: "Only admins can view loan waivers" })
+    })
+  })
+
+  describe("undoLoanWaiverAction authorization", () => {
+    const input = {
+      waiverId: "00000000-0000-4000-8000-000000000001",
+      reason: "Undo approved after settlement review",
+    }
+
+    it("requires loan:waiver permission", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockCheckPermission.mockResolvedValue(null)
+
+      await undoLoanWaiverAction(input)
+
+      expect(mockCheckPermission).toHaveBeenCalledWith(
+        fakeSession,
+        "loan:waiver",
+        "Only admins can undo loan waivers",
+      )
+    })
+
+    it("rejects loan officers", async () => {
+      mockGetSession.mockResolvedValue(loanOfficerSession)
+      const result = await undoLoanWaiverAction(input)
+
+      expect(result).toEqual({ error: "Only admins can undo loan waivers" })
+      expect(mockUndoLoanWaiver).not.toHaveBeenCalled()
+    })
+
+    it("rejects a short undo reason before calling the service", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const result = await undoLoanWaiverAction({
+        ...input,
+        reason: "too short",
+      })
+
+      expect(result).toEqual({ error: "Reason must be at least 10 characters" })
+      expect(mockUndoLoanWaiver).not.toHaveBeenCalled()
+    })
+
+    it("allows admins and returns the service result", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      const result = await undoLoanWaiverAction(input)
+
+      expect(result).toEqual({
+        data: expect.objectContaining({
+          loanId: "loan-1",
+          waiverId: "waiver-1",
+          status: "active",
+        }),
+      })
+      expect(mockUndoLoanWaiver).toHaveBeenCalledWith(input, fakeSession.user.id)
     })
   })
 

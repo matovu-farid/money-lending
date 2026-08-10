@@ -1,5 +1,6 @@
 import type { InferSelectModel } from "drizzle-orm"
 import type { loanWaivers } from "@/lib/db/schema/loan-waivers"
+import type { LoanStatus } from "./loan"
 
 export interface WaiveLoanAmountInput {
   loanId: string
@@ -8,6 +9,22 @@ export interface WaiveLoanAmountInput {
   /** Client-generated UUID so optimistic collection rows reconcile after persist. */
   id?: string
   // waiverDate: server-set at submit time (decision #6)
+}
+
+export interface UndoLoanWaiverInput {
+  waiverId: string
+  reason: string
+}
+
+export interface UndoLoanWaiverResult {
+  loanId: string
+  waiverId: string
+  reversedAmount: string
+  interestPortion: string
+  principalPortion: string
+  previousStatus: LoanStatus
+  status: LoanStatus
+  txid: number
 }
 
 export type LoanWaiver = InferSelectModel<typeof loanWaivers>

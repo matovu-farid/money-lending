@@ -98,6 +98,7 @@ export function LoanDetailClient({
   const penaltyActive = isPenaltyActive(daysOverdue, loan.penaltyWaived);
   const readOnly = isLoanReadOnly(loan.status);
   const canWaiveAmount = !readOnly && has("loan:waiver");
+  const canViewWaivers = has("loan:waiver");
 
   // Fetch userRole via collection
   const { data: userRoleRows } = useLiveQuery((q) =>
@@ -1030,8 +1031,12 @@ export function LoanDetailClient({
         onDeletePayment={openPaymentDelete}
       />
 
-      {canWaiveAmount && (
-        <WaiverHistorySection loanId={loan.id} userNameMap={userNameMap} />
+      {canViewWaivers && (
+        <WaiverHistorySection
+          loanId={loan.id}
+          userNameMap={userNameMap}
+          canUndo={canViewWaivers}
+        />
       )}
 
       {loan.status === "active" && (

@@ -20,7 +20,7 @@ type WaiverInsertMetadata = {
   input: WaiveLoanAmountInput;
 };
 
-function invalidateCrossCutting(loanId: string) {
+export function invalidateLoanWaiverMutation(loanId: string) {
   const qc = getQueryClient();
   invalidateLendingProjections(qc);
   qc.invalidateQueries({ queryKey: queryKeys.loanWaivers.all });
@@ -55,7 +55,7 @@ function createLoanWaiversCollection(loanId: string) {
           id: meta.input.id ?? modified.id,
         };
         const result = throwIfActionError(await waiveLoanAmountAction(input));
-        invalidateCrossCutting(input.loanId);
+        invalidateLoanWaiverMutation(input.loanId);
         return { txid: result.txid };
       },
     }),

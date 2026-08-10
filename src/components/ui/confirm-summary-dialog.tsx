@@ -28,6 +28,8 @@ interface Props {
   footnote?: ReactNode
   confirmLabel?: string
   goBackLabel?: string
+  /** Return to the editing step without closing the parent form. */
+  onGoBack?: () => void
   /** Visual tone for the confirm button — default keeps the primary look. */
   confirmVariant?: "default" | "destructive"
   isPending?: boolean
@@ -49,6 +51,7 @@ export function ConfirmSummaryDialog({
   footnote,
   confirmLabel = "Confirm & save",
   goBackLabel = "Go back",
+  onGoBack,
   confirmVariant = "default",
   isPending = false,
   onConfirm,
@@ -90,7 +93,10 @@ export function ConfirmSummaryDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => {
+              if (onGoBack) onGoBack();
+              else onOpenChange(false);
+            }}
             disabled={isPending}
           >
             {goBackLabel}

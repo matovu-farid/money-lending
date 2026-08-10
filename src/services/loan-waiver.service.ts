@@ -16,13 +16,16 @@ import {
   isLoanEconomicallyFullyPaid,
   maybeUpdateLoanStatusAfterPayment,
 } from "./payment.service";
-import { reverseInterestAccrual } from "./transaction.service";
+import { postJournalEntry, reverseInterestAccrual } from "./transaction.service";
 import { formatAmount } from "@/lib/interest/engine";
 import { getWaiverPortionsFromLedger } from "./ledger-queries.service";
+import { shortId } from "@/lib/utils";
 import type {
   LoanWaiverWithPortions,
   WaiveLoanAmountInput,
   LoanWaiver,
+  UndoLoanWaiverInput,
+  UndoLoanWaiverResult,
 } from "@/types";
 
 export async function waiveLoanAmount(
@@ -157,6 +160,169 @@ export async function waiveLoanAmount(
     );
 
     return { waiver, interestPortion, principalPortion, txid };
+  });
+}
+
+export async function undoLoanWaiver(
+  input: UndoLoanWaiverInput,
+  actorId: string,
+): Promise<UndoLoanWaiverResult> {
+  const reason = input.reason.trim();
+  if (reason.length < 10) {
+    throw {
+      _tag: "ValidationError",
+      message: "Reason must be at least 10 characters",
+      field: "reason",
+    };
+  }
+
+  return db.transaction(async (tx) => {
+    const [waiver] = await tx
+      .select()
+      .from(loanWaivers)
+      .where(
+        and(
+          eq(loanWaivers.id, input.waiverId),
+          isNull(loanWaivers.deletedAt),
+        ),
+      )
+      .for("update");
+
+    if (!waiver) {
+      throw { _tag: "WaiverNotFound", id: input.waiverId };
+    }
+
+    const [loan] = await tx
+      .select()
+      .from(loans)
+      .where(and(eq(loans.id, waiver.loanId), isNull(loans.deletedAt)))
+      .for("update");
+
+    if (!loan) {
+      throw { _tag: "LoanNotFound", id: waiver.loanId };
+    }
+
+    if (loan.status !== "active" && loan.status !== "fully_paid") {
+      throw {
+        _tag: "ValidationError",
+        message:
+          "Loan waiver can only be undone on active or fully paid loans",
+        field: "status",
+      };
+    }
+
+    const portion = (await getWaiverPortionsFromLedger([waiver.id], tx)).get(
+      waiver.id,
+    );
+    if (!portion) {
+      throw {
+        _tag: "ValidationError",
+        message: "Waiver ledger entries could not be found",
+        field: "waiverId",
+      };
+    }
+
+    const interestPortion = portion.interestPortion;
+    const principalPortion = portion.principalPortion;
+    if (
+      new BigNumber(interestPortion).isZero() &&
+      new BigNumber(principalPortion).isZero()
+    ) {
+      throw {
+        _tag: "ValidationError",
+        message: "Waiver ledger entries could not be found",
+        field: "waiverId",
+      };
+    }
+
+    const reversalDate = new Date();
+    const loanRef = shortId(loan.id).toUpperCase();
+
+    if (new BigNumber(interestPortion).isGreaterThan(0)) {
+      await postJournalEntry(tx, {
+        debitCategory: { name: "Interest Earned", type: "revenue" },
+        creditCategory: { name: "Loan Losses", type: "expense" },
+        amount: interestPortion,
+        referenceType: "loan_waiver_reversal",
+        referenceId: waiver.id,
+        description: `Reversal - interest waiver for loan ${loanRef}: ${reason}`,
+        transactionDate: reversalDate,
+        recordedBy: actorId,
+        loanId: loan.id,
+      });
+    }
+
+    if (new BigNumber(principalPortion).isGreaterThan(0)) {
+      await postJournalEntry(tx, {
+        debitCategory: { name: "Loans Receivable", type: "asset" },
+        creditCategory: { name: "Loan Losses", type: "expense" },
+        amount: principalPortion,
+        referenceType: "loan_waiver_reversal",
+        referenceId: waiver.id,
+        description: `Reversal - principal waiver for loan ${loanRef}: ${reason}`,
+        transactionDate: reversalDate,
+        recordedBy: actorId,
+        loanId: loan.id,
+      });
+    }
+
+    await tx
+      .update(loanWaivers)
+      .set({ deletedAt: reversalDate })
+      .where(
+        and(eq(loanWaivers.id, waiver.id), isNull(loanWaivers.deletedAt)),
+      );
+
+    if (
+      loan.status === "fully_paid" &&
+      !(await isLoanEconomicallyFullyPaid(loan.id, reversalDate, tx))
+    ) {
+      await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
+    }
+
+    const [updatedLoan] = await tx
+      .select({ status: loans.status })
+      .from(loans)
+      .where(eq(loans.id, loan.id));
+    const nextStatus = updatedLoan?.status ?? loan.status;
+
+    await writeAuditLog(tx, {
+      actorId,
+      action: "loan.waiver.undo",
+      entityType: "loan",
+      entityId: loan.id,
+      beforeValue: {
+        waiverId: waiver.id,
+        amount: waiver.amount,
+        interestPortion,
+        principalPortion,
+        status: loan.status,
+      },
+      afterValue: {
+        reason,
+        status: nextStatus,
+      },
+    });
+
+    const txidRows = await tx.execute<{ txid: string }>(
+      sql`SELECT pg_current_xact_id()::text as txid`,
+    );
+    const txid = Number(
+      (txidRows as unknown as Array<{ txid: string }>)[0].txid,
+    );
+
+    return {
+      loanId: loan.id,
+      waiverId: waiver.id,
+      reversedAmount: formatAmount(
+        new BigNumber(interestPortion).plus(principalPortion),
+      ),
+      interestPortion,
+      principalPortion,
+      previousStatus: loan.status,
+      status: nextStatus,
+      txid,
+    };
   });
 }
 

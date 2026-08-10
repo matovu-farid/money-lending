@@ -6,10 +6,13 @@ import { withAction } from "@/lib/with-action";
 import { getErrorTag } from "@/lib/action-utils";
 import {
   validatePositiveDecimal,
+  validateUuid,
+  validateWaiveReason,
   validateWaiveLoanAmountInput,
 } from "@/lib/validators";
 import { allocateLoanSettlementAmount } from "@/lib/interest/engine-server";
 import {
+  undoLoanWaiver,
   waiveLoanAmount,
   listLoanWaiversForLoan,
 } from "@/services/loan-waiver.service";
@@ -18,6 +21,8 @@ import { captureServerError } from "@/lib/sentry";
 import type {
   LoanWaiver,
   LoanWaiverWithPortions,
+  UndoLoanWaiverInput,
+  UndoLoanWaiverResult,
   WaiveLoanAmountInput,
 } from "@/types";
 
@@ -66,6 +71,42 @@ export const waiveLoanAmountAction = withAction<
         source: "waiveLoanAmountAction",
         userId: session.user.id,
         loanId: input.loanId,
+      });
+      return { error: "Internal server error" };
+    }
+  },
+});
+
+export const undoLoanWaiverAction = withAction<
+  UndoLoanWaiverInput,
+  { data: UndoLoanWaiverResult } | { error: string }
+>({
+  permission: "loan:waiver",
+  forbiddenMessage: "Only admins can undo loan waivers",
+  action: async (session, input) => {
+    const waiverIdErr = validateUuid(input.waiverId, "Waiver ID");
+    if (waiverIdErr) return { error: waiverIdErr };
+    const reasonErr = validateWaiveReason(input.reason);
+    if (reasonErr) return { error: reasonErr };
+
+    try {
+      const result = await undoLoanWaiver(input, session.user.id);
+      revalidatePath(`/loans/${result.loanId}`);
+      return { data: result };
+    } catch (error) {
+      const tag = getErrorTag(error);
+      if (tag === "LoanNotFound") return { error: "Loan not found" };
+      if (tag === "WaiverNotFound") return { error: "Waiver not found" };
+      if (tag === "ValidationError") {
+        return {
+          error:
+            (error as { message?: string }).message ?? "Validation error",
+        };
+      }
+      captureServerError(error, {
+        source: "undoLoanWaiverAction",
+        userId: session.user.id,
+        waiverId: input.waiverId,
       });
       return { error: "Internal server error" };
     }
