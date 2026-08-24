@@ -23,6 +23,11 @@ import { captureServerWarning } from "@/lib/sentry";
 
 type QueryDb = Pick<typeof db, "select">;
 
+export type LoanBalanceDataOptions = {
+  /** Treat these loans as operational while calculating their balance. */
+  forceOperationalLoanIds?: readonly string[];
+};
+
 type BalanceInfo = ReturnType<typeof computeLoanOverdueInfo> & {
   totalBalanceOwed: string;
   loanId: string;
@@ -51,8 +56,11 @@ export async function computeSingleLoanBalanceData(
   loanId: string,
   asOf: Date,
   queryDb: QueryDb = db,
+  options: LoanBalanceDataOptions = {},
 ) {
-  return (await computeLoanBalanceData([loanId], asOf, queryDb)).get(loanId)!;
+  return (
+    await computeLoanBalanceData([loanId], asOf, queryDb, options)
+  ).get(loanId)!;
 }
 
 export async function computeAllLoansBalanceData() {
@@ -83,6 +91,7 @@ export async function computeLoanBalanceData(
   loanIds: string[],
   asOf: Date,
   queryDb: QueryDb = db,
+  options: LoanBalanceDataOptions = {},
 ) {
   const results: Map<string, BalanceInfo> = new Map();
   if (loanIds.length === 0) return results;
@@ -92,11 +101,17 @@ export async function computeLoanBalanceData(
     .from(loans)
     .where(and(inArray(loans.id, loanIds), isNull(loans.deletedAt)));
 
-  const operational = loansFromDb.filter((loan) =>
-    isOperationalLoan(loan.status),
+  const forcedOperationalLoanIds = new Set(
+    options.forceOperationalLoanIds ?? [],
+  );
+  const operational = loansFromDb.filter(
+    (loan) =>
+      forcedOperationalLoanIds.has(loan.id) || isOperationalLoan(loan.status),
   );
   const historical = loansFromDb.filter(
-    (loan) => !isOperationalLoan(loan.status),
+    (loan) =>
+      !forcedOperationalLoanIds.has(loan.id) &&
+      !isOperationalLoan(loan.status),
   );
 
   for (const loan of historical) {

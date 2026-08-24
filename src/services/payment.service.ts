@@ -159,10 +159,13 @@ export async function isLoanEconomicallyFullyPaid(
   loanId: string,
   asOf: Date = new Date(),
   queryDb?: Pick<typeof db, "select">,
+  options: { forceOperational?: boolean } = {},
 ): Promise<boolean> {
   const principal = await getLoanBalanceFromLedger(loanId, asOf, queryDb);
   if (principal.isGreaterThan(0)) return false;
-  const info = await computeSingleLoanBalanceData(loanId, asOf, queryDb);
+  const info = await computeSingleLoanBalanceData(loanId, asOf, queryDb, {
+    forceOperationalLoanIds: options.forceOperational ? [loanId] : [],
+  });
   return new BigNumber(info.unpaidInterest).isLessThanOrEqualTo(0);
 }
 

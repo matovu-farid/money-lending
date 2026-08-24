@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { Effect } from "effect";
 import { endOfDay } from "date-fns";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import BigNumber from "bignumber.js";
 import { resetDb, testDb, seedCategories } from "./setup";
 import { createCustomer } from "@/services/customer.service";
@@ -51,6 +51,30 @@ async function makeLoan(
       },
       "test-actor",
     ),
+  );
+}
+
+async function getInterestReceivableBalance() {
+  const rows = await testDb
+    .select({ type: transactions.type, amount: transactions.amount })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id),
+    )
+    .where(
+      and(
+        eq(transactionCategories.name, "Interest Receivable"),
+        eq(transactionCategories.type, "revenue"),
+      ),
+    );
+
+  return rows.reduce(
+    (balance, row) =>
+      row.type === "debit"
+        ? balance.plus(row.amount)
+        : balance.minus(row.amount),
+    new BigNumber(0),
   );
 }
 
@@ -181,6 +205,82 @@ describe(
       expect(row.status).toBe("fully_paid");
     });
 
+    it("reopens a fully paid loan after undoing an interest-only waiver", async () => {
+      const customer = await makeCustomer();
+      const loan = await makeLoan(customer.id, "100000.00", "0.10");
+      const [cashCategory] = await testDb
+        .select({ id: transactionCategories.id })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.name, "Cash"));
+      const [loansReceivableCategory] = await testDb
+        .select({ id: transactionCategories.id })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.name, "Loans Receivable"));
+      const principalSettlementGroup = crypto.randomUUID();
+      await testDb.insert(transactions).values([
+        {
+          type: "debit",
+          amount: "100000.00",
+          categoryId: cashCategory.id,
+          referenceType: "payment",
+          referenceId: crypto.randomUUID(),
+          loanId: loan.id,
+          description: "Integration-test principal settlement",
+          transactionDate: new Date(),
+          recordedBy: "test-actor",
+          depositLocation: "cash",
+          journalGroupId: principalSettlementGroup,
+        },
+        {
+          type: "credit",
+          amount: "100000.00",
+          categoryId: loansReceivableCategory.id,
+          referenceType: "payment",
+          referenceId: crypto.randomUUID(),
+          loanId: loan.id,
+          description: "Integration-test principal settlement",
+          transactionDate: new Date(),
+          recordedBy: "test-actor",
+          journalGroupId: principalSettlementGroup,
+        },
+      ]);
+
+      const info = await computeSingleLoanBalanceData(loan.id, new Date());
+      expect(new BigNumber(info.remainingPrincipalAmount).isZero()).toBe(true);
+      expect(new BigNumber(info.unpaidInterest).isGreaterThan(0)).toBe(true);
+
+      const waiverResult = await waiveLoanAmount(
+        {
+          loanId: loan.id,
+          amount: info.unpaidInterest,
+          reason: "Interest-only waiver approved after final principal settlement",
+        },
+        "test-actor",
+      );
+
+      const [settledLoan] = await testDb
+        .select({ status: loans.status })
+        .from(loans)
+        .where(eq(loans.id, loan.id));
+      expect(waiverResult.principalPortion).toBe("0.00");
+      expect(settledLoan.status).toBe("fully_paid");
+
+      const result = await undoLoanWaiver(
+        {
+          waiverId: waiverResult.waiver.id,
+          reason: "Interest-only waiver correction approved by management",
+        },
+        "test-actor",
+      );
+
+      expect(result.status).toBe("active");
+      const [reopenedLoan] = await testDb
+        .select({ status: loans.status })
+        .from(loans)
+        .where(eq(loans.id, loan.id));
+      expect(reopenedLoan.status).toBe("active");
+    });
+
     it("undoes a full waiver, reverses the ledger, and reopens the loan", async () => {
       const customer = await makeCustomer();
       const loan = await makeLoan(customer.id, "100000.00", "0.10");
@@ -233,6 +333,43 @@ describe(
     it("undoes interest and principal using exact stored portions", async () => {
       const customer = await makeCustomer();
       const loan = await makeLoan(customer.id, "1000000.00", "0.10");
+      const [interestReceivableCategory] = await testDb
+        .select({ id: transactionCategories.id })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.name, "Interest Receivable"));
+      const [interestEarnedCategory] = await testDb
+        .select({ id: transactionCategories.id })
+        .from(transactionCategories)
+        .where(eq(transactionCategories.name, "Interest Earned"));
+      const accrualGroup = crypto.randomUUID();
+      await testDb.insert(transactions).values([
+        {
+          type: "debit",
+          amount: "25000.00",
+          categoryId: interestReceivableCategory.id,
+          referenceType: "interest_accrual",
+          referenceId: loan.id,
+          loanId: loan.id,
+          description: "Integration-test interest accrual",
+          transactionDate: new Date(),
+          recordedBy: "test-actor",
+          journalGroupId: accrualGroup,
+        },
+        {
+          type: "credit",
+          amount: "25000.00",
+          categoryId: interestEarnedCategory.id,
+          referenceType: "interest_accrual",
+          referenceId: loan.id,
+          loanId: loan.id,
+          description: "Integration-test interest accrual",
+          transactionDate: new Date(),
+          recordedBy: "test-actor",
+          journalGroupId: accrualGroup,
+        },
+      ]);
+      const receivableBefore = await getInterestReceivableBalance();
+      expect(receivableBefore.toFixed(2)).toBe("25000.00");
       const info = await computeSingleLoanBalanceData(loan.id, new Date());
       const amount = new BigNumber(info.unpaidInterest).plus(50000);
 
@@ -250,6 +387,8 @@ describe(
       expect(new BigNumber(waiverResult.principalPortion).isGreaterThan(0)).toBe(
         true,
       );
+
+      expect((await getInterestReceivableBalance()).toFixed(2)).toBe("0.00");
 
       await undoLoanWaiver(
         {
@@ -299,6 +438,25 @@ describe(
             amount: waiverResult.principalPortion,
           }),
         ]),
+      );
+
+      const accrualReversalRows = await testDb
+        .select({
+          referenceType: transactions.referenceType,
+          referenceId: transactions.referenceId,
+        })
+        .from(transactions)
+        .where(eq(transactions.referenceId, waiverResult.waiver.id));
+      expect(
+        accrualReversalRows.some(
+          (row) =>
+            row.referenceType === "loan_waiver_accrual_reversal" &&
+            row.referenceId === waiverResult.waiver.id,
+        ),
+      ).toBe(true);
+
+      expect((await getInterestReceivableBalance()).toFixed(2)).toBe(
+        receivableBefore.toFixed(2),
       );
     });
 

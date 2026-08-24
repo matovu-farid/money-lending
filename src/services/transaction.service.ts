@@ -453,6 +453,7 @@ export const deleteTransaction = (
         "fund_transfer",
         "interest_accrual",
         "loan_waiver",
+        "loan_waiver_accrual_reversal",
         "loan_waiver_reversal",
       ];
       if (
@@ -513,6 +514,9 @@ export async function reverseInterestAccrual(
     loanId: string;
     paymentDate: string;
     actorId: string;
+    /** Optional waiver-specific marker so the accrual reversal can be undone exactly. */
+    reversalReferenceType?: string;
+    reversalReferenceId?: string;
   },
 ): Promise<void> {
   const [receivableCat] = await tx
@@ -567,13 +571,16 @@ export async function reverseInterestAccrual(
   const reversalAmount = formatAmount(netAccrual);
   const now = new Date(params.paymentDate);
   const journalGroupId = randomUUID();
+  const reversalReferenceType =
+    params.reversalReferenceType ?? "interest_accrual";
+  const reversalReferenceId = params.reversalReferenceId ?? params.loanId;
 
   await tx.insert(transactions).values({
     type: "credit",
     amount: reversalAmount,
     categoryId: receivableCat.id,
-    referenceType: "interest_accrual",
-    referenceId: params.loanId,
+    referenceType: reversalReferenceType,
+    referenceId: reversalReferenceId,
     description: `Reverse interest accrual on payment - loan ${params.loanId}`,
     transactionDate: now,
     recordedBy: params.actorId,
@@ -584,8 +591,8 @@ export async function reverseInterestAccrual(
     type: "debit",
     amount: reversalAmount,
     categoryId: earnedCat.id,
-    referenceType: "interest_accrual",
-    referenceId: params.loanId,
+    referenceType: reversalReferenceType,
+    referenceId: reversalReferenceId,
     description: `Reverse interest accrual on payment - loan ${params.loanId}`,
     transactionDate: now,
     recordedBy: params.actorId,

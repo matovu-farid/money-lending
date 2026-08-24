@@ -1,6 +1,8 @@
 import { db } from "@/lib/db";
 import { loans } from "@/lib/db/schema/loans";
 import { loanWaivers } from "@/lib/db/schema/loan-waivers";
+import { transactions } from "@/lib/db/schema/transactions";
+import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { eq, and, isNull, sql, asc } from "drizzle-orm";
 import BigNumber from "bignumber.js";
 import { endOfDay } from "date-fns";
@@ -99,6 +101,8 @@ export async function waiveLoanAmount(
         loanId: input.loanId,
         paymentDate: waiverDate.toISOString(),
         actorId,
+        reversalReferenceType: "loan_waiver_accrual_reversal",
+        reversalReferenceId: waiver.id,
       });
       await autoPostLoanWaiverInterest(tx, {
         amount: interestPortion,
@@ -161,6 +165,60 @@ export async function waiveLoanAmount(
 
     return { waiver, interestPortion, principalPortion, txid };
   });
+}
+
+async function getWaiverAccrualReversalAmount(
+  tx: Pick<typeof db, "select">,
+  waiverId: string,
+): Promise<string | null> {
+  const rows = await tx
+    .select({
+      categoryName: transactionCategories.name,
+      type: transactions.type,
+      amount: transactions.amount,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionCategories,
+      eq(transactions.categoryId, transactionCategories.id),
+    )
+    .where(
+      and(
+        eq(
+          transactions.referenceType,
+          "loan_waiver_accrual_reversal",
+        ),
+        eq(transactions.referenceId, waiverId),
+      ),
+    );
+
+  if (rows.length === 0) return null;
+
+  let receivableCredit = new BigNumber(0);
+  let earnedDebit = new BigNumber(0);
+  for (const row of rows) {
+    if (row.categoryName === "Interest Receivable" && row.type === "credit") {
+      receivableCredit = receivableCredit.plus(row.amount);
+    } else if (row.categoryName === "Interest Earned" && row.type === "debit") {
+      earnedDebit = earnedDebit.plus(row.amount);
+    } else {
+      throw {
+        _tag: "ValidationError",
+        message: "Waiver accrual reversal entries are invalid",
+        field: "waiverId",
+      };
+    }
+  }
+
+  if (receivableCredit.isZero() || !receivableCredit.eq(earnedDebit)) {
+    throw {
+      _tag: "ValidationError",
+      message: "Waiver accrual reversal entries are invalid",
+      field: "waiverId",
+    };
+  }
+
+  return receivableCredit.toFixed(2);
 }
 
 export async function undoLoanWaiver(
@@ -237,6 +295,23 @@ export async function undoLoanWaiver(
 
     const reversalDate = new Date();
     const loanRef = shortId(loan.id).toUpperCase();
+    const accrualReversalAmount = await getWaiverAccrualReversalAmount(
+      tx,
+      waiver.id,
+    );
+
+    if (accrualReversalAmount) {
+      await postJournalEntry(tx, {
+        debitCategory: { name: "Interest Receivable", type: "revenue" },
+        creditCategory: { name: "Interest Earned", type: "revenue" },
+        amount: accrualReversalAmount,
+        referenceType: "loan_waiver_reversal",
+        referenceId: waiver.id,
+        description: `Reversal - accrued interest correction for loan ${loanRef}: ${reason}`,
+        transactionDate: reversalDate,
+        recordedBy: actorId,
+      });
+    }
 
     if (new BigNumber(interestPortion).isGreaterThan(0)) {
       await postJournalEntry(tx, {
@@ -275,7 +350,9 @@ export async function undoLoanWaiver(
 
     if (
       loan.status === "fully_paid" &&
-      !(await isLoanEconomicallyFullyPaid(loan.id, reversalDate, tx))
+      !(await isLoanEconomicallyFullyPaid(loan.id, reversalDate, tx, {
+        forceOperational: true,
+      }))
     ) {
       await maybeUpdateLoanStatusAfterPayment(tx, loan, "active", actorId);
     }
