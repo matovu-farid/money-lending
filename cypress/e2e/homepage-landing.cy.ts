@@ -12,6 +12,13 @@ describe("Logged-out home landing page", () => {
     cy.contains("Portfolio visibility").should("be.visible")
     cy.contains("Record the loan").should("be.visible")
     cy.get("footer").should("contain", "Kaks Credit")
+    cy.get(".home-page").should(($page) => {
+      const pageStyles = getComputedStyle($page[0])
+      expect(pageStyles.backgroundColor).not.to.equal("rgb(246, 242, 234)")
+    })
+    cy.get(".home-pill-ink").should(($button) => {
+      expect(getComputedStyle($button[0]).backgroundColor).not.to.equal("rgb(31, 45, 39)")
+    })
   })
 
   it("routes sign-in and request-access actions to the existing auth flows", () => {

@@ -18,14 +18,14 @@ export const metadata: Metadata = {
 
 const pageStyles = `
   .home-page {
-    --home-ink: #1f2d27;
-    --home-ink-soft: #536259;
-    --home-cream: #f6f2ea;
-    --home-paper: #fffdf9;
-    --home-sage: #e2ebe4;
-    --home-copper: #bd6e3f;
-    --home-copper-dark: #98502c;
-    --home-line: #ded8ce;
+    --home-ink: var(--foreground);
+    --home-ink-soft: var(--muted-foreground);
+    --home-cream: var(--background);
+    --home-paper: var(--card);
+    --home-sage: var(--accent);
+    --home-copper: #f59e0b;
+    --home-copper-dark: #b45309;
+    --home-line: var(--border);
     min-height: 100vh;
     overflow: hidden;
     background: var(--home-cream);
@@ -102,12 +102,12 @@ const pageStyles = `
   .home-pill-copper:hover { background: var(--home-copper-dark); }
 
   .home-pill-ink {
-    background: var(--home-ink);
-    color: white !important;
+    background: var(--primary);
+    color: var(--primary-foreground) !important;
     box-shadow: 0 12px 24px rgba(31, 45, 39, 0.14);
   }
 
-  .home-pill-ink:hover { background: #2d4036; }
+  .home-pill-ink:hover { background: color-mix(in srgb, var(--primary) 86%, white); }
 
   .home-hero {
     display: grid;
@@ -173,7 +173,7 @@ const pageStyles = `
     align-items: center;
     gap: 8px;
     margin-top: 28px;
-    color: #69766d;
+    color: var(--home-ink-soft);
     font-size: 0.78rem;
   }
 
@@ -192,7 +192,7 @@ const pageStyles = `
     width: 240px;
     height: 240px;
     border-radius: 50%;
-    background: #e6dccc;
+    background: var(--accent);
     content: "";
     opacity: 0.7;
   }
@@ -204,7 +204,7 @@ const pageStyles = `
     left: -38px;
     width: 190px;
     height: 190px;
-    border: 1px solid #d4c9b7;
+    border: 1px solid var(--home-line);
     border-radius: 50%;
     content: "";
   }
@@ -213,7 +213,7 @@ const pageStyles = `
     position: relative;
     z-index: 1;
     overflow: hidden;
-    border: 1px solid #d7d1c6;
+    border: 1px solid var(--home-line);
     border-radius: 24px;
     background: var(--home-paper);
     box-shadow: 0 28px 70px rgba(67, 57, 44, 0.16), 0 5px 12px rgba(67, 57, 44, 0.06);
@@ -224,9 +224,9 @@ const pageStyles = `
     display: flex;
     align-items: center;
     justify-content: space-between;
-    border-bottom: 1px solid #eee8df;
+    border-bottom: 1px solid var(--home-line);
     padding: 16px 20px;
-    color: #81877f;
+    color: var(--home-ink-soft);
     font-size: 0.68rem;
   }
 
@@ -246,8 +246,8 @@ const pageStyles = `
     align-items: center;
     justify-content: center;
     border-radius: 7px;
-    background: var(--home-ink);
-    color: white;
+    background: var(--primary);
+    color: var(--primary-foreground);
     font-size: 0.62rem;
   }
 
@@ -263,7 +263,7 @@ const pageStyles = `
   .home-preview-heading p, .home-preview-heading strong { margin: 0; }
 
   .home-preview-heading p {
-    color: #7b847d;
+    color: var(--home-ink-soft);
     font-size: 0.72rem;
   }
 
@@ -278,9 +278,9 @@ const pageStyles = `
     align-items: center;
     gap: 4px;
     border-radius: 999px;
-    background: #e5f0e6;
+    background: var(--secondary);
     padding: 5px 8px;
-    color: #42704b;
+    color: var(--home-ink);
     font-size: 0.67rem;
     font-weight: 700;
   }
@@ -291,7 +291,7 @@ const pageStyles = `
     align-items: end;
     gap: 10px;
     margin-top: 24px;
-    border-bottom: 1px solid #e8e6df;
+    border-bottom: 1px solid var(--home-line);
     padding: 0 5px 12px;
   }
 
@@ -299,7 +299,7 @@ const pageStyles = `
     flex: 1;
     min-width: 10px;
     border-radius: 6px 6px 2px 2px;
-    background: #b5ccb8;
+    background: var(--chart-2);
   }
 
   .home-chart-bar:nth-child(1) { height: 34%; }
@@ -320,22 +320,22 @@ const pageStyles = `
   .home-preview-stat {
     min-width: 0;
     border-radius: 13px;
-    background: #f3efe7;
+    background: var(--muted);
     padding: 12px;
   }
 
-  .home-preview-stat:nth-child(2) { background: #e7efe8; }
-  .home-preview-stat:nth-child(3) { background: #f3e5db; }
+  .home-preview-stat:nth-child(2) { background: var(--secondary); }
+  .home-preview-stat:nth-child(3) { background: color-mix(in srgb, var(--chart-4) 12%, var(--card)); }
 
   .home-preview-stat span, .home-preview-stat strong { display: block; }
-  .home-preview-stat span { color: #758078; font-size: 0.62rem; }
+  .home-preview-stat span { color: var(--home-ink-soft); font-size: 0.62rem; }
   .home-preview-stat strong { margin-top: 7px; color: var(--home-ink); font-size: 0.88rem; letter-spacing: -0.03em; }
 
   .home-section { padding: 102px 0; }
 
   .home-section-soft {
-    background: #ebe9e1;
-    box-shadow: 50vw 0 0 #ebe9e1, -50vw 0 0 #ebe9e1;
+    background: var(--muted);
+    box-shadow: 50vw 0 0 var(--muted), -50vw 0 0 var(--muted);
   }
 
   .home-section-heading { max-width: 580px; }
@@ -397,8 +397,8 @@ const pageStyles = `
     color: var(--home-ink);
   }
 
-  .home-capability-card:nth-child(2) .home-capability-icon { background: #f2e4d8; color: var(--home-copper-dark); }
-  .home-capability-card:nth-child(3) .home-capability-icon { background: #e4e9ee; color: #4c6470; }
+  .home-capability-card:nth-child(2) .home-capability-icon { background: color-mix(in srgb, var(--home-copper) 15%, var(--card)); color: var(--home-copper-dark); }
+  .home-capability-card:nth-child(3) .home-capability-icon { background: var(--secondary); color: var(--ring); }
 
   .home-capability-card h3 {
     margin: 30px 0 10px;
@@ -436,7 +436,7 @@ const pageStyles = `
     top: 47px;
     bottom: 12px;
     left: 27px;
-    border-left: 1px dashed #c7bcae;
+    border-left: 1px dashed var(--home-line);
     content: "";
   }
 
@@ -448,7 +448,7 @@ const pageStyles = `
     height: 56px;
     align-items: center;
     justify-content: center;
-    border: 1px solid #cfc5b6;
+    border: 1px solid var(--home-line);
     border-radius: 50%;
     background: var(--home-cream);
     color: var(--home-copper-dark);
@@ -464,9 +464,9 @@ const pageStyles = `
     position: relative;
     overflow: hidden;
     border-radius: 26px;
-    background: var(--home-ink);
+    background: var(--primary);
     padding: clamp(42px, 7vw, 78px);
-    color: white;
+    color: var(--primary-foreground);
   }
 
   .home-cta::after {
@@ -482,9 +482,9 @@ const pageStyles = `
   }
 
   .home-cta-content { position: relative; z-index: 1; max-width: 625px; }
-  .home-cta .home-section-kicker { color: #e7a87f; }
-  .home-cta h2 { color: white; }
-  .home-cta p { max-width: 510px; color: #c0cbc4; }
+  .home-cta .home-section-kicker { color: var(--home-copper); }
+  .home-cta h2 { color: var(--primary-foreground); }
+  .home-cta p { max-width: 510px; color: color-mix(in srgb, var(--primary-foreground) 76%, transparent); }
   .home-cta .home-pill-copper { margin-top: 30px; }
 
   .home-footer {
@@ -493,7 +493,7 @@ const pageStyles = `
     justify-content: space-between;
     gap: 20px;
     padding: 42px 0;
-    color: #69766d;
+    color: var(--home-ink-soft);
     font-size: 0.76rem;
   }
 
@@ -559,7 +559,7 @@ export default function HomePage() {
             <p className="home-hero-copy">A clear, connected workspace for loans, repayments, customers, and the daily decisions that keep your lending business moving forward.</p>
             <div className="home-hero-actions">
               <Link className="home-pill home-pill-ink" href="/login">Sign in to your workspace <ArrowUpRight size={16} aria-hidden="true" /></Link>
-              <Link className="home-pill" href="/register" style={{ border: "1px solid #cfc5b6", color: "#536259" }}>Request access</Link>
+              <Link className="home-pill" href="/register" style={{ border: "1px solid var(--home-line)", color: "var(--home-ink-soft)" }}>Request access</Link>
             </div>
             <p className="home-hero-note"><Check size={14} strokeWidth={2.5} aria-hidden="true" /> Built for disciplined, growing lending teams</p>
           </div>
