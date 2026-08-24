@@ -45,6 +45,10 @@ export async function proxy(request: NextRequest) {
   const sessionCookie = getSessionCookie(request)
   if (!sessionCookie) {
     if (isAuthPage) return NextResponse.next()
+    if (pathname === "/") {
+      const dest = request.cookies.has("has_account") ? "/login" : "/home"
+      return NextResponse.redirect(new URL(dest, request.url))
+    }
     if (isPublicHome) {
       if (request.cookies.has("has_account")) {
         return NextResponse.redirect(new URL("/login", request.url))

@@ -3,10 +3,19 @@ describe("Homepage Redirect", () => {
     cy.task("db:reset")
   })
 
-  it("unauthenticated user visiting / redirects to /login", () => {
+  it("first-time unauthenticated user visiting / redirects to /home", () => {
     cy.visit("/")
+    cy.url({ timeout: 10000 }).should("include", "/home")
+    cy.contains("Lending, with clarity")
+  })
+
+  it("returning unauthenticated user visiting / redirects to /login", () => {
+    cy.setCookie("has_account", "1")
+
+    cy.visit("/")
+
     cy.url({ timeout: 10000 }).should("include", "/login")
-    cy.contains("Sign in")
+    cy.contains("Sign in to Kaks Credit")
   })
 
   it("authenticated user visiting / redirects to /dashboard", () => {
