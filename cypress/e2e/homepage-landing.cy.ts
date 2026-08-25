@@ -28,17 +28,26 @@ describe("Logged-out home landing page", () => {
     cy.url().should("include", "/login")
 
     cy.visit("/home")
-    cy.get('a[href="/register"]').first().click()
-    cy.url().should("include", "/register")
+    cy.get('a[href="/request-access"]').first().click()
+    cy.url().should("include", "/request-access")
   })
 
-  it("sends a returning logged-out visitor to sign in", () => {
+  it("keeps an explicit /home visit public for returning visitors", () => {
     cy.setCookie("has_account", "1")
 
     cy.visit("/home")
 
-    cy.url().should("include", "/login")
-    cy.contains("Sign in to Kaks Credit").should("be.visible")
+    cy.location("pathname").should("eq", "/home")
+    cy.contains("Lending, with clarity").should("be.visible")
+  })
+
+  it("stays public for authenticated visitors", () => {
+    cy.registerAndLogin({ name: "Landing Page User" })
+
+    cy.visit("/home")
+
+    cy.location("pathname").should("eq", "/home")
+    cy.contains("Lending, with clarity").should("be.visible")
   })
 
   it("keeps similarly named routes behind the normal auth gate", () => {
@@ -53,7 +62,7 @@ describe("Logged-out home landing page", () => {
 
     cy.get("h1").should("be.visible")
     cy.get('a[href="/login"]').first().should("be.visible")
-    cy.get('a[href="/register"]').first().should("be.visible")
+    cy.get('a[href="/request-access"]').first().should("be.visible")
     cy.document().then((document) => {
       expect(document.documentElement.scrollWidth).to.be.lte(
         document.documentElement.clientWidth + 1,

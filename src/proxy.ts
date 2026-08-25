@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm"
 import { captureServerWarning } from "@/lib/sentry"
 
 const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
+const PUBLIC_PAGES = ["/home", "/request-access"]
 
 // Max time to wait for a DB-backed lookup before treating the request as
 // unauthenticated. Only used as a fallback when the cookie cache is missing —
@@ -36,7 +37,9 @@ export async function proxy(request: NextRequest) {
 
   const { pathname } = request.nextUrl
   const isAuthPage = AUTH_PAGES.some((p) => pathname.startsWith(p))
-  const isPublicHome = pathname === "/home"
+  const isPublicPage = PUBLIC_PAGES.includes(pathname)
+
+  if (isPublicPage) return NextResponse.next()
 
   // Cheap, no-DB presence check — recommended better-auth pattern for
   // middleware. This only verifies the session token cookie is present, not
@@ -48,12 +51,6 @@ export async function proxy(request: NextRequest) {
     if (pathname === "/") {
       const dest = request.cookies.has("has_account") ? "/login" : "/home"
       return NextResponse.redirect(new URL(dest, request.url))
-    }
-    if (isPublicHome) {
-      if (request.cookies.has("has_account")) {
-        return NextResponse.redirect(new URL("/login", request.url))
-      }
-      return NextResponse.next()
     }
     const dest = request.cookies.has("has_account") ? "/login" : "/register"
     return NextResponse.redirect(new URL(dest, request.url))
