@@ -112,7 +112,9 @@ export function TransactionLogClient({
       key: "recordedBy",
       header: "Recorded By",
       render: (row) => (
-        <span className="text-muted-foreground text-xs">{row.recordedBy}</span>
+        <span data-testid="transaction-recorded-by" className="text-muted-foreground text-xs">
+          {row.recordedBy}
+        </span>
       ),
     },
   ]

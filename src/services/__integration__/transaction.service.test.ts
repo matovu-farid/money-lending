@@ -302,6 +302,44 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
     ).toBe(true)
   })
 
+  it("listTransactions — resolves recorder IDs to names with safe system fallback", async () => {
+    const cat = await seedExpenseCategory("Recorder Display")
+
+    await testDb.insert(transactions).values([
+      {
+        type: "debit",
+        amount: "10000",
+        categoryId: cat.id,
+        transactionDate: new Date("2026-03-05T00:00:00.000Z"),
+        recordedBy: ACTOR_ID,
+      },
+      {
+        type: "credit",
+        amount: "10000",
+        categoryId: cat.id,
+        transactionDate: new Date("2026-03-04T00:00:00.000Z"),
+        recordedBy: "system",
+      },
+      {
+        type: "debit",
+        amount: "5000",
+        categoryId: cat.id,
+        transactionDate: new Date("2026-03-03T00:00:00.000Z"),
+        recordedBy: "deleted-user-id",
+      },
+    ])
+
+    const result = await Effect.runPromise(listTransactions({}, 1, 10))
+    const recorderNames = result.data.map((transaction) => transaction.recordedBy)
+
+    expect(recorderNames).toEqual(
+      expect.arrayContaining(["Test Actor", "System", "Unknown user"]),
+    )
+    expect(recorderNames).not.toEqual(
+      expect.arrayContaining([ACTOR_ID, "system", "deleted-user-id"]),
+    )
+  })
+
   it("listTransactions — filters by type", async () => {
     const expCat = await seedExpenseCategory()
     const incCat = await seedIncomeCategory()
