@@ -3,10 +3,12 @@ import { Effect } from "effect"
 
 // ---------- Mocks ----------
 
+const mockSessionRole = vi.hoisted(() => ({ value: "admin" }))
+
 vi.mock("@/lib/with-action", () => ({
   withAction: (opts: any) => {
     return async (input?: any) => {
-      const session = { user: { id: "test-user", role: "admin" } }
+      const session = { user: { id: "test-user", role: mockSessionRole.value } }
       if (opts.effect) {
         const eff = opts.effect(session, input ?? {})
         const result = await Effect.runPromise(eff)
@@ -65,6 +67,7 @@ const mockGetCurrentMonth = vi.mocked(getCurrentMonth)
 describe("Report Actions", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockSessionRole.value = "admin"
     mockGetCurrentMonth.mockReturnValue("2026-04")
   })
 
@@ -181,6 +184,21 @@ describe("Report Actions", () => {
           categories: [],
         },
       })
+    })
+
+    it("excludes creditor transactions for non-admin report readers", async () => {
+      mockSessionRole.value = "supervisor"
+      mockListTransactions.mockReturnValue(
+        Effect.succeed({ data: [], total: 0 }) as any,
+      )
+
+      await getTransactionReportDataAction()
+
+      expect(mockListTransactions).toHaveBeenCalledWith(
+        { excludeCreditorTransactions: true },
+        1,
+        10000,
+      )
     })
   })
 })

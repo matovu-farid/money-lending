@@ -340,6 +340,36 @@ describe("Transaction Service (integration)", { timeout: 30_000 }, () => {
     )
   })
 
+  it("listTransactions — excludes creditor journal rows when requested", async () => {
+    const cat = await seedExpenseCategory("Private Creditor Journal")
+
+    await testDb.insert(transactions).values([
+      {
+        type: "debit",
+        amount: "10000",
+        categoryId: cat.id,
+        referenceType: "creditor_investment",
+        transactionDate: new Date("2026-03-05T00:00:00.000Z"),
+        recordedBy: ACTOR_ID,
+      },
+      {
+        type: "credit",
+        amount: "10000",
+        categoryId: cat.id,
+        referenceType: "creditor_repayment",
+        transactionDate: new Date("2026-03-04T00:00:00.000Z"),
+        recordedBy: ACTOR_ID,
+      },
+    ])
+
+    const result = await Effect.runPromise(
+      listTransactions({ excludeCreditorTransactions: true }, 1, 10),
+    )
+
+    expect(result.total).toBe(0)
+    expect(result.data).toEqual([])
+  })
+
   it("listTransactions — filters by type", async () => {
     const expCat = await seedExpenseCategory()
     const incCat = await seedIncomeCategory()

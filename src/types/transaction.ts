@@ -71,6 +71,8 @@ export interface TransactionLogFilters {
   dateFrom?: string
   dateTo?: string
   manualOnly?: boolean
+  /** Hide creditor investment and repayment journal rows from non-admin views. */
+  excludeCreditorTransactions?: boolean
 }
 
 export interface PnlData {

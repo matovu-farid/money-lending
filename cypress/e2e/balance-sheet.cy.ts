@@ -2,10 +2,10 @@ describe("Balance Sheet", () => {
   beforeEach(() => {
     cy.task("db:reset")
     cy.clearAppPersistence()
-    cy.registerAndLogin({ name: "Balance Sheet Admin" }).then((email) => {
-      cy.task("db:promoteUser", { email, role: "superAdmin" })
-      cy.clearCookies()
-      cy.login(email, "TestPass123!")
+    cy.createTestUser({ name: "Balance Sheet Admin", role: "superAdmin" }).then((user) => {
+      cy.task("db:injectCapital", { amount: "520672006.99" })
+      cy.task("db:seedBalanceRoundingCase")
+      cy.loginAsTestUser((user as { _cookies: Array<{ name: string; value: string }> })._cookies)
     })
   })
 

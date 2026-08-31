@@ -18,6 +18,8 @@ import {
   count,
   inArray,
   isNull,
+  notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import BigNumber from "bignumber.js";
@@ -351,6 +353,17 @@ export const listTransactions = (
       }
       if (filters.manualOnly) {
         conditions.push(isNull(transactions.referenceType));
+      }
+      if (filters.excludeCreditorTransactions) {
+        conditions.push(
+          or(
+            isNull(transactions.referenceType),
+            notInArray(transactions.referenceType, [
+              "creditor_investment",
+              "creditor_repayment",
+            ]),
+          ),
+        );
       }
 
       const whereClause =
