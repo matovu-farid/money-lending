@@ -186,6 +186,26 @@ export default defineConfig({
           })
         },
 
+        async "db:seedBalanceRoundingCase"() {
+          return withSql(async (sql) => {
+            const users = await sql`SELECT id FROM "user" LIMIT 1`
+            const actorId = users[0]?.id
+            if (!actorId) throw new Error("No users found")
+
+            let cashCats = await sql`SELECT id FROM transaction_categories WHERE name = 'Cash'`
+            if (cashCats.length === 0) {
+              cashCats = await sql`INSERT INTO transaction_categories (name, type) VALUES ('Cash', 'asset') RETURNING id`
+            }
+
+            await sql`
+              INSERT INTO transactions (category_id, amount, type, description, transaction_date, recorded_by, deposit_location)
+              VALUES (${cashCats[0].id}, '0.01', 'debit', 'Balance rounding test', NOW(), ${actorId}, 'cash')
+            `
+
+            return null
+          })
+        },
+
         async "auth:createUser"({ name, email, role }: { name: string; email?: string; role: string }) {
           const userEmail = email ?? `${role.toLowerCase()}-${Date.now()}@fidexa.org`
           const res = await fetch("http://localhost:3000/api/test/create-user", {

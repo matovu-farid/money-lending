@@ -23,7 +23,13 @@ export async function GET(request: Request) {
   const format = searchParams.get("format") ?? "pdf"
 
   try {
-    const result = await Effect.runPromise(listTransactions({}, 1, 10000))
+    const result = await Effect.runPromise(
+      listTransactions(
+        { excludeCreditorTransactions: !perms.has("creditor:read") },
+        1,
+        10000,
+      ),
+    )
     const data = result.data
 
     const categories = new Map<string, string>()

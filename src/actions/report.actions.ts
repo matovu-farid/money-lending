@@ -11,6 +11,7 @@ import {
 } from "@/services/report.service"
 import { listTransactions } from "@/services/transaction.service"
 import { getCurrentMonth } from "@/lib/utils"
+import { getUserRole } from "@/lib/action-utils"
 
 export const getPortfolioReportAction = withAction({
   permission: "reports:read",
@@ -44,16 +45,28 @@ export const getCashflowReportAction = withAction<{ period: string }, any>({
 
 export const getTransactionReportDataAction = withAction({
   permission: "reports:read",
-  effect: () =>
-    Effect.map(listTransactions({}, 1, 10000), (result) => {
-      const categories = new Map<string, string>()
-      for (const tx of result.data) {
-        categories.set(tx.category, tx.category)
-      }
-      return {
-        transactions: result.data,
-        categories: Array.from(categories.entries()),
-      }
-    }),
+  effect: (session) => {
+    const canReadCreditorTransactions = ["admin", "superAdmin"].includes(getUserRole(session))
+
+    return Effect.map(
+      listTransactions(
+        canReadCreditorTransactions
+          ? {}
+          : { excludeCreditorTransactions: true },
+        1,
+        10000,
+      ),
+      (result) => {
+        const categories = new Map<string, string>()
+        for (const tx of result.data) {
+          categories.set(tx.category, tx.category)
+        }
+        return {
+          transactions: result.data,
+          categories: Array.from(categories.entries()),
+        }
+      },
+    )
+  },
   errors: { DatabaseError: "Database error" },
 })

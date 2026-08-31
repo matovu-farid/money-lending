@@ -28,6 +28,7 @@ import {
 } from "@/types";
 import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { captureServerWarning } from "@/lib/sentry";
+import { isBalanceSheetBalanced } from "@/lib/balance-sheet";
 
 export const getPnlData = (
   period: string,
@@ -473,7 +474,12 @@ export const getBalanceSheetData = (
 
       const totalLiabilities = totalCreditorBalances.plus(interestPayable);
       const liabilitiesPlusEquity = totalLiabilities.plus(totalEquity);
-      if (!totalAssets.isEqualTo(liabilitiesPlusEquity)) {
+      if (
+        !isBalanceSheetBalanced(
+          formatAmount(totalAssets),
+          formatAmount(liabilitiesPlusEquity),
+        )
+      ) {
         captureServerWarning("Balance sheet is out of balance", {
           source: "report.balance-sheet-imbalance",
         });

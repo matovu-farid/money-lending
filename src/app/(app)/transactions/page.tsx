@@ -43,6 +43,7 @@ export default async function TransactionLogPage({ searchParams }: TransactionLo
   if (params.dateTo) {
     filters.dateTo = params.dateTo
   }
+  filters.excludeCreditorTransactions = !perms.has("creditor:read")
 
   const [transactionsExit, categoriesExit] = await Promise.all([
     Effect.runPromiseExit(listTransactions(filters, page, pageSize)),

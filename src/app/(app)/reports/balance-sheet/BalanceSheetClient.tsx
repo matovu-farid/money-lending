@@ -8,6 +8,7 @@ import {
 import BigNumber from "bignumber.js"
 import type { BalanceSheetData } from "@/types"
 import { formatCurrency, formatPeriodDate } from "@/lib/utils"
+import { isBalanceSheetBalanced } from "@/lib/balance-sheet"
 import { InfoPopover } from "@/components/ui/info-popover"
 import { ReportToolbar } from "@/components/reports/report-toolbar"
 import { useBalanceSheetReport } from "@/hooks/use-reports"
@@ -62,7 +63,10 @@ export function BalanceSheetClient({ period }: BalanceSheetClientProps) {
     .plus(bsData.equity.totalEquity)
     .toFixed(0)
 
-  const isBalanced = new BigNumber(bsData.assets.totalAssets).isEqualTo(totalLiabilitiesPlusEquity)
+  const isBalanced = isBalanceSheetBalanced(
+    bsData.assets.totalAssets,
+    totalLiabilitiesPlusEquity,
+  )
 
   return (
     <div className="space-y-4">

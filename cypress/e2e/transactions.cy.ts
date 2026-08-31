@@ -53,6 +53,11 @@ describe("Transaction Log", () => {
     cy.visit("/transactions")
     cy.contains("No transactions yet", { timeout: 5000 }).should("not.exist")
     cy.contains("200,000", { timeout: 10000 }).should("exist")
+    cy.get("[data-testid='transaction-recorded-by']")
+      .should("have.length.at.least", 2)
+      .each(($recorder) => {
+        expect($recorder.text()).to.equal("Transaction Admin")
+      })
   })
 
   it("can filter transactions by type", () => {
