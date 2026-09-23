@@ -21,15 +21,16 @@ describe("Logged-out home landing page", () => {
     })
   })
 
-  it("routes sign-in and request-access actions to the existing auth flows", () => {
+  it("routes sign-in and request-access actions to their pages", () => {
     cy.visit("/home")
 
     cy.get('a[href="/login"]').first().click()
     cy.url().should("include", "/login")
 
     cy.visit("/home")
-    cy.get('a[href="/register"]').first().click()
-    cy.url().should("include", "/register")
+    cy.get('a[href="/request-access"]').first().click()
+    cy.url().should("include", "/request-access")
+    cy.contains("h1", "Request access").should("be.visible")
   })
 
   it("sends a returning logged-out visitor to sign in", () => {
@@ -53,7 +54,7 @@ describe("Logged-out home landing page", () => {
 
     cy.get("h1").should("be.visible")
     cy.get('a[href="/login"]').first().should("be.visible")
-    cy.get('a[href="/register"]').first().should("be.visible")
+    cy.get('a[href="/request-access"]').first().should("be.visible")
     cy.document().then((document) => {
       expect(document.documentElement.scrollWidth).to.be.lte(
         document.documentElement.clientWidth + 1,

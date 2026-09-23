@@ -7,7 +7,7 @@ import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
 import { captureServerWarning } from "@/lib/sentry"
 
-const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
+const AUTH_PAGES = ["/login", "/register", "/request-access", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
 
 // Max time to wait for a DB-backed lookup before treating the request as
 // unauthenticated. Only used as a fallback when the cookie cache is missing —
