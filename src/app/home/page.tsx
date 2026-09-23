@@ -547,7 +547,7 @@ export default function HomePage() {
         </Link>
         <nav className="home-nav-actions" aria-label="Public navigation">
           <Link className="home-nav-sign-in" href="/login">Sign in</Link>
-          <Link className="home-pill home-pill-copper" href="/register">Request access <ArrowUpRight size={15} aria-hidden="true" /></Link>
+          <Link className="home-pill home-pill-copper" href="/request-access">Request access <ArrowUpRight size={15} aria-hidden="true" /></Link>
         </nav>
       </header>
 
@@ -559,7 +559,7 @@ export default function HomePage() {
             <p className="home-hero-copy">A clear, connected workspace for loans, repayments, customers, and the daily decisions that keep your lending business moving forward.</p>
             <div className="home-hero-actions">
               <Link className="home-pill home-pill-ink" href="/login">Sign in to your workspace <ArrowUpRight size={16} aria-hidden="true" /></Link>
-              <Link className="home-pill" href="/register" style={{ border: "1px solid var(--home-line)", color: "var(--home-ink-soft)" }}>Request access</Link>
+              <Link className="home-pill" href="/request-access" style={{ border: "1px solid var(--home-line)", color: "var(--home-ink-soft)" }}>Request access</Link>
             </div>
             <p className="home-hero-note"><Check size={14} strokeWidth={2.5} aria-hidden="true" /> Built for disciplined, growing lending teams</p>
           </div>
@@ -635,7 +635,7 @@ export default function HomePage() {
             <p className="home-section-kicker">Make room for better work</p>
             <h2 id="home-cta-title">Your lending operation deserves a clear place to land.</h2>
             <p className="home-section-intro">Request access to Kaks Credit and give your team one calm, connected workspace for the work that keeps capital moving.</p>
-            <Link className="home-pill home-pill-copper" href="/register">Request access <ArrowUpRight size={16} aria-hidden="true" /></Link>
+            <Link className="home-pill home-pill-copper" href="/request-access">Request access <ArrowUpRight size={16} aria-hidden="true" /></Link>
           </div>
         </section>
       </main>

@@ -2,7 +2,7 @@ import { Resend } from "resend"
 import { eq } from "drizzle-orm"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
-import { AdminNotificationTemplate } from "@/lib/emails"
+import { AccessRequestTemplate, AdminNotificationTemplate } from "@/lib/emails"
 import { formatNumberWithCommas, shortId } from "@/lib/utils"
 import { absoluteUrl } from "@/lib/urls"
 import { loans } from "@/lib/db/schema/loans"
@@ -13,6 +13,37 @@ import { creditorRepayments } from "@/lib/db/schema/creditor-repayments"
 import { captureServerWarning } from "@/lib/sentry"
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+
+export type AccessRequestEmailPayload = {
+  name: string
+  email?: string
+  phone?: string
+  organization?: string
+  message?: string
+}
+
+export async function sendAccessRequestEmail(
+  payload: AccessRequestEmailPayload,
+): Promise<void> {
+  const recipient = process.env.REQUEST_ACCESS_EMAIL?.trim()
+  if (!recipient) {
+    throw new Error("REQUEST_ACCESS_EMAIL is not configured")
+  }
+
+  const { error } = await resend.emails.send({
+    from: process.env.EMAIL_FROM || "Kaks Credit <noreply@fidexa.org>",
+    to: recipient,
+    subject: "New request for access from " + payload.name,
+    react: AccessRequestTemplate({
+      ...payload,
+      submittedAt: new Date(),
+    }),
+  })
+
+  if (error) {
+    throw new Error(error.message || "Resend rejected the email")
+  }
+}
 
 export type NotificationEvent =
   | "loan.disbursed"

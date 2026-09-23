@@ -30,6 +30,12 @@ describe("Auth Gate (proxy.ts)", () => {
     cy.contains("Create your account")
   })
 
+  it("unauthenticated user can access /request-access directly", () => {
+    cy.visit("/request-access")
+    cy.url().should("include", "/request-access")
+    cy.contains("h1", "Request access").should("be.visible")
+  })
+
   it("unassigned user redirects to /pending-approval", () => {
     // First user becomes superAdmin
     cy.registerAndLogin({ name: "First Admin" })
