@@ -51,3 +51,4 @@ next-env.d.ts
 # agent / tooling artifacts (local only)
 .planning/
 graphify-out/
+docs/superpowers/plans/
