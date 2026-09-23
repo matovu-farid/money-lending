@@ -6,6 +6,7 @@ import { auth } from "@/lib/auth"
 import { db } from "@/lib/db"
 import { sql } from "drizzle-orm"
 import { captureServerWarning } from "@/lib/sentry"
+import { AUTH_COOKIE_PREFIX } from "@/lib/auth-cookie"
 
 const AUTH_PAGES = ["/login", "/register", "/forgot-password", "/verify-email", "/reset-password", "/accept-invite", "/access-blocked"]
 const PUBLIC_PAGES = ["/home", "/request-access"]
@@ -15,6 +16,99 @@ const PUBLIC_PAGES = ["/home", "/request-access"]
 // the hot path is `getSessionCookie` (no DB) and `auth.api.getSession` against
 // the cookie cache (no DB).
 const DB_LOOKUP_TIMEOUT_MS = 3_000
+
+const LEGACY_SESSION_COOKIE_NAMES = [
+  "better-auth.session_token",
+  "better-auth-session_token",
+  "__Secure-better-auth.session_token",
+  "__Secure-better-auth-session_token",
+] as const
+
+function authCookieIsSecure(): boolean {
+  return process.env.BETTER_AUTH_URL
+    ? process.env.BETTER_AUTH_URL.startsWith("https://")
+    : process.env.NODE_ENV === "production"
+}
+
+function clearLegacySessionCookie(response: NextResponse, name: string): void {
+  response.cookies.set({
+    name,
+    value: "",
+    httpOnly: true,
+    secure: name.startsWith("__Secure-") || authCookieIsSecure(),
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+  })
+}
+
+function legacySessionCookies(request: NextRequest): Array<{ name: string; token: string }> {
+  const names = authCookieIsSecure()
+    ? [...LEGACY_SESSION_COOKIE_NAMES].reverse()
+    : LEGACY_SESSION_COOKIE_NAMES
+  return names.flatMap((name) => {
+    const token = request.cookies.get(name)?.value
+    return token ? [{ name, token }] : []
+  })
+}
+
+async function validateLegacySession(request: NextRequest, token: string) {
+  const secure = authCookieIsSecure()
+  const cookieName = `${secure ? "__Secure-" : ""}${AUTH_COOKIE_PREFIX}.session_token`
+  const headers = new Headers(request.headers)
+  headers.set("cookie", `${cookieName}=${token}`)
+  return auth.api.getSession({ headers })
+}
+
+async function clearValidLegacySessions(request: NextRequest, response: NextResponse): Promise<NextResponse> {
+  for (const { name, token } of legacySessionCookies(request)) {
+    try {
+      if (await validateLegacySession(request, token)) clearLegacySessionCookie(response, name)
+    } catch (err) {
+      captureServerWarning("Legacy session cleanup failed", {
+        source: "proxy.legacy-session-cleanup",
+      })
+      console.error("[proxy] legacy session cleanup failed:", err)
+    }
+  }
+  return response
+}
+
+async function migrateLegacySession(request: NextRequest): Promise<NextResponse | null> {
+  const secure = authCookieIsSecure()
+  const sessionCookieName = `${secure ? "__Secure-" : ""}${AUTH_COOKIE_PREFIX}.session_token`
+
+  // Better Auth's signed token is independent of its cookie name. Validate it
+  // with this app's current auth configuration before copying it; a cookie
+  // from another localhost app must never become a session here.
+  for (const { name, token } of legacySessionCookies(request)) {
+    try {
+      const session = await validateLegacySession(request, token)
+      if (!session?.user) continue
+
+      const response = NextResponse.redirect(request.url)
+      response.cookies.set({
+        name: sessionCookieName,
+        value: token,
+        httpOnly: true,
+        secure,
+        sameSite: "lax",
+        path: "/",
+        ...(!request.cookies.has("better-auth.dont_remember")
+          ? { expires: new Date(session.session.expiresAt) }
+          : {}),
+      })
+      clearLegacySessionCookie(response, name)
+      return response
+    } catch (err) {
+      captureServerWarning("Legacy session migration failed", {
+        source: "proxy.legacy-session-migration",
+      })
+      console.error("[proxy] legacy session migration failed:", err)
+    }
+  }
+  return null
+}
 
 export async function proxy(request: NextRequest) {
   // Test-only: clear in-process IP caches from the middleware's own module
@@ -45,8 +139,10 @@ export async function proxy(request: NextRequest) {
   // middleware. This only verifies the session token cookie is present, not
   // that it's still valid. Real validation happens at the page/server-action
   // layer; this is just for optimistic redirects.
-  const sessionCookie = getSessionCookie(request)
+  const sessionCookie = getSessionCookie(request, { cookiePrefix: AUTH_COOKIE_PREFIX })
   if (!sessionCookie) {
+    const migrated = await migrateLegacySession(request)
+    if (migrated) return migrated
     if (isAuthPage) return NextResponse.next()
     if (pathname === "/") {
       const dest = request.cookies.has("has_account") ? "/login" : "/home"
@@ -76,6 +172,8 @@ export async function proxy(request: NextRequest) {
     const dest = request.cookies.has("has_account") ? "/login" : "/register"
     return NextResponse.redirect(new URL(dest, request.url))
   }
+
+  const finish = (response: NextResponse) => clearValidLegacySessions(request, response)
 
   const isTestEnv = process.env.NODE_ENV === "test" || process.env.CYPRESS === "true"
   let emailVerified = session.user.emailVerified
@@ -112,14 +210,14 @@ export async function proxy(request: NextRequest) {
 
   // Email not verified -- redirect to /verify-email (skip in test/Cypress env)
   if (!emailVerified && !isTestEnv) {
-    if (pathname === "/verify-email") return NextResponse.next()
-    return NextResponse.redirect(new URL("/verify-email", request.url))
+    if (pathname === "/verify-email") return finish(NextResponse.next())
+    return finish(NextResponse.redirect(new URL("/verify-email", request.url)))
   }
 
   // Unassigned users can ONLY access /pending-approval
   if (role === "unassigned") {
-    if (pathname === "/pending-approval") return NextResponse.next()
-    return NextResponse.redirect(new URL("/pending-approval", request.url))
+    if (pathname === "/pending-approval") return finish(NextResponse.next())
+    return finish(NextResponse.redirect(new URL("/pending-approval", request.url)))
   }
 
   // IP allowlist gate for lower-role users
@@ -130,19 +228,19 @@ export async function proxy(request: NextRequest) {
       if (!allowed) {
         // Best-effort log; never await
         void recordBlock(session.user.id, clientIp ?? "unknown", pathname)
-        if (pathname === "/access-blocked") return NextResponse.next()
-        return NextResponse.redirect(new URL("/access-blocked", request.url))
+        if (pathname === "/access-blocked") return finish(NextResponse.next())
+        return finish(NextResponse.redirect(new URL("/access-blocked", request.url)))
       }
     }
   }
 
   // Authenticated + assigned user visiting auth pages or /pending-approval -- redirect to dashboard
   if (isAuthPage || pathname === "/pending-approval") {
-    return NextResponse.redirect(new URL("/dashboard", request.url))
+    return finish(NextResponse.redirect(new URL("/dashboard", request.url)))
   }
 
   // Authenticated user with an assigned role -- allow through
-  return NextResponse.next()
+  return finish(NextResponse.next())
 }
 
 export const config = {

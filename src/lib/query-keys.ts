@@ -143,6 +143,10 @@ export const queryKeys = {
       period
         ? (["reports", "cashflow", period] as const)
         : (["reports", "cashflow"] as const),
+    weeklyPayments: (week?: string) =>
+      week ? (["reports", "weekly-payments", week] as const) : (["reports", "weekly-payments"] as const),
+    weeklyLoans: (week?: string) =>
+      week ? (["reports", "weekly-loans", week] as const) : (["reports", "weekly-loans"] as const),
   },
 
   // ── Delegations ──────────────────────────────────────────────────────

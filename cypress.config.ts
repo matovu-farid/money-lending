@@ -40,7 +40,8 @@ export default defineConfig({
     supportFile: "cypress/support/e2e.ts",
     specPattern: "cypress/e2e/**/*.cy.ts",
     pageLoadTimeout: 120000,
-    setupNodeEvents(on) {
+    setupNodeEvents(on, config) {
+      const appBaseUrl = config.baseUrl ?? "http://localhost:3000"
       on("task", {
         async "db:reset"() {
           await withSql(async (sql) => {
@@ -74,8 +75,8 @@ export default defineConfig({
           // stale toggle/IP value from a previous test can't leak across resets.
           // Best-effort — never throw if the dev server isn't reachable.
           await Promise.allSettled([
-            fetch("http://localhost:3000/api/test/clear-ip-cache", { method: "POST" }),
-            fetch("http://localhost:3000/_test/clear-ip-middleware-cache", { method: "POST" }),
+            fetch(new URL("/api/test/clear-ip-cache", appBaseUrl), { method: "POST", signal: AbortSignal.timeout(3000) }),
+            fetch(new URL("/_test/clear-ip-middleware-cache", appBaseUrl), { method: "POST", signal: AbortSignal.timeout(3000) }),
           ])
           return null
         },
@@ -208,7 +209,7 @@ export default defineConfig({
 
         async "auth:createUser"({ name, email, role }: { name: string; email?: string; role: string }) {
           const userEmail = email ?? `${role.toLowerCase()}-${Date.now()}@fidexa.org`
-          const res = await fetch("http://localhost:3000/api/test/create-user", {
+          const res = await fetch(new URL("/api/test/create-user", appBaseUrl), {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name, email: userEmail, role }),
@@ -278,6 +279,114 @@ export default defineConfig({
               RETURNING id
             `
             return { paymentId: rows[0].id }
+          })
+        },
+
+        async "db:seedWeeklyReportsFixture"() {
+          return withSql(async (sql) => {
+            const users = await sql`SELECT id FROM "user" ORDER BY created_at LIMIT 1`
+            const actorId = users[0]?.id
+            if (!actorId) throw new Error("No users found")
+
+            const week = "2026-09-21"
+            const categories: Record<string, string> = {}
+            for (const [name, type] of [["Cash", "asset"], ["Loans Receivable", "asset"], ["Interest Earned", "revenue"]] as const) {
+              const existing = await sql`SELECT id FROM transaction_categories WHERE name = ${name} AND type = ${type}`
+              const [category] = existing.length
+                ? existing
+                : await sql`INSERT INTO transaction_categories (name, type) VALUES (${name}, ${type}) RETURNING id`
+              categories[name] = category.id
+            }
+            const makeLoan = async (name: string, startDate: string, principal: string, status = "active", deleted = false) => {
+              const [customer] = await sql`
+                INSERT INTO customers (full_name, nin, contact, address, status)
+                VALUES (${name}, ${`NIN-${name}`}, ${`07${crypto.randomUUID().replaceAll("-", "").slice(0, 8)}`}, 'Kampala, Uganda', 'active')
+                RETURNING id
+              `
+              const [loan] = await sql`
+                INSERT INTO loans (customer_id, principal_amount, issuance_fee, interest_rate, min_interest_days,
+                  start_date, status, issued_by, disbursement_source, loan_type, deleted_at)
+                VALUES (${customer.id}, ${principal}, '0', '0.1000', 30, ${startDate}::timestamptz,
+                  ${status}::loan_status, ${actorId}, 'cash', 'perpetual',
+                  ${deleted ? "2026-09-23T12:00:00+03:00" : null}::timestamptz)
+                RETURNING id
+              `
+              const disbursementGroup = crypto.randomUUID()
+              await sql`
+                INSERT INTO transactions (type, amount, category_id, reference_type, reference_id, loan_id, description, transaction_date, recorded_by, journal_group_id)
+                VALUES ('debit', ${principal}, ${categories["Loans Receivable"]}, 'loan', ${loan.id}, ${loan.id}, 'Fixture principal disbursement', ${startDate}::timestamptz, ${actorId}, ${disbursementGroup})
+              `
+              await sql`
+                INSERT INTO transactions (type, amount, category_id, reference_type, reference_id, loan_id, description, transaction_date, recorded_by, deposit_location, journal_group_id)
+                VALUES ('credit', ${principal}, ${categories.Cash}, 'loan', ${loan.id}, ${loan.id}, 'Fixture cash disbursement', ${startDate}::timestamptz, ${actorId}, 'cash', ${disbursementGroup})
+              `
+              return { id: loan.id as string, customerName: name }
+            }
+
+            const loanA = await makeLoan("Weekly Report Loan A", "2026-09-22T10:00:00+03:00", "300000")
+            const loanB = await makeLoan("Weekly Report Loan B", "2026-09-10T10:00:00+03:00", "500000")
+            const pendingLoan = await makeLoan("Weekly Report Pending", "2026-09-22T10:00:00+03:00", "900000", "pending")
+            const deletedLoan = await makeLoan("Weekly Report Deleted", "2026-09-22T10:00:00+03:00", "1000000", "active", true)
+            const boundaryLoan = await makeLoan("Weekly Report Boundary", "2026-09-10T10:00:00+03:00", "100000")
+
+            const addPayment = async (loanId: string, name: string, paymentDate: string, amount: string, interest: string, principal: string, options: { wrong?: boolean; deleted?: boolean } = {}) => {
+              const [payment] = await sql`
+                INSERT INTO payments (loan_id, amount, payment_date, recorded_by, deposit_location, marked_wrong, deleted_at)
+                VALUES (${loanId}, ${amount}, ${paymentDate}::timestamptz, ${actorId}, 'cash', ${!!options.wrong}, ${options.deleted ? "2026-09-23T12:00:00+03:00" : null}::timestamptz)
+                RETURNING id
+              `
+              // Wrong/deleted payments have no active journal effect after the
+              // normal reversal flow, so exclude their entries from this fixture.
+              if (options.wrong || options.deleted) return payment.id as string
+              const post = async (categoryName: string, categoryId: string, part: string, type: "debit" | "credit") => {
+                if (Number(part) <= 0) return
+                const group = crypto.randomUUID()
+                const cashIsDebit = type === "debit"
+                const debitId = cashIsDebit ? categories.Cash : categoryId
+                const creditId = cashIsDebit ? categoryId : categories.Cash
+                await sql`
+                  INSERT INTO transactions (type, amount, category_id, reference_type, reference_id, loan_id, description, transaction_date, recorded_by, deposit_location, journal_group_id)
+                  VALUES ('debit', ${part}, ${debitId}, 'payment', ${payment.id}, ${loanId}, ${`Fixture payment ${name} ${categoryName}`}, ${paymentDate}::timestamptz, ${actorId}, 'cash', ${group}),
+                         ('credit', ${part}, ${creditId}, 'payment', ${payment.id}, ${loanId}, ${`Fixture payment ${name} ${categoryName}`}, ${paymentDate}::timestamptz, ${actorId}, 'cash', ${group})
+                `
+              }
+              await post("interest", categories["Interest Earned"], interest, "debit")
+              await post("principal", categories["Loans Receivable"], principal, "debit")
+              return payment.id as string
+            }
+
+            const priorPaymentId = await addPayment(loanB.id, "Loan B prior-week payment", "2026-09-14T10:00:00+03:00", "50000", "6666.67", "43333.33")
+            const loanAPaymentId = await addPayment(loanA.id, "Loan A current-week payment", "2026-09-23T10:00:00+03:00", "50000", "1000", "49000")
+            const loanBPaymentId = await addPayment(loanB.id, "Loan B current-week payment", "2026-09-23T11:00:00+03:00", "60000", "18666.67", "41333.33")
+            await addPayment(pendingLoan.id, "pending excluded", "2026-09-23T12:00:00+03:00", "1000", "0", "1000")
+            await addPayment(deletedLoan.id, "deleted loan excluded", "2026-09-23T12:00:00+03:00", "1000", "0", "1000")
+            const wrongId = await addPayment(loanA.id, "marked wrong excluded", "2026-09-23T13:00:00+03:00", "1000", "0", "1000", { wrong: true })
+            const deletedPaymentId = await addPayment(loanA.id, "deleted payment excluded", "2026-09-23T14:00:00+03:00", "1000", "0", "1000", { deleted: true })
+            const boundaryPaymentId = await addPayment(boundaryLoan.id, "next week boundary", "2026-09-28T00:00:00+03:00", "1000", "0", "1000")
+            return { week, loanAId: loanA.id, loanBId: loanB.id, priorPaymentId, loanAPaymentId, loanBPaymentId, wrongId, deletedPaymentId, boundaryPaymentId }
+          })
+        },
+
+        async "db:changeWeeklyReportLedger"({ paymentId }: { paymentId: string }) {
+          return withSql(async (sql) => {
+            const rows = await sql`
+              WITH allocation_groups AS (
+                SELECT t.journal_group_id,
+                       (CASE WHEN c.name = 'Loans Receivable' THEN '47000.00' ELSE '3000.00' END)::numeric AS new_amount
+                FROM transactions t
+                JOIN transaction_categories c ON c.id = t.category_id
+                WHERE t.reference_type = 'payment'
+                  AND t.reference_id = ${paymentId}
+                  AND c.name IN ('Loans Receivable', 'Interest Earned')
+                  AND t.type = 'credit'
+              )
+              UPDATE transactions t SET amount = g.new_amount
+              FROM allocation_groups g
+              WHERE t.journal_group_id = g.journal_group_id
+              RETURNING t.amount
+            `
+            if (rows.length !== 4) throw new Error("Expected balanced Loan A interest and principal journal pairs to change")
+            return rows[0].amount
           })
         },
 
@@ -509,8 +618,8 @@ export default defineConfig({
           // Clear both the route-handler module cache and the middleware module cache.
           // They run in separate module contexts so each needs its own flush.
           const [routeRes, middlewareRes] = await Promise.all([
-            fetch("http://localhost:3000/api/test/clear-ip-cache", { method: "POST" }),
-            fetch("http://localhost:3000/_test/clear-ip-middleware-cache", { method: "POST" }),
+            fetch(new URL("/api/test/clear-ip-cache", appBaseUrl), { method: "POST" }),
+            fetch(new URL("/_test/clear-ip-middleware-cache", appBaseUrl), { method: "POST" }),
           ])
           if (!routeRes.ok) throw new Error(`Failed to clear route IP caches: ${await routeRes.text()}`)
           if (!middlewareRes.ok) throw new Error(`Failed to clear middleware IP caches: ${await middlewareRes.text()}`)

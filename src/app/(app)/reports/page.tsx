@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { FileText, TrendingUp, Scale, ScrollText, ClipboardList, PiggyBank, ArrowLeftRight } from "lucide-react"
+import { FileText, TrendingUp, Scale, ScrollText, ClipboardList, PiggyBank, ArrowLeftRight, CalendarDays, Banknote } from "lucide-react"
 import {
   Card,
   CardContent,
@@ -20,9 +20,24 @@ interface ReportCard {
   description: string
   href: string
   permission?: Permission
+  permissions?: Permission[]
 }
 
 const reportCards: ReportCard[] = [
+  {
+    icon: Banknote,
+    title: "Weekly Payments",
+    description: "Payments received during a Kampala Monday–Sunday week.",
+    href: "/reports/weekly-payments",
+    permissions: ["reports:read", "payment:read"],
+  },
+  {
+    icon: CalendarDays,
+    title: "Weekly Loans",
+    description: "Loans issued during a Kampala Monday–Sunday week.",
+    href: "/reports/weekly-loans",
+    permissions: ["reports:read", "loan:read"],
+  },
   {
     icon: FileText,
     title: "Loan Portfolio",
@@ -79,7 +94,10 @@ const reportCards: ReportCard[] = [
 
 export default function ReportsPage() {
   const { has } = usePermissions()
-  const visibleCards = reportCards.filter((card) => !card.permission || has(card.permission))
+  const visibleCards = reportCards.filter((card) =>
+    (!card.permission || has(card.permission)) &&
+    (!card.permissions || card.permissions.every((permission) => has(permission)))
+  )
   return (
     <div className="space-y-8 p-4 md:p-6">
       <div>

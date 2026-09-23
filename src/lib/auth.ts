@@ -6,6 +6,7 @@ import { db } from "./db"
 import { ac, superAdminRole, adminRole, supervisorRole, loanOfficerRole, unassignedRole } from "./permissions"
 import { VerifyEmailTemplate, ResetPasswordTemplate } from "@/lib/emails"
 import { captureServerWarning } from "@/lib/sentry"
+import { AUTH_COOKIE_PREFIX } from "@/lib/auth-cookie"
 
 // In-memory store for Cypress E2E tests: maps email -> verification URL
 // Only populated when NODE_ENV=test (sendVerificationEmail stores URL here instead of emailing)
@@ -23,6 +24,7 @@ function getResend(): Resend {
 const emailFrom = process.env.EMAIL_FROM || "Kaks Credit <noreply@fidexa.org>"
 
 export const auth = betterAuth({
+  advanced: { cookiePrefix: AUTH_COOKIE_PREFIX },
   database: drizzleAdapter(db, { provider: "pg" }),
   // Disable rate limiting in test/Cypress mode to prevent 429s
   ...(isCypress ? { rateLimit: { enabled: false } } : {}),
@@ -62,7 +64,7 @@ export const auth = betterAuth({
       const inviteRows = await db.execute(
         sql`SELECT 1 FROM "invitation" WHERE "email" = ${user.email} AND "status" = 'pending' LIMIT 1`
       )
-      if ((inviteRows as unknown as any[]).length > 0) {
+      if ((inviteRows as unknown as unknown[]).length > 0) {
         console.log("[Email Debug] SKIPPED — user has pending invitation")
         return
       }

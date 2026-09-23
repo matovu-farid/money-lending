@@ -7,17 +7,17 @@ import { useSession } from "@/lib/auth-client"
 
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
   const { isPending } = useSession()
-  const { has } = usePermissions()
+  const { has, isLoading } = usePermissions()
   const router = useRouter()
   const allowed = has("reports:read")
 
   useEffect(() => {
-    if (!isPending && !allowed) {
+    if (!isPending && !isLoading && !allowed) {
       router.replace("/dashboard")
     }
-  }, [isPending, allowed, router])
+  }, [isPending, isLoading, allowed, router])
 
-  if (isPending) return null
+  if (isPending || isLoading) return null
   if (!allowed) return null
 
   return <>{children}</>
