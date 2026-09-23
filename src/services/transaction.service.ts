@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
+import { user } from "@/lib/db/schema/auth";
 import { loans } from "@/lib/db/schema/loans";
 import { payments } from "@/lib/db/schema/payments";
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
@@ -17,6 +18,8 @@ import {
   count,
   inArray,
   isNull,
+  notInArray,
+  or,
   sql,
 } from "drizzle-orm";
 import BigNumber from "bignumber.js";
@@ -320,6 +323,7 @@ export const listTransactions = (
       referenceId: string | null;
       description: string | null;
       transactionDate: Date;
+      /** Human-readable recorder name, with a safe fallback for legacy rows. */
       recordedBy: string;
       createdAt: Date;
     }[];
@@ -350,6 +354,17 @@ export const listTransactions = (
       if (filters.manualOnly) {
         conditions.push(isNull(transactions.referenceType));
       }
+      if (filters.excludeCreditorTransactions) {
+        conditions.push(
+          or(
+            isNull(transactions.referenceType),
+            notInArray(transactions.referenceType, [
+              "creditor_investment",
+              "creditor_repayment",
+            ]),
+          ),
+        );
+      }
 
       const whereClause =
         conditions.length > 0 ? and(...conditions) : undefined;
@@ -370,7 +385,13 @@ export const listTransactions = (
             referenceId: transactions.referenceId,
             description: transactions.description,
             transactionDate: transactions.transactionDate,
-            recordedBy: transactions.recordedBy,
+            recordedBy: sql<string>`coalesce(
+              ${user.name},
+              case
+                when ${transactions.recordedBy} = 'system' then 'System'
+                else 'Unknown user'
+              end
+            )`,
             createdAt: transactions.createdAt,
           })
           .from(transactions)
@@ -378,6 +399,7 @@ export const listTransactions = (
             transactionCategories,
             eq(transactions.categoryId, transactionCategories.id),
           )
+          .leftJoin(user, eq(transactions.recordedBy, user.id))
           .where(whereClause)
           .orderBy(
             desc(transactions.transactionDate),
