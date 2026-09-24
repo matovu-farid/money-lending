@@ -1,9 +1,10 @@
 "use client"
 
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { ArrowLeft, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { parseWeeklyReportPeriod, shiftKampalaWeek } from "@/lib/weekly-report-period"
+import { currentKampalaWeek, isFutureKampalaWeek, parseWeeklyReportPeriod, shiftKampalaWeek } from "@/lib/weekly-report-period"
 
 export function weeklyRangeLabel(week: string) {
   const { endLocalDate } = parseWeeklyReportPeriod(week)
@@ -24,7 +25,18 @@ function mondayOf(value: string): string | undefined {
 
 export function WeeklyReportToolbar({ week, basePath, onPrint, printDisabled, printing }: { week: string; basePath: string; onPrint?: () => void; printDisabled?: boolean; printing?: boolean }) {
   const router = useRouter()
-  const navigate = (nextWeek: string) => router.replace(`${basePath}?week=${encodeURIComponent(nextWeek)}`)
+  const [currentWeek, setCurrentWeek] = useState(() => currentKampalaWeek())
+  useEffect(() => {
+    const refreshCurrentWeek = () => setCurrentWeek(currentKampalaWeek())
+    const timer = window.setInterval(refreshCurrentWeek, 30_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const latestSunday = parseWeeklyReportPeriod(currentWeek).endLocalDate
+  const navigate = (nextWeek: string) => {
+    if (isFutureKampalaWeek(nextWeek)) return
+    router.replace(`${basePath}?week=${encodeURIComponent(nextWeek)}`)
+  }
+  const nextDisabled = isFutureKampalaWeek(shiftKampalaWeek(week, 1))
 
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-card p-3">
@@ -37,6 +49,7 @@ export function WeeklyReportToolbar({ week, basePath, onPrint, printDisabled, pr
           id="weekly-report-week"
           type="date"
           value={week}
+          max={latestSunday}
           onChange={(event) => {
             const monday = mondayOf(event.currentTarget.value)
             if (monday) navigate(monday)
@@ -44,7 +57,7 @@ export function WeeklyReportToolbar({ week, basePath, onPrint, printDisabled, pr
           className="h-9 rounded-md border bg-background px-3 text-sm"
         />
       </div>
-      <Button variant="outline" size="sm" aria-label="Next week" onClick={() => navigate(shiftKampalaWeek(week, 1))}>
+      <Button variant="outline" size="sm" aria-label="Next week" disabled={nextDisabled} onClick={() => navigate(shiftKampalaWeek(week, 1))}>
         Next week <ArrowRight className="ml-1 h-4 w-4" />
       </Button>
       {onPrint && <Button variant="outline" size="sm" onClick={onPrint} disabled={printDisabled} loading={printing}>

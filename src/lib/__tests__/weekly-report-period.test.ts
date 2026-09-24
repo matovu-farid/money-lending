@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   currentKampalaWeek,
+  isFutureKampalaWeek,
   parseWeeklyReportPeriod,
   shiftKampalaWeek,
 } from '../weekly-report-period';
@@ -10,6 +11,14 @@ describe('weekly report periods', () => {
     expect(currentKampalaWeek(new Date('2026-09-23T12:00:00.000Z'))).toBe('2026-09-21');
     // Sunday evening UTC is still Sunday in Kampala until 21:00 UTC.
     expect(currentKampalaWeek(new Date('2026-09-27T20:59:00.000Z'))).toBe('2026-09-21');
+  });
+
+  it('identifies future weeks using Kampala time across the Monday boundary', () => {
+    const beforeKampalaMonday = new Date('2026-09-27T20:59:00.000Z');
+    const atKampalaMonday = new Date('2026-09-27T21:00:00.000Z');
+    expect(isFutureKampalaWeek('2026-09-28', beforeKampalaMonday)).toBe(true);
+    expect(isFutureKampalaWeek('2026-09-28', atKampalaMonday)).toBe(false);
+    expect(isFutureKampalaWeek('2026-09-21', atKampalaMonday)).toBe(false);
   });
 
   it('validates real calendar Mondays, including leap days', () => {

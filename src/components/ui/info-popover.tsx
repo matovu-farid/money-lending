@@ -12,15 +12,19 @@ import { cn } from "@/lib/utils"
 interface InfoPopoverProps {
   children: React.ReactNode
   className?: string
+  triggerClassName?: string
 }
 
-export function InfoPopover({ children, className }: InfoPopoverProps) {
+export function InfoPopover({ children, className, triggerClassName }: InfoPopoverProps) {
   return (
     <Popover>
       <PopoverTrigger
         render={<span role="button" tabIndex={0} />}
         nativeButton={false}
-        className="inline-flex items-center justify-center cursor-help text-muted-foreground hover:text-foreground transition-colors"
+        className={cn(
+          "inline-flex items-center justify-center cursor-help text-muted-foreground hover:text-foreground transition-colors",
+          triggerClassName,
+        )}
         aria-label="More information"
         onClick={(e) => e.stopPropagation()}
       >

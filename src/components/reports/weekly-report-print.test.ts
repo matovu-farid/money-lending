@@ -9,14 +9,22 @@ describe("weekly report print documents", () => {
       lastPaymentDate: "2026-09-22T00:00:00.000Z",
     }])
 
-    expect(html).toContain("Customer Name</th><th>Contact</th><th class=\"num\">Principal Amount (UGX)</th>")
-    expect(html).toMatch(/Principal Balance \(UGX\)<\/th>\s*<th class="num">Total Due \(UGX\)<\/th>/)
-    expect(html).toMatch(/Accrued Interest \(UGX\)<\/th><th class="num">Days Overdue<\/th><th>Last Payment/)
+    expect(html).toContain("Customer Name</th><th>Contact</th><th class=\"num\">Principal Amount</th>")
+    expect(html).toMatch(/Principal Balance<\/th>\s*<th class="num">Accrued Interest<\/th><th class="num">Total Due<\/th>/)
+    expect(html).toMatch(/Total Due<\/th><th class="num">Days Overdue<\/th><th>Last Payment/)
+    const body = html.split("<tbody>")[1].split("</tbody>")[0]
+    const footer = html.split("<tfoot>")[1].split("</tfoot>")[0]
+    expect(body).toMatch(/>5,000<\/td><td class="num">55,000<\/td>/)
+    expect(footer).toMatch(/>5,000<\/td><td class="num">55,000<\/td>/)
     expect(html).toContain("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;")
     expect(html).not.toContain("<img")
     expect(html).toContain("Week: 21 Sept 2026 – 27 Sept 2026")
     expect(html).toContain("As of: 22 Sept 2026, 10:30")
-    expect(html).toContain("UGX 100,000")
+    expect(body).toContain("100,000")
+    expect(footer).toContain("100,000")
+    expect(body).not.toContain("UGX")
+    expect(footer).not.toContain("UGX")
+    expect(html).not.toContain("(UGX)")
     expect(html).toContain("1 loan</td>")
   })
 
@@ -25,11 +33,21 @@ describe("weekly report print documents", () => {
       customerName: "Test Customer", paymentDate: "2026-09-22T06:00:00.000Z", amount: "1200.00",
       interestPortion: "200.00", principalPortion: "1000.00", principalBalanceAfter: "9000.00",
     }])
-    expect(html).toContain("<th>Customer</th><th>Date</th><th class=\"num\">Amount (UGX)</th>")
-    expect(html).toMatch(/Interest \(UGX\)<\/th>\s*<th class="num">Principal \(UGX\)<\/th><th class="num">Principal Balance \(UGX\)/)
-    expect(html).toContain("UGX 1,200")
-    expect(html).toContain("UGX 200")
+    expect(html).toContain("<th>Customer</th><th>Date</th><th class=\"num\">Amount</th>")
+    expect(html).toMatch(/Interest<\/th>\s*<th class="num">Principal<\/th><th class="num">Principal Balance/)
+    const body = html.split("<tbody>")[1].split("</tbody>")[0]
+    const footer = html.split("<tfoot>")[1].split("</tfoot>")[0]
+    expect(body).toContain("1,200")
+    expect(body).toContain("200")
+    expect(footer).toContain("1,200")
+    expect(footer).toContain("200")
+    expect(body).not.toContain("UGX")
+    expect(footer).not.toContain("UGX")
+    expect(html).not.toContain("(UGX)")
 
-    expect(buildWeeklyPaymentsPrintHtml("2026-09-21", "2026-09-22T07:30:00.000Z", [])).toContain("No payments this week")
+    const emptyHtml = buildWeeklyPaymentsPrintHtml("2026-09-21", "2026-09-22T07:30:00.000Z", [])
+    expect(emptyHtml).toContain("No payments this week")
+    expect(emptyHtml).toContain(">0</td>")
+    expect(emptyHtml).not.toContain("(UGX)")
   })
 })

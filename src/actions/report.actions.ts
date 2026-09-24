@@ -12,7 +12,7 @@ import {
 import { listTransactions } from "@/services/transaction.service"
 import { getCurrentMonth } from "@/lib/utils"
 import { checkPermission, getUserRole } from "@/lib/action-utils"
-import { parseWeeklyReportPeriod } from "@/lib/weekly-report-period"
+import { isFutureKampalaWeek, parseWeeklyReportPeriod } from "@/lib/weekly-report-period"
 import { DatabaseError, ForbiddenError, ValidationError } from "@/lib/errors"
 import {
   getWeeklyLoansData,
@@ -99,6 +99,9 @@ function runWeeklyReport<T>(
       parseWeeklyReportPeriod(week)
     } catch {
       return yield* Effect.fail(new ValidationError({ message: "Invalid week" }))
+    }
+    if (isFutureKampalaWeek(week)) {
+      return yield* Effect.fail(new ValidationError({ message: "Future weeks are not available" }))
     }
     return yield* service(week)
   })

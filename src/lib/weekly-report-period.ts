@@ -74,6 +74,12 @@ export function currentKampalaWeek(now = new Date()): string {
   return formatDate(monday.getUTCFullYear(), monday.getUTCMonth() + 1, monday.getUTCDate());
 }
 
+/** Returns whether a valid report week starts after the current Kampala week. */
+export function isFutureKampalaWeek(week: string, now = new Date()): boolean {
+  parseMonday(week);
+  return week > currentKampalaWeek(now);
+}
+
 export function shiftKampalaWeek(week: string, weeks: number): string {
   const monday = parseMonday(week);
   if (!Number.isInteger(weeks)) throw new RangeError('Week shift must be an integer');

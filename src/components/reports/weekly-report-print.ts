@@ -1,6 +1,6 @@
 import BigNumber from "bignumber.js"
 import { parseWeeklyReportPeriod } from "@/lib/weekly-report-period"
-import { formatCurrency } from "@/lib/utils"
+import { formatWeeklyReportAmount } from "@/lib/weekly-report-format"
 
 export type WeeklyLoanPrintRow = {
   customerName: string
@@ -71,16 +71,16 @@ export function buildWeeklyLoansPrintHtml(week: string, calculatedAt: string, ro
     interest: sum.interest.plus(row.accruedInterest),
   }), { principal: new BigNumber(0), balance: new BigNumber(0), due: new BigNumber(0), interest: new BigNumber(0) })
   const body = rows.map((row) => `<tr><td>${escapeHtml(row.customerName)}</td><td>${escapeHtml(row.contactNumber ?? "")}</td>
-<td class="num">${formatCurrency(row.principalAmount)}</td><td class="num">${formatCurrency(row.principalBalance)}</td>
-<td class="num">${formatCurrency(row.totalDue)}</td><td class="num">${formatCurrency(row.accruedInterest)}</td>
+<td class="num">${formatWeeklyReportAmount(row.principalAmount)}</td><td class="num">${formatWeeklyReportAmount(row.principalBalance)}</td>
+<td class="num">${formatWeeklyReportAmount(row.accruedInterest)}</td><td class="num">${formatWeeklyReportAmount(row.totalDue)}</td>
 <td class="num">${row.daysOverdue}</td><td>${escapeHtml(date(row.lastPaymentDate))}</td></tr>`).join("")
   return documentHtml("Kaks Credit — Weekly Loans Report", week, calculatedAt, rows.length,
     `<p class="note">Balances and interest are current as of the snapshot time shown above.</p><table><thead><tr>
-<th>Customer Name</th><th>Contact</th><th class="num">Principal Amount (UGX)</th><th class="num">Principal Balance (UGX)</th>
-<th class="num">Total Due (UGX)</th><th class="num">Accrued Interest (UGX)</th><th class="num">Days Overdue</th><th>Last Payment</th></tr></thead>
+<th>Customer Name</th><th>Contact</th><th class="num">Principal Amount</th><th class="num">Principal Balance</th>
+<th class="num">Accrued Interest</th><th class="num">Total Due</th><th class="num">Days Overdue</th><th>Last Payment</th></tr></thead>
 <tbody>${body || '<tr><td colspan="8" style="text-align:center;color:#666;padding:24px;">No loans issued this week</td></tr>'}</tbody>
-<tfoot><tr><td>TOTAL</td><td></td><td class="num">${formatCurrency(totals.principal.toFixed(2))}</td><td class="num">${formatCurrency(totals.balance.toFixed(2))}</td>
-<td class="num">${formatCurrency(totals.due.toFixed(2))}</td><td class="num">${formatCurrency(totals.interest.toFixed(2))}</td><td></td><td>${rows.length} ${rows.length === 1 ? "loan" : "loans"}</td></tr></tfoot></table>`)
+<tfoot><tr><td>TOTAL</td><td></td><td class="num">${formatWeeklyReportAmount(totals.principal.toFixed(2))}</td><td class="num">${formatWeeklyReportAmount(totals.balance.toFixed(2))}</td>
+<td class="num">${formatWeeklyReportAmount(totals.interest.toFixed(2))}</td><td class="num">${formatWeeklyReportAmount(totals.due.toFixed(2))}</td><td></td><td>${rows.length} ${rows.length === 1 ? "loan" : "loans"}</td></tr></tfoot></table>`)
 }
 
 export function buildWeeklyPaymentsPrintHtml(week: string, calculatedAt: string, rows: WeeklyPaymentPrintRow[]): string {
@@ -90,14 +90,14 @@ export function buildWeeklyPaymentsPrintHtml(week: string, calculatedAt: string,
     principal: sum.principal.plus(row.principalPortion),
   }), { amount: new BigNumber(0), interest: new BigNumber(0), principal: new BigNumber(0) })
   const body = rows.map((row) => `<tr><td>${escapeHtml(row.customerName)}</td><td>${escapeHtml(dateTime(row.paymentDate))}</td>
-<td class="num">${formatCurrency(row.amount)}</td><td class="num">${formatCurrency(row.interestPortion)}</td>
-<td class="num">${formatCurrency(row.principalPortion)}</td><td class="num">${formatCurrency(row.principalBalanceAfter)}</td></tr>`).join("")
+<td class="num">${formatWeeklyReportAmount(row.amount)}</td><td class="num">${formatWeeklyReportAmount(row.interestPortion)}</td>
+<td class="num">${formatWeeklyReportAmount(row.principalPortion)}</td><td class="num">${formatWeeklyReportAmount(row.principalBalanceAfter)}</td></tr>`).join("")
   return documentHtml("Kaks Credit — Weekly Payments Report", week, calculatedAt, rows.length,
-    `<table><thead><tr><th>Customer</th><th>Date</th><th class="num">Amount (UGX)</th><th class="num">Interest (UGX)</th>
-<th class="num">Principal (UGX)</th><th class="num">Principal Balance (UGX)</th></tr></thead>
+    `<table><thead><tr><th>Customer</th><th>Date</th><th class="num">Amount</th><th class="num">Interest</th>
+<th class="num">Principal</th><th class="num">Principal Balance</th></tr></thead>
 <tbody>${body || '<tr><td colspan="6" style="text-align:center;color:#666;padding:24px;">No payments this week</td></tr>'}</tbody>
-<tfoot><tr><td>TOTAL</td><td></td><td class="num">${formatCurrency(totals.amount.toFixed(2))}</td><td class="num">${formatCurrency(totals.interest.toFixed(2))}</td>
-<td class="num">${formatCurrency(totals.principal.toFixed(2))}</td><td></td></tr></tfoot></table>`)
+<tfoot><tr><td>TOTAL</td><td></td><td class="num">${formatWeeklyReportAmount(totals.amount.toFixed(2))}</td><td class="num">${formatWeeklyReportAmount(totals.interest.toFixed(2))}</td>
+<td class="num">${formatWeeklyReportAmount(totals.principal.toFixed(2))}</td><td></td></tr></tfoot></table>`)
 }
 
 export function printHtml(html: string): void {

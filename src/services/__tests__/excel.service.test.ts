@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import type { PnlData, BalanceSheetData, PortfolioEntry } from "@/types"
+import type { PnlData, BalanceSheetData, PortfolioEntry, LoanListEntry } from "@/types"
 
 const mockCells: Map<number, Record<string, any>> = new Map()
 let addedRows: any[][] = []
@@ -50,6 +50,7 @@ const mockWriteBuffer = vi.fn().mockResolvedValue(new ArrayBuffer(64))
 
 const mockWorksheet = {
   addRow: mockAddRow,
+  mergeCells: vi.fn(),
   getColumn: mockGetColumn,
   set views(v: any[]) { sheetViews = v },
   get views() { return sheetViews },
@@ -311,6 +312,33 @@ describe("Excel Export Service", () => {
       const lastCall = mockAddRow.mock.calls[mockAddRow.mock.calls.length - 1][0]
       expect(lastCall[0]).toBe("Total Liabilities + Equity")
       expect(lastCall[1]).toBe(5000000) // 2M + 3M
+    })
+  })
+
+  describe("generateLoansExcel", () => {
+    it("keeps accrued interest before total due in headers, rows, and totals", async () => {
+      const { generateLoansExcel } = await import("@/services/export/excel.service")
+      const loan = {
+        customerName: "Distinct Values Loan",
+        customerContact: "0700000000",
+        principalAmount: "100000.00",
+        outstandingBalance: "40000.00",
+        unpaidInterest: "7000.00",
+        daysOverdue: 3,
+        lastPaymentDate: null,
+      } as LoanListEntry
+
+      await generateLoansExcel([loan])
+
+      const headerRow = mockAddRow.mock.calls[2][0]
+      const dataRow = mockAddRow.mock.calls[3][0]
+      const summaryRow = mockAddRow.mock.calls[5][0]
+      expect(headerRow[4]).toBe("Accrued Interest (UGX)")
+      expect(headerRow[5]).toBe("Total Due (UGX)")
+      expect(dataRow[4]).toBe(7000)
+      expect(dataRow[5]).toBe(47000)
+      expect(summaryRow[4]).toBe(7000)
+      expect(summaryRow[5]).toBe(47000)
     })
   })
 

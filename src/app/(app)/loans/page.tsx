@@ -50,6 +50,10 @@ function escapeHtml(value: string): string {
     .replace(/'/g, "&#39;");
 }
 
+function formatLoanAmount(amount: string | number | null | undefined): string {
+  return formatCurrency(amount).replace(/^UGX\s*/, "");
+}
+
 /**
  * Builds an HTML document that mirrors the columns and totals of
  * generateLoansExcel (src/services/export/excel.service.ts) for printing.
@@ -62,7 +66,7 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
   let totalInterest = 0;
 
   const rows = entries
-    .map((e) => {
+    .map((e, index) => {
       const principal = parseFloat(e.principalAmount);
       const outstanding = parseFloat(e.outstandingBalance);
       const interest = parseFloat(e.unpaidInterest);
@@ -75,12 +79,13 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
         ? formatDate(e.lastPaymentDate)
         : "No payments";
       return `<tr>
+      <td class="num">${index + 1}</td>
       <td>${escapeHtml(e.customerName)}</td>
       <td>${escapeHtml(e.customerContact ?? "")}</td>
-      <td class="num">${formatCurrency(e.principalAmount)}</td>
-      <td class="num">${formatCurrency(e.outstandingBalance)}</td>
-      <td class="num">${formatCurrency(owed.toFixed(2))}</td>
-      <td class="num">${formatCurrency(e.unpaidInterest)}</td>
+      <td class="num">${formatLoanAmount(e.principalAmount)}</td>
+      <td class="num">${formatLoanAmount(e.outstandingBalance)}</td>
+      <td class="num">${formatLoanAmount(e.unpaidInterest)}</td>
+      <td class="num">${formatLoanAmount(owed.toFixed(2))}</td>
       <td class="num">${e.daysOverdue}</td>
       <td>${escapeHtml(last)}</td>
     </tr>`;
@@ -114,25 +119,27 @@ function buildLoansPrintHtml(entries: LoanListEntry[]): string {
   <table>
     <thead>
       <tr>
+        <th>No.</th>
         <th>Customer Name</th>
         <th>Contact</th>
-        <th class="num">Principal Amount (UGX)</th>
-        <th class="num">Principal Balance (UGX)</th>
-        <th class="num">Total Due (UGX)</th>
-        <th class="num">Accrued Interest (UGX)</th>
+        <th class="num">Principal Amount</th>
+        <th class="num">Principal Balance</th>
+        <th class="num">Accrued Interest</th>
+        <th class="num">Total Due</th>
         <th class="num">Days Overdue</th>
         <th>Last Payment</th>
       </tr>
     </thead>
-    <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#666;padding:24px;">No loans</td></tr>`}</tbody>
+    <tbody>${rows || `<tr><td colspan="9" style="text-align:center;color:#666;padding:24px;">No loans</td></tr>`}</tbody>
     <tfoot>
       <tr>
+        <td></td>
         <td>TOTAL</td>
         <td></td>
-        <td class="num">${formatCurrency(totalPrincipal.toFixed(2))}</td>
-        <td class="num">${formatCurrency(totalOutstanding.toFixed(2))}</td>
-        <td class="num">${formatCurrency(totalOwed.toFixed(2))}</td>
-        <td class="num">${formatCurrency(totalInterest.toFixed(2))}</td>
+        <td class="num">${formatLoanAmount(totalPrincipal.toFixed(2))}</td>
+        <td class="num">${formatLoanAmount(totalOutstanding.toFixed(2))}</td>
+        <td class="num">${formatLoanAmount(totalInterest.toFixed(2))}</td>
+        <td class="num">${formatLoanAmount(totalOwed.toFixed(2))}</td>
         <td></td>
         <td>${escapeHtml(countLabel)}</td>
       </tr>
@@ -245,8 +252,16 @@ export default function LoansPage() {
     }
   }, [activeFilter, critical, atRisk, early, sortedEntries]);
 
+  const activeFilterLabel = {
+    all: "All Loans",
+    critical: "Critical (30+ days)",
+    "at-risk": "At Risk (25-29 days)",
+    early: "Early (0-24 days)",
+  }[activeFilter];
+
   const handlePrint = useCallback(() => {
     const iframe = document.createElement("iframe");
+    iframe.title = "Loans print preview";
     iframe.style.position = "fixed";
     iframe.style.left = "-9999px";
     iframe.style.top = "-9999px";
@@ -603,35 +618,60 @@ export default function LoansPage() {
                     )
                   }
                   className={cn(
-                    "group relative rounded-xl border bg-card p-4 text-left transition-all duration-150 ease-out shadow-xs",
+                    "group relative cursor-pointer rounded-xl border bg-card p-4 text-left transition-all duration-150 ease-out shadow-xs",
                     "hover:shadow-md hover:-translate-y-0.5",
                     isActive
-                      ? "border-foreground/40 ring-2 ring-foreground/15"
+                      ? "border-foreground bg-foreground text-background ring-2 ring-foreground/20"
                       : "border-border/60 hover:border-border",
                   )}
                   aria-pressed={isActive}
                 >
                   <div className="space-y-3">
                     {/* Label row: dot + label + info — proximity groups them, alignment via flex */}
-                    <div className="inline-flex items-center gap-2 text-muted-foreground">
+                    <div
+                      className={cn(
+                        "inline-flex items-center gap-2 text-muted-foreground",
+                        isActive && "text-background/80",
+                      )}
+                    >
                       <span
                         aria-hidden="true"
                         className={cn(
                           "h-1.5 w-1.5 rounded-full shrink-0",
-                          card.dotClass,
+                          isActive && card.key === "all"
+                            ? "bg-background/50"
+                            : card.dotClass,
                         )}
                       />
-                      <p className="text-sm font-medium text-foreground/80">
+                      <p
+                        className={cn(
+                          "text-sm font-medium text-foreground/80",
+                          isActive && "text-background/90",
+                        )}
+                      >
                         {card.label}
                       </p>
-                      <InfoPopover>{card.info}</InfoPopover>
+                      <InfoPopover
+                        triggerClassName={
+                          isActive
+                            ? "text-background/75 hover:text-background"
+                            : undefined
+                        }
+                      >
+                        {card.info}
+                      </InfoPopover>
                     </div>
                     {/* Hero number — same scale across all 4 cards (repetition) */}
                     <p className="text-3xl font-semibold tracking-tight tabular-nums">
                       {card.count}
                     </p>
                     {/* Subtitle — uniform line height across cards (alignment) */}
-                    <p className="text-xs text-muted-foreground tabular-nums">
+                    <p
+                      className={cn(
+                        "text-xs text-muted-foreground tabular-nums",
+                        isActive && "text-background/75",
+                      )}
+                    >
                       {card.balance != null
                         ? `${formatCurrency(card.balance)} outstanding`
                         : "overdueText" in card
@@ -645,24 +685,29 @@ export default function LoansPage() {
           </div>
 
           {/* Actions Row */}
-          <div className="flex items-center justify-end gap-2 print:hidden">
-            <Button size="sm" onClick={() => setPickerOpen(true)}>
-              <Plus className="h-4 w-4" />
-              Issue Loan
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleExportExcel}
-              disabled={isExporting}
-            >
-              <Download className="h-4 w-4" />
-              {isExporting ? "Exporting..." : "Export Excel"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <Printer className="h-4 w-4" />
-              Print
-            </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between print:hidden">
+            <p className="text-sm font-medium text-foreground" aria-live="polite">
+              Showing: {activeFilterLabel}
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <Button size="sm" onClick={() => setPickerOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Issue Loan
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportExcel}
+                disabled={isExporting}
+              >
+                <Download className="h-4 w-4" />
+                {isExporting ? "Exporting..." : "Export Excel"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={handlePrint}>
+                <Printer className="h-4 w-4" />
+                Print
+              </Button>
+            </div>
           </div>
 
           {/* Filter empty state */}

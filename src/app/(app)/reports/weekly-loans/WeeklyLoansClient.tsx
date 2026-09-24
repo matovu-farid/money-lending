@@ -34,12 +34,12 @@ export function WeeklyLoansClient({ week }: { week: string }) {
     { key: "contact", header: "Contact", render: (row) => row.contactNumber || "—" },
     { key: "principal", header: "Principal Amount", align: "right", render: (row) => <CurrencyCell amount={row.principalAmount} /> },
     { key: "balance", header: "Principal Balance", align: "right", render: (row) => <CurrencyCell amount={row.principalBalance} /> },
-    { key: "due", header: "Total Due", align: "right", render: (row) => <CurrencyCell amount={row.totalDue} /> },
     { key: "interest", header: "Accrued Interest", align: "right", render: (row) => <CurrencyCell amount={row.accruedInterest} /> },
+    { key: "due", header: "Total Due", align: "right", render: (row) => <CurrencyCell amount={row.totalDue} /> },
     { key: "overdue", header: "Days Overdue", align: "right", render: (row) => row.daysOverdue },
     { key: "lastPayment", header: "Last Payment", render: (row) => formatKampalaDate(row.lastPaymentDate) },
   ]
-  const canPrint = Boolean(report && report.week === week && !isLoading && !hasError && !printing)
+  const canPrint = Boolean(report && report.week === week && report.rows.length > 0 && !isLoading && !hasError && !printing)
 
   const handlePrint = async () => {
     if (!canPrint) return
@@ -48,6 +48,10 @@ export function WeeklyLoansClient({ week }: { week: string }) {
       const result = await getWeeklyLoansReportAction({ week })
       if ("error" in result || !result.data || result.data.week !== week) {
         toast.error("Could not refresh weekly loans for printing")
+        return
+      }
+      if (result.data.rows.length === 0) {
+        toast.info("No loans issued this week.")
         return
       }
       if (latestWeek.current !== week) return
@@ -66,9 +70,13 @@ export function WeeklyLoansClient({ week }: { week: string }) {
     {isLoading && !hasError && <p role="status" className="py-8 text-center text-sm text-muted-foreground">Loading weekly loans…</p>}
     {hasError && <div role="alert" className="flex flex-col items-center gap-3 py-8 text-center text-sm text-destructive"><p>Could not load weekly loans.</p><Button variant="outline" size="sm" onClick={() => void retry()}>Retry</Button></div>}
     {!isLoading && !hasError && report && <>
-      <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-card p-4 text-sm"><p>Loans issued <strong className="ml-1 tabular-nums">{report.count}</strong></p><p>Principal total <strong className="ml-1"><CurrencyCell amount={report.total} /></strong></p></div>
-      <p className="text-xs text-muted-foreground">Balances and interest are current as of {formatSnapshot(report.calculatedAt)}. Closed loans follow the current report convention: zero balance and interest.</p>
-      <ResponsiveTable columns={columns} rows={report.rows} getRowKey={(row) => row.id} emptyState={<p className="py-8 text-center text-sm text-muted-foreground">No loans issued this week.</p>} />
+      {report.rows.length === 0
+        ? <p className="py-8 text-center text-sm text-muted-foreground">No loans issued this week.</p>
+        : <>
+          <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-card p-4 text-sm"><p>Loans issued <strong className="ml-1 tabular-nums">{report.count}</strong></p><p>Principal total <strong className="ml-1"><CurrencyCell amount={report.total} /></strong></p></div>
+          <p className="text-xs text-muted-foreground">Balances and interest are current as of {formatSnapshot(report.calculatedAt)}. Closed loans follow the current report convention: zero balance and interest.</p>
+          <ResponsiveTable columns={columns} rows={report.rows} getRowKey={(row) => row.id} />
+        </>}
     </>}
   </div>
 }

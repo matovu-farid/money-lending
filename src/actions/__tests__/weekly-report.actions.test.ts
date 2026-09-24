@@ -53,6 +53,16 @@ describe("weekly report actions", () => {
     expect(getWeeklyLoansData).not.toHaveBeenCalled()
   })
 
+  it("does not query either service for a future week", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date("2026-09-24T12:00:00.000Z"))
+    await expect(getWeeklyPaymentsReportAction({ week: "2026-09-28" })).resolves.toEqual({ error: "Invalid week" })
+    await expect(getWeeklyLoansReportAction({ week: "2026-09-28" })).resolves.toEqual({ error: "Invalid week" })
+    expect(getWeeklyPaymentsData).not.toHaveBeenCalled()
+    expect(getWeeklyLoansData).not.toHaveBeenCalled()
+    vi.useRealTimers()
+  })
+
   it("maps service failures to a stable database error", async () => {
     const { DatabaseError } = await import("@/lib/errors")
     vi.mocked(getWeeklyPaymentsData).mockReturnValue(Effect.fail(new DatabaseError({ cause: new Error("private db details") })) as ReturnType<typeof getWeeklyPaymentsData>)

@@ -33,5 +33,9 @@ describe("WeeklyPaymentsClient", () => {
 
     expect(screen.getByText("No payments for this week.")).toBeTruthy()
     expect(screen.queryByRole("status")).toBeNull()
+    expect(screen.queryByText(/Payments\s*0/)).toBeNull()
+    expect(screen.queryByText(/Total received/)).toBeNull()
+    expect(screen.queryByText(/Payment allocations and balances/)).toBeNull()
+    expect(screen.queryByRole("table")).toBeNull()
   })
 })

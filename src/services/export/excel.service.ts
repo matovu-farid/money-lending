@@ -376,8 +376,8 @@ export async function generateLoansExcel(
     "Contact",
     "Principal Amount (UGX)",
     "Principal Balance (UGX)",
-    "Total Due (UGX)",
     "Accrued Interest (UGX)",
+    "Total Due (UGX)",
     "Days Overdue",
     "Last Payment",
   ]);
@@ -414,8 +414,8 @@ export async function generateLoansExcel(
       entry.customerContact ?? "",
       principal,
       outstanding,
-      owed,
       unpaidInterest,
+      owed,
       entry.daysOverdue,
       entry.lastPaymentDate
         ? formatDateStr(entry.lastPaymentDate)
@@ -444,8 +444,8 @@ export async function generateLoansExcel(
     "",
     totalPrincipal,
     totalOutstanding,
-    totalOwed,
     totalInterest,
+    totalOwed,
     "",
     `${data.length} loan${data.length === 1 ? "" : "s"}`,
   ]);
