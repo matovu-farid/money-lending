@@ -86,6 +86,44 @@ describe("app-specific session cookie", () => {
     expect(response.cookies.get("__Secure-better-auth.session_token")?.value).toBe("")
   })
 
+  it.each([
+    {
+      label: "nonsecure",
+      baseUrl: "http://localhost:3482",
+      oldSessionCookie: "better-auth.session_token",
+      oldDontRememberCookie: "better-auth.dont_remember",
+      newSessionCookie: "kaks-credit.session_token",
+    },
+    {
+      label: "secure",
+      baseUrl: "https://credit.example.com",
+      oldSessionCookie: "__Secure-better-auth.session_token",
+      oldDontRememberCookie: "__Secure-better-auth.dont_remember",
+      newSessionCookie: "__Secure-kaks-credit.session_token",
+    },
+  ])("keeps a $label legacy dont_remember session as a browser-session cookie", async ({
+    baseUrl,
+    oldSessionCookie,
+    oldDontRememberCookie,
+    newSessionCookie,
+  }) => {
+    vi.stubEnv("BETTER_AUTH_URL", baseUrl)
+    getSessionCookie.mockImplementation((_request, config) => config ? null : "signed-legacy-token")
+    getSession.mockResolvedValue({
+      user: { id: "user-1", emailVerified: true, role: "superAdmin" },
+      session: { expiresAt: new Date(Date.now() + 60_000) },
+    })
+
+    const response = await proxy(new NextRequest(`${baseUrl}/dashboard`, {
+      headers: {
+        cookie: `${oldSessionCookie}=signed-legacy-token; ${oldDontRememberCookie}=signed-flag`,
+      },
+    }))
+
+    expect(response.cookies.get(newSessionCookie)?.value).toBe("signed-legacy-token")
+    expect(response.cookies.get(newSessionCookie)?.expires).toBeUndefined()
+  })
+
   it("removes a leftover legacy cookie when the new session is already valid", async () => {
     getSessionCookie.mockImplementation((_request, config) => config ? "new-token" : "old-token")
     getSession.mockResolvedValue({

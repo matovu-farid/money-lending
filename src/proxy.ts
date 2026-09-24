@@ -23,6 +23,12 @@ const LEGACY_SESSION_COOKIE_NAMES = [
   "__Secure-better-auth.session_token",
   "__Secure-better-auth-session_token",
 ] as const
+const LEGACY_DONT_REMEMBER_COOKIE_NAMES = [
+  "better-auth.dont_remember",
+  "better-auth-dont_remember",
+  "__Secure-better-auth.dont_remember",
+  "__Secure-better-auth-dont_remember",
+] as const
 
 function authCookieIsSecure(): boolean {
   return process.env.BETTER_AUTH_URL
@@ -50,6 +56,10 @@ function legacySessionCookies(request: NextRequest): Array<{ name: string; token
     const token = request.cookies.get(name)?.value
     return token ? [{ name, token }] : []
   })
+}
+
+function hasLegacyDontRememberCookie(request: NextRequest): boolean {
+  return LEGACY_DONT_REMEMBER_COOKIE_NAMES.some((name) => request.cookies.has(name))
 }
 
 async function validateLegacySession(request: NextRequest, token: string) {
@@ -94,7 +104,7 @@ async function migrateLegacySession(request: NextRequest): Promise<NextResponse 
         secure,
         sameSite: "lax",
         path: "/",
-        ...(!request.cookies.has("better-auth.dont_remember")
+        ...(!hasLegacyDontRememberCookie(request)
           ? { expires: new Date(session.session.expiresAt) }
           : {}),
       })
