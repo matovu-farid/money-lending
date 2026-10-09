@@ -707,87 +707,87 @@ function PaymentsContent({
         </TabsList>
 
         <TabsContent value="list">
-          {/* Filter bar */}
-          <FilterPanel label="Filters" activeCount={activeFilterCount}>
-            <div className="flex flex-wrap items-end gap-3">
-              <div>
-                <Label className="text-sm">Search by customer name...</Label>
-                <Input
-                  placeholder="Search by customer name..."
-                  value={customerName}
-                  onChange={(e) => setFilter("customerName", e.target.value)}
-                  className="w-[220px]"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">From</Label>
-                <DatePicker
-                  size="sm"
-                  className="w-[160px]"
-                  value={dateFrom}
-                  onChange={(value) => setFilter("dateFrom", value)}
-                  max={dateTo || undefined}
-                  placeholder="From"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">To</Label>
-                <DatePicker
-                  size="sm"
-                  className="w-[160px]"
-                  value={dateTo}
-                  onChange={(value) => setFilter("dateTo", value)}
-                  min={dateFrom || undefined}
-                  placeholder="To"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">Min amount</Label>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  className="w-[120px]"
-                  value={amountMin}
-                  onChange={(e) => setFilter("amountMin", e.target.value)}
-                  placeholder="0"
-                />
-              </div>
-              <div>
-                <Label className="text-sm">Max amount</Label>
-                <Input
-                  type="text"
-                  inputMode="numeric"
-                  className="w-[120px]"
-                  value={amountMax}
-                  onChange={(e) => setFilter("amountMax", e.target.value)}
-                  placeholder="Any"
-                />
-              </div>
-              {hasFilters && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-muted-foreground"
-                  onClick={clearFilters}
-                >
-                  Clear filters
-                </Button>
-              )}
+          {/* Filter bar and compact total */}
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:gap-4">
+            <div className="min-w-0 flex-1">
+              <FilterPanel label="Filters" activeCount={activeFilterCount}>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div>
+                    <Label className="text-sm">Search by customer name...</Label>
+                    <Input
+                      placeholder="Search by customer name..."
+                      value={customerName}
+                      onChange={(e) => setFilter("customerName", e.target.value)}
+                      className="w-[200px]"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">From</Label>
+                    <DatePicker
+                      size="sm"
+                      className="w-[144px]"
+                      value={dateFrom}
+                      onChange={(value) => setFilter("dateFrom", value)}
+                      max={dateTo || undefined}
+                      placeholder="From"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">To</Label>
+                    <DatePicker
+                      size="sm"
+                      className="w-[144px]"
+                      value={dateTo}
+                      onChange={(value) => setFilter("dateTo", value)}
+                      min={dateFrom || undefined}
+                      placeholder="To"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Min amount</Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      className="w-[104px]"
+                      value={amountMin}
+                      onChange={(e) => setFilter("amountMin", e.target.value)}
+                      placeholder="0"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-sm">Max amount</Label>
+                    <Input
+                      type="text"
+                      inputMode="numeric"
+                      className="w-[104px]"
+                      value={amountMax}
+                      onChange={(e) => setFilter("amountMax", e.target.value)}
+                      placeholder="Any"
+                    />
+                  </div>
+                  {hasFilters && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-muted-foreground"
+                      onClick={clearFilters}
+                    >
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
+              </FilterPanel>
             </div>
-          </FilterPanel>
-
-          <div
-            data-testid="payments-total"
-            aria-live="polite"
-            className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-4"
-          >
-            <div>
-              <p className="text-sm font-medium">Total payments</p>
+            <div
+              data-testid="payments-total"
+              aria-live="polite"
+              className="ml-auto shrink-0 text-right"
+            >
               <p className="text-xs text-muted-foreground">
-                {total} {hasFilters ? "matching " : ""}{total === 1 ? "payment" : "payments"}
+                Total payments <span aria-label={`${total} ${hasFilters ? "matching " : ""}${total === 1 ? "payment" : "payments"}`}>({total})</span>
               </p>
+              <CurrencyCell amount={totalAmount} className="text-sm font-semibold" />
             </div>
-            <CurrencyCell amount={totalAmount} className="text-xl font-semibold" />
           </div>
 
           {/* Content */}

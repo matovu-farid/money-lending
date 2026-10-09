@@ -51,6 +51,14 @@ describe("Payments totals and spreadsheet export", () => {
   it("shows the total of all payments and updates for customer and amount filters", () => {
     cy.visit("/payments")
     expectTotal("750,000")
+    cy.get("[data-testid='payments-total']").should(($total) => {
+      const summary = $total[0].getBoundingClientRect()
+      const maxAmount = Cypress.$("input[placeholder='Any']")[0].getBoundingClientRect()
+      expect(summary.width).to.be.lessThan(300)
+      expect(summary.height).to.be.lessThan(60)
+      expect(summary.left).to.be.greaterThan(maxAmount.right)
+      expect(Math.abs(summary.bottom - maxAmount.bottom)).to.be.lessThan(2)
+    })
     cy.get("input[placeholder='Search by customer name...']").type("Alice")
     expectTotal("500,000")
     cy.url().should("include", "customerName=Alice")
@@ -147,5 +155,16 @@ describe("Payments totals and spreadsheet export", () => {
     cy.viewport(390, 844)
     cy.visit("/payments?customerName=Alice")
     expectTotal("500,000")
+    cy.get("[data-testid='payments-total']").should(($total) => {
+      const summary = $total[0].getBoundingClientRect()
+      expect(summary.right).to.be.at.most(390)
+      expect(summary.height).to.be.lessThan(60)
+    })
+    cy.get("button[aria-label='Toggle filters']").click()
+    cy.get("input[placeholder='Any']").should("be.visible")
+    cy.get("[data-testid='payments-total']").should("be.visible")
+    cy.document().should((doc) => {
+      expect(doc.documentElement.scrollWidth).to.be.at.most(390)
+    })
   })
 })
