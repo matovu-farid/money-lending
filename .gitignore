@@ -20,6 +20,7 @@ cypress/videos
 
 # next.js
 /.next/
+/.next-cypress/
 /out/
 
 # production

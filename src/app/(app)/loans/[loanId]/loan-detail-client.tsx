@@ -34,7 +34,7 @@ import {
   adjustLoanInterestRateAction,
   listLoanRateHistoryAction,
 } from "@/actions/rate-change-request.actions";
-import { getLoanRolloverInterestAction } from "@/actions/loan.actions";
+import { getLoanReceivableBalanceAction, getLoanRolloverInterestAction, getLoanSuccessorAction } from "@/actions/loan.actions";
 import { invalidateLendingProjections } from "@/lib/cache-invalidation";
 import { emitTableChange } from "@/lib/table-events";
 import { getQueryClient } from "@/lib/query-client";
@@ -75,7 +75,7 @@ import { DeletePaymentDialog } from "./delete-payment-dialog";
 import { RateChangeDialog } from "./rate-change-dialog";
 import { LoanRateHistoryDialog } from "./loan-rate-history-dialog";
 import { AdminRateAdjustmentDialog } from "./admin-rate-adjustment-dialog";
-import { LoanStatementDialog } from "./loan-statement-dialog";
+import { LoanStatementDialog, LoanStatementUnavailableDialog } from "./loan-statement-dialog";
 import { buildLoanStatement } from "@/lib/loan-statement";
 import { LoanRolloverHistoryBanner } from "@/components/loans/loan-rollover-history";
 import { isLoanReadOnly } from "@/lib/loan-visibility";
@@ -352,9 +352,33 @@ export function LoanDetailClient({
     enabled: statementOpen && !!loan.rolledOverFrom,
     staleTime: 30_000,
   });
+  const { data: rolloverSuccessor, isLoading: successorLoading } = useQuery({
+    queryKey: [...queryKeys.loans.detail(loan.id), "rollover-successor"],
+    queryFn: async () => {
+      const result = await getLoanSuccessorAction(loan.id);
+      if ("error" in result) throw new Error(result.error);
+      return result.data;
+    },
+    enabled: statementOpen && loan.status === "rolled_over",
+    staleTime: 30_000,
+  });
+  const { data: predecessorReceivable, isLoading: receivableLoading } = useQuery({
+    queryKey: [...queryKeys.loans.detail(loan.id), "rollover-receivable"],
+    queryFn: async () => {
+      const result = await getLoanReceivableBalanceAction(loan.id);
+      if ("error" in result) throw new Error(result.error);
+      return result.data;
+    },
+    enabled: statementOpen && loan.status === "rolled_over",
+    staleTime: 30_000,
+  });
+  const invalidRolloverChronology = !!rolloverSuccessor &&
+    new Date(rolloverSuccessor.startDate).getTime() < new Date(loan.startDate).getTime();
   const statement = useMemo(() => {
     if (!statementOpen) return null;
     if (loan.rolledOverFrom && rolloverInterestLoading) return null;
+    if (loan.status === "rolled_over" && (successorLoading || receivableLoading || !rolloverSuccessor)) return null;
+    if (invalidRolloverChronology) return null;
     return buildLoanStatement({
       loan: {
         id: loan.id,
@@ -385,18 +409,28 @@ export function LoanDetailClient({
       rateChanges: rateChangeList
         .filter((r: RateChangeRequest) => r.status === "approved")
         .map((r: RateChangeRequest) => ({
-          effectiveDate: r.createdAt,
+          effectiveDate: r.reviewedAt ?? r.createdAt,
           fromRate: r.currentRate,
           toRate: r.requestedRate,
         })),
+      closingRollover: rolloverSuccessor ? {
+        date: rolloverSuccessor.startDate,
+        amount: rolloverSuccessor.rolloverAmount ?? "0",
+        remainingReceivable: predecessorReceivable ?? null,
+      } : undefined,
       today: new Date(),
-    });
+  });
   }, [
     statementOpen,
     loan,
     payments,
     rolloverInterestSettled,
     rolloverInterestLoading,
+    rolloverSuccessor,
+    invalidRolloverChronology,
+    successorLoading,
+    predecessorReceivable,
+    receivableLoading,
     waivers,
     rateChangeList,
   ]);
@@ -830,9 +864,9 @@ export function LoanDetailClient({
                       Principal Balance
                     </p>
                     <p className="text-xs text-muted-foreground mb-2">
-                      The remaining principal the borrower still owes. This
-                      decreases only when a payment exceeds the accrued interest
-                      — the excess reduces the principal.
+                      {loan.status === "rolled_over"
+                        ? "This loan's balance was transferred to its successor. A zero balance here does not mean the borrower repaid it."
+                        : "The remaining principal the borrower still owes. This decreases only when a payment exceeds the accrued interest — the excess reduces the principal."}
                     </p>
                     <p className="text-xs text-muted-foreground mb-2">
                       Different from the total amount owed, which also includes
@@ -853,8 +887,9 @@ export function LoanDetailClient({
                   <InfoPopover>
                     <p className="font-semibold text-sm mb-1">Total Due</p>
                     <p className="text-xs text-muted-foreground mb-2">
-                      The total amount the borrower must pay right now to fully
-                      settle the loan.
+                      {loan.status === "rolled_over"
+                        ? "Nothing is collectible on this predecessor loan because its balance moved to the successor; this is not a cash repayment."
+                        : "The total amount the borrower must pay right now to fully settle the loan."}
                     </p>
                     <p className="text-xs font-semibold mb-1">Formula</p>
                     <p className="text-xs font-mono bg-muted rounded px-2 py-1 mb-2">
@@ -914,29 +949,34 @@ export function LoanDetailClient({
                 )}
               </div>
             </div>
-            {/* Repayment progress */}
-            <div className="space-y-1.5 max-w-md">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{repaymentPercent}% repaid</span>
-                <span>
-                  {formatCurrency(totalPaid)} of{" "}
-                  {formatCurrency(loan.principalAmount)}
-                </span>
+            {loan.status === "rolled_over" ? (
+              <p className="text-xs text-muted-foreground">
+                Balance transferred to successor — not repaid
+              </p>
+            ) : (
+              <div className="space-y-1.5 max-w-md">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{repaymentPercent}% repaid</span>
+                  <span>
+                    {formatCurrency(totalPaid)} of{" "}
+                    {formatCurrency(loan.principalAmount)}
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all duration-500",
+                      repaymentPercent === 100
+                        ? "bg-green-500"
+                        : repaymentPercent >= 50
+                          ? "bg-primary"
+                          : "bg-primary/70",
+                    )}
+                    style={{ width: `${repaymentPercent}%` }}
+                  />
+                </div>
               </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <div
-                  className={cn(
-                    "h-full rounded-full transition-all duration-500",
-                    repaymentPercent === 100
-                      ? "bg-green-500"
-                      : repaymentPercent >= 50
-                        ? "bg-primary"
-                        : "bg-primary/70",
-                  )}
-                  style={{ width: `${repaymentPercent}%` }}
-                />
-              </div>
-            </div>
+            )}
           </div>
           <div className="flex gap-2 flex-wrap">
             {loan.status === "active" && (
@@ -1131,6 +1171,14 @@ export function LoanDetailClient({
           statement={statement}
           customerName={customerName ?? "—"}
           loanRef={loanRef}
+        />
+      )}
+      {loan.status === "rolled_over" && !successorLoading &&
+        (!rolloverSuccessor || invalidRolloverChronology) && (
+        <LoanStatementUnavailableDialog
+          open={statementOpen}
+          onOpenChange={setStatementOpen}
+          reason={invalidRolloverChronology ? "The successor issue date is before this loan started. The rollover dates need review before a statement can be shown." : undefined}
         />
       )}
     </div>

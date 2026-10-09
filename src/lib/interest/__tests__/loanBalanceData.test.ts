@@ -174,6 +174,23 @@ describe("loanBalanceData", () => {
     )
   })
 
+  it("excludes capitalized rollover interest from interest settled on the successor", async () => {
+    const { computeSingleLoanBalanceData } = await import("../loanBalanceData")
+    const asOf = new Date("2026-01-09T00:00:00.000Z")
+    mockGetInterestEarnedFromLedger.mockResolvedValue(
+      new Map([["loan-1", new BigNumber("308500")]]),
+    )
+    mockGetRolloverInterestSettledFromLedger.mockResolvedValue(
+      new Map([["loan-1", new BigNumber("308500")]]),
+    )
+
+    await computeSingleLoanBalanceData("loan-1", asOf)
+
+    expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
+      expect.objectContaining({ totalInterestPaid: "0.00" }),
+    )
+  })
+
   it("passes cumulative accrued interest into overdue calculation instead of only the latest-payment period", async () => {
     mockSelect.mockReset()
 

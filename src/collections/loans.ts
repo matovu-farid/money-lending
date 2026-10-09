@@ -170,7 +170,7 @@ export async function insertLoanWithInput(
     }
   }
 
-  loanCollection.insert(optimistic, {
+  const mutation = loanCollection.insert(optimistic, {
     metadata: { intent: "create", input } satisfies LoanInsertMetadata,
   })
 
@@ -181,4 +181,6 @@ export async function insertLoanWithInput(
     captureClientError(error, { source: "collections.loans.insert.write-insert" })
     // Refetch via invalidateLendingProjections on persist will repair
   }
+  // A receipt must represent a committed loan, not a merely optimistic row.
+  await mutation.isPersisted.promise
 }

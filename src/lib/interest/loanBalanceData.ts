@@ -217,8 +217,16 @@ export async function computeLoanBalanceData(
 
     const baseRate = getBaseRate(loan);
     const loanType = toLoanType(loan.loanType);
+    // Interest Earned includes predecessor interest capitalized at rollover.
+    // That amount is already in this loan's principal, so it cannot also
+    // reduce interest accrued on the successor.
     const totalInterestPaid = formatAmount(
-      interestEarnedMap.get(loan.id) ?? new BigNumber(0),
+      BigNumber.max(
+        (interestEarnedMap.get(loan.id) ?? new BigNumber(0)).minus(
+          rolloverInterestMap.get(loan.id) ?? new BigNumber(0),
+        ),
+        0,
+      ),
     );
     const hasAllPaymentPortions = activePayments.every((payment) =>
       paymentPortions.has(payment.id),

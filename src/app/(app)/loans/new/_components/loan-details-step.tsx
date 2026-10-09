@@ -35,6 +35,8 @@ interface LoanDetailsStepProps {
   prefilledCustomerId: string
   customerName: string | null
   activeLoanData: ActiveLoanInfo | null | undefined
+  quotePending?: boolean
+  quoteError?: string | null
   loanType: LoanType
   setLoanType: (t: LoanType) => void
   termMonths: string
@@ -55,6 +57,8 @@ export function LoanDetailsStep({
   prefilledCustomerId,
   customerName,
   activeLoanData,
+  quotePending,
+  quoteError,
   loanType,
   setLoanType,
   termMonths,
@@ -96,13 +100,18 @@ export function LoanDetailsStep({
           )}
         </div>
 
-        {activeLoanData && (
+        {activeLoanData && !quotePending && (
           <RolloverBanner
             loanId={activeLoanData.loan.id}
             customerName={activeLoanData.customerName}
             outstandingPrincipal={activeLoanData.outstandingPrincipal}
             accruedInterest={activeLoanData.accruedInterest}
           />
+        )}
+        {activeLoanData && quotePending && (
+          <p className="text-sm text-muted-foreground" role="status">
+            {quoteError ?? "Calculating rollover at the selected effective date…"}
+          </p>
         )}
 
         <MoneyInput
@@ -177,7 +186,7 @@ export function LoanDetailsStep({
         />
 
         <div className="flex gap-3 pt-2">
-          <Button type="button" onClick={onNext}>Next</Button>
+          <Button type="button" onClick={onNext} disabled={!!quotePending}>Next</Button>
         </div>
       </CardContent>
     </Card>

@@ -72,7 +72,11 @@ export function PaymentTable({
           </div>
           <p className="text-sm font-medium">No payments recorded</p>
           <p className="text-xs text-muted-foreground max-w-xs">
-            Record the first payment against this loan to start tracking repayments.
+            {loanStatus === "rolled_over"
+              ? "The balance was transferred to the successor without a cash payment."
+              : loanStatus === "active"
+                ? "Record the first payment against this loan to start tracking repayments."
+                : "No cash payments were recorded against this loan."}
           </p>
           {loanStatus === "active" && (
             <Link

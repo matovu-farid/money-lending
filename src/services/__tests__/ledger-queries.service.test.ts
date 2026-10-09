@@ -625,7 +625,8 @@ describe("ledger-queries.service", () => {
         "@/services/ledger-queries.service"
       )
       const qdb = mockQueryDb([
-        { loanId: "loan-1", total: "3636606.34" },
+        { loanId: "loan-1", txType: "credit", total: "3636606.34" },
+        { loanId: "loan-1", txType: "debit", total: "50000.00" },
       ])
 
       const result = await getRolloverInterestSettledFromLedger(
@@ -634,7 +635,7 @@ describe("ledger-queries.service", () => {
         qdb as any,
       )
 
-      expect(result.get("loan-1")?.toFixed(2)).toBe("3636606.34")
+      expect(result.get("loan-1")?.toFixed(2)).toBe("3586606.34")
     })
   })
 

@@ -3,6 +3,9 @@ import { withSentryConfig } from "@sentry/nextjs";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  // Cypress uses an isolated local database and a separate dev build so it
+  // cannot collide with the operator's running .next development server.
+  distDir: process.env.CYPRESS === "true" ? ".next-cypress" : ".next",
   reactCompiler: true,
   serverExternalPackages: ["jspdf", "jspdf-autotable"],
   async headers() {

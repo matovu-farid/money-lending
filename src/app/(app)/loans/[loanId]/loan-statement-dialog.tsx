@@ -20,6 +20,23 @@ export interface LoanStatementDialogProps {
   loanRef: string
 }
 
+export function LoanStatementUnavailableDialog({ open, onOpenChange, reason }: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  reason?: string
+}) {
+  return (
+    <DrawerDialog open={open} onOpenChange={onOpenChange}>
+      <DrawerDialogContent className="sm:max-w-md p-6" data-testid="loan-statement-unavailable">
+        <DialogHeader><DialogTitle>Statement unavailable</DialogTitle></DialogHeader>
+        <p className="mt-4 text-sm text-muted-foreground">
+          {reason ?? "This loan is marked as rolled over, but no active successor can be found. Its historical transfer needs review before a collectible balance can be shown."}
+        </p>
+      </DrawerDialogContent>
+    </DrawerDialog>
+  )
+}
+
 export function LoanStatementDialog({
   open,
   onOpenChange,
@@ -161,7 +178,7 @@ function EventRow({ event }: { event: StatementEvent }) {
             <span className="text-[10px] uppercase tracking-wider text-primary">Loan Issued</span>
           </div>
           <div className="text-muted-foreground space-y-0.5 mt-1">
-            <div>Principal disbursed: {formatCurrency(event.principal)}</div>
+            <div>{event.rolledOver ? "Opening principal (includes rollover amounts)" : "Principal disbursed"}: {formatCurrency(event.principal)}</div>
             {Number(event.issuanceFee) > 0 && (
               <div>Issuance fee charged: {formatCurrency(event.issuanceFee)}</div>
             )}
@@ -175,11 +192,23 @@ function EventRow({ event }: { event: StatementEvent }) {
           <div className="flex items-baseline justify-between gap-2">
             <span className="font-semibold">{dayLabel} · {dateLabel}</span>
             <span className="text-[10px] uppercase tracking-wider text-violet-600">
-              Rollover Interest Settled
+              Interest Capitalized at Rollover
             </span>
           </div>
           <div className="text-muted-foreground mt-1">
-            Interest carried from the predecessor loan: {formatCurrency(event.amount)}
+            Interest from the predecessor loan included in the opening principal; no cash payment: {formatCurrency(event.amount)}
+          </div>
+        </div>
+      )
+    case "rollover_closed":
+      return (
+        <div className="border-l-2 border-violet-500/40 pl-4">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="font-semibold">{dayLabel} · {dateLabel}</span>
+            <span className="text-[10px] uppercase tracking-wider text-violet-600">Rolled Into Successor</span>
+          </div>
+          <div className="text-muted-foreground mt-1">
+            Recorded balance transferred to successor; no cash payment: {formatCurrency(event.amount)}
           </div>
         </div>
       )
@@ -276,6 +305,7 @@ function CyclesBlock({ cycles }: { cycles: CycleSnapshot[] }) {
               <th className="py-2 pr-3 text-right">@Pen (d)</th>
               <th className="py-2 pr-3 text-right">Accrued</th>
               <th className="py-2 pr-3 text-right">Cum. Paid</th>
+              <th className="py-2 pr-3 text-right">Cum. Waived</th>
               <th className="py-2 pr-3 text-right">Unpaid</th>
               <th className="py-2 text-right">Overdue</th>
             </tr>
@@ -299,6 +329,7 @@ function CyclesBlock({ cycles }: { cycles: CycleSnapshot[] }) {
                 <td className="py-1.5 pr-3 text-right tabular-nums">{c.daysAtEffectiveRate || "—"}</td>
                 <td className="py-1.5 pr-3 text-right tabular-nums">{formatCurrency(c.accruedInCycle)}</td>
                 <td className="py-1.5 pr-3 text-right tabular-nums">{formatCurrency(c.cumulativePaid)}</td>
+                <td className="py-1.5 pr-3 text-right tabular-nums">{formatCurrency(c.cumulativeWaived)}</td>
                 <td className="py-1.5 pr-3 text-right tabular-nums">{formatCurrency(c.netUnpaidAtEnd)}</td>
                 <td className="py-1.5 text-right tabular-nums">
                   {c.daysOverdueAtEnd}d
@@ -318,12 +349,18 @@ function CyclesBlock({ cycles }: { cycles: CycleSnapshot[] }) {
 
 function FinalStateBlock({ statement }: { statement: LoanStatement }) {
   const f = statement.finalState
+  const transferReconciled = statement.closingTransfer !== undefined &&
+    statement.closingReceivable != null &&
+    Math.abs(Number(statement.closingReceivable)) < 1
   return (
     <Section title={`As Of ${format(statement.today, "MMM d, yyyy")}`}>
-      <Row label="Principal Balance" value={formatCurrency(f.principalBalance)} />
+      <Row label={statement.closingTransfer ? "Principal at Transfer" : "Principal Balance"} value={formatCurrency(f.principalBalance)} />
       <Row label="Cumulative Interest Accrued" value={formatCurrency(f.cumulativeInterestAccrued)} />
       <Row label="Cumulative Interest Paid" value={formatCurrency(f.cumulativeInterestPaid)} />
-      <Row label="Net Unpaid Interest" value={formatCurrency(f.netUnpaidInterest)} />
+      {Number(f.cumulativeInterestWaived) > 0 && (
+        <Row label="Cumulative Interest Waived" value={formatCurrency(f.cumulativeInterestWaived)} />
+      )}
+      <Row label={statement.closingTransfer ? "Unpaid Interest at Transfer" : "Net Unpaid Interest"} value={formatCurrency(f.netUnpaidInterest)} />
       {f.minimumInterestAdjustment !== "0" && (
         <Row
           label="Minimum Interest Adjustment"
@@ -331,8 +368,20 @@ function FinalStateBlock({ statement }: { statement: LoanStatement }) {
         />
       )}
       <div className="border-t border-border my-2" />
+      {statement.closingTransfer && (
+        <Row label="Recorded Non-cash Transfer" value={formatCurrency(statement.closingTransfer)} />
+      )}
+      {statement.closingTransfer && (
+        <Row label="Unresolved Receivable on This Loan" value={
+          statement.closingReceivable == null
+            ? "Not verified"
+            : formatCurrency(statement.closingReceivable)
+        } />
+      )}
       <Row
-        label="Total Due to Settle"
+        label={statement.closingTransfer
+          ? transferReconciled ? "Still Collectible on This Loan" : "Calculated Due at Transfer"
+          : "Total Due to Settle"}
         value={<span className="text-lg font-bold">{formatCurrency(f.totalDue)}</span>}
       />
       <Row label="Days Overdue" value={`${f.daysOverdue} days`} />

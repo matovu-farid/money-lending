@@ -62,6 +62,7 @@ import { assertLoanOperational } from "@/lib/loan-visibility";
 import { filterLoansForExport } from "@/lib/loan-filters";
 import { cancelPendingRateChangeRequestsForLoan } from "./rate-change-request.service";
 import { captureServerWarning } from "@/lib/sentry";
+import { quoteRecordedRollover } from "./rollover-quote.service";
 
 const checkCustomerCompleteness = (customer: {
   fullName: string | null;
@@ -185,13 +186,34 @@ export const createLoan = (
           });
         }
 
+        let rolloverCarry: Awaited<ReturnType<typeof quoteRecordedRollover>> | null = null;
+        if (input.rollover && existingActiveLoan) {
+          try {
+            rolloverCarry = await quoteRecordedRollover(tx, existingActiveLoan, startDate);
+          } catch (error) {
+            throw new ValidationError({
+              message: error instanceof Error ? error.message : "Cannot calculate rollover carry",
+              field: "rollover",
+            });
+          }
+        }
+        if (input.rollover && rolloverCarry && (
+          !new BigNumber(input.rollover.carriedPrincipal).eq(rolloverCarry.carriedPrincipal) ||
+          !new BigNumber(input.rollover.carriedInterest).eq(rolloverCarry.carriedInterest)
+        )) {
+          throw new ValidationError({
+            message: "Rollover amount changed. Refresh the effective-date quote before issuing the loan.",
+            field: "rollover",
+          });
+        }
+
         const loanValues = {
           ...(input.id ? { id: input.id } : {}),
           customerId: input.customerId,
           principalAmount: input.rollover
             ? new BigNumber(input.principalAmount)
-                .plus(new BigNumber(input.rollover.carriedPrincipal))
-                .plus(new BigNumber(input.rollover.carriedInterest))
+                .plus(new BigNumber(rolloverCarry!.carriedPrincipal))
+                .plus(new BigNumber(rolloverCarry!.carriedInterest))
                 .toFixed(0)
             : input.principalAmount,
           issuanceFee: input.issuanceFee,
@@ -208,8 +230,8 @@ export const createLoan = (
           termMonths: input.termMonths ?? null,
           rolledOverFrom: input.rollover?.fromLoanId ?? null,
           rolloverAmount: input.rollover
-            ? new BigNumber(input.rollover.carriedPrincipal)
-                .plus(new BigNumber(input.rollover.carriedInterest))
+            ? new BigNumber(rolloverCarry!.carriedPrincipal)
+                .plus(new BigNumber(rolloverCarry!.carriedInterest))
                 .toFixed(0)
             : null,
           ...(input.backdateNote
@@ -236,11 +258,11 @@ export const createLoan = (
         // Handle rollover: close old loan
         if (input.rollover && existingActiveLoan) {
           // Post old loan's accrued interest as earned
-          if (new BigNumber(input.rollover.carriedInterest).isGreaterThan(0)) {
+          if (new BigNumber(rolloverCarry!.carriedInterest).isGreaterThan(0)) {
             await postJournalEntry(tx, {
               debitCategory: { name: "Loans Receivable", type: "asset" },
               creditCategory: { name: "Interest Earned", type: "revenue" },
-              amount: input.rollover.carriedInterest,
+              amount: rolloverCarry!.carriedInterest,
               referenceType: "rollover",
               referenceId: existingActiveLoan.id,
               description: `Interest earned - loan ${shortId(existingActiveLoan.id).toUpperCase()} rolled over into ${shortId(loan.id).toUpperCase()}`,
@@ -251,9 +273,9 @@ export const createLoan = (
           }
 
           // Transfer carried principal from old loan to new loan on the ledger
-          if (new BigNumber(input.rollover.carriedPrincipal).isGreaterThan(0)) {
+          if (new BigNumber(rolloverCarry!.carriedPrincipal).isGreaterThan(0)) {
             await autoPostRolloverPrincipalTransfer(tx, {
-              amount: input.rollover.carriedPrincipal,
+              amount: rolloverCarry!.carriedPrincipal,
               newLoanId: loan.id,
               oldLoanId: existingActiveLoan.id,
               transactionDate: startDate,
@@ -284,8 +306,8 @@ export const createLoan = (
             afterValue: {
               status: "rolled_over",
               rolledIntoLoanId: loan.id,
-              carriedPrincipal: input.rollover.carriedPrincipal,
-              carriedInterest: input.rollover.carriedInterest,
+              carriedPrincipal: rolloverCarry!.carriedPrincipal,
+              carriedInterest: rolloverCarry!.carriedInterest,
             },
           });
         }
@@ -302,8 +324,8 @@ export const createLoan = (
             ...(input.rollover && {
               rolloverFrom: input.rollover.fromLoanId,
               freshAmount: input.principalAmount,
-              rolloverAmount: new BigNumber(input.rollover.carriedPrincipal)
-                .plus(new BigNumber(input.rollover.carriedInterest))
+              rolloverAmount: new BigNumber(rolloverCarry!.carriedPrincipal)
+                .plus(new BigNumber(rolloverCarry!.carriedInterest))
                 .toFixed(0),
             }),
           },
@@ -499,7 +521,7 @@ export async function getLoanRowById(
 export async function getLoanPredecessorChain(loanId: string): Promise<Loan[]> {
   const chain: Loan[] = [];
   const visited = new Set<string>();
-  let current = await getLoanRowById(loanId, { includeDeleted: true });
+  const current = await getLoanRowById(loanId, { includeDeleted: true });
   if (!current) return chain;
 
   let predecessorId = current.rolledOverFrom;

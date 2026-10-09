@@ -211,6 +211,20 @@
       "when": 1784795373858,
       "tag": "0029_fund_transfer_backdating",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1791556433862,
+      "tag": "0030_flawless_stature",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1791557873298,
+      "tag": "0031_brown_morbius",
+      "breakpoints": true
     }
   ]
 }

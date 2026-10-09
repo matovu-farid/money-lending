@@ -8,6 +8,16 @@ const DB_URL = process.env.DATABASE_URL_TEST ?? "postgres://localhost:5432/money
 const NEON_URL = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? DB_URL
 
 function freshSql(): Sql {
+  const configured = process.env.DATABASE_URL_TEST
+  const explicit = process.env.CYPRESS_TEST_DATABASE_URL
+  if (!configured || configured !== explicit) {
+    throw new Error("Cypress requires an explicitly selected isolated test database")
+  }
+  const url = new URL(configured)
+  if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||
+      url.pathname !== "/money_lending_integration_test") {
+    throw new Error("Cypress database must be the isolated local integration test database")
+  }
   return postgres(DB_URL, { max: 1 })
 }
 
@@ -43,8 +53,11 @@ export default defineConfig({
     setupNodeEvents(on, config) {
       const appBaseUrl = config.baseUrl ?? "http://localhost:3000"
       on("task", {
-        async "db:seedRolloverInterest"({ actorId, rolledOver, paidFirstMonth }: { actorId: string; rolledOver: boolean; paidFirstMonth: boolean }) {
+        async "db:seedRolloverInterest"({ actorId, rolledOver, paidFirstMonth, capitalizedInterest = "0" }: { actorId: string; rolledOver: boolean; paidFirstMonth: boolean; capitalizedInterest?: string }) {
           return withSql(async (sql) => {
+            const carriedInterest = rolledOver ? Number(capitalizedInterest) : 0
+            const successorPrincipal = String(10000000 + carriedInterest)
+            const rolloverAmount = rolledOver ? String(9000000 + carriedInterest) : null
             const [customer] = await sql`
               INSERT INTO customers (full_name, nin, contact, address, status)
               VALUES ('Rollover Interest Borrower', 'CM12345678ABCD', '0771234567', 'Kampala', 'active') RETURNING id
@@ -57,33 +70,41 @@ export default defineConfig({
             if (rolledOver) {
               const [predecessor] = await sql`
                 INSERT INTO loans (customer_id, principal_amount, issuance_fee, interest_rate, min_interest_days, start_date, status, issued_by, disbursement_source, loan_type)
-                VALUES (${customer.id}, '9000000', '50000', '0.10', 30, NOW() - INTERVAL '38 days', 'rolled_over', ${actorId}, 'cash', 'perpetual') RETURNING id
+                VALUES (${customer.id}, '9000000', '50000', '0.10', 30, (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '38 days', 'rolled_over', ${actorId}, 'cash', 'perpetual') RETURNING id
               `
               predecessorId = predecessor.id
             }
             const [loan] = await sql`
               INSERT INTO loans (customer_id, principal_amount, issuance_fee, interest_rate, min_interest_days, start_date, status, issued_by, disbursement_source, loan_type, rolled_over_from, rollover_amount)
-              VALUES (${customer.id}, '10000000', '50000', '0.10', 30,
-                NOW() - (${paidFirstMonth ? 38 : 8} * INTERVAL '1 day'), 'active', ${actorId}, 'cash', 'perpetual', ${predecessorId}, ${rolledOver ? '9000000' : null}) RETURNING id
+              VALUES (${customer.id}, ${successorPrincipal}, '50000', '0.10', 30,
+                (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - (${paidFirstMonth ? 38 : 8} * INTERVAL '1 day'), 'active', ${actorId}, 'cash', 'perpetual', ${predecessorId}, ${rolloverAmount}) RETURNING id
             `
             await sql`INSERT INTO collateral (loan_id, nature, description) VALUES (${loan.id}, 'Land Title', 'Kampala plot')`
             const journal = crypto.randomUUID()
             // Fund cash and establish the loan's principal in the ledger.
             await sql`
               INSERT INTO transactions (category_id, loan_id, amount, type, transaction_date, recorded_by, reference_type, reference_id, journal_group_id, deposit_location)
-              VALUES (${receivable.id}, ${loan.id}, '10000000', 'debit', NOW() - INTERVAL '38 days', ${actorId}, 'loan', ${loan.id}, ${journal}, null),
-                     (${cash.id}, null, '20000000', 'debit', NOW() - INTERVAL '38 days', ${actorId}, 'test', null, ${crypto.randomUUID()}, 'cash')
+              VALUES (${receivable.id}, ${loan.id}, '10000000', 'debit', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '38 days', ${actorId}, 'loan', ${loan.id}, ${journal}, null),
+                     (${cash.id}, null, '20000000', 'debit', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '38 days', ${actorId}, 'test', null, ${crypto.randomUUID()}, 'cash')
             `
+            if (carriedInterest > 0) {
+              const rolloverJournal = crypto.randomUUID()
+              await sql`
+                INSERT INTO transactions (category_id, loan_id, amount, type, transaction_date, recorded_by, reference_type, reference_id, journal_group_id)
+                VALUES (${receivable.id}, ${loan.id}, ${capitalizedInterest}, 'debit', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '8 days', ${actorId}, 'rollover', ${predecessorId}, ${rolloverJournal}),
+                       (${interest.id}, ${loan.id}, ${capitalizedInterest}, 'credit', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '8 days', ${actorId}, 'rollover', ${predecessorId}, ${rolloverJournal})
+              `
+            }
             if (paidFirstMonth) {
               const [payment] = await sql`
                 INSERT INTO payments (loan_id, amount, payment_date, recorded_by, deposit_location)
-                VALUES (${loan.id}, '1000000', NOW() - INTERVAL '8 days', ${actorId}, 'cash') RETURNING id
+                VALUES (${loan.id}, '1000000', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '8 days', ${actorId}, 'cash') RETURNING id
               `
               const paymentJournal = crypto.randomUUID()
               await sql`
                 INSERT INTO transactions (category_id, loan_id, amount, type, transaction_date, recorded_by, reference_type, reference_id, journal_group_id, deposit_location)
-                VALUES (${interest.id}, ${loan.id}, '1000000', 'credit', NOW() - INTERVAL '8 days', ${actorId}, 'payment', ${payment.id}, ${paymentJournal}, null),
-                       (${cash.id}, ${loan.id}, '1000000', 'debit', NOW() - INTERVAL '8 days', ${actorId}, 'payment', ${payment.id}, ${paymentJournal}, 'cash')
+                VALUES (${interest.id}, ${loan.id}, '1000000', 'credit', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '8 days', ${actorId}, 'payment', ${payment.id}, ${paymentJournal}, null),
+                       (${cash.id}, ${loan.id}, '1000000', 'debit', (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') - INTERVAL '8 days', ${actorId}, 'payment', ${payment.id}, ${paymentJournal}, 'cash')
               `
             }
             return { customerId: customer.id, loanId: loan.id }
@@ -93,6 +114,8 @@ export default defineConfig({
           await withSql(async (sql) => {
             await sql.unsafe(`
               DELETE FROM financial_snapshots;
+              DELETE FROM rollover_correction_runs;
+              DELETE FROM rollover_correction_approvals;
               DELETE FROM transactions;
               DELETE FROM transaction_categories;
               DELETE FROM fund_transfers;
@@ -461,6 +484,20 @@ export default defineConfig({
               ORDER BY t.created_at ASC
             `
             return rows
+          })
+        },
+
+        async "db:addUnresolvedReceivable"({ loanId, actorId }: { loanId: string; actorId: string }) {
+          return withSql(async (sql) => {
+            const journalGroupId = crypto.randomUUID()
+            const [receivable] = await sql`SELECT id FROM transaction_categories WHERE name = 'Loans Receivable'`
+            const [interest] = await sql`SELECT id FROM transaction_categories WHERE name = 'Interest Earned'`
+            await sql`
+              INSERT INTO transactions (category_id, loan_id, amount, type, transaction_date, recorded_by, reference_type, reference_id, journal_group_id)
+              VALUES (${receivable.id}, ${loanId}, '500000', 'debit', NOW(), ${actorId}, 'test_adjustment', ${loanId}, ${journalGroupId}),
+                     (${interest.id}, ${loanId}, '500000', 'credit', NOW(), ${actorId}, 'test_adjustment', ${loanId}, ${journalGroupId})
+            `
+            return null
           })
         },
 

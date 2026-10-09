@@ -8,11 +8,34 @@ import * as schema from "@/lib/db/schema"
 
 export const testDb = db
 
+function assertIsolatedIntegrationDatabase() {
+  const configured = process.env.DATABASE_URL
+  const explicit = process.env.INTEGRATION_TEST_DATABASE_URL
+  if (!configured || !explicit || configured !== explicit) {
+    throw new Error("An isolated integration database must be explicitly selected")
+  }
+  let url: URL
+  try {
+    url = new URL(configured)
+  } catch {
+    throw new Error("An isolated integration database must have a valid URL")
+  }
+  if (!["localhost", "127.0.0.1", "::1"].includes(url.hostname) ||
+      url.pathname !== "/money_lending_integration_test") {
+    throw new Error("An isolated integration database on loopback is required")
+  }
+}
+
 /**
  * Truncates all application tables in a single TRUNCATE statement,
  * then seeds test users so audit log FK constraints are satisfied.
  */
 export async function resetDb() {
+  assertIsolatedIntegrationDatabase()
+  const identity = await db.execute(sql`SELECT current_database() AS name`)
+  if (identity[0]?.name !== "money_lending_integration_test") {
+    throw new Error("Connected database is not the isolated integration database")
+  }
   await db.execute(sql`
     TRUNCATE TABLE
       transactions,

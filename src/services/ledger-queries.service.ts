@@ -148,7 +148,6 @@ export async function getRolloverInterestSettledFromLedger(
 
   const conditions = [
     eq(transactionCategories.name, "Interest Earned"),
-    eq(transactions.type, "credit"),
     eq(transactions.referenceType, "rollover"),
     inArray(transactions.loanId, loanIds),
   ];
@@ -157,6 +156,7 @@ export async function getRolloverInterestSettledFromLedger(
   const rows = await queryDb
     .select({
       loanId: transactions.loanId,
+      txType: transactions.type,
       total: sql<string>`COALESCE(SUM(${transactions.amount}), '0')`,
     })
     .from(transactions)
@@ -165,11 +165,15 @@ export async function getRolloverInterestSettledFromLedger(
       eq(transactions.categoryId, transactionCategories.id),
     )
     .where(and(...conditions))
-    .groupBy(transactions.loanId);
+    .groupBy(transactions.loanId, transactions.type);
 
   const result = new Map<string, BigNumber>();
   for (const row of rows) {
-    if (row.loanId) result.set(row.loanId, new BigNumber(row.total));
+    if (!row.loanId) continue;
+    const current = result.get(row.loanId) ?? new BigNumber(0);
+    const amount = new BigNumber(row.total);
+    result.set(row.loanId, row.txType === "credit"
+      ? current.plus(amount) : current.minus(amount));
   }
   return result;
 }

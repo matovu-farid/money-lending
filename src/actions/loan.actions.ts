@@ -59,9 +59,28 @@ import { notifyAdmin, resolveLoanContext } from "@/lib/email";
 import BigNumber from "bignumber.js";
 import { generateLoansExcel } from "@/services/export/excel.service";
 import { getLocationBalances } from "@/services/report.service";
-import { getRolloverInterestSettledFromLedger } from "@/services/ledger-queries.service";
+import { getLoanBalancesFromLedger, getRolloverInterestSettledFromLedger } from "@/services/ledger-queries.service";
 import { formatAmount } from "@/lib/interest/engine";
 import { VALID_DEPOSIT_LOCATIONS, VALID_LOAN_TYPES } from "@/lib/constants";
+import { getActiveRolloverQuote } from "@/services/rollover-quote.service";
+
+export const getRolloverQuoteAction = withAction<
+  { customerId: string; startDate: string },
+  { data: Awaited<ReturnType<typeof getActiveRolloverQuote>> } | { error: string }
+>({
+  permission: "loan:rollover",
+  action: async (_session, input) => {
+    const effectiveDate = new Date(input.startDate);
+    if (!input.customerId || Number.isNaN(effectiveDate.getTime())) {
+      return { error: "A valid customer and effective date are required" };
+    }
+    try {
+      return { data: await getActiveRolloverQuote(input.customerId, effectiveDate) };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : "Cannot quote rollover" };
+    }
+  },
+});
 
 export const getLocationBalancesAction = withAction({
   permission: "reports:read",
@@ -146,6 +165,19 @@ export const getLoanRolloverInterestAction = withAction<
       new Date(),
     );
     return { data: settled.get(loanId)?.toFixed(2) ?? "0" };
+  },
+});
+
+/** Receivable remaining on a predecessor, independent of its rolled-over status. */
+export const getLoanReceivableBalanceAction = withAction<
+  string,
+  { data: string | null } | { error: string }
+>({
+  permission: "loan:read",
+  action: async (_session, loanId) => {
+    if (!loanId?.trim()) return { error: "Loan ID is required" };
+    const balances = await getLoanBalancesFromLedger([loanId]);
+    return { data: balances.get(loanId)?.toFixed(2) ?? null };
   },
 });
 

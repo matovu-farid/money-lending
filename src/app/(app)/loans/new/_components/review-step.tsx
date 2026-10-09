@@ -30,6 +30,8 @@ interface ReviewStepProps {
   collateralNature: string
   collateralDescription: string
   activeLoanData: ActiveLoanInfo | null | undefined
+  quoteError?: string | null
+  canIssue?: boolean
   loanSummary: ReturnType<typeof calculateLoanSummary> | null
   isPending: boolean
   onBack: () => void
@@ -49,6 +51,8 @@ export function ReviewStep({
   collateralNature,
   collateralDescription,
   activeLoanData,
+  quoteError,
+  canIssue = true,
   loanSummary,
   isPending,
   onBack,
@@ -129,12 +133,17 @@ export function ReviewStep({
         </dl>
 
         {/* Rollover Breakdown */}
-        {activeLoanData && (
+        {activeLoanData && canIssue && (
           <RolloverBreakdown
             principalAmount={principalAmount}
             outstandingPrincipal={activeLoanData.outstandingPrincipal}
             accruedInterest={activeLoanData.accruedInterest}
           />
+        )}
+        {activeLoanData && !canIssue && (
+          <p className="text-sm text-destructive" role="alert">
+            {quoteError ?? "Calculating rollover at the selected effective date…"}
+          </p>
         )}
 
         {/* Interest Calculation Preview */}
@@ -146,7 +155,7 @@ export function ReviewStep({
           <Button type="button" variant="outline" onClick={onBack} disabled={isPending}>
             Back
           </Button>
-          <Button type="submit" disabled={isPending}>
+          <Button type="submit" disabled={isPending || !canIssue}>
             {isPending ? (
               <>
                 <Loader2 className="animate-spin h-4 w-4" />

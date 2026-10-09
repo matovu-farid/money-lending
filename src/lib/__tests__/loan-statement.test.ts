@@ -118,19 +118,109 @@ describe("buildLoanStatement — payments", () => {
 })
 
 describe("buildLoanStatement — rollover settlement", () => {
-  it("counts rollover interest as settled at the opening of the new loan", () => {
+  it("accepts serialized loan dates and keeps capitalized interest out of payments", () => {
     const stmt = buildLoanStatement({
-      loan: baseLoan,
+      loan: {
+        ...baseLoan,
+        id: "samuel-current",
+        principalAmount: "33363461",
+        rolledOverFrom: "samuel-predecessor",
+        startDate: "2026-10-08T00:00:00Z" as unknown as Date,
+        createdAt: "2026-10-09T00:00:00Z" as unknown as Date,
+      },
+      payments: [],
+      openingInterestSettled: "715128",
+      today: new Date("2026-10-09T00:00:00Z"),
+    })
+
+    expect(stmt.daysSinceStart).toBe(1)
+    expect(stmt.terms.backdated).toBe(true)
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("0")
+    expect(stmt.finalState.netUnpaidInterest).toBe("111212")
+    expect(stmt.events).toContainEqual(expect.objectContaining({
+      kind: "rollover_settled", amount: "715128",
+    }))
+  })
+
+  it("ends a predecessor at its rollover date and does not present a collectible balance", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, principalAmount: "15000000", startDate: new Date("2026-08-28T00:00:00Z") },
+      payments: [],
+      today: new Date("2026-10-09T00:00:00Z"),
+      closingRollover: { date: new Date("2026-09-18T00:00:00Z"), amount: "16500000", remainingReceivable: "0" },
+    });
+    expect(stmt.today).toEqual(new Date("2026-09-18T00:00:00Z"));
+    expect(stmt.daysSinceStart).toBe(21);
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("1050000");
+    expect(stmt.finalState.totalDue).toBe("0");
+    expect(stmt.events).toContainEqual(expect.objectContaining({
+      kind: "rollover_closed", amount: "16500000",
+    }));
+  });
+  it("rejects a successor date before the predecessor loan started", () => {
+    expect(() => buildLoanStatement({
+      loan: { ...baseLoan, startDate: new Date("2026-05-18T00:00:00Z") },
+      payments: [],
+      today: new Date("2026-10-09T00:00:00Z"),
+      closingRollover: { date: new Date("2026-04-24T00:00:00Z"), amount: "1000000" },
+    })).toThrow(/precedes the predecessor loan start date/i);
+  });
+  it("does not report zero due when a recorded rollover left receivable unresolved", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, principalAmount: "15000000", startDate: new Date("2026-08-28T00:00:00Z") },
+      payments: [],
+      today: new Date("2026-10-09T00:00:00Z"),
+      closingRollover: {
+        date: new Date("2026-09-18T00:00:00Z"), amount: "15000000", remainingReceivable: "500000",
+      },
+    });
+    expect(stmt.closingReceivable).toBe("500000");
+    expect(stmt.finalState.totalDue).not.toBe("0");
+  });
+  it("does not infer reconciliation when the predecessor receivable is unavailable", () => {
+    const stmt = buildLoanStatement({
+      loan: baseLoan, payments: [], today: new Date("2026-01-31T00:00:00Z"),
+      closingRollover: { date: new Date("2026-01-31T00:00:00Z"), amount: "1000000" },
+    });
+    expect(stmt.finalState.totalDue).not.toBe("0");
+  });
+  it("does not count capitalized predecessor interest as a payment on the new loan", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, principalAmount: "1100000", rolledOverFrom: "previous-loan" },
       payments: [],
       openingInterestSettled: "100000",
       today: new Date("2026-01-31T00:00:00Z"),
     })
 
     expect(stmt.events.some((event) => event.kind === "rollover_settled")).toBe(true)
-    expect(stmt.finalState.cumulativeInterestAccrued).toBe("100000")
-    expect(stmt.finalState.cumulativeInterestPaid).toBe("100000")
-    expect(stmt.finalState.netUnpaidInterest).toBe("0")
-    expect(stmt.finalState.totalDue).toBe("1000000")
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("110000")
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("0")
+    expect(stmt.finalState.netUnpaidInterest).toBe("110000")
+    expect(stmt.finalState.totalDue).toBe("1210000")
+    expect(stmt.finalState.daysOverdue).toBe(30)
+  })
+
+  it("shows all eight days of interest unpaid for the reported rollover with no payments", () => {
+    const stmt = buildLoanStatement({
+      loan: {
+        ...baseLoan,
+        principalAmount: "29858500",
+        rolledOverFrom: "previous-loan",
+        startDate: new Date("2026-10-01T00:00:00Z"),
+        createdAt: new Date("2026-10-09T00:00:00Z"),
+      },
+      payments: [],
+      openingInterestSettled: "308500",
+      today: new Date("2026-10-09T00:00:00Z"),
+    })
+
+    expect(stmt.cycles[0].accruedInCycle).toBe("796227")
+    expect(stmt.events[0]).toMatchObject({ kind: "issue", rolledOver: true })
+    expect(stmt.cycles[0].cumulativePaid).toBe("0")
+    expect(stmt.cycles[0].netUnpaidAtEnd).toBe("796227")
+    expect(stmt.cycles[0].daysOverdueAtEnd).toBe(8)
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("0")
+    expect(stmt.finalState.totalDue).toBe("30654727")
   })
 
   it("matches the production rollover loan after recognizing opening interest", () => {
@@ -186,10 +276,10 @@ describe("buildLoanStatement — rollover settlement", () => {
 
     expect(stmt.finalState.principalBalance).toBe("11021706")
     expect(stmt.finalState.cumulativeInterestAccrued).toBe("27995289")
-    expect(stmt.finalState.cumulativeInterestPaid).toBe("8149828")
-    expect(stmt.finalState.netUnpaidInterest).toBe("19845461")
-    expect(stmt.finalState.totalDue).toBe("30867167")
-    expect(stmt.finalState.daysOverdue).toBe(450)
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("4513222")
+    expect(stmt.finalState.netUnpaidInterest).toBe("23482067")
+    expect(stmt.finalState.totalDue).toBe("34503773")
+    expect(stmt.finalState.daysOverdue).toBeGreaterThan(450)
   })
 })
 
@@ -235,7 +325,8 @@ describe("buildLoanStatement — waivers", () => {
     // The two UGX 100,000 principal waivers stop interest accruing on that
     // principal from their settlement date onward.
     expect(stmt.finalState.cumulativeInterestAccrued).toBe("9470467")
-    expect(stmt.finalState.cumulativeInterestPaid).toBe("4000000")
+    expect(stmt.finalState.cumulativeInterestPaid).toBe("0")
+    expect(stmt.finalState.cumulativeInterestWaived).toBe("4000000")
     expect(stmt.finalState.netUnpaidInterest).toBe("5470467")
     expect(stmt.finalState.totalDue).toBe("15270467")
     expect(stmt.finalState.daysOverdue).toBe(167)
@@ -285,6 +376,29 @@ describe("buildLoanStatement — penalty activation", () => {
     expect(stmt.events.find((e) => e.kind === "penalty_active")).toBeUndefined()
     // All 90 days at base = 300,000
     expect(stmt.finalState.cumulativeInterestAccrued).toBe("300000")
+  })
+
+  it("applies a dated penalty waiver only from its recorded day", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, penaltyWaived: true,
+        penaltyWaivedAt: new Date("2026-03-20T00:00:00Z") },
+      payments: [],
+      today: new Date("2026-04-01T00:00:00Z"),
+    })
+    expect(stmt.events.some((event) => event.kind === "penalty_active")).toBe(true)
+    expect(stmt.events.some((event) => event.kind === "penalty_waived")).toBe(true)
+    expect(stmt.finalState.penaltyActive).toBe(false)
+    expect(Number(stmt.finalState.cumulativeInterestAccrued)).toBeGreaterThan(300000)
+    expect(Number(stmt.finalState.cumulativeInterestAccrued)).toBeLessThan(310000)
+
+    const beforeWaiver = buildLoanStatement({
+      loan: { ...baseLoan, penaltyWaived: true,
+        penaltyWaivedAt: new Date("2026-03-20T00:00:00Z") },
+      payments: [],
+      closingRollover: { date: new Date("2026-03-15T00:00:00Z"), amount: "0" },
+      today: new Date("2026-04-01T00:00:00Z"),
+    })
+    expect(beforeWaiver.events.some((event) => event.kind === "penalty_waived")).toBe(false)
   })
 })
 

@@ -26,6 +26,13 @@ vi.mock("@/services/ledger-queries.service", () => ({
   getPaymentPortionsFromLedger: vi.fn().mockResolvedValue(new Map()),
 }))
 
+vi.mock("@/services/rollover-quote.service", () => ({
+  quoteRecordedRollover: vi.fn().mockResolvedValue({
+    carriedPrincipal: "200000.00",
+    carriedInterest: "50000.00",
+  }),
+}))
+
 vi.mock("@/services/rate-change-request.service", () => ({
   cancelPendingRateChangeRequestsForLoan: vi.fn().mockResolvedValue(0),
 }))
@@ -878,6 +885,7 @@ describe("Loan Service", () => {
   it("calls autoPostRolloverPrincipalTransfer when rolling over with carried principal", async () => {
     const { db: mockedDb } = await import("@/lib/db")
     const { autoPostRolloverPrincipalTransfer } = await import("@/services/auto-post.service")
+    const { quoteRecordedRollover } = await import("@/services/rollover-quote.service")
 
     const existingLoan = {
       id: "old-loan-1",
@@ -958,6 +966,12 @@ describe("Loan Service", () => {
     const { createLoan } = await import("@/services/loan.service")
     await Effect.runPromise(createLoan(rolloverInput, "actor-1"))
 
+    expect(quoteRecordedRollover).toHaveBeenCalledWith(
+      expect.anything(),
+      existingLoan,
+      new Date(rolloverInput.startDate),
+    )
+
     expect(autoPostRolloverPrincipalTransfer).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
@@ -967,6 +981,14 @@ describe("Loan Service", () => {
         actorId: "actor-1",
       })
     )
+
+    const before = vi.mocked(autoPostRolloverPrincipalTransfer).mock.calls.length
+    const stale = await Effect.runPromiseExit(createLoan({
+      ...rolloverInput,
+      rollover: { ...rolloverInput.rollover, carriedInterest: "100000.00" },
+    }, "actor-1"))
+    expect(stale._tag).toBe("Failure")
+    expect(vi.mocked(autoPostRolloverPrincipalTransfer).mock.calls).toHaveLength(before)
   })
 
   // ── createLoan: blacklisted customer guard ──────────────────────────

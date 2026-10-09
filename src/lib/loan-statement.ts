@@ -40,9 +40,16 @@ export type StatementEvent =
       principal: string
       issuanceFee: string
       baseRate: string
+      rolledOver: boolean
     }
   | {
       kind: "rollover_settled"
+      day: number
+      date: Date
+      amount: string
+    }
+  | {
+      kind: "rollover_closed"
       day: number
       date: Date
       amount: string
@@ -105,6 +112,7 @@ export interface CycleSnapshot {
   accruedInCycle: string
   cumulativeAccrued: string
   cumulativePaid: string
+  cumulativeWaived: string
   netUnpaidAtEnd: string
   daysOverdueAtEnd: number
   penaltyActiveAtEnd: boolean
@@ -116,6 +124,8 @@ export interface LoanStatement {
   startDate: Date
   today: Date
   daysSinceStart: number
+  closingTransfer?: string
+  closingReceivable?: string | null
   terms: {
     principal: string
     baseRate: string
@@ -133,6 +143,7 @@ export interface LoanStatement {
     principalBalance: string
     cumulativeInterestAccrued: string
     cumulativeInterestPaid: string
+    cumulativeInterestWaived: string
     minimumInterestAdjustment: string
     netUnpaidInterest: string
     totalDue: string
@@ -168,6 +179,8 @@ export interface BuildStatementInput {
   }>
   /** Interest from a predecessor loan settled when this loan was created. */
   openingInterestSettled?: string
+  /** Recorded non-cash transfer into a successor; stops this loan's accrual. */
+  closingRollover?: { date: Date; amount: string; remainingReceivable?: string | null }
   waivers?: Array<{
     waiverDate: Date
     amount: string
@@ -184,6 +197,14 @@ export interface BuildStatementInput {
   today: Date
 }
 
+function statementDate(value: Date): Date {
+  // Collection hydration and server actions can return ISO strings even when
+  // their static types describe Dates. Normalize at the calculator boundary.
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) throw new Error("Invalid loan statement date")
+  return date
+}
+
 function daysBetween(a: Date, b: Date): number {
   return Math.floor((b.getTime() - a.getTime()) / DAY_MS)
 }
@@ -194,13 +215,22 @@ function addDays(d: Date, n: number): Date {
 
 export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   const {
-    loan,
     payments,
     openingInterestSettled = "0",
     waivers = [],
     rateChanges = [],
-    today,
+    closingRollover,
   } = input
+  const loan = {
+    ...input.loan,
+    startDate: statementDate(input.loan.startDate),
+    createdAt: statementDate(input.loan.createdAt),
+  }
+  if (closingRollover && statementDate(closingRollover.date) < loan.startDate) {
+    throw new Error("Successor issue date precedes the predecessor loan start date")
+  }
+  const today = closingRollover && closingRollover.date < input.today
+    ? closingRollover.date : input.today
 
   const principalBN = new BigNumber(loan.principalAmount)
   const minimumInterestDays =
@@ -221,6 +251,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       principal: loan.principalAmount,
       issuanceFee: loan.issuanceFee,
       baseRate: initialBaseRate,
+      rolledOver: !!loan.rolledOverFrom,
     },
   ]
   const openingInterestSettledBN = new BigNumber(openingInterestSettled)
@@ -253,11 +284,10 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   let balance = principalBN
   let baseRate = new BigNumber(initialBaseRate)
   let cumulativeAccrued = new BigNumber(0)
-  let cumulativePaid = openingInterestSettledBN
-  // Rollover interest is capitalized into the opening principal, while the
-  // successor loan still inherits the predecessor's overdue/penalty state.
-  // Keep that opening settlement out of threshold detection only.
-  let cumulativePaidForPenalty = new BigNumber(0)
+  // Rollover interest is already part of the successor's opening principal.
+  // Only settlements against this loan reduce its newly accrued interest.
+  let cumulativePaid = new BigNumber(0)
+  let cumulativeWaived = new BigNumber(0)
   let penaltyActive = false
   let penaltyActivatedDay: number | null = null
 
@@ -273,7 +303,10 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   function pushCycle(endDay: number, isPartial: boolean) {
     const accruedInCycle = cycleAccruedBase.plus(cycleAccruedEffective)
     const dailyAtBaseEnd = balance.multipliedBy(baseRate).dividedBy(30)
-    const netUnpaid = BigNumber.max(cumulativeAccrued.minus(cumulativePaid), 0)
+    const netUnpaid = BigNumber.max(
+      cumulativeAccrued.minus(cumulativePaid).minus(cumulativeWaived),
+      0,
+    )
     const daysOverdueAtEnd = dailyAtBaseEnd.isZero()
       ? 0
       : Math.floor(netUnpaid.dividedBy(dailyAtBaseEnd).toNumber())
@@ -293,6 +326,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       accruedInCycle: accruedInCycle.toFixed(0),
       cumulativeAccrued: cumulativeAccrued.toFixed(0),
       cumulativePaid: cumulativePaid.toFixed(0),
+      cumulativeWaived: cumulativeWaived.toFixed(0),
       netUnpaidAtEnd: netUnpaid.toFixed(0),
       daysOverdueAtEnd,
       penaltyActiveAtEnd: penaltyActive,
@@ -340,9 +374,6 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       const balanceBefore = balance
       balance = BigNumber.max(balance.minus(new BigNumber(p.principalPortion)), 0)
       cumulativePaid = cumulativePaid.plus(new BigNumber(p.interestPortion))
-      cumulativePaidForPenalty = cumulativePaidForPenalty.plus(
-        new BigNumber(p.interestPortion),
-      )
       events.push({
         kind: "payment",
         day: pDay,
@@ -370,10 +401,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
         balance.minus(new BigNumber(w.principalPortion)),
         0,
       )
-      cumulativePaid = cumulativePaid.plus(new BigNumber(w.interestPortion))
-      cumulativePaidForPenalty = cumulativePaidForPenalty.plus(
-        new BigNumber(w.interestPortion),
-      )
+      cumulativeWaived = cumulativeWaived.plus(new BigNumber(w.interestPortion))
       events.push({
         kind: "waiver",
         day: wDay,
@@ -392,14 +420,18 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
     //    derived from cumulative base-rate accrual so far.
     const dailyAtBase = balance.multipliedBy(baseRate).dividedBy(30)
     const netUnpaidBefore = BigNumber.max(
-      cumulativeAccrued.minus(cumulativePaidForPenalty),
+      cumulativeAccrued.minus(cumulativePaid).minus(cumulativeWaived),
       0,
     )
     const daysOverdueBefore = dailyAtBase.isZero()
       ? 0
       : Math.floor(netUnpaidBefore.dividedBy(dailyAtBase).toNumber())
+    const waiverEffective = loan.penaltyWaived &&
+      (!loan.penaltyWaivedAt || loan.penaltyWaivedAt <= dayDate)
     const shouldPenalize =
-      daysOverdueBefore >= PENALTY_THRESHOLD_DAYS && !loan.penaltyWaived
+      daysOverdueBefore >= PENALTY_THRESHOLD_DAYS && !waiverEffective
+
+    if (waiverEffective && penaltyActive) penaltyActive = false
 
     if (shouldPenalize && !penaltyActive) {
       penaltyActive = true
@@ -439,7 +471,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
 
   // Penalty-waived event, if any (whole-loan-level — historical exact day
   // isn't material since the waiver is currently in effect).
-  if (loan.penaltyWaived && loan.penaltyWaivedAt) {
+  if (loan.penaltyWaived && loan.penaltyWaivedAt && loan.penaltyWaivedAt <= today) {
     events.push({
       kind: "penalty_waived",
       day: daysBetween(loan.startDate, loan.penaltyWaivedAt),
@@ -447,12 +479,21 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       waivedBy: loan.penaltyWaivedBy,
     })
   }
+  if (closingRollover && closingRollover.date <= input.today) {
+    events.push({
+      kind: "rollover_closed",
+      day: daysBetween(loan.startDate, closingRollover.date),
+      date: closingRollover.date,
+      amount: closingRollover.amount,
+    })
+  }
 
   // Sort events chronologically (rate changes / penalties might have been
   // appended out of order).
   events.sort((a, b) => a.date.getTime() - b.date.getTime() || a.day - b.day)
 
-  const netUnpaid = BigNumber.max(cumulativeAccrued.minus(cumulativePaid), 0)
+  const cumulativeSettled = cumulativePaid.plus(cumulativeWaived)
+  const netUnpaid = BigNumber.max(cumulativeAccrued.minus(cumulativeSettled), 0)
   const dailyAtBaseEnd = balance.multipliedBy(baseRate).dividedBy(30)
   const daysOverdue = dailyAtBaseEnd.isZero()
     ? 0
@@ -469,7 +510,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
     .multipliedBy(Math.max(minimumInterestDays, 0))
     .dividedBy(30)
   const remainingMinimumInterest = BigNumber.max(
-    minimumInterestDue.minus(cumulativePaid),
+    minimumInterestDue.minus(cumulativeSettled),
     0,
   )
   const settlementUnpaid = BigNumber.max(netUnpaid, remainingMinimumInterest)
@@ -482,6 +523,10 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   const totalDue = new BigNumber(principalBalanceRounded).plus(
     new BigNumber(netUnpaidRounded),
   )
+  const rolloverClosed = !!closingRollover && closingRollover.date <= input.today
+  const receivableReconciled = rolloverClosed &&
+    closingRollover.remainingReceivable != null &&
+    new BigNumber(closingRollover.remainingReceivable).abs().lt(1)
 
   // penaltyActivatedDay is captured via the events array — the variable just
   // makes future "since penalty activation" math cheap if we want it.
@@ -489,10 +534,15 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
 
   return {
     loanId: loan.id,
-    generatedAt: today,
+    generatedAt: input.today,
     startDate: loan.startDate,
     today,
     daysSinceStart,
+    ...(rolloverClosed
+      ? {
+          closingTransfer: closingRollover.amount,
+          closingReceivable: closingRollover.remainingReceivable ?? null,
+        } : {}),
     terms: {
       principal: loan.principalAmount,
       baseRate: initialBaseRate,
@@ -510,9 +560,10 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       principalBalance: principalBalanceRounded,
       cumulativeInterestAccrued: cumulativeAccrued.toFixed(0),
       cumulativeInterestPaid: cumulativePaid.toFixed(0),
+      cumulativeInterestWaived: cumulativeWaived.toFixed(0),
       minimumInterestAdjustment: minimumInterestAdjustment.toFixed(0),
       netUnpaidInterest: netUnpaidRounded,
-      totalDue: totalDue.toFixed(0),
+      totalDue: receivableReconciled ? "0" : totalDue.toFixed(0),
       daysOverdue,
       penaltyActive,
     },

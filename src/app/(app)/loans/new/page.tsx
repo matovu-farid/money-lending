@@ -8,6 +8,7 @@ import { customerCollection } from "@/collections/customers"
 import { collateralNaturesCollection, locationBalancesCollection, getActiveLoanCheckCollection, getLoanCollateralCollection } from "@/collections/loan-extras"
 import { generateClientId } from "@/lib/client-id"
 import { insertLoanWithInput } from "@/collections/loans"
+import { getRolloverQuoteAction } from "@/actions/loan.actions"
 import { useSession } from "@/lib/auth-client"
 
 import { calculateLoanSummary } from "@/lib/interest"
@@ -33,6 +34,13 @@ function NewLoanPageInner() {
   const router = useRouter()
   const { data: session } = useSession()
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [rolloverQuote, setRolloverQuote] = useState<{
+    fromLoanId: string
+    carriedPrincipal: string
+    carriedInterest: string
+    startDate: string
+  } | null>(null)
+  const [rolloverQuoteError, setRolloverQuoteError] = useState<string | null>(null)
   const userRole = (session?.user?.role ?? "unassigned") as UserRole
   const prefilledCustomerId = searchParams.get("customerId") ?? ""
 
@@ -121,8 +129,6 @@ function NewLoanPageInner() {
   const disbursementSource = watch("disbursementSource")
   const backdateNote = watch("backdateNote")
 
-  const isPending = isSubmitting
-
   // --- Data queries ---
 
   const { data: knownNaturesRows } = useLiveQuery((q) =>
@@ -155,6 +161,44 @@ function NewLoanPageInner() {
   const activeLoanData = (activeLoanCheckRows as any)?.[0]?.data ?? null
 
   const activeLoanId = activeLoanData?.loan.id
+  useEffect(() => {
+    if (!activeLoanId || !customerId || !startDate) {
+      return
+    }
+    let cancelled = false
+    getRolloverQuoteAction({ customerId, startDate: new Date(startDate).toISOString() })
+      .then((result) => {
+        if (cancelled) return
+        if ("error" in result) {
+          setRolloverQuote(null)
+          setRolloverQuoteError(result.error)
+        } else {
+          setRolloverQuote({ ...result.data, startDate })
+          setRolloverQuoteError(null)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRolloverQuote(null)
+          setRolloverQuoteError("Could not calculate rollover at this date")
+        }
+      })
+    return () => { cancelled = true }
+  }, [activeLoanId, customerId, startDate])
+  const currentQuote = rolloverQuote?.fromLoanId === activeLoanId && rolloverQuote?.startDate === startDate
+    ? rolloverQuote : null
+  const isPending = isSubmitting
+  const quotedActiveLoanData = activeLoanData && currentQuote
+    ? {
+        ...activeLoanData,
+        outstandingPrincipal: currentQuote.carriedPrincipal,
+        accruedInterest: currentQuote.carriedInterest,
+      }
+    : activeLoanData ? {
+        ...activeLoanData,
+        outstandingPrincipal: "0",
+        accruedInterest: "0",
+      } : null
   const activeLoanCollateralColl = activeLoanId ? getLoanCollateralCollection(activeLoanId) : null
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: activeLoanCollateralRows } = useLiveQuery(((q: any) =>
@@ -199,12 +243,12 @@ function NewLoanPageInner() {
   // --- Computed values ---
 
   const effectivePrincipal =
-    activeLoanData && principalAmount
+    currentQuote && principalAmount
       ? new BigNumber(principalAmount)
-          .plus(new BigNumber(activeLoanData.outstandingPrincipal))
-          .plus(new BigNumber(activeLoanData.accruedInterest))
+          .plus(new BigNumber(currentQuote.carriedPrincipal))
+          .plus(new BigNumber(currentQuote.carriedInterest))
           .toFixed(0)
-      : principalAmount
+      : activeLoanData ? "" : principalAmount
 
   const loanSummary =
     step === 3 && effectivePrincipal && interestRateDisplay
@@ -242,16 +286,33 @@ function NewLoanPageInner() {
   async function onSubmit(data: LoanFormValues) {
     setIsSubmitting(true)
 
+    try {
+    let confirmedQuote = currentQuote
+    if (activeLoanData) {
+      const result = await getRolloverQuoteAction({
+        customerId: data.customerId,
+        startDate: new Date(data.startDate).toISOString(),
+      })
+      if ("error" in result) throw new Error(result.error)
+      if (!confirmedQuote || confirmedQuote.fromLoanId !== result.data.fromLoanId ||
+          confirmedQuote.carriedPrincipal !== result.data.carriedPrincipal ||
+          confirmedQuote.carriedInterest !== result.data.carriedInterest) {
+        setRolloverQuote({ ...result.data, startDate: data.startDate })
+        throw new Error("Rollover amount changed. Please review the updated figures before issuing.")
+      }
+      confirmedQuote = { ...result.data, startDate: data.startDate }
+    }
+
     const collateral: CollateralInput = {
       nature: data.collateralNature,
       description: data.collateralDescription.trim(),
     }
 
-    const rolloverData = activeLoanData
+    const rolloverData = confirmedQuote
       ? {
-          fromLoanId: activeLoanData.loan.id,
-          carriedPrincipal: activeLoanData.outstandingPrincipal,
-          carriedInterest: activeLoanData.accruedInterest,
+          fromLoanId: confirmedQuote.fromLoanId,
+          carriedPrincipal: confirmedQuote.carriedPrincipal,
+          carriedInterest: confirmedQuote.carriedInterest,
         }
       : undefined
 
@@ -320,7 +381,7 @@ function NewLoanPageInner() {
       backdateNote: data.backdateNote?.trim() || undefined,
     }
 
-    // Insert into collection (queues server action) and show receipt immediately
+    // Wait for the server commit before showing a receipt.
     await insertLoanWithInput(id, optimistic, formInput)
 
     setReceiptData({
@@ -347,7 +408,11 @@ function NewLoanPageInner() {
       } : {}),
     })
     draft.clear()
-    setIsSubmitting(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Loan could not be issued")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -369,7 +434,9 @@ function NewLoanPageInner() {
             errors={errors}
             prefilledCustomerId={prefilledCustomerId}
             customerName={customerName}
-            activeLoanData={activeLoanData}
+            activeLoanData={quotedActiveLoanData}
+            quotePending={!!activeLoanData && !currentQuote}
+            quoteError={rolloverQuoteError}
             loanType={loanType}
             setLoanType={setLoanType}
             termMonths={termMonths}
@@ -409,7 +476,9 @@ function NewLoanPageInner() {
             disbursementSource={disbursementSource}
             collateralNature={collateralNature}
             collateralDescription={collateralDescription}
-            activeLoanData={activeLoanData}
+            activeLoanData={quotedActiveLoanData}
+            quoteError={rolloverQuoteError}
+            canIssue={!activeLoanData || !!currentQuote}
             loanSummary={loanSummary}
             isPending={isPending}
             onBack={() => setStep(2)}
