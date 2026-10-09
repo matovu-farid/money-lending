@@ -50,7 +50,7 @@ import { InfoPopover } from "@/components/ui/info-popover";
 import { PageHeader } from "@/components/ui/page-header";
 import { CurrencyCell } from "@/components/ui/currency-cell";
 import { useSession } from "@/lib/auth-client";
-import { formatDate, shortId } from "@/lib/utils";
+import { formatDate, formatNumberWithCommas, shortId } from "@/lib/utils";
 import type { PaymentWithCustomer, LoanStatus } from "@/types";
 import { usePermissions } from "@/hooks/use-permissions";
 import { usePaymentsPageStore } from "@/lib/stores/payments-page";
@@ -91,10 +91,10 @@ function exportToCsv(
       [
         `"${formatDate(r.paymentDate)}"`,
         `"${r.customerName.replaceAll('"', '""')}"`,
-        r.amount,
-        r.interestPortion,
-        r.principalPortion,
-        r.principalBalanceAfter,
+        `"${formatNumberWithCommas(r.amount)}"`,
+        `"${formatNumberWithCommas(r.interestPortion)}"`,
+        `"${formatNumberWithCommas(r.principalPortion)}"`,
+        `"${formatNumberWithCommas(r.principalBalanceAfter)}"`,
       ].join(","),
     ),
   ];

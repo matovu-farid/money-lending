@@ -30,11 +30,11 @@ describe("Payments totals and spreadsheet export", () => {
       .should("be.visible").and("contain.text", "Total payments").and("contain.text", `UGX ${amount}`)
   }
 
-  function exportCsv(assertCsv: (csv: string) => void) {
+  function exportCsv(assertCsv: (csv: string) => void, customerName = "Summary") {
     let exportedBlob: Blob
     cy.get("table [data-testid='data-row']").should(($rows) => {
       $rows.each((_index, row) => {
-        expect(Cypress.$(row).find("td").first().text()).to.include("Summary")
+        expect(Cypress.$(row).find("td").first().text()).to.include(customerName)
       })
     })
     cy.window().then((win) => {
@@ -99,7 +99,22 @@ describe("Payments totals and spreadsheet export", () => {
       expect(csv.split("\n")[0]).to.equal("Date,Customer,Amount,Interest,Principal,Principal Balance")
       expect(csv).not.to.include("Date range")
       expect(csv).not.to.include("Alice Summary")
+      // The embedded commas must be quoted to keep the six CSV columns intact.
+      expect(csv).to.include('"250,000","0","0","2,000,000"')
+      expect(csv).not.to.match(/\d\.\d/)
+      expect(csv).not.to.include("UGX")
     })
+  })
+
+  it("formats all four money columns without decimals or a currency prefix", () => {
+    cy.task("db:seedWeeklyReportsFixture")
+    cy.visit("/payments?customerName=Weekly%20Report%20Loan%20A")
+    cy.contains("td", "UGX 49,000", { timeout: 15000 }).scrollIntoView().should("be.visible")
+    exportCsv((csv) => {
+      expect(csv).to.include('"50,000","1,000","49,000","251,000"')
+      expect(csv).not.to.match(/\d\.\d/)
+      expect(csv).not.to.include("UGX")
+    }, "Weekly Report Loan A")
   })
 
   it("totals and exports every matching payment across pagination", () => {
