@@ -30,6 +30,10 @@ describe("Payments totals and spreadsheet export", () => {
       .should("be.visible").and("contain.text", "Total payments").and("contain.text", `UGX ${amount}`)
   }
 
+  function expectExportTotal(csv: string, amount: string) {
+    expect(csv.trim().split("\n").at(-1)).to.equal(`Total payments,,"${amount}",,,`)
+  }
+
   function exportCsv(assertCsv: (csv: string) => void, customerName = "Summary") {
     let exportedBlob: Blob
     cy.get("table [data-testid='data-row']").should(($rows) => {
@@ -82,6 +86,7 @@ describe("Payments totals and spreadsheet export", () => {
       expect(csv).to.include("Alice Summary")
       expect(csv).to.include('"Bob ""Summary"""')
       expect(csv).not.to.include("400000")
+      expectExportTotal(csv, "350,000")
     })
   })
 
@@ -91,13 +96,17 @@ describe("Payments totals and spreadsheet export", () => {
     exportCsv((csv) => {
       expect(csv.split("\n")[0]).to.equal('Date range,"From Oct 1, 2026"')
       expect(csv).not.to.include("Bob")
+      expectExportTotal(csv, "400,000")
     })
   })
 
   it("exports a To-only date filter", () => {
     cy.visit("/payments?dateTo=2026-09-15")
     expectTotal("350,000")
-    exportCsv((csv) => expect(csv.split("\n")[0]).to.equal('Date range,"Through Sep 15, 2026"'))
+    exportCsv((csv) => {
+      expect(csv.split("\n")[0]).to.equal('Date range,"Through Sep 15, 2026"')
+      expectExportTotal(csv, "350,000")
+    })
   })
 
   it("keeps the column header first when no dates are selected", () => {
@@ -111,6 +120,16 @@ describe("Payments totals and spreadsheet export", () => {
       expect(csv).to.include('"250,000","0","0","2,000,000"')
       expect(csv).not.to.match(/\d\.\d/)
       expect(csv).not.to.include("UGX")
+      expectExportTotal(csv, "250,000")
+    })
+  })
+
+  it("adds a payment total at the bottom of an unfiltered export", () => {
+    cy.visit("/payments")
+    expectTotal("750,000")
+    exportCsv((csv) => {
+      expect(csv.trim().split("\n")).to.have.length(5)
+      expectExportTotal(csv, "750,000")
     })
   })
 
@@ -138,7 +157,10 @@ describe("Payments totals and spreadsheet export", () => {
     cy.url().should("include", "page=2")
     cy.get("table [data-testid='data-row']").should("have.length", 4)
     expectTotal("1,010,000")
-    exportCsv((csv) => expect(csv.trim().split("\n")).to.have.length(31))
+    exportCsv((csv) => {
+      expect(csv.trim().split("\n")).to.have.length(32)
+      expectExportTotal(csv, "1,010,000")
+    })
   })
 
   it("shows zero when there are no payments", () => {

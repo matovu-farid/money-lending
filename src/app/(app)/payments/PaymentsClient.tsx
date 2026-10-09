@@ -66,6 +66,7 @@ function exportToCsv(
   rows: PaymentWithCustomer[],
   dateFrom: string,
   dateTo: string,
+  totalAmount: string,
 ) {
   const headers = [
     "Date",
@@ -97,6 +98,7 @@ function exportToCsv(
         `"${formatNumberWithCommas(r.principalBalanceAfter)}"`,
       ].join(","),
     ),
+    `Total payments,,"${formatNumberWithCommas(new BigNumber(totalAmount).toFixed(0))}",,,`,
   ];
   const blob = new Blob([csvLines.join("\n")], { type: "text/csv" });
   downloadBlob(blob, `payments-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -692,7 +694,7 @@ function PaymentsContent({
           <Button
             variant="outline"
             disabled={filtered.length === 0}
-            onClick={() => exportToCsv(filtered, dateFrom, dateTo)}
+            onClick={() => exportToCsv(filtered, dateFrom, dateTo, totalAmount)}
           >
             <Download className="h-4 w-4" />
             Export CSV
