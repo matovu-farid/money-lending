@@ -66,7 +66,6 @@ function exportToCsv(
   rows: PaymentWithCustomer[],
   dateFrom: string,
   dateTo: string,
-  totalAmount: string,
 ) {
   const headers = [
     "Date",
@@ -85,6 +84,17 @@ function exportToCsv(
       : toLabel
         ? `Through ${toLabel}`
         : "";
+  const moneyFields = [
+    "amount",
+    "interestPortion",
+    "principalPortion",
+    "principalBalanceAfter",
+  ] as const;
+  const totals = moneyFields.map((field) =>
+    formatNumberWithCommas(
+      rows.reduce((sum, row) => sum.plus(row[field]), new BigNumber(0)).toFixed(0),
+    ),
+  );
   const csvLines = [
     ...(dateRange ? [`Date range,"${dateRange}"`] : []),
     headers.join(","),
@@ -98,7 +108,7 @@ function exportToCsv(
         `"${formatNumberWithCommas(r.principalBalanceAfter)}"`,
       ].join(","),
     ),
-    `Total payments,,"${formatNumberWithCommas(new BigNumber(totalAmount).toFixed(0))}",,,`,
+    ["Total payments", "", ...totals.map((total) => `"${total}"`)].join(","),
   ];
   const blob = new Blob([csvLines.join("\n")], { type: "text/csv" });
   downloadBlob(blob, `payments-${new Date().toISOString().slice(0, 10)}.csv`);
@@ -454,7 +464,8 @@ function PaymentsContent({
   );
 
   // Amount filter stays in JS — `amount` is a numeric string and TanStack DB's
-  // gt/lt would do lexicographic compare ("9" > "100"). Pagination follows.
+  // gt/lt would do lexicographic compare ("9" > "100"). Sort the full filtered
+  // set before pagination so the table and CSV share newest-first ordering.
   const filtered = useMemo(() => {
     let result = allFilteredPayments;
     if (amountMin) {
@@ -467,7 +478,11 @@ function PaymentsContent({
       if (!isNaN(max))
         result = result.filter((p) => parseFloat(p.amount) <= max);
     }
-    return result;
+    return [...result].sort((a, b) =>
+      new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime() ||
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+      a.id.localeCompare(b.id),
+    );
   }, [allFilteredPayments, amountMin, amountMax]);
 
   const total = filtered.length;
@@ -694,7 +709,7 @@ function PaymentsContent({
           <Button
             variant="outline"
             disabled={filtered.length === 0}
-            onClick={() => exportToCsv(filtered, dateFrom, dateTo, totalAmount)}
+            onClick={() => exportToCsv(filtered, dateFrom, dateTo)}
           >
             <Download className="h-4 w-4" />
             Export CSV

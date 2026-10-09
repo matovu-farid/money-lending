@@ -30,8 +30,8 @@ describe("Payments totals and spreadsheet export", () => {
       .should("be.visible").and("contain.text", "Total payments").and("contain.text", `UGX ${amount}`)
   }
 
-  function expectExportTotal(csv: string, amount: string) {
-    expect(csv.trim().split("\n").at(-1)).to.equal(`Total payments,,"${amount}",,,`)
+  function expectExportTotal(csv: string, amount: string, interest: string, principal: string, principalBalance: string) {
+    expect(csv.trim().split("\n").at(-1)).to.equal(`Total payments,,"${amount}","${interest}","${principal}","${principalBalance}"`)
   }
 
   function exportCsv(assertCsv: (csv: string) => void, customerName = "Summary") {
@@ -86,7 +86,7 @@ describe("Payments totals and spreadsheet export", () => {
       expect(csv).to.include("Alice Summary")
       expect(csv).to.include('"Bob ""Summary"""')
       expect(csv).not.to.include("400000")
-      expectExportTotal(csv, "350,000")
+      expectExportTotal(csv, "350,000", "0", "0", "4,000,000")
     })
   })
 
@@ -96,7 +96,7 @@ describe("Payments totals and spreadsheet export", () => {
     exportCsv((csv) => {
       expect(csv.split("\n")[0]).to.equal('Date range,"From Oct 1, 2026"')
       expect(csv).not.to.include("Bob")
-      expectExportTotal(csv, "400,000")
+      expectExportTotal(csv, "400,000", "0", "0", "2,000,000")
     })
   })
 
@@ -105,7 +105,7 @@ describe("Payments totals and spreadsheet export", () => {
     expectTotal("350,000")
     exportCsv((csv) => {
       expect(csv.split("\n")[0]).to.equal('Date range,"Through Sep 15, 2026"')
-      expectExportTotal(csv, "350,000")
+      expectExportTotal(csv, "350,000", "0", "0", "4,000,000")
     })
   })
 
@@ -120,28 +120,41 @@ describe("Payments totals and spreadsheet export", () => {
       expect(csv).to.include('"250,000","0","0","2,000,000"')
       expect(csv).not.to.match(/\d\.\d/)
       expect(csv).not.to.include("UGX")
-      expectExportTotal(csv, "250,000")
+      expectExportTotal(csv, "250,000", "0", "0", "2,000,000")
     })
   })
 
-  it("adds a payment total at the bottom of an unfiltered export", () => {
+  it("adds all four money totals at the bottom of an unfiltered export", () => {
     cy.visit("/payments")
     expectTotal("750,000")
     exportCsv((csv) => {
       expect(csv.trim().split("\n")).to.have.length(5)
-      expectExportTotal(csv, "750,000")
+      expectExportTotal(csv, "750,000", "0", "0", "6,000,000")
     })
   })
 
   it("formats all four money columns without decimals or a currency prefix", () => {
     cy.task("db:seedWeeklyReportsFixture")
-    cy.visit("/payments?customerName=Weekly%20Report%20Loan%20A")
+    cy.visit("/payments?customerName=Weekly%20Report%20Loan%20A&amountMin=10000")
     cy.contains("td", "UGX 49,000", { timeout: 15000 }).scrollIntoView().should("be.visible")
     exportCsv((csv) => {
       expect(csv).to.include('"50,000","1,000","49,000","251,000"')
       expect(csv).not.to.match(/\d\.\d/)
       expect(csv).not.to.include("UGX")
+      expectExportTotal(csv, "50,000", "1,000", "49,000", "251,000")
     }, "Weekly Report Loan A")
+  })
+
+  it("sums interest, principal, and balance over multiple exported loans and payments", () => {
+    cy.task("db:seedWeeklyReportsFixture")
+    cy.visit("/payments?customerName=Weekly%20Report%20Loan&amountMin=10000")
+    expectTotal("160,000")
+    cy.contains("td", "UGX 49,000", { timeout: 15000 }).scrollIntoView().should("be.visible")
+    cy.contains("td", "UGX 41,333", { timeout: 15000 }).scrollIntoView().should("be.visible")
+    exportCsv((csv) => {
+      expect(csv.trim().split("\n")).to.have.length(5)
+      expectExportTotal(csv, "160,000", "26,333", "133,667", "1,123,000")
+    }, "Weekly Report Loan")
   })
 
   it("totals and exports every matching payment across pagination", () => {
@@ -156,10 +169,53 @@ describe("Payments totals and spreadsheet export", () => {
     cy.contains("button", "Next").click()
     cy.url().should("include", "page=2")
     cy.get("table [data-testid='data-row']").should("have.length", 4)
+    cy.get("table [data-testid='data-row'] td:nth-child(2)").should(($dates) => {
+      expect([...$dates].map((cell) => cell.textContent)).to.deep.equal([
+        "Oct 9, 2026", "Oct 9, 2026", "Sep 15, 2026", "Sep 1, 2026",
+      ])
+    })
     expectTotal("1,010,000")
     exportCsv((csv) => {
       expect(csv.trim().split("\n")).to.have.length(32)
-      expectExportTotal(csv, "1,010,000")
+      expectExportTotal(csv, "1,010,000", "0", "0", "58,000,000")
+      const lines = csv.trim().split("\n")
+      expect(lines[2]).to.match(/^"Oct 9, 2026"/)
+      expect(lines.at(-3)).to.match(/^"Sep 15, 2026"/)
+      expect(lines.at(-2)).to.match(/^"Sep 1, 2026"/)
+    })
+  })
+
+  it("orders the app table and CSV by payment date from newest to oldest", () => {
+    cy.visit("/payments")
+    expectTotal("750,000")
+    cy.get("table [data-testid='data-row'] td:nth-child(2)").should(($dates) => {
+      expect([...$dates].map((cell) => cell.textContent)).to.deep.equal([
+        "Oct 9, 2026", "Sep 15, 2026", "Sep 1, 2026",
+      ])
+    })
+    exportCsv((csv) => {
+      const lines = csv.trim().split("\n")
+      expect(lines[1]).to.match(/^"Oct 9, 2026"/)
+      expect(lines[2]).to.match(/^"Sep 15, 2026"/)
+      expect(lines[3]).to.match(/^"Sep 1, 2026"/)
+    })
+  })
+
+  it("orders payments with the same payment date by newest creation time", () => {
+    cy.task("db:seedPayment", { loanId, recordedBy: userId, amount: "450000", paymentDate: "2026-10-09T12:00:00Z" })
+    cy.task("db:seedPayment", { loanId, recordedBy: userId, amount: "550000", paymentDate: "2026-10-09T12:00:00Z" })
+    cy.visit("/payments")
+    expectTotal("1,750,000")
+    cy.get("table [data-testid='data-row'] td:nth-child(3)").should(($amounts) => {
+      expect([...$amounts].map((cell) => cell.textContent)).to.deep.equal([
+        "UGX 550,000", "UGX 450,000", "UGX 400,000", "UGX 250,000", "UGX 100,000",
+      ])
+    })
+    exportCsv((csv) => {
+      const lines = csv.trim().split("\n")
+      expect(lines[1]).to.include('"550,000"')
+      expect(lines[2]).to.include('"450,000"')
+      expect(lines[3]).to.include('"400,000"')
     })
   })
 
