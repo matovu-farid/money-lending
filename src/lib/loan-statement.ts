@@ -153,6 +153,7 @@ export interface BuildStatementInput {
     penaltyWaivedBy: string | null
     minInterestDays: number
     minPeriodOverride?: number | null
+    rolledOverFrom?: string | null
     issuanceFee: string
     loanType: string
     startDate: Date
@@ -203,7 +204,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
 
   const principalBN = new BigNumber(loan.principalAmount)
   const minimumInterestDays =
-    loan.minPeriodOverride ?? loan.minInterestDays
+    loan.rolledOverFrom ? 0 : (loan.minPeriodOverride ?? loan.minInterestDays)
   const initialBaseRate = loan.interestRateOverride ?? loan.interestRate
   const multiplier = new BigNumber(loan.penaltyMultiplier ?? "0.1000")
   const initialEffective = new BigNumber(initialBaseRate)

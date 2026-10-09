@@ -43,6 +43,52 @@ export default defineConfig({
     setupNodeEvents(on, config) {
       const appBaseUrl = config.baseUrl ?? "http://localhost:3000"
       on("task", {
+        async "db:seedRolloverInterest"({ actorId, rolledOver, paidFirstMonth }: { actorId: string; rolledOver: boolean; paidFirstMonth: boolean }) {
+          return withSql(async (sql) => {
+            const [customer] = await sql`
+              INSERT INTO customers (full_name, nin, contact, address, status)
+              VALUES ('Rollover Interest Borrower', 'CM12345678ABCD', '0771234567', 'Kampala', 'active') RETURNING id
+            `
+            // Stable IDs keep the server's category caches valid across db:reset.
+            const [cash] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000001', 'Cash', 'asset') RETURNING id`
+            const [receivable] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000002', 'Loans Receivable', 'asset') RETURNING id`
+            const [interest] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000003', 'Interest Earned', 'revenue') RETURNING id`
+            let predecessorId: string | null = null
+            if (rolledOver) {
+              const [predecessor] = await sql`
+                INSERT INTO loans (customer_id, principal_amount, issuance_fee, interest_rate, min_interest_days, start_date, status, issued_by, disbursement_source, loan_type)
+                VALUES (${customer.id}, '9000000', '50000', '0.10', 30, NOW() - INTERVAL '38 days', 'rolled_over', ${actorId}, 'cash', 'perpetual') RETURNING id
+              `
+              predecessorId = predecessor.id
+            }
+            const [loan] = await sql`
+              INSERT INTO loans (customer_id, principal_amount, issuance_fee, interest_rate, min_interest_days, start_date, status, issued_by, disbursement_source, loan_type, rolled_over_from, rollover_amount)
+              VALUES (${customer.id}, '10000000', '50000', '0.10', 30,
+                NOW() - (${paidFirstMonth ? 38 : 8} * INTERVAL '1 day'), 'active', ${actorId}, 'cash', 'perpetual', ${predecessorId}, ${rolledOver ? '9000000' : null}) RETURNING id
+            `
+            await sql`INSERT INTO collateral (loan_id, nature, description) VALUES (${loan.id}, 'Land Title', 'Kampala plot')`
+            const journal = crypto.randomUUID()
+            // Fund cash and establish the loan's principal in the ledger.
+            await sql`
+              INSERT INTO transactions (category_id, loan_id, amount, type, transaction_date, recorded_by, reference_type, reference_id, journal_group_id, deposit_location)
+              VALUES (${receivable.id}, ${loan.id}, '10000000', 'debit', NOW() - INTERVAL '38 days', ${actorId}, 'loan', ${loan.id}, ${journal}, null),
+                     (${cash.id}, null, '20000000', 'debit', NOW() - INTERVAL '38 days', ${actorId}, 'test', null, ${crypto.randomUUID()}, 'cash')
+            `
+            if (paidFirstMonth) {
+              const [payment] = await sql`
+                INSERT INTO payments (loan_id, amount, payment_date, recorded_by, deposit_location)
+                VALUES (${loan.id}, '1000000', NOW() - INTERVAL '8 days', ${actorId}, 'cash') RETURNING id
+              `
+              const paymentJournal = crypto.randomUUID()
+              await sql`
+                INSERT INTO transactions (category_id, loan_id, amount, type, transaction_date, recorded_by, reference_type, reference_id, journal_group_id, deposit_location)
+                VALUES (${interest.id}, ${loan.id}, '1000000', 'credit', NOW() - INTERVAL '8 days', ${actorId}, 'payment', ${payment.id}, ${paymentJournal}, null),
+                       (${cash.id}, ${loan.id}, '1000000', 'debit', NOW() - INTERVAL '8 days', ${actorId}, 'payment', ${payment.id}, ${paymentJournal}, 'cash')
+              `
+            }
+            return { customerId: customer.id, loanId: loan.id }
+          })
+        },
         async "db:reset"() {
           await withSql(async (sql) => {
             await sql.unsafe(`
@@ -61,7 +107,6 @@ export default defineConfig({
               DELETE FROM account;
               DELETE FROM verification;
               DELETE FROM audit_log;
-              DELETE FROM notifications;
               DELETE FROM payments;
               DELETE FROM collateral;
               DELETE FROM loans;
@@ -267,15 +312,17 @@ export default defineConfig({
           loanId,
           amount,
           recordedBy,
+          paymentDate,
         }: {
           loanId: string
           amount: string
           recordedBy: string
+          paymentDate?: string
         }) {
           return withSql(async (sql) => {
             const rows = await sql`
               INSERT INTO payments (loan_id, amount, payment_date, recorded_by, deposit_location)
-              VALUES (${loanId}, ${amount}, NOW(), ${recordedBy}, 'cash')
+              VALUES (${loanId}, ${amount}, ${paymentDate ?? new Date().toISOString()}, ${recordedBy}, 'cash')
               RETURNING id
             `
             return { paymentId: rows[0].id }

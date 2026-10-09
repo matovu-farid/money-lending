@@ -25,6 +25,21 @@ import {
 } from "../engine";
 
 describe("Interest Engine", () => {
+  it("allocates the first rollover payment using eight days of actual interest", () => {
+    const result = allocatePayment({
+      paymentAmount: "10266666.67",
+      principalBalanceBefore: "10000000",
+      monthlyRateDecimal: "0.10",
+      daysElapsed: 8,
+      minInterestDays: 30,
+      paymentNumber: 1,
+      rolledOverFrom: "previous-loan",
+    });
+    expect(result.interestPortion).toBe("266666.67");
+    expect(result.principalPortion).toBe("10000000.00");
+    expect(result.loanFullyPaid).toBe(true);
+  });
+
   // Test 1: calculateInterest basic — 500,000 UGX at 10%/month for 30 days = 50,000.00 UGX
   it("calculateInterest: 500,000 at 10%/month for 30 days = 50,000.00 UGX (LOAN-03)", () => {
     const result = calculateInterest("500000", "0.10", 30, 30);

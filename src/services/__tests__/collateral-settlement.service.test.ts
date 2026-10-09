@@ -46,6 +46,16 @@ vi.mock("@/lib/interest/engine", () => ({
   formatAmount: vi.fn().mockImplementation((v: BigNumber) => v.toFixed(0)),
 }));
 
+vi.mock("@/lib/interest/loanBalanceData", () => ({
+  computeSingleLoanBalanceData: vi.fn().mockResolvedValue({
+    // The balance feed retains the original principal when legacy ledger rows
+    // are missing; its remaining-principal projection is zero in that case.
+    totalBalanceOwed: "10000000",
+    remainingPrincipalAmount: "0.00",
+    unpaidInterest: "266667",
+  }),
+}));
+
 vi.mock("@/lib/db/utils", () => ({
   daysBetween: vi.fn().mockReturnValue(30),
 }));
@@ -463,7 +473,9 @@ describe("Collateral Settlement Service", () => {
     expect(result).not.toBeNull();
     expect(result!.customerName).toBe("Jane Doe");
     expect(result!.loan.id).toBe("loan-1");
-    expect(result!.outstandingPrincipal).toBeDefined();
-    expect(result!.accruedInterest).toBeDefined();
+    expect(result!.outstandingPrincipal).toBe("10000000");
+    expect(result!.accruedInterest).toBe("266667");
+    const { computeSingleLoanBalanceData } = await import("@/lib/interest/loanBalanceData");
+    expect(computeSingleLoanBalanceData).toHaveBeenCalledWith("loan-1", expect.any(Date));
   });
 });

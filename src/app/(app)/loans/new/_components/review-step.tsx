@@ -308,17 +308,23 @@ function InterestPreview({
               <dt className="text-muted-foreground">Daily interest amount</dt>
               <dd><CurrencyCell amount={loanSummary.dailyInterest} className="font-medium" /></dd>
             </div>
-            <div className="flex justify-between">
-              <dt className="text-muted-foreground">Total interest at minimum period</dt>
-              <dd><CurrencyCell amount={loanSummary.totalInterestAtMinPeriod} className="font-medium" /></dd>
-            </div>
-            <div className="flex justify-between border-t border-border pt-2 mt-2">
-              <dt className="font-medium">Total owed at minimum period</dt>
-              <dd><CurrencyCell amount={loanSummary.totalOwedAtMinPeriod} className="font-semibold" /></dd>
-            </div>
+            {loanSummary.minInterestDays > 0 && (
+              <>
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">Total interest at minimum period</dt>
+                  <dd><CurrencyCell amount={loanSummary.totalInterestAtMinPeriod} className="font-medium" /></dd>
+                </div>
+                <div className="flex justify-between border-t border-border pt-2 mt-2">
+                  <dt className="font-medium">Total owed at minimum period</dt>
+                  <dd><CurrencyCell amount={loanSummary.totalOwedAtMinPeriod} className="font-semibold" /></dd>
+                </div>
+              </>
+            )}
           </dl>
           <p className="text-xs text-muted-foreground">
-            Minimum interest period applies even if repaid early ({loanSummary.minInterestDays} days minimum).
+            {loanSummary.minInterestDays > 0
+              ? `Minimum interest period applies even if repaid early (${loanSummary.minInterestDays} days minimum).`
+              : "Interest accrues for the actual days elapsed on rolled-over loans."}
           </p>
         </>
       )}

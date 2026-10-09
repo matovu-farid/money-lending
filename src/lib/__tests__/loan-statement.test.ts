@@ -18,6 +18,18 @@ const baseLoan = {
 }
 
 describe("buildLoanStatement — basic accrual", () => {
+  it("charges only eight days of interest on a rollover, including with a minimum override", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, principalAmount: "10000000", rolledOverFrom: "previous-loan", minPeriodOverride: 45 },
+      payments: [],
+      today: new Date("2026-01-09T00:00:00Z"),
+    })
+    expect(stmt.terms.minInterestDays).toBe(0)
+    expect(stmt.finalState.minimumInterestAdjustment).toBe("0")
+    expect(stmt.finalState.netUnpaidInterest).toBe("266667")
+    expect(stmt.finalState.totalDue).toBe("10266667")
+  })
+
   it("captures the issuance event on day 0", () => {
     const stmt = buildLoanStatement({
       loan: baseLoan,

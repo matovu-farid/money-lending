@@ -33,6 +33,7 @@ export function computeLoanOverdueInfo(params: {
     interestRateOverride: string | null;
     penaltyMultiplier?: string | null;
     startDate: Date;
+    rolledOverFrom?: string | null;
   };
   asOf: Date;
   lastPaymentDate: Date;
@@ -101,6 +102,7 @@ export function computeFixedLoanOverdueInfo(params: {
     interestRateOverride: string | null;
     penaltyMultiplier?: string | null;
     startDate: Date;
+    rolledOverFrom?: string | null;
   };
   lastPaymentDate: Date;
   totalInterestAccrued?: string | BigNumber;
@@ -161,6 +163,7 @@ export function computePerpetualOverdueInfo(params: {
     interestRateOverride: string | null;
     penaltyMultiplier?: string | null;
     startDate: Date;
+    rolledOverFrom?: string | null;
   };
   totalInterestPaid: string;
   totalInterestAccrued?: string | BigNumber;
@@ -218,6 +221,7 @@ export function computeOverdueInfoFromInterestAccrued(params: {
     interestRateOverride: string | null;
     penaltyMultiplier?: string | null;
     startDate: Date;
+    rolledOverFrom?: string | null;
   };
   totalInterestPaid: string;
   totalInterestAccrued?: string | BigNumber;
@@ -262,9 +266,9 @@ export function computeOverdueInfoFromInterestAccrued(params: {
   const dailyRate = dailyInterestAmount.toFixed(0);
   const penaltyIsActive = isPenaltyActive(daysOverdue, penaltyWaived);
   const effectiveRate = getEffectiveRate(loan, penaltyIsActive);
-  const minimumDefaultInterest = BigNumber(principalAmount).multipliedBy(
-    BigNumber(effectiveRate),
-  );
+  const minimumDefaultInterest = loan.rolledOverFrom
+    ? new BigNumber(0)
+    : BigNumber(principalAmount).multipliedBy(BigNumber(effectiveRate));
 
   const remainingMinimumDefaultInterest = BigNumber.max(
     0,

@@ -102,6 +102,7 @@ export async function allocateLoanSettlementAmount(
     monthlyRateDecimal,
     daysElapsed,
     minInterestDays,
+    rolledOverFrom: loan.rolledOverFrom,
     loanType,
     originalPrincipal: loan.principalAmount,
     termMonths: loan.termMonths ?? undefined,

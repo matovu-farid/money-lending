@@ -126,7 +126,9 @@ function TermsBlock({ statement }: { statement: LoanStatement }) {
       <Row label="Penalty Threshold" value={`${t.penaltyThresholdDays} days overdue`} />
       <Row
         label="Min Interest Period"
-        value={`${t.minInterestDays} days (first payment only — subsequent payments accrue pro-rata)`}
+        value={t.minInterestDays > 0
+          ? `${t.minInterestDays} days (first payment only — subsequent payments accrue pro-rata)`
+          : "Actual days elapsed (rolled-over loan)"}
       />
       <Row label="Loan Type" value={t.loanType} />
       <Row label="Issuance Fee" value={formatCurrency(t.issuanceFee)} />

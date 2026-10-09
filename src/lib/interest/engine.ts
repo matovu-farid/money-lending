@@ -43,8 +43,8 @@ export function calculateDailyRate(monthlyRateDecimal: string): BigNumber {
  * accuracy is no worse than the previous formulation.
  *
  * Default `minInterestDays = 0` gives pure pro-rata interest. Pass an explicit
- * non-zero value at the rollover and collateral-settlement call sites where
- * the business rule mandates a minimum interest period.
+ * non-zero value when settling a brand-new loan's first payment. Rolled-over
+ * loans accrue interest for the actual elapsed days.
  */
 export function calculateInterest(
   outstandingBalance: string,
@@ -509,6 +509,7 @@ export function allocatePayment(params: {
   originalPrincipal?: string;
   termMonths?: number;
   paymentNumber?: number;
+  rolledOverFrom?: string | null;
   /** Interest already collected from earlier payments within the same min-interest period */
   interestAlreadyPaidInPeriod?: string;
 }): PaymentAllocation {
@@ -523,6 +524,7 @@ export function allocatePayment(params: {
     termMonths,
     paymentNumber,
     interestAlreadyPaidInPeriod,
+    rolledOverFrom,
   } = params;
 
   // Dispatch to fixed_rate strategy
@@ -558,9 +560,9 @@ export function allocatePayment(params: {
   // Default: perpetual logic.
   //
   // Rule: minimum-interest-period (typically 30 days) is enforced ONLY on
-  // the FIRST payment. The first payment must cover at least one full
+  // the FIRST payment of a brand-new loan. That payment must cover at least one full
   // cycle of interest — that's the cost of borrowing, regardless of how
-  // quickly the borrower pays back. Subsequent payments accrue interest
+  // quickly the borrower pays back. Rolled-over loans and subsequent payments accrue interest
   // pro-rata based on the actual days since the previous payment.
   //
   // Formula:
@@ -570,7 +572,7 @@ export function allocatePayment(params: {
   // paymentNumber defaults to 1 when not supplied (preserves the original
   // single-payment semantics that legacy callers — and most unit tests — rely on).
   const isFirstPayment = !paymentNumber || paymentNumber === 1;
-  const effectiveMinDays = isFirstPayment ? minInterestDays : 0;
+  const effectiveMinDays = isFirstPayment && !rolledOverFrom ? minInterestDays : 0;
 
   const payment = new BigNumber(paymentAmount);
   const balance = new BigNumber(principalBalanceBefore);

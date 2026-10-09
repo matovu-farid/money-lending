@@ -11,6 +11,7 @@ import { DatabaseError, LoanNotFound, ValidationError } from "@/lib/errors";
 import { shortId } from "@/lib/utils";
 import { writeAuditLog } from "./audit.service";
 import { calculateInterest, formatAmount } from "@/lib/interest/engine";
+import { computeSingleLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { daysBetween } from "@/lib/db/utils";
 import {
   postJournalEntry,
@@ -36,7 +37,7 @@ export function computeAccruedInterest(
 ): BigNumber {
   const loanType = loan.loanType ?? "perpetual";
   const monthlyRateDecimal = getBaseRate(loan);
-  const minInterestDays = loan.minPeriodOverride ?? loan.minInterestDays;
+  const minInterestDays = loan.rolledOverFrom ? 0 : (loan.minPeriodOverride ?? loan.minInterestDays);
 
   const now = new Date();
 
@@ -278,43 +279,17 @@ export async function getCustomerActiveLoan(customerId: string): Promise<{
 
   const { loan, customerName } = row;
 
-  const activePayments = await db
-    .select()
-    .from(payments)
-    .where(
-      and(
-        eq(payments.loanId, loan.id),
-        isNull(payments.deletedAt),
-        eq(payments.markedWrong, false),
-      ),
-    )
-    .orderBy(asc(payments.paymentDate), asc(payments.createdAt));
-
-  const custBalanceMap = await getLoanBalancesFromLedger([loan.id]);
-  const custHasLedger = custBalanceMap.has(loan.id);
-  const custLedgerBalance = custBalanceMap.get(loan.id) ?? new BigNumber(0);
-  if (!custHasLedger) {
-    captureServerWarning("Customer active loan ledger entry missing; using principal fallback", {
-      source: "customer-active-loan.missing-ledger",
-    });
-    console.warn(
-      `[getCustomerActiveLoan] No ledger entries for loan ${loan.id}, using principalAmount as fallback`,
-    );
-  }
-  const outstandingPrincipal = custHasLedger
-    ? custLedgerBalance
-    : new BigNumber(loan.principalAmount);
-
-  const accruedInterest = computeAccruedInterest(
-    loan,
-    activePayments,
-    outstandingPrincipal,
-  );
+  // Share the detail/payment balance calculation. Recalculating the latest
+  // payment period here would reapply the first-month minimum on every rollover
+  // and omit older unpaid interest, waivers, and penalty accrual.
+  const balance = await computeSingleLoanBalanceData(loan.id, new Date());
 
   return {
     loan,
     customerName: customerName ?? "",
-    outstandingPrincipal: formatAmount(outstandingPrincipal),
-    accruedInterest: formatAmount(accruedInterest),
+    // totalBalanceOwed is the ledger principal balance, including its legacy
+    // fallback to principalAmount when no ledger entries exist.
+    outstandingPrincipal: formatAmount(new BigNumber(balance.totalBalanceOwed)),
+    accruedInterest: balance.unpaidInterest,
   };
 }

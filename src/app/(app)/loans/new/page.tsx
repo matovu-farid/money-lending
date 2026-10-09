@@ -211,7 +211,7 @@ function NewLoanPageInner() {
       ? calculateLoanSummary(
           effectivePrincipal,
           (parseFloat(interestRateDisplay) / 100).toFixed(10),
-          loanType === "perpetual" ? 30 : undefined,
+          loanType === "perpetual" ? (activeLoanData ? 0 : 30) : undefined,
           loanType !== "perpetual" ? loanType : undefined,
           loanType !== "perpetual" ? parseInt(termMonths, 10) : undefined
         )

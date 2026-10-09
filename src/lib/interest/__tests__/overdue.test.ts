@@ -14,6 +14,7 @@ function makeLoan(overrides: Partial<{
   interestRateOverride: string | null;
   penaltyMultiplier: string | null;
   startDate: Date;
+  rolledOverFrom: string | null;
 }> = {}) {
   return {
     id: "loan-1",
@@ -62,6 +63,21 @@ function makeParams(overrides: Partial<{
 }
 
 describe("computeLoanOverdueInfo", () => {
+  it("does not add the first-month minimum to an eight-day rollover balance", () => {
+    const result = computeLoanOverdueInfo(makeParams({
+      principalAmount: "10000000",
+      totalBalanceOwed: "10000000",
+      asOf: addDays(BASE_DATE, 8),
+      loan: makeLoan({ rolledOverFrom: "previous-loan" }),
+    }));
+    expect(result.unpaidInterest).toBe("266667");
+  });
+
+  it("keeps the first-month minimum for a brand-new loan", () => {
+    const result = computeLoanOverdueInfo(makeParams({ asOf: addDays(BASE_DATE, 8) }));
+    expect(result.unpaidInterest).toBe("100000");
+  });
+
   it("uses elapsed days and clears unpaid interest when payment covers accrued interest", () => {
     const result = computeLoanOverdueInfo(
       makeParams({

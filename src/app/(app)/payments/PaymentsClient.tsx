@@ -62,7 +62,11 @@ import { FilterPanel } from "@/components/ui/filter-panel";
 import { downloadBlob } from "@/lib/download";
 import type { DepositLocation } from "@/types";
 
-function exportToCsv(rows: PaymentWithCustomer[]) {
+function exportToCsv(
+  rows: PaymentWithCustomer[],
+  dateFrom: string,
+  dateTo: string,
+) {
   const headers = [
     "Date",
     "Customer",
@@ -71,12 +75,22 @@ function exportToCsv(rows: PaymentWithCustomer[]) {
     "Principal",
     "Principal Balance",
   ];
+  const fromLabel = dateFrom ? formatDate(`${dateFrom}T00:00:00`) : "";
+  const toLabel = dateTo ? formatDate(`${dateTo}T00:00:00`) : "";
+  const dateRange = fromLabel && toLabel
+    ? `${fromLabel} to ${toLabel}`
+    : fromLabel
+      ? `From ${fromLabel}`
+      : toLabel
+        ? `Through ${toLabel}`
+        : "";
   const csvLines = [
+    ...(dateRange ? [`Date range,"${dateRange}"`] : []),
     headers.join(","),
     ...rows.map((r) =>
       [
         `"${formatDate(r.paymentDate)}"`,
-        `"${r.customerName}"`,
+        `"${r.customerName.replaceAll('"', '""')}"`,
         r.amount,
         r.interestPortion,
         r.principalPortion,
@@ -240,7 +254,7 @@ function PaymentsContent({
     [dateFrom],
   );
   const dateToTime = useMemo(
-    () => (dateTo ? new Date(dateTo).getTime() : null),
+    () => (dateTo ? new Date(`${dateTo}T23:59:59.999Z`).getTime() : null),
     [dateTo],
   );
 
@@ -455,6 +469,10 @@ function PaymentsContent({
   }, [allFilteredPayments, amountMin, amountMax]);
 
   const total = filtered.length;
+  const totalAmount = useMemo(
+    () => filtered.reduce((sum, payment) => sum.plus(payment.amount), new BigNumber(0)).toFixed(2),
+    [filtered],
+  );
   const rows = filtered.slice((page - 1) * pageSize, page * pageSize);
 
   function handleEditSubmit() {
@@ -673,8 +691,8 @@ function PaymentsContent({
         {activeTab === "list" && (
           <Button
             variant="outline"
-            disabled={rows.length === 0}
-            onClick={() => exportToCsv(rows)}
+            disabled={filtered.length === 0}
+            onClick={() => exportToCsv(filtered, dateFrom, dateTo)}
           >
             <Download className="h-4 w-4" />
             Export CSV
@@ -757,6 +775,20 @@ function PaymentsContent({
               )}
             </div>
           </FilterPanel>
+
+          <div
+            data-testid="payments-total"
+            aria-live="polite"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-muted/30 p-4"
+          >
+            <div>
+              <p className="text-sm font-medium">Total payments</p>
+              <p className="text-xs text-muted-foreground">
+                {total} {hasFilters ? "matching " : ""}{total === 1 ? "payment" : "payments"}
+              </p>
+            </div>
+            <CurrencyCell amount={totalAmount} className="text-xl font-semibold" />
+          </div>
 
           {/* Content */}
           {total === 0 ? (
