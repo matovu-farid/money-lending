@@ -235,7 +235,9 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   const principalBN = new BigNumber(loan.principalAmount)
   const minimumInterestDays =
     loan.rolledOverFrom ? 0 : (loan.minPeriodOverride ?? loan.minInterestDays)
-  const initialBaseRate = loan.interestRateOverride ?? loan.interestRate
+  const initialBaseRate = rateChanges.length > 0
+    ? loan.interestRate
+    : (loan.interestRateOverride ?? loan.interestRate)
   const multiplier = new BigNumber(loan.penaltyMultiplier ?? "0.1000")
   const initialEffective = new BigNumber(initialBaseRate)
     .plus(new BigNumber(initialBaseRate).multipliedBy(multiplier))
@@ -300,6 +302,24 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   let cycleDaysAtEffective = 0
   const cycles: CycleSnapshot[] = []
 
+  // A rate effective at issuance governs the first full-day interval. Later
+  // dated changes take effect only after the interval ending on their date.
+  while (
+    nextRateChangeIdx < sortedRateChanges.length &&
+    daysBetween(loan.startDate, sortedRateChanges[nextRateChangeIdx].effectiveDate) <= 0
+  ) {
+    const rc = sortedRateChanges[nextRateChangeIdx]
+    events.push({
+      kind: "rate_changed",
+      day: 0,
+      date: rc.effectiveDate,
+      from: rc.fromRate,
+      to: rc.toRate,
+    })
+    baseRate = new BigNumber(rc.toRate)
+    nextRateChangeIdx += 1
+  }
+
   function pushCycle(endDay: number, isPartial: boolean) {
     const accruedInCycle = cycleAccruedBase.plus(cycleAccruedEffective)
     const dailyAtBaseEnd = balance.multipliedBy(baseRate).dividedBy(30)
@@ -344,79 +364,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
   for (let day = 1; day <= daysSinceStart; day++) {
     const dayDate = addDays(loan.startDate, day)
 
-    // 1) Process any rate changes effective on or before this day.
-    while (
-      nextRateChangeIdx < sortedRateChanges.length &&
-      daysBetween(loan.startDate, sortedRateChanges[nextRateChangeIdx].effectiveDate) <= day
-    ) {
-      const rc = sortedRateChanges[nextRateChangeIdx]
-      const rcDay = daysBetween(loan.startDate, rc.effectiveDate)
-      events.push({
-        kind: "rate_changed",
-        day: rcDay,
-        date: rc.effectiveDate,
-        from: rc.fromRate,
-        to: rc.toRate,
-      })
-      baseRate = new BigNumber(rc.toRate)
-      nextRateChangeIdx += 1
-    }
-
-    // 2) Process any payments dated up to and including this day. Payments
-    //    reduce the principal balance BEFORE this day's accrual is computed,
-    //    so a "pay everything down" same-day stops further accrual.
-    while (
-      nextPaymentIdx < sortedPayments.length &&
-      daysBetween(loan.startDate, sortedPayments[nextPaymentIdx].paymentDate) <= day
-    ) {
-      const p = sortedPayments[nextPaymentIdx]
-      const pDay = daysBetween(loan.startDate, p.paymentDate)
-      const balanceBefore = balance
-      balance = BigNumber.max(balance.minus(new BigNumber(p.principalPortion)), 0)
-      cumulativePaid = cumulativePaid.plus(new BigNumber(p.interestPortion))
-      events.push({
-        kind: "payment",
-        day: pDay,
-        date: p.paymentDate,
-        amount: p.amount,
-        interestPortion: p.interestPortion,
-        principalPortion: p.principalPortion,
-        balanceBefore: balanceBefore.toFixed(0),
-        balanceAfter: balance.toFixed(0),
-        recordedBy: p.recorderName,
-      })
-      nextPaymentIdx += 1
-    }
-
-    // 2b) Waivers settle interest and reduce principal without collecting
-    // cash. They follow the same allocation that was posted to the ledger.
-    while (
-      nextWaiverIdx < sortedWaivers.length &&
-      daysBetween(loan.startDate, sortedWaivers[nextWaiverIdx].waiverDate) <= day
-    ) {
-      const w = sortedWaivers[nextWaiverIdx]
-      const wDay = daysBetween(loan.startDate, w.waiverDate)
-      const balanceBefore = balance
-      balance = BigNumber.max(
-        balance.minus(new BigNumber(w.principalPortion)),
-        0,
-      )
-      cumulativeWaived = cumulativeWaived.plus(new BigNumber(w.interestPortion))
-      events.push({
-        kind: "waiver",
-        day: wDay,
-        date: w.waiverDate,
-        amount: w.amount,
-        interestPortion: w.interestPortion,
-        principalPortion: w.principalPortion,
-        balanceBefore: balanceBefore.toFixed(0),
-        balanceAfter: balance.toFixed(0),
-        reason: w.reason,
-      })
-      nextWaiverIdx += 1
-    }
-
-    // 3) Determine if penalty is active for this day, based on days-overdue
+    // 1) Determine if penalty is active for this elapsed-day interval, based on days-overdue
     //    derived from cumulative base-rate accrual so far.
     const dailyAtBase = balance.multipliedBy(baseRate).dividedBy(30)
     const netUnpaidBefore = BigNumber.max(
@@ -444,7 +392,8 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       })
     }
 
-    // 4) Accrue today's interest at the active rate.
+    // 2) Accrue the interval ending today on the balance and rate in force
+    //    before today's settlements or rate changes.
     const effectiveBN = baseRate.plus(baseRate.multipliedBy(multiplier))
     if (penaltyActive) {
       const accr = balance.multipliedBy(effectiveBN).dividedBy(30)
@@ -458,7 +407,75 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       cycleDaysAtBase += 1
     }
 
-    // 5) Close the cycle at every 30-day boundary.
+    // 3) Events effective today change the state for the following interval.
+    while (
+      nextRateChangeIdx < sortedRateChanges.length &&
+      daysBetween(loan.startDate, sortedRateChanges[nextRateChangeIdx].effectiveDate) <= day
+    ) {
+      const rc = sortedRateChanges[nextRateChangeIdx]
+      const rcDay = daysBetween(loan.startDate, rc.effectiveDate)
+      events.push({
+        kind: "rate_changed",
+        day: rcDay,
+        date: rc.effectiveDate,
+        from: rc.fromRate,
+        to: rc.toRate,
+      })
+      baseRate = new BigNumber(rc.toRate)
+      nextRateChangeIdx += 1
+    }
+
+    while (
+      nextPaymentIdx < sortedPayments.length &&
+      daysBetween(loan.startDate, sortedPayments[nextPaymentIdx].paymentDate) <= day
+    ) {
+      const p = sortedPayments[nextPaymentIdx]
+      const pDay = daysBetween(loan.startDate, p.paymentDate)
+      const balanceBefore = balance
+      balance = BigNumber.max(balance.minus(new BigNumber(p.principalPortion)), 0)
+      cumulativePaid = cumulativePaid.plus(new BigNumber(p.interestPortion))
+      events.push({
+        kind: "payment",
+        day: pDay,
+        date: p.paymentDate,
+        amount: p.amount,
+        interestPortion: p.interestPortion,
+        principalPortion: p.principalPortion,
+        balanceBefore: balanceBefore.toFixed(0),
+        balanceAfter: balance.toFixed(0),
+        recordedBy: p.recorderName,
+      })
+      nextPaymentIdx += 1
+    }
+
+    // Waivers settle interest and reduce principal without collecting cash.
+    while (
+      nextWaiverIdx < sortedWaivers.length &&
+      daysBetween(loan.startDate, sortedWaivers[nextWaiverIdx].waiverDate) <= day
+    ) {
+      const w = sortedWaivers[nextWaiverIdx]
+      const wDay = daysBetween(loan.startDate, w.waiverDate)
+      const balanceBefore = balance
+      balance = BigNumber.max(
+        balance.minus(new BigNumber(w.principalPortion)),
+        0,
+      )
+      cumulativeWaived = cumulativeWaived.plus(new BigNumber(w.interestPortion))
+      events.push({
+        kind: "waiver",
+        day: wDay,
+        date: w.waiverDate,
+        amount: w.amount,
+        interestPortion: w.interestPortion,
+        principalPortion: w.principalPortion,
+        balanceBefore: balanceBefore.toFixed(0),
+        balanceAfter: balance.toFixed(0),
+        reason: w.reason,
+      })
+      nextWaiverIdx += 1
+    }
+
+    // 4) Close the cycle at every 30-day boundary.
     if (day % 30 === 0) {
       pushCycle(day, /* isPartial */ false)
     }

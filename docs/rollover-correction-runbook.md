@@ -28,6 +28,13 @@ Start with the first reviewed chain and verify its receipt/statement and ledger 
 - Nantale Zaituni's successor `59320d81-0ad1-4f52-bceb-12bc36ba695e` was corrected in audited run `955044f0-2ed8-4f20-8739-dc40ba0c06ea`. Its effective `start_date` is 2026-09-07, although the backdated record was entered 2026-09-08. Opening principal is now UGX 2,018,508; the September 10 and 30 receipts retain their cash amounts but use actual-day, interest-first allocation. The post-apply plan has zero principal delta and the same numeric allocations.
 - The portfolio still has 14 links in 10 chains: Brian's chain needs a decision on whether its UGX 2,000,000 August 12 payment was expressly principal-only; seven chains remain blocked on source attribution, contradictory dates, deleted records, or closure evidence. These were not changed. The inverted-date Kavuma chain remains expressly excluded below.
 
+### 2026-10-10 calculation-boundary review (not yet applied)
+
+The statement calculator now accrues the full interval ending on a payment, waiver, or rate-change date before changing principal or rate for the following interval. Correction policy `v3` invalidates old `v2` plan hashes. The live read-only `v3` dry run still covers 14 links in 10 chains (1 ready, 2 review, 7 blocked); it is not an apply result.
+
+- Nantale's earlier `v2` correction remains intact in production, but the `v3` report proposes UGX 2,028,674 opening principal for successor `59320d81-0ad1-4f52-bceb-12bc36ba695e`, a further UGX 10,166 above the current UGX 2,018,508. It also changes predecessor July 31 and August 31 payment allocations and successor September 10 and 30 allocations. Do not describe the `v2` post-apply zero delta as current under `v3`; obtain a fresh backup, review the exact report, approve, apply, and verify before claiming this chain is complete.
+- Brian's successor `9575e1d7-9b88-4460-807e-dbb79aed4498` has `start_date` 2026-06-30, although it was entered 2026-07-23. Its UGX 2,000,000 payment dated 2026-08-12 is 43 elapsed days after the start date. The recorded ledger posts all UGX 2,000,000 to principal; the `v3` review plan proposes all to interest after recalculating predecessor carry. Confirm whether an express principal-only agreement exists before applying this review plan.
+
 Use each loan's recorded `start_date` as the effective rollover date, including when it was backdated. `created_at` is entry time and must never substitute for the effective date. A successor dated before its predecessor started blocks correction and the predecessor statement.
 
 ### Known production exclusion (verified 2026-10-09)

@@ -18,6 +18,82 @@ const baseLoan = {
 }
 
 describe("buildLoanStatement — basic accrual", () => {
+  it("uses a backdated loan start, not its entry date, for elapsed interest", () => {
+    const stmt = buildLoanStatement({
+      loan: {
+        ...baseLoan,
+        principalAmount: "15488333",
+        rolledOverFrom: "predecessor",
+        startDate: new Date("2026-06-30T00:00:00Z"),
+        createdAt: new Date("2026-07-23T08:36:10Z"),
+      },
+      payments: [],
+      today: new Date("2026-08-12T00:00:00Z"),
+    })
+    expect(stmt.daysSinceStart).toBe(43)
+    expect(stmt.terms.backdated).toBe(true)
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("2219994")
+  })
+
+  it("starts with the original rate before applying a dated override", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, interestRateOverride: "0.1200", rolledOverFrom: "previous-loan" },
+      rateChanges: [{
+        effectiveDate: new Date("2026-01-11T00:00:00Z"),
+        fromRate: "0.1000", toRate: "0.1200",
+      }],
+      payments: [],
+      today: new Date("2026-01-21T00:00:00Z"),
+    })
+    expect(stmt.terms.baseRate).toBe("0.10")
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("73333")
+  })
+  it("applies a rate change effective at issuance before the first interval", () => {
+    const stmt = buildLoanStatement({
+      loan: { ...baseLoan, interestRateOverride: "0.1200", rolledOverFrom: "previous-loan" },
+      rateChanges: [{
+        effectiveDate: new Date("2026-01-01T00:00:00Z"),
+        fromRate: "0.1000", toRate: "0.1200",
+      }],
+      payments: [],
+      today: new Date("2026-01-11T00:00:00Z"),
+    })
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("40000")
+    expect(stmt.events).toContainEqual(expect.objectContaining({
+      kind: "rate_changed", day: 0, to: "0.1200",
+    }))
+  })
+  it("does not reduce interest already accrued through the payment date", () => {
+    const loan = { ...baseLoan, rolledOverFrom: "previous-loan" }
+    const paymentDate = new Date("2026-01-11T00:00:00Z")
+    const before = buildLoanStatement({ loan, payments: [], today: paymentDate })
+    const after = buildLoanStatement({
+      loan,
+      payments: [{
+        paymentDate, amount: "100000", interestPortion: "33333",
+        principalPortion: "66667", recorderName: "Test",
+      }],
+      today: paymentDate,
+    })
+    expect(after.finalState.cumulativeInterestAccrued)
+      .toBe(before.finalState.cumulativeInterestAccrued)
+  })
+  it("preserves the full overdue interval when principal is paid on a penalty-rate day", () => {
+    const loan = { ...baseLoan, rolledOverFrom: "previous-loan" }
+    const paymentDate = new Date("2026-03-12T00:00:00Z")
+    const before = buildLoanStatement({ loan, payments: [], today: paymentDate })
+    const after = buildLoanStatement({
+      loan,
+      payments: [{
+        paymentDate, amount: "100000", interestPortion: "0",
+        principalPortion: "100000", recorderName: "Test",
+      }],
+      today: paymentDate,
+    })
+    expect(before.finalState.penaltyActive).toBe(true)
+    expect(after.finalState.cumulativeInterestAccrued)
+      .toBe(before.finalState.cumulativeInterestAccrued)
+  })
   it("charges only eight days of interest on a rollover, including with a minimum override", () => {
     const stmt = buildLoanStatement({
       loan: { ...baseLoan, principalAmount: "10000000", rolledOverFrom: "previous-loan", minPeriodOverride: 45 },
@@ -275,10 +351,11 @@ describe("buildLoanStatement — rollover settlement", () => {
     })
 
     expect(stmt.finalState.principalBalance).toBe("11021706")
-    expect(stmt.finalState.cumulativeInterestAccrued).toBe("27995289")
+    // Principal reductions take effect after interest through their payment dates.
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("28013830")
     expect(stmt.finalState.cumulativeInterestPaid).toBe("4513222")
-    expect(stmt.finalState.netUnpaidInterest).toBe("23482067")
-    expect(stmt.finalState.totalDue).toBe("34503773")
+    expect(stmt.finalState.netUnpaidInterest).toBe("23500609")
+    expect(stmt.finalState.totalDue).toBe("34522315")
     expect(stmt.finalState.daysOverdue).toBeGreaterThan(450)
   })
 })
@@ -324,11 +401,11 @@ describe("buildLoanStatement — waivers", () => {
     expect(stmt.finalState.principalBalance).toBe("9800000")
     // The two UGX 100,000 principal waivers stop interest accruing on that
     // principal from their settlement date onward.
-    expect(stmt.finalState.cumulativeInterestAccrued).toBe("9470467")
+    expect(stmt.finalState.cumulativeInterestAccrued).toBe("9471200")
     expect(stmt.finalState.cumulativeInterestPaid).toBe("0")
     expect(stmt.finalState.cumulativeInterestWaived).toBe("4000000")
-    expect(stmt.finalState.netUnpaidInterest).toBe("5470467")
-    expect(stmt.finalState.totalDue).toBe("15270467")
+    expect(stmt.finalState.netUnpaidInterest).toBe("5471200")
+    expect(stmt.finalState.totalDue).toBe("15271200")
     expect(stmt.finalState.daysOverdue).toBe(167)
   })
 })

@@ -286,7 +286,8 @@ describe("loanBalanceData", () => {
     expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
       expect.objectContaining({
         totalInterestPaid: "5149840.83",
-        totalInterestAccrued: "11275634",
+        // Principal reductions take effect after interest through each payment date.
+        totalInterestAccrued: "11279771",
       }),
     )
   })

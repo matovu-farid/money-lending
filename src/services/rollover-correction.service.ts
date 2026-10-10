@@ -328,7 +328,7 @@ export function assembleRolloverChains(input: {
 /** Every query runs inside one repeatable, read-only PostgreSQL transaction. */
 export async function loadRolloverCorrectionPlansInSnapshot(
   queryDb: Pick<typeof db, "select">,
-  policyVersion = "v2",
+  policyVersion = "v3",
 ): Promise<{
   plans: CorrectionPlan[];
   liveLinks: number;
@@ -420,7 +420,7 @@ export async function loadRolloverCorrectionPlansInSnapshot(
     };
 }
 
-export async function loadRolloverCorrectionPlans(policyVersion = "v2") {
+export async function loadRolloverCorrectionPlans(policyVersion = "v3") {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`);
     return loadRolloverCorrectionPlansInSnapshot(tx, policyVersion);
