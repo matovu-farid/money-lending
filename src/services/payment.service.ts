@@ -314,6 +314,7 @@ export const recordPaymentWithTxid = (
             loanId: input.loanId,
             paymentDate: input.paymentDate,
             actorId,
+            settledInterestAmount: interestPortion,
           });
           await autoPostInterestEarned(tx, {
             amount: interestPortion,
@@ -617,6 +618,7 @@ export const editPaymentWithTxid = (
             loanId: payment.loanId,
             paymentDate: newPaymentDate.toISOString(),
             actorId,
+            settledInterestAmount: allocation.interestPortion,
           });
           await autoPostInterestEarned(tx, {
             amount: allocation.interestPortion,
@@ -1374,6 +1376,7 @@ export async function unmarkPaymentWrong(
         loanId: payment.loanId,
         paymentDate: payment.paymentDate.toISOString(),
         actorId,
+        settledInterestAmount: allocation.interestPortion,
       });
       await autoPostInterestEarned(tx, {
         amount: allocation.interestPortion,

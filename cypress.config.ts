@@ -66,7 +66,7 @@ export default defineConfig({
             const [cash] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000001', 'Cash', 'asset') RETURNING id`
             const [receivable] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000002', 'Loans Receivable', 'asset') RETURNING id`
             const [interest] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000003', 'Interest Earned', 'revenue') RETURNING id`
-            await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000004', 'Interest Receivable', 'revenue')`
+            await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000004', 'Interest Receivable', 'asset')`
             let predecessorId: string | null = null
             if (rolledOver) {
               const [predecessor] = await sql`
@@ -198,6 +198,10 @@ export default defineConfig({
           await withSql(async (sql) => {
             await sql.unsafe(`
               DELETE FROM financial_snapshots;
+              DELETE FROM portfolio_accrual_repair_runs;
+              DELETE FROM portfolio_accrual_repair_approvals;
+              DELETE FROM historical_rate_repair_runs;
+              DELETE FROM historical_rate_repair_approvals;
               DELETE FROM rollover_correction_runs;
               DELETE FROM rollover_correction_approvals;
               DELETE FROM transactions;
@@ -412,6 +416,55 @@ export default defineConfig({
             `
 
             return { customerId, loanId }
+          })
+        },
+
+        async "db:seedPortfolioAccrualReview"({ actorId }: { actorId: string }) {
+          return withSql(async (sql) => {
+            const [customer] = await sql`
+              INSERT INTO customers (full_name, nin, contact, address, status)
+              VALUES ('Accrual Review Fixture', 'C1234567890123', '+256700000001', 'Kampala', 'active')
+              RETURNING id
+            `
+            const [loan] = await sql`
+              INSERT INTO loans (customer_id, principal_amount, issuance_fee, interest_rate,
+                min_interest_days, start_date, status, issued_by, disbursement_source, loan_type)
+              VALUES (${customer.id}, '1000000.00', '0.00', '0.1000', 30,
+                '2025-01-01T00:00:00.000Z', 'active', ${actorId}, 'cash', 'perpetual')
+              RETURNING id
+            `
+            const ids: Record<string, string> = {}
+            for (const [name, type] of [
+              ["Cash", "asset"], ["Loans Receivable", "asset"],
+              ["Interest Earned", "revenue"], ["Interest Receivable", "asset"],
+            ] as const) {
+              const [category] = await sql`
+                INSERT INTO transaction_categories (name, type, is_default)
+                VALUES (${name}, ${type}, true) RETURNING id
+              `
+              ids[name] = category.id
+            }
+            const group = crypto.randomUUID()
+            await sql`
+              INSERT INTO transactions (type, amount, category_id, reference_type,
+                reference_id, loan_id, transaction_date, recorded_by, journal_group_id)
+              VALUES ('debit', '1000000.00', ${ids["Loans Receivable"]}, 'loan',
+                ${loan.id}, ${loan.id}, '2025-01-01T00:00:00.000Z', ${actorId}, ${group})
+            `
+            await sql`
+              INSERT INTO transactions (type, amount, category_id, reference_type,
+                reference_id, loan_id, deposit_location, transaction_date, recorded_by, journal_group_id)
+              VALUES ('credit', '1000000.00', ${ids.Cash}, 'loan',
+                ${loan.id}, ${loan.id}, 'cash', '2025-01-01T00:00:00.000Z', ${actorId}, ${group})
+            `
+            return { loanId: loan.id }
+          })
+        },
+
+        async "db:countPortfolioAccrualApprovals"() {
+          return withSql(async (sql) => {
+            const [row] = await sql`SELECT count(*)::int AS count FROM portfolio_accrual_repair_approvals`
+            return row.count as number
           })
         },
 

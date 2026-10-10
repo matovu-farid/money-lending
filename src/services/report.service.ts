@@ -715,7 +715,8 @@ export const getCashflowData = (
         }
         if (ref === "fund_transfer" || ref === "capital_injection")
           return { direction: "skip", label: "" };
-        if (ref === "interest_accrual" || ref === "penalty_interest_accrual")
+        if (ref === "interest_accrual" || ref === "penalty_interest_accrual" ||
+            ref === "portfolio_accrual_repair")
           return { direction: "skip", label: "" };
         if (ref === "collateral_settlement")
           return { direction: "skip", label: "" };

@@ -103,6 +103,7 @@ export async function waiveLoanAmount(
         actorId,
         reversalReferenceType: "loan_waiver_accrual_reversal",
         reversalReferenceId: waiver.id,
+        settledInterestAmount: interestPortion,
       });
       await autoPostLoanWaiverInterest(tx, {
         amount: interestPortion,

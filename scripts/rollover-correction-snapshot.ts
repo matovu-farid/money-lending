@@ -10,6 +10,8 @@ import { correctionAuditTablesInCatalog, historicalRateAuditTablesInCatalog,
   validateCorrectionDatabaseEndpoints,
   validateRolloverSnapshotTarget } from
   "../src/lib/interest/rollover-snapshot-guard";
+import { portfolioAccrualDataInCatalog } from
+  "../src/lib/interest/portfolio-accrual-backup";
 
 const execFileAsync = promisify(execFile);
 
@@ -100,6 +102,7 @@ async function main() {
     dumpSha256: await fileSha256(out),
     correctionAuditTablesInDump: correctionAuditTablesInCatalog(catalog),
     historicalRateAuditTablesInDump: historicalRateAuditTablesInCatalog(catalog),
+    portfolioAccrualAuditTablesInDump: portfolioAccrualDataInCatalog(catalog),
   };
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2),
     { flag: "wx", mode: 0o600 });

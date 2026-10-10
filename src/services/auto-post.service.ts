@@ -308,8 +308,9 @@ export async function autoPostRateChangeAdjustment(
   }).from(transactions)
     .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
     .where(and(
-      inArray(transactions.referenceType, ["interest_accrual", "penalty_interest_accrual"]),
-      eq(transactions.referenceId, params.loanId),
+      inArray(transactions.referenceType, ["interest_accrual", "penalty_interest_accrual",
+        "portfolio_accrual_repair"]),
+      eq(transactions.loanId, params.loanId),
     ))
 
   const groups = new Map<string, typeof rows>()

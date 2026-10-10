@@ -25,11 +25,13 @@ export async function GET(request: Request) {
   try {
     // Accrue interest BEFORE generating snapshots so P&L and balance sheet
     // reflect accrued (not just cash-basis) interest
-    const [loanAccrual, creditorAccrual] = await Promise.all([
-      Effect.runPromise(accrueInterestForLoans(periodEnd)),
-      Effect.runPromise(accrueInterestForCreditors(periodEnd)),
-    ])
+    const loanAccrual = await Effect.runPromise(accrueInterestForLoans(periodEnd))
 
+    if (loanAccrual.loansBlocked > 0) {
+      throw new Error(`Month-end loan accrual has ${loanAccrual.loansBlocked} unreconciled loans`)
+    }
+
+    const creditorAccrual = await Effect.runPromise(accrueInterestForCreditors(periodEnd))
     await Effect.runPromise(generateMonthlySnapshot(period, "cron"))
     return NextResponse.json({
       success: true,

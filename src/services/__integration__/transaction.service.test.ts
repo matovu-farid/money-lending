@@ -726,13 +726,11 @@ describe("accrueInterestForLoans — Integration", () => {
     expect(result.loansProcessed).toBe(2)
   })
 
-  it("skips loans when required categories are missing", async () => {
+  it("fails closed when required accrual categories are missing", async () => {
     // Reset without seeding categories
     await resetDb()
-    // Don't seed any categories — accrual should skip gracefully
+    // Don't seed any categories — a monthly snapshot must not be published.
 
-    const result = await Effect.runPromise(accrueInterestForLoans(new Date()))
-    expect(result.loansProcessed).toBe(0)
-    expect(result.entriesPosted).toBe(0)
+    await expect(Effect.runPromise(accrueInterestForLoans(new Date()))).rejects.toThrow()
   })
 })

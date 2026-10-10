@@ -232,6 +232,13 @@
       "when": 1791640684995,
       "tag": "0032_historical_rate_repair",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1791656556429,
+      "tag": "0033_bored_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

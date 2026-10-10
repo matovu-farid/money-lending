@@ -48,6 +48,7 @@ import {
 import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { captureServerWarning } from "@/lib/sentry";
 import { buildLoanStatement } from "@/lib/loan-statement";
+import { loadPortfolioAccrualPlan } from "./portfolio-accrual-repair.service";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -541,6 +542,8 @@ export async function reverseInterestAccrual(
     /** Optional waiver-specific marker so the accrual reversal can be undone exactly. */
     reversalReferenceType?: string;
     reversalReferenceId?: string;
+    /** Limit a payment or waiver reversal to interest actually settled. Omit only for full closure. */
+    settledInterestAmount?: string;
   },
 ): Promise<void> {
   const [receivableCat] = await tx
@@ -575,9 +578,11 @@ export async function reverseInterestAccrual(
         inArray(transactions.referenceType, [
           "interest_accrual",
           "penalty_interest_accrual",
+          "portfolio_accrual_repair",
         ]),
-        eq(transactions.referenceId, params.loanId),
+        eq(transactions.loanId, params.loanId),
         eq(transactions.categoryId, receivableCat.id),
+        lte(transactions.transactionDate, new Date(params.paymentDate)),
       ),
     );
 
@@ -592,7 +597,15 @@ export async function reverseInterestAccrual(
 
   if (netAccrual.isLessThanOrEqualTo(0)) return;
 
-  const reversalAmount = formatAmount(netAccrual);
+  let amountToReverse = netAccrual;
+  if (params.settledInterestAmount !== undefined) {
+    const settled = new BigNumber(params.settledInterestAmount);
+    if (!settled.isFinite() || settled.isLessThanOrEqualTo(0)) {
+      throw new Error("Settled interest amount must be positive and finite");
+    }
+    amountToReverse = BigNumber.min(netAccrual, settled);
+  }
+  const reversalAmount = formatAmount(amountToReverse);
   const now = new Date(params.paymentDate);
   const journalGroupId = randomUUID();
   const reversalReferenceType =
@@ -721,7 +734,7 @@ export async function reverseCreditorInterestAccrual(
 export const accrueInterestForLoans = (
   asOfDate: Date = new Date(),
 ): Effect.Effect<
-  { loansProcessed: number; entriesPosted: number },
+  { loansProcessed: number; entriesPosted: number; loansBlocked: number },
   DatabaseError
 > =>
   Effect.tryPromise({
@@ -750,22 +763,46 @@ export const accrueInterestForLoans = (
         captureServerWarning("Interest accrual categories missing; skipping loan accrual", {
           source: "interest-accrual.loan-categories-missing",
         });
-        console.warn(
-          "[accrueInterestForLoans] Required categories not found — skipping",
-        );
-        return { loansProcessed: 0, entriesPosted: 0 };
+        throw new Error("Loan interest accrual accounts are missing; monthly report cannot be published");
       }
 
-      const activeLoans = await db.select({ id: loans.id }).from(loans)
+      return db.transaction(async (batchTx) => {
+      await batchTx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
+      const activeLoans = await batchTx.select({ id: loans.id }).from(loans)
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)));
+      let preflightBlocked = 0;
+      for (const candidate of activeLoans) {
+        const reviewed = await loadPortfolioAccrualPlan(candidate.id, asOfDate, batchTx);
+        if (reviewed.classification !== "noop" &&
+            (reviewed.classification !== "ready" || reviewed.entries.length !== 1 ||
+             reviewed.entries[0].date.getTime() !== asOfDate.getTime() ||
+             new BigNumber(reviewed.entries[0].delta).lte(0))) {
+          preflightBlocked++;
+        }
+      }
+      if (preflightBlocked > 0) {
+        return { loansProcessed: activeLoans.length, entriesPosted: 0,
+          loansBlocked: preflightBlocked };
+      }
       let entriesPosted = 0;
+      let loansBlocked = 0;
 
       for (const candidate of activeLoans) {
-        const posted = await db.transaction(async (tx) => {
+        const posted = await (async () => {
+          const tx = batchTx;
           const [loan] = await tx.select().from(loans)
             .where(and(eq(loans.id, candidate.id), eq(loans.status, "active"), isNull(loans.deletedAt)))
             .for("update");
-          if (!loan) return false;
+          if (!loan) return "noop" as const;
+
+          const reviewed = await loadPortfolioAccrualPlan(loan.id, asOfDate, tx);
+          if (reviewed.classification === "noop") return "noop" as const;
+          if (reviewed.classification !== "ready" || reviewed.entries.length !== 1 ||
+              reviewed.entries[0].date.getTime() !== asOfDate.getTime() ||
+              new BigNumber(reviewed.entries[0].delta).lte(0)) {
+            return "blocked" as const;
+          }
+          const reviewedDelta = new BigNumber(reviewed.entries[0].delta);
 
           const paymentRows = await tx.select().from(payments).where(and(
             eq(payments.loanId, loan.id), isNull(payments.deletedAt),
@@ -848,7 +885,7 @@ export const accrueInterestForLoans = (
               principalPayments,
             });
             const target = totalAccrued.minus(earned);
-            if (target.lte(0)) return false;
+            if (target.lte(0)) return "blocked" as const;
             if (overdueInfo.penaltyActive) {
               const totalAtBaseRate = computeSegmentedInterest({
                 principalAmount: loan.principalAmount,
@@ -862,6 +899,10 @@ export const accrueInterestForLoans = (
             } else {
               baseAmount = target;
             }
+          }
+
+          if (!new BigNumber(formatAmount(baseAmount.plus(penaltyAmount))).eq(reviewedDelta)) {
+            return "blocked" as const;
           }
 
           const postPair = async (amount: BigNumber, referenceType: string, description: string) => {
@@ -880,12 +921,20 @@ export const accrueInterestForLoans = (
           await postPair(baseAmount, "interest_accrual", `Interest accrual - loan ${loan.id}`);
           await postPair(penaltyAmount, "penalty_interest_accrual",
             `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`);
-          return baseAmount.gt(0) || penaltyAmount.gt(0);
-        });
-        if (posted) entriesPosted++;
+          const afterPosting = await loadPortfolioAccrualPlan(loan.id, asOfDate, tx);
+          if (afterPosting.classification !== "noop") {
+            throw new Error(`Loan ${loan.id} accrual did not reconcile after posting`);
+          }
+          return "posted" as const;
+        })();
+        if (posted === "posted") entriesPosted++;
+        if (posted === "blocked") {
+          throw new Error(`Loan ${candidate.id} became blocked during accrual; entire batch rolled back`);
+        }
       }
 
-      return { loansProcessed: activeLoans.length, entriesPosted };
+      return { loansProcessed: activeLoans.length, entriesPosted, loansBlocked };
+      });
     },
     catch: (e) => new DatabaseError({ cause: e }),
   });
