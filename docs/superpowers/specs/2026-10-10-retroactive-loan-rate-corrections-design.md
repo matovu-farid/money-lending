@@ -1,6 +1,7 @@
 # Retroactive loan-rate corrections with event locks
 
-**Date:** 2026-10-10  
+**Date:** 2026-10-10
+
 **Status:** Approved conversational design; awaiting written-spec review
 
 ## Goal and policy
