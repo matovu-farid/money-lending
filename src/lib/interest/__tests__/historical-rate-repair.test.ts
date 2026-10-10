@@ -69,6 +69,8 @@ describe("historical paid-rate repair preview", () => {
     ]);
     expect(plan.endingPrincipal).toBe("25925");
     expect(plan.accruedInterest).toBe("5925");
+    expect(plan.accrualJournalTarget).toBe("0.00");
+    expect(plan.accrualJournalDelta).toBeNull();
   });
 
   it("retains four-decimal rate precision rather than rounding a rate as money", () => {
@@ -137,10 +139,37 @@ describe("historical paid-rate repair preview", () => {
     input.settlements[1].oldInterest = "1425";
     input.settlements[1].oldPrincipal = "3575";
     input.correctionMarked = true;
-    input.postedAccrual = "5925";
+    // Both payments already earned all accrued interest. No additional
+    // non-cash accrual journal is needed after the corrected allocations.
+    input.postedAccrual = "0";
 
     const plan = planHistoricalRateRepair(input);
 
     expect(plan.classification).toBe("noop");
+  });
+
+  it("blocks a start-day receipt that the current statement cannot include", () => {
+    const input = snapshot();
+    input.settlements = [{ ...input.settlements[0], date: input.loan.startDate }];
+    input.asOf = input.loan.startDate;
+
+    const plan = planHistoricalRateRepair(input);
+
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/start.day settlement/i),
+    ]));
+  });
+
+  it("blocks fractional-UGX principal until the statement replay preserves cents", () => {
+    const input = snapshot();
+    input.loan.principalAmount = "30000.50";
+
+    const plan = planHistoricalRateRepair(input);
+
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/fractional.*UGX/i),
+    ]));
   });
 });

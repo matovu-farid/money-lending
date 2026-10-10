@@ -1,10 +1,6 @@
 import { createHash } from "node:crypto";
 import BigNumber from "bignumber.js";
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement";
-import { allocatePayment, clampAllocationToUnpaidInterest } from "./engine";
-import { toLoanType } from "@/types";
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type HistoricalSettlement = {
   id: string;
@@ -44,6 +40,8 @@ export type HistoricalRatePlan = {
   changes: HistoricalSettlementChange[];
   correctedRate: string;
   accruedInterest: string | null;
+  accrualJournalTarget: string | null;
+  accrualJournalDelta: string | null;
   endingPrincipal: string | null;
 };
 
@@ -83,11 +81,18 @@ export function planHistoricalRateRepair(
   if (!correctedRate.isFinite() || correctedRate.lte(0)) {
     exceptions.push("Corrected rate is invalid");
   }
+  const openingPrincipal = new BigNumber(snapshot.loan.principalAmount);
+  if (!openingPrincipal.isFinite() || !openingPrincipal.isInteger()) {
+    exceptions.push("Fractional UGX opening principal requires a cent-precise replay");
+  }
   for (let i = 0; i < settlements.length; i++) {
     const settlement = settlements[i];
     if (!Number.isFinite(settlement.date.getTime()) ||
         settlement.date < snapshot.loan.startDate || settlement.date > snapshot.asOf) {
       exceptions.push(`Settlement ${settlement.id} has an invalid effective date`);
+    }
+    if (settlement.date.getTime() === snapshot.loan.startDate.getTime()) {
+      exceptions.push(`Settlement ${settlement.id} is a start-day settlement requiring statement support`);
     }
     if (i > 0 && settlement.date.getTime() === settlements[i - 1].date.getTime()) {
       exceptions.push(`Settlement ${settlement.id} has an ambiguous same-time order`);
@@ -95,6 +100,10 @@ export function planHistoricalRateRepair(
     if (![settlement.amount, settlement.oldInterest, settlement.oldPrincipal,
       settlement.oldOverpayment].every(validMoney)) {
       exceptions.push(`Settlement ${settlement.id} has invalid monetary values`);
+    } else if ([settlement.amount, settlement.oldInterest,
+      settlement.oldPrincipal, settlement.oldOverpayment]
+      .some((value) => !new BigNumber(value).isInteger())) {
+      exceptions.push(`Settlement ${settlement.id} contains fractional UGX`);
     } else if (!new BigNumber(settlement.oldInterest)
       .plus(settlement.oldPrincipal).plus(settlement.oldOverpayment)
       .eq(settlement.amount)) {
@@ -110,8 +119,6 @@ export function planHistoricalRateRepair(
       interestRate: correctedRate.toFixed(4), interestRateOverride: null };
     const replayedPayments: BuildStatementInput["payments"] = [];
     const replayedWaivers: NonNullable<BuildStatementInput["waivers"]> = [];
-    let previousSettlementDate = correctedLoan.startDate;
-    let paymentCount = 0;
 
     for (const event of settlements) {
       const statement = buildLoanStatement({ loan: correctedLoan,
@@ -122,28 +129,6 @@ export function planHistoricalRateRepair(
       const interest = BigNumber.min(amount, unpaid);
       const principal = BigNumber.min(amount.minus(interest), principalBalance);
       const overpayment = amount.minus(interest).minus(principal);
-      const effectiveRate = statement.finalState.penaltyActive
-        ? correctedRate.multipliedBy(new BigNumber(1).plus(correctedLoan.penaltyMultiplier))
-        : correctedRate;
-      const rawQuote = allocatePayment({
-        paymentAmount: event.amount,
-        principalBalanceBefore: money(principalBalance),
-        monthlyRateDecimal: effectiveRate.toFixed(4),
-        daysElapsed: Math.floor((event.date.getTime() - previousSettlementDate.getTime()) / DAY_MS),
-        minInterestDays: correctedLoan.minPeriodOverride ?? correctedLoan.minInterestDays,
-        rolledOverFrom: correctedLoan.rolledOverFrom,
-        loanType: toLoanType(correctedLoan.loanType),
-        originalPrincipal: correctedLoan.principalAmount,
-        termMonths: correctedLoan.termMonths ?? undefined,
-        paymentNumber: event.kind === "payment" ? paymentCount + 1 : Math.max(paymentCount, 1),
-      });
-      const quote = clampAllocationToUnpaidInterest(rawQuote,
-        event.amount, money(unpaid), money(principalBalance), effectiveRate.toFixed(4));
-      if (!new BigNumber(quote.interestPortion).eq(interest) ||
-          !new BigNumber(quote.principalPortion).eq(principal)) {
-        exceptions.push(`Settlement ${event.id} differs from today's payment calculator`);
-        break;
-      }
       if (event.kind === "waiver" && !overpayment.isZero()) {
         exceptions.push(`Waiver ${event.id} exceeds corrected amount due`);
         break;
@@ -163,7 +148,6 @@ export function planHistoricalRateRepair(
           principalPortion: change.newPrincipal,
           recorderName: "",
         });
-        paymentCount += 1;
       } else {
         replayedWaivers.push({
           waiverDate: event.date,
@@ -173,13 +157,17 @@ export function planHistoricalRateRepair(
           reason: "historical rate repair",
         });
       }
-      previousSettlementDate = event.date;
     }
     if (exceptions.length === 0) {
       const finalStatement = buildLoanStatement({ loan: correctedLoan,
         payments: replayedPayments, waivers: replayedWaivers, today: snapshot.asOf });
       accruedInterest = finalStatement.finalState.cumulativeInterestAccrued;
       endingPrincipal = finalStatement.finalState.principalBalance;
+      const expectedPrincipal = openingPrincipal.minus(changes.reduce((sum, change) =>
+        sum.plus(change.newPrincipal), new BigNumber(0)));
+      if (!new BigNumber(endingPrincipal).eq(expectedPrincipal)) {
+        exceptions.push("Final statement principal does not match replayed settlements");
+      }
     }
   }
 
@@ -187,13 +175,19 @@ export function planHistoricalRateRepair(
     !new BigNumber(change.newInterest).eq(change.oldInterest) ||
     !new BigNumber(change.newPrincipal).eq(change.oldPrincipal) ||
     !new BigNumber(change.newOverpayment).eq(change.oldOverpayment));
-  const accrualDelta = accruedInterest !== null && snapshot.postedAccrual !== undefined &&
-    !new BigNumber(accruedInterest).eq(snapshot.postedAccrual);
+  const accrualJournalTarget = accruedInterest === null ? null : BigNumber.max(
+    new BigNumber(accruedInterest).minus(changes.reduce((sum, change) =>
+      sum.plus(change.newInterest), new BigNumber(0))), 0).toFixed(2);
+  const accrualJournalDelta = accrualJournalTarget === null ||
+    snapshot.postedAccrual === undefined ? null :
+    new BigNumber(accrualJournalTarget).minus(snapshot.postedAccrual).toFixed(2);
+  const accrualDelta = accrualJournalDelta !== null &&
+    !new BigNumber(accrualJournalDelta).isZero();
   const classification: HistoricalRatePlan["classification"] = exceptions.length ? "blocked" :
     hasAllocationDelta || accrualDelta || !snapshot.correctionMarked ? "review" : "noop";
   const planBody = { loanId: snapshot.loan.id, asOf: snapshot.asOf,
     policyVersion, inputFingerprint,
     classification, exceptions, changes, correctedRate: snapshot.correctedRate,
-    accruedInterest, endingPrincipal };
+    accruedInterest, accrualJournalTarget, accrualJournalDelta, endingPrincipal };
   return { ...planBody, planHash: hash(planBody) };
 }

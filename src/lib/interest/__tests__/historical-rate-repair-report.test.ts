@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildHistoricalRateRepairReport } from "../historical-rate-repair-report";
+import { buildHistoricalRateRepairReport, parseHistoricalRateAsOf } from
+  "../historical-rate-repair-report";
 import type { HistoricalRatePlan } from "../historical-rate-repair";
 
 const plan: HistoricalRatePlan = {
@@ -12,6 +13,8 @@ const plan: HistoricalRatePlan = {
   exceptions: [],
   correctedRate: "0.1500",
   accruedInterest: "5925",
+  accrualJournalTarget: "1425.00",
+  accrualJournalDelta: "1425.00",
   endingPrincipal: "25925",
   changes: [{
     id: "00000000-0000-4000-8000-000000000011",
@@ -45,6 +48,8 @@ describe("historical rate repair report", () => {
       reviewable: true,
       inputFingerprint: plan.inputFingerprint,
       planHash: plan.planHash,
+      accrualJournalTarget: "1425.00",
+      accrualJournalDelta: "1425.00",
     }));
     expect(report.settlements).toEqual([expect.objectContaining({
       oldInterest: "3000", newInterest: "4500",
@@ -62,5 +67,35 @@ describe("historical rate repair report", () => {
 
     expect(blocked.summary.reviewable).toBe(false);
     expect(blocked.exceptions).toEqual(["Cash mismatch"]);
+  });
+
+  it("requires an explicit instant rather than treating a date as midnight", () => {
+    expect(() => parseHistoricalRateAsOf("2026-10-10"))
+      .toThrow(/explicit.*instant/i);
+    expect(parseHistoricalRateAsOf("2026-10-10T23:59:59.999+03:00",
+      new Date("2026-10-11T00:00:00Z")).toISOString())
+      .toBe("2026-10-10T20:59:59.999Z");
+  });
+
+  it("rejects a future as-of instant for a historical repair preview", () => {
+    expect(() => parseHistoricalRateAsOf(
+      "2026-10-10T23:59:59.999+03:00", new Date("2026-10-10T14:00:00Z"),
+    )).toThrow(/future/i);
+  });
+
+  it("separates non-cash waiver value from unchanged receipt cash", () => {
+    const withWaiver = buildHistoricalRateRepairReport({
+      databaseHost: "db.example.test",
+      databaseName: "review_db",
+      plan: { ...plan, changes: [...plan.changes, {
+        id: "00000000-0000-4000-8000-000000000012",
+        kind: "waiver", date: new Date("2026-02-10T00:00:00Z"),
+        amount: "100", oldInterest: "100", oldPrincipal: "0", oldOverpayment: "0",
+        newInterest: "100", newPrincipal: "0", newOverpayment: "0",
+      }] },
+    });
+
+    expect(withWaiver.summary.unchangedCashTotal).toBe("5000.00");
+    expect(withWaiver.summary.waivedTotal).toBe("100.00");
   });
 });

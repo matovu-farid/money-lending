@@ -5,9 +5,11 @@ import { resetDb, seedCategories, testDb } from "./setup";
 import { customers } from "@/lib/db/schema/customers";
 import { loans } from "@/lib/db/schema/loans";
 import { payments } from "@/lib/db/schema/payments";
+import { loanWaivers } from "@/lib/db/schema/loan-waivers";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { auditLog } from "@/lib/db/schema/audit";
+import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests";
 import { loadHistoricalRateRepairPlan } from "../historical-rate-repair.service";
 
 const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
@@ -145,5 +147,88 @@ describe("historical rate repair source preview", () => {
 
     expect(plan.classification).toBe("review");
     expect(plan.exceptions).toEqual([]);
+  });
+
+  it("blocks an approved audit whose requested rate differs from the approved request", async () => {
+    const { loan, audit } = await seedPaidLoan();
+    const [request] = await testDb.insert(rateChangeRequests).values({
+      loanId: loan.id, requestedRate: "0.2000", currentRate: "0.1000",
+      requestedBy: "actor-1", requiredApproverRole: "admin",
+      status: "approved", reviewedBy: "admin-1", reviewedAt: day("2026-04-01"),
+    }).returning();
+    await testDb.update(auditLog).set({
+      action: "loan.rate_change.approved",
+      afterValue: JSON.stringify({ interestRateOverride: "0.1500", requestId: request.id }),
+    }).where(eq(auditLog.id, audit.id));
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/approved.*rate.*request/i),
+    ]));
+  });
+
+  it("blocks a receipt whose cash journal still carries the old payment date", async () => {
+    const { loan, payment } = await seedPaidLoan();
+    await testDb.update(payments).set({ paymentDate: day("2026-01-12") })
+      .where(eq(payments.id, payment.id));
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/cash receipt/i),
+    ]));
+  });
+
+  it("blocks a journal whose category changed from asset to liability", async () => {
+    const { loan } = await seedPaidLoan();
+    await testDb.update(transactionCategories).set({ type: "liability" })
+      .where(eq(transactionCategories.name, "Loans Receivable"));
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/category.*type/i),
+    ]));
+  });
+
+  it("nets a waiver accrual reversal before quoting the new accrual journal", async () => {
+    const { loan } = await seedPaidLoan();
+    const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+      .map((row) => [row.name, row.id]));
+    const [waiver] = await testDb.insert(loanWaivers).values({
+      loanId: loan.id, amount: "500", waiverDate: day("2026-02-10"),
+      reason: "Fixture write-down", recordedBy: "actor-1",
+    }).returning();
+    const groups = [randomUUID(), randomUUID(), randomUUID()];
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "debit",
+        amount: "500", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: groups[0], transactionDate: day("2026-02-10"), recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "500", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: groups[0], transactionDate: day("2026-02-10"), recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "credit",
+        amount: "500", referenceType: "loan_waiver_accrual_reversal", referenceId: waiver.id,
+        journalGroupId: groups[1], transactionDate: day("2026-02-10"), recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "debit",
+        amount: "500", referenceType: "loan_waiver_accrual_reversal", referenceId: waiver.id,
+        journalGroupId: groups[1], transactionDate: day("2026-02-10"), recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Loan Losses"], type: "debit",
+        amount: "500", referenceType: "loan_waiver", referenceId: waiver.id,
+        journalGroupId: groups[2], transactionDate: day("2026-02-10"), recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "500", referenceType: "loan_waiver", referenceId: waiver.id,
+        journalGroupId: groups[2], transactionDate: day("2026-02-10"), recordedBy: "actor-1" },
+    ]);
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+
+    expect(plan.classification).toBe("review");
+    expect(plan.accrualJournalTarget).toBe("925.00");
+    expect(plan.accrualJournalDelta).toBe("925.00");
   });
 });

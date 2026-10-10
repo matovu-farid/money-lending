@@ -39,6 +39,13 @@ function parseAudit(value: string | null): Record<string, unknown> | null {
   }
 }
 
+function rateFromAudit(value: Record<string, unknown> | null): BigNumber | null {
+  const raw = value?.interestRateOverride ?? value?.interestRate;
+  if (typeof raw !== "string" && typeof raw !== "number") return null;
+  const rate = new BigNumber(raw);
+  return rate.isFinite() && rate.gt(0) && rate.lt(1) ? rate : null;
+}
+
 function sameMoney(a: BigNumber, b: string): boolean {
   return a.minus(b).abs().lt(0.01);
 }
@@ -79,7 +86,9 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     subLocationId: transactions.subLocationId,
     amount: transactions.amount,
     type: transactions.type,
+    categoryId: transactions.categoryId,
     categoryName: transactionCategories.name,
+    categoryType: transactionCategories.type,
   }).from(transactions)
     .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
     .where(settlementIds.length
@@ -98,7 +107,9 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     subLocationId: transactions.subLocationId,
     amount: transactions.amount,
     type: transactions.type,
+    categoryId: transactions.categoryId,
     categoryName: transactionCategories.name,
+    categoryType: transactionCategories.type,
   }).from(transactions)
     .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
     .where(inArray(transactions.journalGroupId, groupIds)) : [];
@@ -111,6 +122,26 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
   ]);
 
   const exceptions: string[] = [];
+  const requiredTypes = new Map([
+    ["Cash", "asset"], ["Loans Receivable", "asset"],
+    ["Interest Receivable", "revenue"], ["Interest Earned", "revenue"],
+    ["Overpayment Revenue", "revenue"], ["Loan Losses", "expense"],
+    ["Issuance Fees", "revenue"],
+  ]);
+  for (const row of journalRows) {
+    const expected = requiredTypes.get(row.categoryName);
+    if (expected && row.categoryType !== expected) {
+      exceptions.push(`Journal ${row.id} category type does not match ${row.categoryName}`);
+    }
+  }
+  const relevantCategoryRows = await queryDb.select().from(transactionCategories)
+    .where(inArray(transactionCategories.name, [...requiredTypes.keys()]));
+  for (const [name, expected] of requiredTypes) {
+    const rows = relevantCategoryRows.filter((row) => row.name === name);
+    if (rows.some((row) => row.type !== expected) || rows.length > 1) {
+      exceptions.push(`Account category type or identity is ambiguous for ${name}`);
+    }
+  }
   if (loan.deletedAt) exceptions.push("Loan is deleted");
   if (loan.rolledOverFrom || successorRows.length) {
     exceptions.push("Loan is part of a rollover chain; chain-level repair is required");
@@ -121,30 +152,57 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
   const finalAudit = appliedAudits.at(-1);
   const finalAuditValue = parseAudit(finalAudit?.afterValue ?? null);
   const currentRate = new BigNumber(loan.interestRateOverride ?? loan.interestRate);
-  const auditRateValue = finalAuditValue?.interestRateOverride ?? finalAuditValue?.interestRate;
-  const auditRate = auditRateValue == null ? null : new BigNumber(String(auditRateValue));
+  const auditRate = rateFromAudit(finalAuditValue);
   if (!currentRate.isFinite() || currentRate.lte(0) || currentRate.gte(1) ||
       !finalAudit || !auditRate?.isFinite() || !auditRate.eq(currentRate)) {
     exceptions.push("Final applied rate audit does not reconcile to the loan rate");
   }
+  let priorRate = new BigNumber(loan.interestRate);
+  const approvedRequests = new Map(rateRows.filter((row) => row.status === "approved")
+    .map((row) => [row.id, row]));
+  const matchedRequests = new Set<string>();
   for (const row of appliedAudits) {
+    const before = rateFromAudit(parseAudit(row.beforeValue));
     const parsed = parseAudit(row.afterValue);
-    if (!parsed || (parsed.interestRateOverride == null && parsed.interestRate == null)) {
+    const after = rateFromAudit(parsed);
+    if (!before || !after) {
       exceptions.push(`Applied rate audit ${row.id} is incomplete`);
+      continue;
     }
+    if (!priorRate.eq(before)) {
+      exceptions.push(`Applied rate audit ${row.id} breaks rate history continuity`);
+    }
+    if (row.action === "loan.rate_change.approved") {
+      const requestId = parsed?.requestId;
+      const request = typeof requestId === "string" ? approvedRequests.get(requestId) : undefined;
+      if (!request || !request.reviewedAt ||
+          !new BigNumber(request.currentRate).eq(before) ||
+          !new BigNumber(request.requestedRate).eq(after) ||
+          matchedRequests.has(request.id)) {
+        exceptions.push(`Approved rate audit ${row.id} does not match its approved rate request`);
+      } else {
+        matchedRequests.add(request.id);
+      }
+    }
+    priorRate = after;
+  }
+  for (const request of approvedRequests.values()) {
+    if (!matchedRequests.has(request.id)) {
+      exceptions.push(`Approved rate request ${request.id} lacks an applied audit`);
+    }
+  }
+  if (appliedAudits.some((row, index) => index > 0 &&
+      row.occurredAt.getTime() === appliedAudits[index - 1].occurredAt.getTime())) {
+    exceptions.push("Applied rate audits have an ambiguous exact-time order");
   }
   if (orderedAudits.some((row) => row.action === "loan.update" &&
       (() => {
         const value = parseAudit(row.afterValue);
         return value && (Object.hasOwn(value, "interestRate") ||
+          Object.hasOwn(value, "interestRateOverride") ||
           Object.hasOwn(value, "startDate"));
       })())) {
     exceptions.push("Direct loan terms edit needs separate effective-date review");
-  }
-  for (const row of rateRows.filter((item) => item.status === "approved")) {
-    if (!appliedAudits.some((audit) => parseAudit(audit.afterValue)?.requestId === row.id)) {
-      exceptions.push(`Approved rate request ${row.id} lacks an applied audit`);
-    }
   }
 
   const groups = new Map<string, typeof journalRows>();
@@ -190,9 +248,23 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     if (!allocation) exceptions.push(`Payment ${payment.id} has no allocation journal`);
     const rows = journalRows.filter((row) => row.referenceId === payment.id &&
       ["payment", "payment_reversal"].includes(row.referenceType ?? ""));
-    const received = net(rows.filter((row) => row.categoryName === "Cash"), "debit");
-    if (!sameMoney(received, payment.amount) || rows.some((row) =>
-      row.categoryName === "Cash" && row.depositLocation !== payment.depositLocation)) {
+    const cashGroups = new Map<string, typeof rows>();
+    for (const row of rows.filter((item) => item.categoryName === "Cash")) {
+      const key = JSON.stringify([row.transactionDate.toISOString(),
+        row.depositLocation, row.subLocationId]);
+      const group = cashGroups.get(key) ?? [];
+      group.push(row);
+      cashGroups.set(key, group);
+    }
+    const uncancelledCash = [...cashGroups.values()].filter((group) =>
+      !net(group, "debit").isZero());
+    if (uncancelledCash.length !== 1 ||
+        !sameMoney(net(uncancelledCash[0], "debit"), payment.amount) ||
+        uncancelledCash[0].some((row) =>
+          row.transactionDate.getTime() !== payment.paymentDate.getTime() ||
+          row.depositLocation !== payment.depositLocation ||
+          (row.subLocationId ?? null) !== (payment.subLocationId ?? null) ||
+          (row.loanId !== null && row.loanId !== loanId))) {
       exceptions.push(`Payment ${payment.id} cash receipt does not reconcile`);
     }
     if (allocation) {
@@ -225,9 +297,22 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
         .minus(principalSettled).toFixed(2))) {
     exceptions.push("Loans receivable does not reconcile to recorded settlements");
   }
-  const postedAccrual = net(directRows.filter((row) =>
-    ["interest_accrual", "penalty_interest_accrual"].includes(row.referenceType ?? "") &&
-    row.categoryName === "Interest Receivable"), "debit").toFixed(2);
+  const waiverIds = new Set(waiverRows.map((row) => row.id));
+  const accrualReferenceTypes = new Set([
+    "interest_accrual", "penalty_interest_accrual",
+    "loan_waiver_accrual_reversal", "loan_waiver_reversal",
+  ]);
+  const accrualRows = journalRows.filter((row) =>
+    row.categoryName === "Interest Receivable" &&
+    (row.loanId === loanId || row.referenceId === loanId ||
+      waiverIds.has(row.referenceId ?? "")));
+  for (const row of accrualRows) {
+    if (!accrualReferenceTypes.has(row.referenceType ?? "")) {
+      exceptions.push(`Interest Receivable journal ${row.id} has an unknown source`);
+    }
+  }
+  const postedAccrual = net(accrualRows.filter((row) =>
+    row.transactionDate <= asOf), "debit").toFixed(2);
   const correctionMarked = finalAuditValue?.rateSemantics === "correction" &&
     finalAuditValue.effectiveFrom === loan.startDate.toISOString();
   const sourceDigest = digest({
@@ -237,6 +322,7 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     rateAudits: rateAudits.toSorted((a, b) => a.id.localeCompare(b.id)),
     linkedRows: [...successorRows, ...linkedRows].sort((a, b) => a.id.localeCompare(b.id)),
     journalRows: journalRows.sort((a, b) => a.id.localeCompare(b.id)),
+    relevantCategoryRows: relevantCategoryRows.sort((a, b) => a.id.localeCompare(b.id)),
   });
   return planHistoricalRateRepair({
     loan: {

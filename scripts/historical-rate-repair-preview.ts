@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { sql } from "drizzle-orm";
 import { db } from "../src/lib/db";
-import { buildHistoricalRateRepairReport } from
+import { buildHistoricalRateRepairReport, parseHistoricalRateAsOf } from
   "../src/lib/interest/historical-rate-repair-report";
 import { loadHistoricalRateRepairPlan } from
   "../src/services/historical-rate-repair.service";
@@ -39,14 +39,7 @@ async function main() {
   if (!loanId || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(loanId)) {
     throw new Error("Exactly one valid --loan-id is required");
   }
-  const asOfText = option("as-of");
-  if (!asOfText || !/^\d{4}-\d{2}-\d{2}$/.test(asOfText)) {
-    throw new Error("An explicit --as-of=YYYY-MM-DD is required");
-  }
-  const asOf = new Date(`${asOfText}T00:00:00.000Z`);
-  if (!Number.isFinite(asOf.getTime()) || asOf.toISOString().slice(0, 10) !== asOfText) {
-    throw new Error("Invalid --as-of date");
-  }
+  const asOf = parseHistoricalRateAsOf(option("as-of"));
   const identity = await db.execute(sql`SELECT current_database() AS name`);
   if (identity[0]?.name !== expectedDatabase) {
     throw new Error("Connected database identity does not match");
