@@ -35,6 +35,7 @@ export type HistoricalSettlementChange = HistoricalSettlement & {
 
 export type HistoricalRatePlan = {
   loanId: string;
+  asOf: Date;
   policyVersion: string;
   inputFingerprint: string;
   planHash: string;
@@ -190,7 +191,8 @@ export function planHistoricalRateRepair(
     !new BigNumber(accruedInterest).eq(snapshot.postedAccrual);
   const classification: HistoricalRatePlan["classification"] = exceptions.length ? "blocked" :
     hasAllocationDelta || accrualDelta || !snapshot.correctionMarked ? "review" : "noop";
-  const planBody = { loanId: snapshot.loan.id, policyVersion, inputFingerprint,
+  const planBody = { loanId: snapshot.loan.id, asOf: snapshot.asOf,
+    policyVersion, inputFingerprint,
     classification, exceptions, changes, correctedRate: snapshot.correctedRate,
     accruedInterest, endingPrincipal };
   return { ...planBody, planHash: hash(planBody) };
