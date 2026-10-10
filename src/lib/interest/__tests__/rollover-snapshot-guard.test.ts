@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   correctionAuditTablesInCatalog,
+  correctionTempDirectory,
   historicalRateDataInCatalog,
   historicalRateAuditTablesInCatalog,
   requireCorrectionAuditTablesInDump,
@@ -14,21 +15,22 @@ const localUrl = "postgres://test:secret@127.0.0.1:55432/money_lending_test";
 describe("validateRolloverSnapshotTarget", () => {
   it("accepts an explicitly identified database and a direct private temporary file", () => {
     const target = validateRolloverSnapshotTarget(localUrl, "127.0.0.1",
-      "money_lending_test", "/private/tmp/rollover-snapshot-test.dump");
+      "money_lending_test", `${correctionTempDirectory}/rollover-snapshot-test.dump`);
     expect(target.database).toBe("money_lending_test");
-    expect(target.out).toBe("/private/tmp/rollover-snapshot-test.dump");
+    expect(target.out).toBe(`${correctionTempDirectory}/rollover-snapshot-test.dump`);
   });
 
   it("rejects host and database identity mismatches", () => {
     expect(() => validateRolloverSnapshotTarget(localUrl, "production.example",
-      "money_lending_test", "/private/tmp/test.dump")).toThrow(/identity/i);
+      "money_lending_test", `${correctionTempDirectory}/test.dump`)).toThrow(/identity/i);
     expect(() => validateRolloverSnapshotTarget(localUrl, "127.0.0.1",
-      "neondb", "/private/tmp/test.dump")).toThrow(/identity/i);
+      "neondb", `${correctionTempDirectory}/test.dump`)).toThrow(/identity/i);
   });
 
   it("rejects paths outside the direct private temporary directory", () => {
-    for (const out of ["/tmp/test.dump", "/private/tmp/nested/test.dump",
-      "/Users/faridmatovu/projects/money-lending/test.dump", "/private/tmp/test.sql"]) {
+    for (const out of [`${correctionTempDirectory}/nested/test.dump`,
+      "/Users/faridmatovu/projects/money-lending/test.dump",
+      `${correctionTempDirectory}/test.sql`]) {
       expect(() => validateRolloverSnapshotTarget(localUrl, "127.0.0.1",
         "money_lending_test", out)).toThrow(/snapshot path/i);
     }

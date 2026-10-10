@@ -1,5 +1,8 @@
 import { dirname, isAbsolute, resolve } from "node:path";
 
+/** A deliberately narrow backup location that exists on both supported hosts. */
+export const correctionTempDirectory = process.platform === "darwin" ? "/private/tmp" : "/tmp";
+
 /** The backup must use the direct endpoint of the same database as the app. */
 export function validateCorrectionDatabaseEndpoints(
   primaryText: string | undefined,
@@ -98,11 +101,11 @@ export function validateRolloverSnapshotTarget(
     throw new Error("Database identity does not match the requested snapshot target");
   }
   if (!outText || !isAbsolute(outText)) {
-    throw new Error("Snapshot path must be an absolute direct child of /private/tmp");
+    throw new Error(`Snapshot path must be an absolute direct child of ${correctionTempDirectory}`);
   }
   const out = resolve(outText);
-  if (dirname(out) !== "/private/tmp" || !out.endsWith(".dump")) {
-    throw new Error("Snapshot path must be a .dump file directly under /private/tmp");
+  if (dirname(out) !== correctionTempDirectory || !out.endsWith(".dump")) {
+    throw new Error(`Snapshot path must be a .dump file directly under ${correctionTempDirectory}`);
   }
   return { url, database, out };
 }

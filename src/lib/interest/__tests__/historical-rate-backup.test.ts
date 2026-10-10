@@ -2,19 +2,20 @@ import { describe, expect, it } from "vitest";
 import { randomUUID, createHash } from "node:crypto";
 import { writeFile, unlink, symlink } from "node:fs/promises";
 import { verifyHistoricalRateBackup } from "../historical-rate-backup";
+import { correctionTempDirectory } from "../rollover-snapshot-guard";
 
 const localUrl = "postgresql://faridmatovu@127.0.0.1:55439/money_lending_integration_test";
 
 describe("historical rate repair backup gate", () => {
   it("rejects a broad or missing backup path", async () => {
     await expect(verifyHistoricalRateBackup({
-      manifestPath: "/private/tmp/nested/backup.dump.manifest.json",
+      manifestPath: `${correctionTempDirectory}/nested/backup.dump.manifest.json`,
       expectedDumpSha256: "a".repeat(64),
       primaryUrl: localUrl,
       directUrl: localUrl,
     })).rejects.toThrow(/private|path/i);
     await expect(verifyHistoricalRateBackup({
-      manifestPath: `/private/tmp/missing-${randomUUID()}.dump.manifest.json`,
+      manifestPath: `${correctionTempDirectory}/missing-${randomUUID()}.dump.manifest.json`,
       expectedDumpSha256: "a".repeat(64),
       primaryUrl: localUrl,
       directUrl: localUrl,
@@ -22,7 +23,7 @@ describe("historical rate repair backup gate", () => {
   });
 
   it("rejects a checksum-matching fake dump even when its manifest claims audit tables", async () => {
-    const path = `/private/tmp/fake-historical-rate-${randomUUID()}.dump`;
+    const path = `${correctionTempDirectory}/fake-historical-rate-${randomUUID()}.dump`;
     const manifestPath = `${path}.manifest.json`;
     const dump = "not a postgres custom-format dump";
     const sha = createHash("sha256").update(dump).digest("hex");
@@ -51,8 +52,8 @@ describe("historical rate repair backup gate", () => {
   });
 
   it("rejects a symlinked manifest before reading its claims", async () => {
-    const target = `/private/tmp/historical-rate-manifest-${randomUUID()}.dump.manifest.json`;
-    const link = `/private/tmp/historical-rate-link-${randomUUID()}.dump.manifest.json`;
+    const target = `${correctionTempDirectory}/historical-rate-manifest-${randomUUID()}.dump.manifest.json`;
+    const link = `${correctionTempDirectory}/historical-rate-link-${randomUUID()}.dump.manifest.json`;
     await writeFile(target, "{}", { flag: "wx", mode: 0o600 });
     await symlink(target, link);
     try {

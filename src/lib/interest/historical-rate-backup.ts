@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import {
   historicalRateAuditTablesInCatalog,
   historicalRateDataInCatalog,
+  correctionTempDirectory,
   requireHistoricalRateAuditTablesInDump,
   validateCorrectionDatabaseEndpoints,
 } from "./rollover-snapshot-guard";
@@ -22,9 +23,9 @@ type BackupGate = {
 
 function privateTmpChild(path: string, suffix: string): string {
   const canonical = resolve(path);
-  if (canonical !== path || dirname(canonical) !== "/private/tmp" ||
+  if (canonical !== path || dirname(canonical) !== correctionTempDirectory ||
       !canonical.endsWith(suffix)) {
-    throw new Error(`Backup path must be a ${suffix} file directly under /private/tmp`);
+    throw new Error(`Backup path must be a ${suffix} file directly under ${correctionTempDirectory}`);
   }
   return canonical;
 }

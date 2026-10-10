@@ -8,6 +8,8 @@ import { buildHistoricalRateRepairReport, parseHistoricalRateAsOf } from
   "../src/lib/interest/historical-rate-repair-report";
 import { loadHistoricalRateRepairPlan } from
   "../src/services/historical-rate-repair.service";
+import { correctionTempDirectory } from
+  "../src/lib/interest/rollover-snapshot-guard";
 
 const allowed = new Set([
   "expect-host", "expect-database", "loan-id", "as-of", "out",
@@ -53,8 +55,8 @@ async function main() {
   const output = option("out");
   if (output) {
     const path = resolve(output);
-    if (dirname(path) !== "/private/tmp" || !path.endsWith(".json")) {
-      throw new Error("Report must be a new JSON file directly under /private/tmp");
+    if (dirname(path) !== correctionTempDirectory || !path.endsWith(".json")) {
+      throw new Error(`Report must be a new JSON file directly under ${correctionTempDirectory}`);
     }
     await writeFile(path, JSON.stringify(report, null, 2), { flag: "wx", mode: 0o600 });
     console.log(JSON.stringify({ ...report.summary, reportPath: path,

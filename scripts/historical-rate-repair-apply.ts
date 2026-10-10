@@ -6,6 +6,8 @@ import { sql } from "drizzle-orm";
 import { db } from "../src/lib/db";
 import { buildHistoricalRateRepairReport } from
   "../src/lib/interest/historical-rate-repair-report";
+import { correctionTempDirectory } from
+  "../src/lib/interest/rollover-snapshot-guard";
 import { loadHistoricalRateRepairPlan } from
   "../src/services/historical-rate-repair.service";
 import { approveHistoricalRateRepair, applyHistoricalRateRepair } from
@@ -22,9 +24,9 @@ function option(name: string): string | undefined {
 function privateReportPath(path: string | undefined): string {
   if (!path) throw new Error("An exact reviewed report path is required");
   const canonical = resolve(path);
-  if (canonical !== path || dirname(canonical) !== "/private/tmp" ||
+  if (canonical !== path || dirname(canonical) !== correctionTempDirectory ||
       !canonical.endsWith(".json")) {
-    throw new Error("Report must be a JSON file directly under /private/tmp");
+    throw new Error(`Report must be a JSON file directly under ${correctionTempDirectory}`);
   }
   return canonical;
 }
