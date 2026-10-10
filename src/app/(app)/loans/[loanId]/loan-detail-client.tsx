@@ -77,6 +77,7 @@ import { LoanRateHistoryDialog } from "./loan-rate-history-dialog";
 import { AdminRateAdjustmentDialog } from "./admin-rate-adjustment-dialog";
 import { LoanStatementDialog, LoanStatementUnavailableDialog } from "./loan-statement-dialog";
 import { buildLoanStatement } from "@/lib/loan-statement";
+import { resolveStatementRateHistory } from "@/lib/interest/statement-rate-history";
 import { LoanRolloverHistoryBanner } from "@/components/loans/loan-rollover-history";
 import { isLoanReadOnly } from "@/lib/loan-visibility";
 
@@ -327,7 +328,7 @@ export function LoanDetailClient({
     (r: RateChangeRequest) => r.status === "pending",
   );
 
-  const { data: rateHistory = [] } = useQuery<LoanRateChangeHistoryEntry[]>({
+  const { data: rateHistory = [], isLoading: rateHistoryLoading, isError: rateHistoryError } = useQuery<LoanRateChangeHistoryEntry[]>({
     queryKey: queryKeys.loans.rateHistory(loan.id),
     queryFn: async () => {
       const result = await listLoanRateHistoryAction(loan.id);
@@ -374,8 +375,17 @@ export function LoanDetailClient({
   });
   const invalidRolloverChronology = !!rolloverSuccessor &&
     new Date(rolloverSuccessor.startDate).getTime() < new Date(loan.startDate).getTime();
+  const rateHistoryResolution = useMemo(
+    () => resolveStatementRateHistory({ loan, history: rateHistory }),
+    [loan, rateHistory],
+  );
+  const rateHistoryIssue = rateHistoryError
+    ? "Rate history could not be loaded. Try again before calculating interest."
+    : rateHistoryResolution.issue;
   const statement = useMemo(() => {
     if (!statementOpen) return null;
+    if (rateHistoryLoading) return null;
+    if (rateHistoryIssue) return null;
     if (loan.rolledOverFrom && rolloverInterestLoading) return null;
     if (loan.status === "rolled_over" && (successorLoading || receivableLoading || !rolloverSuccessor)) return null;
     if (invalidRolloverChronology) return null;
@@ -406,13 +416,7 @@ export function LoanDetailClient({
       })),
       openingInterestSettled: rolloverInterestSettled ?? "0",
       waivers,
-      rateChanges: rateChangeList
-        .filter((r: RateChangeRequest) => r.status === "approved")
-        .map((r: RateChangeRequest) => ({
-          effectiveDate: r.reviewedAt ?? r.createdAt,
-          fromRate: r.currentRate,
-          toRate: r.requestedRate,
-        })),
+      rateChanges: rateHistoryResolution.rateChanges,
       closingRollover: rolloverSuccessor ? {
         date: rolloverSuccessor.startDate,
         amount: rolloverSuccessor.rolloverAmount ?? "0",
@@ -432,7 +436,9 @@ export function LoanDetailClient({
     predecessorReceivable,
     receivableLoading,
     waivers,
-    rateChangeList,
+    rateHistoryResolution,
+    rateHistoryLoading,
+    rateHistoryIssue,
   ]);
 
   // Initialize penalty multiplier on mount and reset on unmount
@@ -603,7 +609,7 @@ export function LoanDetailClient({
     }
   }
 
-  function handleRateChangeSubmit() {
+  async function handleRateChangeSubmit() {
     const rateDecimal = (parseFloat(newRate) / 100).toFixed(4);
     const id = generateClientId();
     const now = new Date();
@@ -623,7 +629,7 @@ export function LoanDetailClient({
     };
 
     try {
-      rateChangeRequestCollection.insert(optimistic);
+      await rateChangeRequestCollection.insert(optimistic).isPersisted.promise;
       toast.success("Rate change request submitted");
       closeRateChange();
     } catch (error) {
@@ -1173,12 +1179,13 @@ export function LoanDetailClient({
           loanRef={loanRef}
         />
       )}
-      {loan.status === "rolled_over" && !successorLoading &&
-        (!rolloverSuccessor || invalidRolloverChronology) && (
+      {statementOpen && !rateHistoryLoading &&
+        (rateHistoryIssue || (loan.status === "rolled_over" && !successorLoading &&
+          (!rolloverSuccessor || invalidRolloverChronology))) && (
         <LoanStatementUnavailableDialog
           open={statementOpen}
           onOpenChange={setStatementOpen}
-          reason={invalidRolloverChronology ? "The successor issue date is before this loan started. The rollover dates need review before a statement can be shown." : undefined}
+          reason={rateHistoryIssue ?? (invalidRolloverChronology ? "The successor issue date is before this loan started. The rollover dates need review before a statement can be shown." : undefined)}
         />
       )}
     </div>

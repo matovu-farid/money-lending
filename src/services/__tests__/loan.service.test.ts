@@ -672,6 +672,33 @@ describe("Loan Service", () => {
 
   // ── updateLoan ──────────────────────────────────────────────────────
 
+  it("updateLoan: cannot bypass the guarded rate-correction path", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([mockLoan]) }),
+    })
+    const update = vi.fn().mockReturnValue({
+      set: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({ returning: vi.fn().mockResolvedValue([mockLoan]) }),
+      }),
+    })
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
+      async (callback: any) => callback({ update }),
+    )
+
+    const { updateLoan } = await import("@/services/loan.service")
+    const result = await Effect.runPromiseExit(updateLoan({
+      loanId: "loan-1", interestRate: "0.0800", reason: "Correction",
+    }, "actor-1"))
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) {
+      const failure = Cause.failureOption(result.cause)
+      expect(failure._tag).toBe("Some")
+      if (failure._tag === "Some") expect(failure.value._tag).toBe("ValidationError")
+    }
+    expect(update).not.toHaveBeenCalled()
+  })
+
   it("updateLoan: updates issuance fee transaction when fee changes", async () => {
     const { db: mockedDb } = await import("@/lib/db")
     const { postJournalEntry } = await import("@/services/transaction.service")

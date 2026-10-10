@@ -30,4 +30,6 @@ export type LoanRateChangeHistoryEntry = {
   actorId: string | null
   actorName: string | null
   changedAt: Date
+  /** Contractual start date for explicitly retroactive corrections; absent on legacy edits. */
+  effectiveFrom?: Date
 }

@@ -6,6 +6,8 @@ import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { user } from "@/lib/db/schema/auth";
 import { loans } from "@/lib/db/schema/loans";
 import { payments } from "@/lib/db/schema/payments";
+import { loanWaivers } from "@/lib/db/schema/loan-waivers";
+import { auditLog } from "@/lib/db/schema/audit";
 import { creditorInvestments } from "@/lib/db/schema/creditor-investments";
 import { creditorRepayments } from "@/lib/db/schema/creditor-repayments";
 import {
@@ -32,20 +34,20 @@ import {
   computeSegmentedInterest,
 } from "@/lib/interest/engine";
 import { getEffectiveRate, getBaseRate } from "@/lib/interest/effective-rate";
-import { computeLoanOverdueInfo } from "@/lib/interest/overdue";
 import {
-  toLoanType,
   type CreateTransactionInput,
   type TransactionLogFilters,
 } from "@/types";
 import {
-  getLoanBalancesFromLedger,
   getInterestEarnedFromLedger,
+  getRolloverInterestSettledFromLedger,
   getCreditorBalancesFromLedger,
   getPaymentPortionsFromLedger,
+  getWaiverPortionsFromLedger,
 } from "./ledger-queries.service";
 import { computeLoanBalanceData } from "@/lib/interest/loanBalanceData";
 import { captureServerWarning } from "@/lib/sentry";
+import { buildLoanStatement } from "@/lib/loan-statement";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -601,6 +603,7 @@ export async function reverseInterestAccrual(
     type: "credit",
     amount: reversalAmount,
     categoryId: receivableCat.id,
+    loanId: params.loanId,
     referenceType: reversalReferenceType,
     referenceId: reversalReferenceId,
     description: `Reverse interest accrual on payment - loan ${params.loanId}`,
@@ -613,6 +616,7 @@ export async function reverseInterestAccrual(
     type: "debit",
     amount: reversalAmount,
     categoryId: earnedCat.id,
+    loanId: params.loanId,
     referenceType: reversalReferenceType,
     referenceId: reversalReferenceId,
     description: `Reverse interest accrual on payment - loan ${params.loanId}`,
@@ -752,173 +756,133 @@ export const accrueInterestForLoans = (
         return { loansProcessed: 0, entriesPosted: 0 };
       }
 
-      const activeLoans = await db
-        .select()
-        .from(loans)
+      const activeLoans = await db.select({ id: loans.id }).from(loans)
         .where(and(eq(loans.status, "active"), isNull(loans.deletedAt)));
-
-      const loanIds = activeLoans.map((l) => l.id);
-      const balanceData = await computeLoanBalanceData(loanIds, new Date());
-      const [interestEarnedBatch, allPaymentRows] = await Promise.all([
-        getInterestEarnedFromLedger(loanIds),
-
-        // Fetch all active payments for segmented interest calculation (BUG-11)
-        loanIds.length > 0
-          ? db
-              .select({
-                id: payments.id,
-                loanId: payments.loanId,
-                paymentDate: payments.paymentDate,
-              })
-              .from(payments)
-              .where(
-                and(
-                  inArray(payments.loanId, loanIds),
-                  isNull(payments.deletedAt),
-                  eq(payments.markedWrong, false),
-                ),
-              )
-              .orderBy(asc(payments.paymentDate))
-          : Promise.resolve([]),
-      ]);
-
-      // Batch-fetch principal portions from ledger for segmented interest (BUG-11)
-      const allPaymentIds = allPaymentRows.map((p) => p.id);
-      const allPortions =
-        allPaymentIds.length > 0
-          ? await getPaymentPortionsFromLedger(allPaymentIds)
-          : new Map<
-              string,
-              { interestPortion: string; principalPortion: string }
-            >();
-
-      // Group payments by loan with their principal portions
-      const paymentsByLoan = new Map<
-        string,
-        { date: Date; principalPortion: string }[]
-      >();
-      for (const p of allPaymentRows) {
-        const portion = allPortions.get(p.id);
-        const principalPortion = portion?.principalPortion ?? "0";
-        if (new BigNumber(principalPortion).isGreaterThan(0)) {
-          const existing = paymentsByLoan.get(p.loanId) ?? [];
-          existing.push({ date: new Date(p.paymentDate), principalPortion });
-          paymentsByLoan.set(p.loanId, existing);
-        }
-      }
-
       let entriesPosted = 0;
 
-      for (const loan of activeLoans) {
-        const baseRate = getBaseRate(loan);
+      for (const candidate of activeLoans) {
+        const posted = await db.transaction(async (tx) => {
+          const [loan] = await tx.select().from(loans)
+            .where(and(eq(loans.id, candidate.id), eq(loans.status, "active"), isNull(loans.deletedAt)))
+            .for("update");
+          if (!loan) return false;
 
-        const overdueInfo = balanceData.get(loan.id)!;
-        const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive);
-
-        // BUG-11 fix: compute interest segment-by-segment using the actual balance
-        // during each period, instead of applying current balance to all past periods.
-        const loanPayments = paymentsByLoan.get(loan.id) ?? [];
-        const totalInterestAccrued = computeSegmentedInterest({
-          principalAmount: loan.principalAmount,
-          monthlyRateDecimal: effectiveRate,
-          startDate: new Date(loan.startDate),
-          asOfDate,
-          principalPayments: loanPayments,
-        });
-
-        // Net Interest Earned from ledger = cash interest + accruals - reversals
-        const totalInterestEarned =
-          interestEarnedBatch.get(loan.id) ?? new BigNumber(0);
-
-        const target = totalInterestAccrued.minus(totalInterestEarned);
-
-        if (target.isGreaterThan(0)) {
-          // When penalty is active, split into base interest + penalty interest
-          // so the ledger transparently shows the penalty portion
-          let baseAmount: BigNumber;
-          let penaltyAmount: BigNumber;
-
-          if (overdueInfo.penaltyActive) {
-            const totalAtBaseRate = computeSegmentedInterest({
-              principalAmount: loan.principalAmount,
-              monthlyRateDecimal: baseRate,
-              startDate: new Date(loan.startDate),
-              asOfDate,
-              principalPayments: loanPayments,
-            });
-            const baseTarget = totalAtBaseRate.minus(totalInterestEarned);
-            baseAmount = BigNumber.max(baseTarget, 0);
-            penaltyAmount = target.minus(baseAmount);
-            // If base is fully covered, all new accrual is penalty
-            if (penaltyAmount.isLessThan(0)) penaltyAmount = new BigNumber(0);
-          } else {
-            baseAmount = target;
-            penaltyAmount = new BigNumber(0);
+          const paymentRows = await tx.select().from(payments).where(and(
+            eq(payments.loanId, loan.id), isNull(payments.deletedAt),
+            eq(payments.markedWrong, false), lte(payments.paymentDate, asOfDate),
+          )).orderBy(asc(payments.paymentDate));
+          const paymentPortions = paymentRows.length > 0
+            ? await getPaymentPortionsFromLedger(paymentRows.map((row) => row.id), tx)
+            : new Map<string, { interestPortion: string; principalPortion: string }>();
+          const earned = (await getInterestEarnedFromLedger([loan.id], asOfDate, tx)).get(loan.id) ?? new BigNumber(0);
+          const [latestRateAudit] = await tx.select({ afterValue: auditLog.afterValue })
+            .from(auditLog).where(and(
+              eq(auditLog.entityType, "loan"), eq(auditLog.entityId, loan.id),
+              inArray(auditLog.action, [
+                "loan.rate_change.immediate", "loan.rate_change.approved", "loan.rate_change.admin_adjusted",
+              ]),
+            )).orderBy(desc(auditLog.occurredAt)).limit(1);
+          let corrected = false;
+          if (latestRateAudit?.afterValue) {
+            try {
+              corrected = JSON.parse(latestRateAudit.afterValue)?.rateSemantics === "correction";
+            } catch {
+              throw new Error("Rate-change audit cannot be parsed for accrual");
+            }
           }
 
-          await db.transaction(async (tx) => {
-            // Post base interest accrual
-            if (baseAmount.isGreaterThan(0)) {
-              const amount = formatAmount(baseAmount);
-              const journalGroupId = randomUUID();
-              await tx.insert(transactions).values({
-                type: "debit",
-                amount,
-                categoryId: receivableCat.id,
-                referenceType: "interest_accrual",
-                referenceId: loan.id,
-                description: `Interest accrual - loan ${loan.id}`,
-                transactionDate: asOfDate,
-                recordedBy: "system",
-                journalGroupId,
-                loanId: loan.id,
-              });
-              await tx.insert(transactions).values({
-                type: "credit",
-                amount,
-                categoryId: earnedCat.id,
-                referenceType: "interest_accrual",
-                referenceId: loan.id,
-                description: `Interest accrual - loan ${loan.id}`,
-                transactionDate: asOfDate,
-                recordedBy: "system",
-                journalGroupId,
-                loanId: loan.id,
-              });
+          let baseAmount = new BigNumber(0);
+          let penaltyAmount = new BigNumber(0);
+          if (corrected) {
+            const carriedPredecessorInterest =
+              (await getRolloverInterestSettledFromLedger([loan.id], asOfDate, tx)).get(loan.id)
+              ?? new BigNumber(0);
+            const earnedOnThisLoan = earned.minus(carriedPredecessorInterest);
+            if (earnedOnThisLoan.lt(0)) {
+              throw new Error("Corrected loan has more carried interest than earned interest");
             }
+            const waiverRows = await tx.select().from(loanWaivers).where(and(
+              eq(loanWaivers.loanId, loan.id), isNull(loanWaivers.deletedAt),
+              lte(loanWaivers.waiverDate, asOfDate),
+            ));
+            const waiverPortions = waiverRows.length > 0
+              ? await getWaiverPortionsFromLedger(waiverRows.map((row) => row.id), tx)
+              : new Map<string, { interestPortion: string; principalPortion: string }>();
+            if (paymentRows.some((row) => !paymentPortions.has(row.id)) ||
+                waiverRows.some((row) => !waiverPortions.has(row.id))) {
+              throw new Error("Corrected loan has an unreconciled settlement allocation");
+            }
+            const statement = buildLoanStatement({
+              loan,
+              payments: paymentRows.map((row) => ({
+                paymentDate: row.paymentDate, amount: row.amount,
+                interestPortion: paymentPortions.get(row.id)!.interestPortion,
+                principalPortion: paymentPortions.get(row.id)!.principalPortion,
+                recorderName: "",
+              })),
+              waivers: waiverRows.map((row) => ({
+                waiverDate: row.waiverDate, amount: row.amount,
+                interestPortion: waiverPortions.get(row.id)!.interestPortion,
+                principalPortion: waiverPortions.get(row.id)!.principalPortion,
+                reason: row.reason,
+              })),
+              today: asOfDate,
+            });
+            baseAmount = BigNumber.max(
+              new BigNumber(statement.finalState.cumulativeInterestAccrued).minus(earnedOnThisLoan), 0,
+            );
+          } else {
+            const overdueInfo = (await computeLoanBalanceData([loan.id], asOfDate, tx)).get(loan.id)!;
+            const baseRate = getBaseRate(loan);
+            const effectiveRate = getEffectiveRate(loan, overdueInfo.penaltyActive);
+            const principalPayments = paymentRows.flatMap((row) => {
+              const principalPortion = paymentPortions.get(row.id)?.principalPortion ?? "0";
+              return new BigNumber(principalPortion).gt(0)
+                ? [{ date: row.paymentDate, principalPortion }] : [];
+            });
+            const totalAccrued = computeSegmentedInterest({
+              principalAmount: loan.principalAmount,
+              monthlyRateDecimal: effectiveRate,
+              startDate: loan.startDate,
+              asOfDate,
+              principalPayments,
+            });
+            const target = totalAccrued.minus(earned);
+            if (target.lte(0)) return false;
+            if (overdueInfo.penaltyActive) {
+              const totalAtBaseRate = computeSegmentedInterest({
+                principalAmount: loan.principalAmount,
+                monthlyRateDecimal: baseRate,
+                startDate: loan.startDate,
+                asOfDate,
+                principalPayments,
+              });
+              baseAmount = BigNumber.max(totalAtBaseRate.minus(earned), 0);
+              penaltyAmount = BigNumber.max(target.minus(baseAmount), 0);
+            } else {
+              baseAmount = target;
+            }
+          }
 
-            // Post penalty interest as a separate, labeled entry
-            if (penaltyAmount.isGreaterThan(0)) {
-              const amount = formatAmount(penaltyAmount);
-              const journalGroupId = randomUUID();
-              await tx.insert(transactions).values({
-                type: "debit",
-                amount,
-                categoryId: receivableCat.id,
-                referenceType: "penalty_interest_accrual",
-                referenceId: loan.id,
-                description: `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`,
-                transactionDate: asOfDate,
-                recordedBy: "system",
-                journalGroupId,
-                loanId: loan.id,
-              });
-              await tx.insert(transactions).values({
-                type: "credit",
-                amount,
-                categoryId: earnedCat.id,
-                referenceType: "penalty_interest_accrual",
-                referenceId: loan.id,
-                description: `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`,
-                transactionDate: asOfDate,
-                recordedBy: "system",
-                journalGroupId,
-                loanId: loan.id,
-              });
-            }
-          });
-          entriesPosted++;
-        }
+          const postPair = async (amount: BigNumber, referenceType: string, description: string) => {
+            if (amount.lte(0)) return;
+            const rounded = formatAmount(amount);
+            const journalGroupId = randomUUID();
+            await tx.insert(transactions).values([
+              { type: "debit", amount: rounded, categoryId: receivableCat.id, referenceType,
+                referenceId: loan.id, description, transactionDate: asOfDate,
+                recordedBy: "system", journalGroupId, loanId: loan.id },
+              { type: "credit", amount: rounded, categoryId: earnedCat.id, referenceType,
+                referenceId: loan.id, description, transactionDate: asOfDate,
+                recordedBy: "system", journalGroupId, loanId: loan.id },
+            ]);
+          };
+          await postPair(baseAmount, "interest_accrual", `Interest accrual - loan ${loan.id}`);
+          await postPair(penaltyAmount, "penalty_interest_accrual",
+            `Penalty interest (${(parseFloat(loan.penaltyMultiplier) * 100).toFixed(0)}% surcharge) - loan ${loan.id}`);
+          return baseAmount.gt(0) || penaltyAmount.gt(0);
+        });
+        if (posted) entriesPosted++;
       }
 
       return { loansProcessed: activeLoans.length, entriesPosted };

@@ -77,7 +77,8 @@ export async function getSingleInterestEarnedFromLedger(
 }
 
 /**
- * Derive per-loan total interest earned (cash basis) from the ledger.
+ * Derive per-loan total Interest Earned revenue from the ledger. This includes
+ * non-cash accrual credits and must not be treated as borrower-paid interest.
  * Queries "Interest Earned" entries grouped by loanId.
  * Revenue account: CR adds, DR subtracts.
  */

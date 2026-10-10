@@ -577,38 +577,52 @@ describe("Auto-Post Service", () => {
   // ── autoPostRateChangeAdjustment ────────────────────────────────────
 
   describe("autoPostRateChangeAdjustment", () => {
-    it("calls reverseInterestAccrual with correct params", async () => {
-      const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
+    function mockCorrectedLoan(startDate: Date) {
+      const loan = {
+        id: "loan-1", principalAmount: "1000000.00", interestRate: "0.1000",
+        interestRateOverride: "0.0800", penaltyMultiplier: "0.1000",
+        penaltyWaived: false, penaltyWaivedAt: null, penaltyWaivedBy: null,
+        minInterestDays: 30, minPeriodOverride: null, rolledOverFrom: null,
+        issuanceFee: "0", loanType: "perpetual", startDate, createdAt: startDate,
+      }
+      let call = 0
+      mockTx.select.mockImplementation(() => {
+        call++
+        return { from: vi.fn().mockReturnValue(call === 1
+          ? { where: vi.fn().mockResolvedValue([loan]) }
+          : { innerJoin: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([]) }) }) }
+      })
+    }
 
-      const beforeDate = new Date()
+    it("posts a balanced non-cash accrual for corrected statement interest", async () => {
+      const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
+      mockCorrectedLoan(new Date(Date.now() - 3 * 24 * 60 * 60 * 1000))
       await autoPostRateChangeAdjustment(mockTx, {
         loanId: "loan-1",
-        oldRate: "10",
-        newRate: "15",
+        oldRate: "0.1000",
+        newRate: "0.0800",
         actorId: "actor-1",
+        correctionId: "correction-1",
       })
-      const afterDate = new Date()
-
-      expect(mockReverseInterestAccrual).toHaveBeenCalledOnce()
-      expect(mockReverseInterestAccrual).toHaveBeenCalledWith(mockTx, {
+      expect(mockReverseInterestAccrual).not.toHaveBeenCalled()
+      expect(mockPostJournalEntry).toHaveBeenCalledWith(mockTx, expect.objectContaining({
+        debitCategory: { name: "Interest Receivable", type: "revenue" },
+        creditCategory: { name: "Interest Earned", type: "revenue" },
+        referenceType: "interest_accrual",
+        referenceId: "loan-1",
         loanId: "loan-1",
-        paymentDate: expect.any(String),
-        actorId: "actor-1",
-      })
-
-      // Verify the paymentDate is a valid ISO string within the test window
-      const passedDate = new Date(mockReverseInterestAccrual.mock.calls[0][1].paymentDate)
-      expect(passedDate.getTime()).toBeGreaterThanOrEqual(beforeDate.getTime())
-      expect(passedDate.getTime()).toBeLessThanOrEqual(afterDate.getTime())
+      }))
     })
 
-    it("does NOT call postJournalEntry", async () => {
+    it("does not post when corrected interest is still zero", async () => {
       const { autoPostRateChangeAdjustment } = await import("@/services/auto-post.service")
+      mockCorrectedLoan(new Date())
       await autoPostRateChangeAdjustment(mockTx, {
         loanId: "loan-1",
-        oldRate: "10",
-        newRate: "15",
+        oldRate: "0.1000",
+        newRate: "0.0800",
         actorId: "actor-1",
+        correctionId: "correction-2",
       })
 
       expect(mockPostJournalEntry).not.toHaveBeenCalled()

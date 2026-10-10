@@ -27,7 +27,7 @@ export function LoanRateHistoryDialog({
         <DialogHeader>
           <DialogTitle>Interest Rate History</DialogTitle>
           <DialogDescription>
-            Applied changes to this loan&apos;s monthly interest rate.
+            Applied changes and corrections to this loan&apos;s monthly interest rate.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
@@ -38,9 +38,12 @@ export function LoanRateHistoryDialog({
                   {formatRate(change.fromRate, 1)} → {formatRate(change.toRate, 1)}
                 </span>
                 <span className="text-xs text-muted-foreground">
-                  {formatDateTime(change.changedAt)}
+                  Applied {formatDateTime(change.changedAt)}
                 </span>
               </div>
+              {change.effectiveFrom && (
+                <p className="text-sm">Interest corrected from {formatDateTime(change.effectiveFrom)}</p>
+              )}
               <p className="text-sm text-muted-foreground">
                 Changed by <span className="font-medium text-foreground">{change.actorName ?? "Unknown user"}</span>
               </p>

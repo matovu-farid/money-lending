@@ -2,9 +2,9 @@
 
 import { and, asc, eq, inArray, isNull, lte } from "drizzle-orm";
 import { db } from "../db";
-import { loans, loanWaivers, payments } from "../db/schema";
+import { auditLog, loans, loanWaivers, payments } from "../db/schema";
 import { computeLoanOverdueInfo } from "./overdue";
-import { getBaseRate } from "./effective-rate";
+import { getBaseRate, getEffectiveRate } from "./effective-rate";
 import { toLoanType } from "@/types";
 import { formatAmount } from "./engine";
 import {
@@ -189,6 +189,40 @@ export async function computeLoanBalanceData(
       )
     : new Map<string, { interestPortion: string; principalPortion: string }>();
 
+  // Legacy fixed/reducing loans can have unmarked, time-effective rate edits.
+  // Only newly marked retroactive corrections use their statement accrual path;
+  // otherwise preserve the pre-existing balance calculation for those loans.
+  // The marker also makes missing allocations a hard error on corrected loans.
+  const overriddenIds = operational
+    .filter((loan) => loan.interestRateOverride !== null)
+    .map((loan) => loan.id);
+  const correctedLoanIds = new Set<string>();
+  if (overriddenIds.length > 0) {
+    const audits = await queryDb.select({
+      entityId: auditLog.entityId,
+      afterValue: auditLog.afterValue,
+    }).from(auditLog).where(and(
+      eq(auditLog.entityType, "loan"),
+      inArray(auditLog.entityId, overriddenIds),
+      inArray(auditLog.action, [
+        "loan.rate_change.immediate",
+        "loan.rate_change.approved",
+        "loan.rate_change.admin_adjusted",
+      ]),
+    ));
+    for (const audit of audits) {
+      if (!audit.afterValue) continue;
+      try {
+        const after = JSON.parse(audit.afterValue) as Record<string, unknown>;
+        if (after.rateSemantics === "correction" && typeof after.effectiveFrom === "string") {
+          correctedLoanIds.add(audit.entityId);
+        }
+      } catch {
+        // An unreadable legacy audit is not evidence of a retroactive correction.
+      }
+    }
+  }
+
   const waiversByLoanId = new Map<string, typeof allWaivers>();
   for (const w of allWaivers) {
     const list = waiversByLoanId.get(w.loanId) ?? [];
@@ -220,7 +254,7 @@ export async function computeLoanBalanceData(
     // Interest Earned includes predecessor interest capitalized at rollover.
     // That amount is already in this loan's principal, so it cannot also
     // reduce interest accrued on the successor.
-    const totalInterestPaid = formatAmount(
+    const legacyInterestPaid = formatAmount(
       BigNumber.max(
         (interestEarnedMap.get(loan.id) ?? new BigNumber(0)).minus(
           rolloverInterestMap.get(loan.id) ?? new BigNumber(0),
@@ -231,8 +265,18 @@ export async function computeLoanBalanceData(
     const hasAllPaymentPortions = activePayments.every((payment) =>
       paymentPortions.has(payment.id),
     );
+    const hasAllWaiverPortions = activeWaivers.every((waiver) =>
+      waiverPortions.has(waiver.id),
+    );
+    if (correctedLoanIds.has(loan.id) && (!hasAllPaymentPortions || !hasAllWaiverPortions)) {
+      throw new Error("Corrected loan has an unreconciled settlement allocation");
+    }
+    // Use the same penalty-aware accrual timeline as statements and journal
+    // reconciliation for every loan type. A separate fixed/reducing estimate
+    // can disagree with a retroactive correction after the penalty threshold.
     const statement =
-      loanType === "perpetual" && hasAllPaymentPortions
+      hasAllPaymentPortions && hasAllWaiverPortions &&
+      (loanType === "perpetual" || correctedLoanIds.has(loan.id))
         ? buildLoanStatement({
             loan: {
               id: loan.id,
@@ -276,10 +320,19 @@ export async function computeLoanBalanceData(
             today: asOf,
           })
         : null;
+    // Interest Earned includes non-cash accrual credits. Those are revenue,
+    // not borrower payments, so a statement-backed balance must use only
+    // actual payment/waiver allocations as interest settled.
+    const totalInterestPaid = statement
+      ? formatAmount([
+          ...activePayments.map((payment) => paymentPortions.get(payment.id)?.interestPortion ?? "0"),
+          ...activeWaivers.map((waiver) => waiverPortions.get(waiver.id)?.interestPortion ?? "0"),
+        ].reduce((sum, portion) => sum.plus(portion), new BigNumber(0)))
+      : legacyInterestPaid;
     const lastPaymentDate =
       settlementEvents.get(loan.id)?.date ?? new Date(loan.startDate);
 
-    const info = computeLoanOverdueInfo({
+    const computedInfo = computeLoanOverdueInfo({
       principalAmount: loan.principalAmount,
       baseRate,
       startDate: new Date(loan.startDate),
@@ -294,6 +347,18 @@ export async function computeLoanBalanceData(
       asOf,
       totalInterestAccrued: statement?.finalState.cumulativeInterestAccrued,
     });
+    // The statement settles fractional portions before UGX rounding. Do not
+    // re-round cumulative accrual and subtract the unrounded portions again:
+    // that can overstate the amount due by one shilling.
+    const info = statement
+      ? {
+          ...computedInfo,
+          unpaidInterest: statement.finalState.netUnpaidInterest,
+          daysOverdue: statement.finalState.daysOverdue,
+          penaltyActive: statement.finalState.penaltyActive,
+          effectiveRate: getEffectiveRate(loan, statement.finalState.penaltyActive),
+        }
+      : computedInfo;
 
     results.set(loan.id, {
       ...info,

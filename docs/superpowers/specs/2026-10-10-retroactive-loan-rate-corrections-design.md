@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-10
 
-**Status:** Approved conversational design; awaiting written-spec review
+**Status:** Approved; implementation under verification
 
 ## Goal and policy
 
@@ -38,13 +38,19 @@ After authorization and eligibility, normalize the requested rate and update the
 
 Use one rate-resolution contract for statements, balance/projection readers, payment and waiver quotes, and rollover quotes: after a new correction, the corrected rate is active from this loan's `startDate` for its entire life; older correction audits remain history, not interest-rate transitions. A later eligible correction supersedes the earlier one over that same interval. The rate-history UI shows *when* each correction was made and *from when* it applies, rather than depicting these audits as successive earning periods.
 
+For statement-backed balances, interest settled means actual payment and waiver interest allocations, not the `Interest Earned` revenue account: that account also contains non-cash accruals. Fixed-rate and reducing-balance loans use statement-based penalty accrual after a marked correction; unmarked legacy histories retain their existing balance calculation until separately reviewed. Use the statement's final unpaid amount after UGX rounding rather than subtracting fractional settlements from rounded cumulative accrual a second time. The displayed total due is principal receivable plus unpaid interest, not the principal receivable alone.
+
 ### 3. Accrual and ledger consistency
 
 An eligible loan can still have posted non-cash interest accruals. At the application timestamp, calculate the corrected accrued-interest amount using the same interest engine and loan terms as the statement, compare it with net posted accrual, and post balanced non-cash adjustment entries for the difference in the same transaction. Preserve the original journal entries and never rewrite a cash receipt. If existing journals cannot be reconciled deterministically, reject the ordinary correction and report the exception for audited repair. After commit, the displayed balance, statement, future settlement/rollover quote, and accrual ledger must agree to the app's UGX rounding precision. Repeating a read or recalculation must not create a second adjustment.
 
+On a rollover successor, `Interest Earned` also includes predecessor interest capitalized at rollover. The successor's future accrual worker must subtract that carried component before comparing its own cumulative interest to earned revenue, so the carried amount cannot suppress new interest. An immediate correction must invalidate both balance projections and the loan's cached rate history, just as an approved correction does.
+
 ## Existing data and rollout
 
 This change defines the meaning of **newly applied** corrections. Existing rate-change audits lack the correction marker; do not silently treat them as retroactive on loans with payments, waivers, or rollovers. Generate a read-only inventory of legacy rate changes and classify eligible uncrystallized loans separately from locked loans. Any production record repair requires a reviewed plan, backup, named actor, balanced non-cash correction, and before/after verification. It is not an automatic deployment migration. The existing rollover-chain correction inventory remains a separate workflow; this feature does not unlock or silently rewrite its blocked chains.
+
+Read-only production inventory on 2026-10-10 found 6 unmarked applied-rate audits across 3 loans. All 3 loans have recorded payments and are therefore locked; no eligible legacy loan, marked correction, or orphan rate audit was found. The inventory made no database changes. These 3 loan histories remain separate reviewed exceptions, not automatic correction candidates.
 
 ## Error handling and interface
 

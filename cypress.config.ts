@@ -66,6 +66,7 @@ export default defineConfig({
             const [cash] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000001', 'Cash', 'asset') RETURNING id`
             const [receivable] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000002', 'Loans Receivable', 'asset') RETURNING id`
             const [interest] = await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000003', 'Interest Earned', 'revenue') RETURNING id`
+            await sql`INSERT INTO transaction_categories (id, name, type) VALUES ('00000000-0000-4000-8000-000000000004', 'Interest Receivable', 'revenue')`
             let predecessorId: string | null = null
             if (rolledOver) {
               const [predecessor] = await sql`
@@ -108,6 +109,89 @@ export default defineConfig({
               `
             }
             return { customerId: customer.id, loanId: loan.id }
+          })
+        },
+        async "db:seedRateLockEvent"({ loanId, actorId, kind }: { loanId: string; actorId: string; kind: "waiver" | "rollover" }) {
+          return withSql(async (sql) => {
+            if (kind === "waiver") {
+              await sql`
+                INSERT INTO loan_waivers (loan_id, amount, waiver_date, reason, recorded_by, deleted_at)
+                VALUES (${loanId}, '1000.00', now(), 'Cypress undone waiver', ${actorId}, now())
+              `
+            } else if (kind === "rollover") {
+              const [predecessor] = await sql`
+                SELECT customer_id FROM loans WHERE id = ${loanId}
+              `
+              if (!predecessor) throw new Error("Predecessor loan not found in isolated test database")
+              await sql`
+                INSERT INTO loans (
+                  customer_id, principal_amount, issuance_fee, interest_rate,
+                  min_interest_days, start_date, status, issued_by,
+                  disbursement_source, loan_type, rolled_over_from, deleted_at
+                ) VALUES (
+                  ${predecessor.customer_id}, '1000000.00', '0.00', '0.1000',
+                  30, now(), 'active', ${actorId}, 'cash', 'perpetual', ${loanId}, now()
+                )
+              `
+            } else {
+              throw new Error("Unsupported rate-lock event")
+            }
+            return null
+          })
+        },
+        async "db:seedAmbiguousRateHistory"({ loanId, actorId }: { loanId: string; actorId: string }) {
+          return withSql(async (sql) => {
+            const [loan] = await sql`SELECT interest_rate FROM loans WHERE id = ${loanId}`
+            if (!loan) throw new Error("Loan not found in isolated test database")
+            const at = new Date(Date.now() - 24 * 60 * 60 * 1000)
+            await sql`UPDATE loans SET interest_rate_override = '0.0700' WHERE id = ${loanId}`
+            await sql`
+              INSERT INTO audit_log (actor_id, action, entity_type, entity_id, before_value, after_value, occurred_at)
+              VALUES
+                (${actorId}, 'loan.rate_change.admin_adjusted', 'loan', ${loanId},
+                  ${JSON.stringify({ interestRateOverride: loan.interest_rate })},
+                  ${JSON.stringify({ interestRateOverride: "0.0800" })}, ${at}),
+                (${actorId}, 'loan.rate_change.admin_adjusted', 'loan', ${loanId},
+                  ${JSON.stringify({ interestRateOverride: "0.0800" })},
+                  ${JSON.stringify({ interestRateOverride: "0.0700" })}, ${new Date(at.getTime() + 60 * 60 * 1000)})
+            `
+            return null
+          })
+        },
+        async "db:seedPendingRateRequestAndPayment"({ loanId, requestedBy, paymentBy, addPayment = true }: {
+          loanId: string; requestedBy: string; paymentBy: string; addPayment?: boolean
+        }) {
+          return withSql(async (sql) => {
+            const [request] = await sql`
+              INSERT INTO rate_change_requests (
+                loan_id, requested_rate, current_rate, requested_by, required_approver_role, created_at
+              ) VALUES (${loanId}, '0.0800', '0.1000', ${requestedBy}, 'rate-change:approve-standard', now() - interval '1 hour')
+              RETURNING id
+            `
+            if (addPayment) {
+              await sql`
+                INSERT INTO payments (loan_id, amount, payment_date, recorded_by, deposit_location)
+                VALUES (${loanId}, '1000.00', now(), ${paymentBy}, 'cash')
+              `
+            }
+            return request.id
+          })
+        },
+        async "db:getRateReviewState"({ loanId, requestId }: { loanId: string; requestId: string }) {
+          return withSql(async (sql) => {
+            const [row] = await sql`
+              SELECT r.status, l.interest_rate_override,
+                (SELECT count(*)::int FROM audit_log a WHERE a.entity_type = 'loan'
+                  AND a.entity_id = ${loanId}
+                  AND a.action IN ('loan.rate_change.immediate', 'loan.rate_change.approved', 'loan.rate_change.admin_adjusted')) AS applied_audit_count
+              FROM rate_change_requests r JOIN loans l ON l.id = r.loan_id
+              WHERE r.id = ${requestId} AND r.loan_id = ${loanId}
+            `
+            return {
+              status: row.status,
+              interestRateOverride: row.interest_rate_override,
+              appliedAuditCount: row.applied_audit_count,
+            }
           })
         },
         async "db:reset"() {

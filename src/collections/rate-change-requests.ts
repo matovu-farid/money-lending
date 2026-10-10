@@ -11,6 +11,7 @@ import { rateChangeRequestSchema } from "@/lib/schemas/collections"
 import { getQueryClient } from "@/lib/query-client"
 import { queryKeys } from "@/lib/query-keys"
 import { emitTableChange } from "@/lib/table-events"
+import { invalidateLendingProjections } from "@/lib/cache-invalidation"
 import { throwIfActionError, coerceDates } from "./_utils"
 
 export const rateChangeRequestCollection = createCollection(
@@ -27,14 +28,20 @@ export const rateChangeRequestCollection = createCollection(
     staleTime: 30_000,
     onInsert: async ({ transaction }) => {
       const { modified } = transaction.mutations[0]
-      throwIfActionError(
+      const result = throwIfActionError(
         await requestRateChangeAction({
           id: modified.id,
           loanId: modified.loanId,
           requestedRate: modified.requestedRate,
         }),
       )
-      getQueryClient().invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
+      const qc = getQueryClient()
+      qc.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
+      if (result.data.applied) {
+        qc.invalidateQueries({ queryKey: queryKeys.loans.rateHistory(modified.loanId) })
+        invalidateLendingProjections(qc)
+        emitTableChange("loans")
+      }
       emitTableChange("rate_change_requests")
     },
     onUpdate: async ({ transaction }) => {
@@ -57,6 +64,7 @@ export const rateChangeRequestCollection = createCollection(
       const qc = getQueryClient()
       qc.invalidateQueries({ queryKey: queryKeys.rateChangeRequests.all })
       if (changes.status === "approved") {
+        qc.invalidateQueries({ queryKey: queryKeys.loans.rateHistory(original.loanId) })
         // Invalidate query-based collections
         qc.invalidateQueries({ queryKey: queryKeys.dashboard.kpis })
         qc.invalidateQueries({ queryKey: queryKeys.reports.pnl() })

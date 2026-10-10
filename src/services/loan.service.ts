@@ -648,15 +648,19 @@ export const updateLoan = (
 
       if (!existingLoan) throw { _tag: "LoanNotFound", id: input.loanId };
       assertLoanOperational(existingLoan);
+      if (input.interestRate !== undefined) {
+        throw {
+          _tag: "ValidationError",
+          field: "interestRate",
+          message: "Use the guarded rate-correction request to change a loan rate",
+        };
+      }
 
       const setObj: Partial<typeof loans.$inferInsert> & { updatedAt: Date } = {
         updatedAt: new Date(),
       };
       if (input.principalAmount !== undefined) {
         setObj.principalAmount = input.principalAmount;
-      }
-      if (input.interestRate !== undefined) {
-        setObj.interestRate = input.interestRate;
       }
       if (input.startDate !== undefined) {
         setObj.startDate = new Date(input.startDate);

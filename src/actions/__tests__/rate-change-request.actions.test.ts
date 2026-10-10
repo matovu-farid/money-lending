@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect } from "effect"
+import { ValidationError } from "@/lib/errors"
 
 // ---------- Mocks ----------
 
@@ -38,6 +39,13 @@ vi.mock("@/lib/action-utils", () => {
       }
     }
     return undefined
+  },
+  getErrorField: (error: unknown, field: string): unknown => {
+    if (error == null || typeof error !== "object") return undefined
+    if ("_tag" in error && field in error) return (error as any)[field]
+    const cause = (error as any)[Symbol.for("effect/Runtime/FiberFailure/Cause")] ?? (error as any).cause
+    const inner = cause?.failure ?? cause?.error
+    return inner && typeof inner === "object" ? inner[field] : undefined
   },
   }
 })
@@ -330,6 +338,16 @@ describe("Rate Change Request Actions", () => {
       expect(result).toEqual({ data: { applied: true, message: "Rate changed immediately" } })
     })
 
+    it("shows the payment lock reason when an immediate correction is rejected", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetLoanRateForChange.mockResolvedValue({ interestRate: "0.10", interestRateOverride: null })
+      mockGetBaseRate.mockReturnValue("0.10")
+      mockApplyRateChange.mockReturnValue(Effect.fail(new ValidationError({ message: "The rate cannot be changed because a payment has been recorded on this loan" })))
+      expect(await requestRateChangeAction(validInput as any)).toEqual({
+        error: "The rate cannot be changed because a payment has been recorded on this loan",
+      })
+    })
+
     it("creates a pending request when approval is required and user lacks permission", async () => {
       mockGetSession.mockResolvedValue(fakeSession)
       mockGetUserRole.mockReturnValue("loanOfficer")
@@ -351,6 +369,17 @@ describe("Rate Change Request Actions", () => {
       mockCreatePendingRequest.mockRejectedValue({ _tag: "DuplicatePending" })
       const result = await requestRateChangeAction({ loanId: "l1", requestedRate: "0.09" } as any)
       expect(result).toEqual({ error: "A pending rate change request already exists for this loan" })
+    })
+
+    it("shows the waiver lock reason when a pending request is rejected", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetEffectivePermissions.mockResolvedValueOnce(new Set(["loan:create"]))
+      mockGetLoanRateForChange.mockResolvedValue({ interestRate: "0.20", interestRateOverride: null })
+      mockGetBaseRate.mockReturnValue("0.20")
+      mockCreatePendingRequest.mockRejectedValue({ _tag: "ValidationError", message: "The rate cannot be changed because a waiver has been recorded on this loan" })
+      expect(await requestRateChangeAction({ loanId: "l1", requestedRate: "0.09" } as any)).toEqual({
+        error: "The rate cannot be changed because a waiver has been recorded on this loan",
+      })
     })
   })
 
@@ -431,6 +460,17 @@ describe("Rate Change Request Actions", () => {
       mockReviewRequest.mockReturnValue(Effect.succeed(reviewed))
       const result = await reviewRateChangeRequestAction(validReview)
       expect(result).toEqual({ data: reviewed })
+    })
+
+    it("shows the rollover lock reason when approval is rejected", async () => {
+      mockGetSession.mockResolvedValue(fakeSession)
+      mockGetRequestForReview.mockResolvedValue({
+        requiredApproverRole: "rate-change:approve-standard", loanId: "l1", requestedBy: "someone-else",
+      })
+      mockReviewRequest.mockReturnValue(Effect.fail(new ValidationError({ message: "The rate cannot be changed because a rollover has been recorded on this loan" })))
+      expect(await reviewRateChangeRequestAction(validReview)).toEqual({
+        error: "The rate cannot be changed because a rollover has been recorded on this loan",
+      })
     })
   })
 

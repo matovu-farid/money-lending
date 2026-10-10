@@ -37,6 +37,12 @@ vi.mock("@/lib/db/schema", () => ({
     deletedAt: "deletedAt",
     waiverDate: "waiverDate",
   },
+  auditLog: {
+    entityId: "entityId",
+    entityType: "entityType",
+    action: "action",
+    afterValue: "afterValue",
+  },
 }))
 
 vi.mock("@/services/ledger-queries.service", () => ({
@@ -285,10 +291,111 @@ describe("loanBalanceData", () => {
 
     expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
       expect.objectContaining({
-        totalInterestPaid: "5149840.83",
+        // Use the sum of payment allocations, not Interest Earned revenue.
+        totalInterestPaid: "5149840.53",
         // Principal reductions take effect after interest through each payment date.
         totalInterestAccrued: "11279771",
       }),
+    )
+  })
+
+  it.each(["fixed_rate", "reducing_balance"] as const)(
+    "uses the statement's penalty-aware accrued interest for corrected %s loans",
+    async (loanType) => {
+      mockSelect.mockReset()
+      const loanRow = {
+        id: "loan-1",
+        status: "active",
+        principalAmount: "1000000.00",
+        interestRate: "0.1000",
+        interestRateOverride: "0.0800",
+        penaltyMultiplier: "0.1000",
+        penaltyWaived: false,
+        penaltyWaivedAt: null,
+        penaltyWaivedBy: null,
+        minInterestDays: 30,
+        minPeriodOverride: null,
+        rolledOverFrom: null,
+        issuanceFee: "0.00",
+        loanType,
+        termMonths: 6,
+        startDate: new Date("2026-01-01T00:00:00.000Z"),
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      }
+      mockSelect
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([loanRow]),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockReturnValue({
+              orderBy: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        })
+        .mockReturnValueOnce({
+          from: vi.fn().mockReturnValue({
+            where: vi.fn().mockResolvedValue([{
+              entityId: loanRow.id,
+              afterValue: JSON.stringify({ rateSemantics: "correction", effectiveFrom: loanRow.startDate.toISOString() }),
+            }]),
+          }),
+        })
+      mockGetLastSettlementEventsForLoans.mockResolvedValue(new Map())
+      mockGetPaymentPortionsFromLedger.mockResolvedValue(new Map())
+      mockGetWaiverPortionsFromLedger.mockResolvedValue(new Map())
+      const asOf = new Date("2026-04-15T00:00:00.000Z")
+      const { buildLoanStatement } = await import("@/lib/loan-statement")
+      const statement = buildLoanStatement({ loan: loanRow, payments: [], today: asOf })
+      const { computeSingleLoanBalanceData } = await import("../loanBalanceData")
+
+      await computeSingleLoanBalanceData(loanRow.id, asOf)
+
+      expect(statement.finalState.penaltyActive).toBe(true)
+      expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
+        expect.objectContaining({
+          loanType,
+          totalInterestAccrued: statement.finalState.cumulativeInterestAccrued,
+        }),
+      )
+    },
+  )
+
+  it("preserves the legacy fixed-loan balance calculation without a correction marker", async () => {
+    mockSelect.mockReset()
+    const loanRow = {
+      id: "loan-1", status: "active", principalAmount: "1000000.00",
+      interestRate: "0.1000", interestRateOverride: "0.0800",
+      penaltyMultiplier: "0.1000", penaltyWaived: false,
+      loanType: "fixed_rate", termMonths: 6,
+      startDate: new Date("2026-01-01T00:00:00.000Z"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    }
+    mockSelect
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([loanRow]) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockResolvedValue([]),
+      }) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({
+        orderBy: vi.fn().mockResolvedValue([]),
+      }) }) })
+      .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{
+        entityId: loanRow.id,
+        afterValue: JSON.stringify({ interestRateOverride: "0.0800" }),
+      }]) }) })
+    const { computeSingleLoanBalanceData } = await import("../loanBalanceData")
+    await computeSingleLoanBalanceData(loanRow.id, new Date("2026-04-15T00:00:00.000Z"))
+    expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
+      expect.objectContaining({ totalInterestAccrued: undefined }),
     )
   })
 })

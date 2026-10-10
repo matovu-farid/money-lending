@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition, useMemo } from "react"
+import { useState, useMemo } from "react"
 import { useLiveQuery } from "@tanstack/react-db"
 import { toast } from "sonner"
 import { Check, X, Loader2, ClipboardCheck } from "lucide-react"
@@ -94,7 +94,7 @@ export default function ApprovalsPage() {
 }
 
 function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
-  const [isPending, startTransition] = useTransition()
+  const [isPending, setIsPending] = useState(false)
 
   const { data: rawRequests = [], isLoading: requestsLoading } = useLiveQuery(
     (q) => q.from({ r: rateChangeRequestCollection }),
@@ -167,17 +167,23 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
     setReviewNote("")
   }
 
-  function handleReviewSubmit() {
-    if (!reviewingRequest) return
+  async function handleReviewSubmit() {
+    if (!reviewingRequest || isPending) return
     const trimmedNote = reviewNote.trim() || null
-    startTransition(() => {
-      rateChangeRequestCollection.update(reviewingRequest.id, (draft) => {
+    setIsPending(true)
+    try {
+      const transaction = rateChangeRequestCollection.update(reviewingRequest.id, (draft) => {
         draft.status = reviewAction
         draft.reviewNote = trimmedNote
       })
+      await transaction.isPersisted.promise
       toast.success(reviewAction === "approved" ? "Rate change approved and applied" : "Rate change request rejected")
       closeReviewDialog()
-    })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to review rate change request")
+    } finally {
+      setIsPending(false)
+    }
   }
 
   // Hide pending requests whose loan is no longer operational (auto-cancelled on close)
@@ -199,7 +205,7 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
             When a loan officer requests a rate change, it may require approval depending on the size of the change. Small changes can be applied immediately, while larger changes require a Supervisor or Admin to approve.
           </p>
           <p className="text-xs text-muted-foreground">
-            Once approved, the new rate takes effect immediately for future interest calculations. Rejected requests keep the current rate unchanged.
+            Once approved, the corrected rate applies from the loan&apos;s recorded start date. A request cannot be approved after a payment, waiver, or rollover. Rejected requests keep the current rate unchanged.
           </p>
         </InfoPopover>
       </PageHeader>
@@ -388,8 +394,7 @@ function ApprovalsContent({ has }: { has: (p: Permission) => boolean }) {
               </div>
               {reviewAction === "approved" && (
                 <p className="text-sm text-muted-foreground bg-green-50 dark:bg-green-950/20 rounded-md p-3">
-                  Approving this request will immediately update the loan&apos;s interest rate to{" "}
-                  {formatRate(reviewingRequest.requestedRate, 1)}.
+                  Approving this request will correct interest to {formatRate(reviewingRequest.requestedRate, 1)} from the loan&apos;s recorded start date.
                 </p>
               )}
               {reviewAction === "rejected" && (

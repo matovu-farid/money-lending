@@ -1,10 +1,13 @@
 import { randomUUID } from "crypto"
+import BigNumber from "bignumber.js"
 import { db } from "@/lib/db"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { eq, and } from "drizzle-orm"
-import { postJournalEntry, reverseInterestAccrual } from "./transaction.service"
+import { loans } from "@/lib/db/schema/loans"
+import { eq, and, inArray } from "drizzle-orm"
+import { postJournalEntry } from "./transaction.service"
 import { shortId } from "@/lib/utils"
+import { buildLoanStatement } from "@/lib/loan-statement"
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0]
 
@@ -285,20 +288,65 @@ export async function autoPostCreditorPrincipalRepaid(
   })
 }
 
-/**
- * Post a rate-change accrual adjustment that resets the accrual baseline.
- * Reverses any outstanding Interest Receivable for the loan, so the next
- * accrual run picks up from the new rate cleanly.
- */
+/** Reconcile non-cash accruals to the corrected statement inside the rate transaction. */
 export async function autoPostRateChangeAdjustment(
   tx: DrizzleTransaction,
-  params: { loanId: string; oldRate: string; newRate: string; actorId: string }
+  params: { loanId: string; oldRate: string; newRate: string; actorId: string; correctionId: string }
 ): Promise<void> {
-  // Reverse any outstanding interest accrual for this loan
-  await reverseInterestAccrual(tx, {
+  const [loan] = await tx.select().from(loans).where(eq(loans.id, params.loanId))
+  if (!loan || loan.interestRateOverride !== params.newRate) {
+    throw new Error("Rate-correction loan does not match the applied rate")
+  }
+  const now = new Date()
+  const target = new BigNumber(buildLoanStatement({ loan, payments: [], today: now })
+    .finalState.cumulativeInterestAccrued)
+  const rows = await tx.select({
+    type: transactions.type,
+    amount: transactions.amount,
+    categoryName: transactionCategories.name,
+    journalGroupId: transactions.journalGroupId,
+  }).from(transactions)
+    .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+    .where(and(
+      inArray(transactions.referenceType, ["interest_accrual", "penalty_interest_accrual"]),
+      eq(transactions.referenceId, params.loanId),
+    ))
+
+  const groups = new Map<string, typeof rows>()
+  for (const row of rows) {
+    if (!row.journalGroupId) throw new Error("Unpaired interest accrual journal needs review")
+    const group = groups.get(row.journalGroupId) ?? []
+    group.push(row)
+    groups.set(row.journalGroupId, group)
+  }
+  for (const group of groups.values()) {
+    const receivable = group.find((row) => row.categoryName === "Interest Receivable")
+    const earned = group.find((row) => row.categoryName === "Interest Earned")
+    if (group.length !== 2 || !receivable || !earned ||
+        receivable.amount !== earned.amount || receivable.type === earned.type) {
+      throw new Error("Unbalanced interest accrual journal needs review")
+    }
+  }
+
+  const posted = rows.filter((row) => row.categoryName === "Interest Receivable")
+    .reduce((sum, row) => sum.plus(row.type === "debit" ? row.amount : `-${row.amount}`), new BigNumber(0))
+  const delta = target.minus(posted)
+  if (delta.isZero()) return
+  const increasing = delta.isGreaterThan(0)
+  await postJournalEntry(tx, {
+    debitCategory: increasing
+      ? { name: "Interest Receivable", type: "revenue" }
+      : { name: "Interest Earned", type: "revenue" },
+    creditCategory: increasing
+      ? { name: "Interest Earned", type: "revenue" }
+      : { name: "Interest Receivable", type: "revenue" },
+    amount: delta.abs().toFixed(2),
+    referenceType: "interest_accrual",
+    referenceId: params.loanId,
     loanId: params.loanId,
-    paymentDate: new Date().toISOString(),
-    actorId: params.actorId,
+    description: `Rate correction ${params.correctionId} accrual - loan ${shortId(params.loanId).toUpperCase()}`,
+    transactionDate: now,
+    recordedBy: params.actorId,
   })
 }
 

@@ -52,6 +52,23 @@ const mockRequest = {
   reviewedAt: null,
 }
 
+function reviewSelect(request: typeof mockRequest | undefined, approved: boolean) {
+  let call = 0
+  return vi.fn().mockImplementation(() => {
+    call++
+    const rows = call === 1
+      ? request ? [{ loanId: request.loanId }] : []
+      : approved && (call === 2 || call === 4)
+        ? [{ ...mockLoan, deletedAt: null }]
+        : call === (approved ? 3 : 2) && request ? [request] : []
+    return { from: vi.fn().mockReturnValue({
+      where: vi.fn().mockImplementation(() => call === 1
+        ? Promise.resolve(rows)
+        : { for: vi.fn().mockResolvedValue(rows), limit: vi.fn().mockResolvedValue([]) }),
+    }) }
+  })
+}
+
 describe("Rate Change Request Service", () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -61,19 +78,20 @@ describe("Rate Change Request Service", () => {
 
   it("creates a rate change request for an existing loan", async () => {
     const { db: mockedDb } = await import("@/lib/db")
-
-    // Mock loan lookup
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([mockLoan]),
-      }),
-    })
-
-    // Mock insert
-    ;(mockedDb.insert as ReturnType<typeof vi.fn>).mockReturnValue({
-      values: vi.fn().mockReturnValue({
-        returning: vi.fn().mockResolvedValue([mockRequest]),
-      }),
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (callback: any) => {
+      let selectCall = 0
+      return callback({
+        select: vi.fn().mockImplementation(() => {
+          selectCall++
+          return { from: vi.fn().mockReturnValue({ where: vi.fn().mockReturnValue({
+            for: vi.fn().mockResolvedValue(selectCall === 1 ? [mockLoan] : []),
+            limit: vi.fn().mockResolvedValue([]),
+          }) }) }
+        }),
+        insert: vi.fn().mockReturnValue({ values: vi.fn().mockReturnValue({
+          returning: vi.fn().mockResolvedValue([mockRequest]),
+        }) }),
+      })
     })
 
     const { createRateChangeRequest } = await import("@/services/rate-change-request.service")
@@ -89,11 +107,11 @@ describe("Rate Change Request Service", () => {
   it("returns LoanNotFound when loan does not exist", async () => {
     const { db: mockedDb } = await import("@/lib/db")
 
-    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([]),
-      }),
-    })
+    ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(async (callback: any) =>
+      callback({ select: vi.fn().mockReturnValue({ from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({ for: vi.fn().mockResolvedValue([]) }),
+      }) }) }),
+    )
 
     const { createRateChangeRequest } = await import("@/services/rate-change-request.service")
     const exit = await Effect.runPromiseExit(
@@ -125,6 +143,7 @@ describe("Rate Change Request Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
                 for: vi.fn().mockResolvedValue([{ ...mockLoan, interestRateOverride: null }]),
+                limit: vi.fn().mockResolvedValue([]),
               }),
             }),
           }),
@@ -150,6 +169,7 @@ describe("Rate Change Request Service", () => {
       oldRate: "0.10",
       newRate: "0.1200",
       actorId: "admin-1",
+      correctionId: expect.any(String),
     })
     expect(writeAuditLog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       actorId: "admin-1",
@@ -157,7 +177,12 @@ describe("Rate Change Request Service", () => {
       entityType: "loan",
       entityId: "loan-1",
       beforeValue: { interestRate: "0.10" },
-      afterValue: { interestRateOverride: "0.1200" },
+      afterValue: expect.objectContaining({
+        interestRateOverride: "0.1200",
+        rateSemantics: "correction",
+        effectiveFrom: mockLoan.startDate.toISOString(),
+        correctionId: expect.any(String),
+      }),
     }))
   })
 
@@ -202,7 +227,7 @@ describe("Rate Change Request Service", () => {
                 actorName: "Admin User",
                 action: "loan.rate_change.admin_adjusted",
                 beforeValue: JSON.stringify({ interestRate: "0.11" }),
-                afterValue: JSON.stringify({ interestRateOverride: "0.12" }),
+                afterValue: JSON.stringify({ interestRateOverride: "0.12", rateSemantics: "correction", effectiveFrom: "2026-03-01T00:00:00.000Z" }),
                 occurredAt: new Date("2026-08-03T12:00:00Z"),
               },
               {
@@ -233,10 +258,33 @@ describe("Rate Change Request Service", () => {
     const result = await Effect.runPromise(listLoanRateChangeHistory("loan-1"))
 
     expect(result).toEqual([
-      { id: "audit-admin", fromRate: "0.11", toRate: "0.12", actorId: "admin-1", actorName: "Admin User", changedAt: new Date("2026-08-03T12:00:00Z") },
+      { id: "audit-admin", fromRate: "0.11", toRate: "0.12", actorId: "admin-1", actorName: "Admin User", changedAt: new Date("2026-08-03T12:00:00Z"), effectiveFrom: new Date("2026-03-01T00:00:00.000Z") },
       { id: "audit-approved", fromRate: "0.10", toRate: "0.11", actorId: "supervisor-1", actorName: "Supervisor User", changedAt: new Date("2026-08-02T12:00:00Z") },
       { id: "audit-immediate", fromRate: "0.09", toRate: "0.10", actorId: "officer-1", actorName: "Loan Officer", changedAt: new Date("2026-08-01T12:00:00Z") },
     ])
+  })
+
+  it.each([
+    { beforeValue: "not-json", afterValue: JSON.stringify({ interestRateOverride: "0.08" }) },
+    { beforeValue: JSON.stringify({ interestRate: "0.10" }), afterValue: JSON.stringify({ interestRateOverride: "0.08", rateSemantics: "correction" }) },
+  ])("does not silently omit an incomplete applied rate audit: %j", async (audit) => {
+    const { db: mockedDb } = await import("@/lib/db")
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        leftJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockResolvedValue([{
+              id: "incomplete", actorId: null, actorName: null,
+              action: "loan.rate_change.immediate", occurredAt: new Date("2026-08-01T12:00:00.000Z"),
+              ...audit,
+            }]),
+          }),
+        }),
+      }),
+    })
+    const { listLoanRateChangeHistory } = await import("@/services/rate-change-request.service")
+    const result = await Effect.runPromiseExit(listLoanRateChangeHistory("loan-1"))
+    expect(Exit.isFailure(result)).toBe(true)
   })
 
   it("applies rate change immediately within a transaction", async () => {
@@ -251,6 +299,7 @@ describe("Rate Change Request Service", () => {
             from: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
                 for: vi.fn().mockResolvedValue([mockLoan]),
+                limit: vi.fn().mockResolvedValue([]),
               }),
             }),
           }),
@@ -380,19 +429,8 @@ describe("Rate Change Request Service", () => {
     // After the TOCTOU fix, both select and update happen inside the transaction
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
-        let selectCall = 0
         const mockTx = {
-          select: vi.fn().mockImplementation(() => {
-            selectCall++
-            const row = selectCall === 1 ? mockRequest : { ...mockLoan, deletedAt: null }
-            return {
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockReturnValue({
-                  for: vi.fn().mockResolvedValue([row]),
-                }),
-              }),
-            }
-          }),
+          select: reviewSelect(mockRequest, true),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
@@ -432,13 +470,7 @@ describe("Rate Change Request Service", () => {
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                for: vi.fn().mockResolvedValue([mockRequest]),
-              }),
-            }),
-          }),
+          select: reviewSelect(mockRequest, false),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({
@@ -475,13 +507,7 @@ describe("Rate Change Request Service", () => {
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                for: vi.fn().mockResolvedValue([]),
-              }),
-            }),
-          }),
+          select: reviewSelect(undefined, true),
         }
         return callback(mockTx)
       }
@@ -511,13 +537,7 @@ describe("Rate Change Request Service", () => {
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
         const mockTx = {
-          select: vi.fn().mockReturnValue({
-            from: vi.fn().mockReturnValue({
-              where: vi.fn().mockReturnValue({
-                for: vi.fn().mockResolvedValue([alreadyApproved]),
-              }),
-            }),
-          }),
+          select: reviewSelect(alreadyApproved, true),
         }
         return callback(mockTx)
       }
@@ -548,19 +568,8 @@ describe("Rate Change Request Service", () => {
     let capturedTx: any = null
     ;(mockedDb.transaction as ReturnType<typeof vi.fn>).mockImplementation(
       async (callback: any) => {
-        let selectCall = 0
         const mockTx = {
-          select: vi.fn().mockImplementation(() => {
-            selectCall++
-            const row = selectCall === 1 ? mockRequest : { ...mockLoan, deletedAt: null }
-            return {
-              from: vi.fn().mockReturnValue({
-                where: vi.fn().mockReturnValue({
-                  for: vi.fn().mockResolvedValue([row]),
-                }),
-              }),
-            }
-          }),
+          select: reviewSelect(mockRequest, true),
           update: vi.fn().mockReturnValue({
             set: vi.fn().mockReturnValue({
               where: vi.fn().mockReturnValue({

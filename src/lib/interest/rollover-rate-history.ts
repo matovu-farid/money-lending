@@ -54,14 +54,42 @@ export function reconstructRolloverRateHistory(input: {
   const exceptions: string[] = [];
   const initialRate = normalizedRate(input.loan.interestRate);
   if (!initialRate) exceptions.push("Loan has an invalid original rate");
+  const orderedAudits = [...input.audits].sort((a, b) =>
+    a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id));
+  const corrections = orderedAudits.filter((audit) =>
+    parseObject(audit.afterValue)?.rateSemantics === "correction");
+  if (corrections.length > 0) {
+    const latest = corrections.at(-1)!;
+    const after = parseObject(latest.afterValue);
+    const correctedRate = rateFromValue(after);
+    if (!correctedRate || after?.effectiveFrom !== input.loan.startDate.toISOString()) {
+      exceptions.push(`Rate correction audit ${latest.id} has invalid rate or effective-from date`);
+    }
+    const current = normalizedRate(input.loan.interestRateOverride ?? input.loan.interestRate);
+    if (correctedRate !== current) {
+      exceptions.push("Current loan rate does not reconcile to corrected rate history");
+    }
+    if (orderedAudits.some((audit) => audit.action !== "loan.update" &&
+        audit.occurredAt > latest.occurredAt &&
+        parseObject(audit.afterValue)?.rateSemantics !== "correction")) {
+      exceptions.push("An unmarked rate change followed the latest correction");
+    }
+    for (const audit of orderedAudits) {
+      if (audit.action !== "loan.update") continue;
+      const value = parseObject(audit.afterValue);
+      if (value && (Object.hasOwn(value, "interestRate") || Object.hasOwn(value, "startDate"))) {
+        exceptions.push("Loan terms were directly edited; rate history or effective date needs review");
+      }
+    }
+    return { initialRate: correctedRate ?? input.loan.interestRate, changes: [], exceptions };
+  }
   const approved = new Map(input.approvedRequests.map((request) => [request.id, request]));
   const seenApproved = new Set<string>();
   const changes: RateChange[] = [];
   let previous = initialRate;
   let previousDay: string | null = null;
 
-  for (const audit of [...input.audits].sort((a, b) =>
-    a.occurredAt.getTime() - b.occurredAt.getTime() || a.id.localeCompare(b.id))) {
+  for (const audit of orderedAudits) {
     const before = parseObject(audit.beforeValue);
     const after = parseObject(audit.afterValue);
     if (audit.action === "loan.update") {

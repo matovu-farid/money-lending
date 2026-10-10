@@ -2,7 +2,7 @@
 
 import { Effect } from "effect"
 import { withAction } from "@/lib/with-action"
-import { getSession, getErrorTag, getSessionPermissions } from "@/lib/action-utils"
+import { getSession, getErrorTag, getErrorField, getSessionPermissions } from "@/lib/action-utils"
 import { revalidatePath } from "next/cache"
 import {
   type Permission,
@@ -69,8 +69,8 @@ export const adjustLoanInterestRateAction = withAction<
       const tag = getErrorTag(error)
       if (tag === "LoanNotFound") return { error: "Loan not found" }
       if (tag === "ValidationError") {
-        const message = error instanceof Error ? error.message : "Unable to adjust interest rate"
-        return { error: message }
+        const message = getErrorField(error, "message")
+        return { error: typeof message === "string" ? message : "Unable to adjust interest rate" }
       }
       captureServerError(error, {
         source: "adjustLoanInterestRateAction",
@@ -147,6 +147,10 @@ export async function requestRateChangeAction(
       if (getErrorTag(error) === "LoanNotFound") {
         return { error: "Loan not found" }
       }
+      if (getErrorTag(error) === "ValidationError") {
+        const message = getErrorField(error, "message")
+        return { error: typeof message === "string" ? message : "Unable to change rate" }
+      }
       captureServerError(error, {
         source: "requestRateChangeAction:apply",
         userId: session.user.id,
@@ -176,6 +180,10 @@ export async function requestRateChangeAction(
     }
     if (getErrorTag(error) === "LoanNotFound") {
       return { error: "Loan not found" }
+    }
+    if (getErrorTag(error) === "ValidationError") {
+      const message = getErrorField(error, "message")
+      return { error: typeof message === "string" ? message : "Unable to request rate change" }
     }
     captureServerError(error, {
       source: "requestRateChangeAction:create",
@@ -277,6 +285,10 @@ export async function reviewRateChangeRequestAction(
   } catch (error) {
     if (getErrorTag(error) === "RateChangeRequestNotFound") {
       return { error: "Rate change request not found" }
+    }
+    if (getErrorTag(error) === "ValidationError") {
+      const message = getErrorField(error, "message")
+      return { error: typeof message === "string" ? message : "Unable to review rate change" }
     }
     captureServerError(error, {
       source: "reviewRateChangeRequestAction",

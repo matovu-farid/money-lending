@@ -1,12 +1,16 @@
 import { Effect } from "effect"
 import BigNumber from "bignumber.js"
+import { randomUUID } from "crypto"
 import { db } from "@/lib/db"
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { loans } from "@/lib/db/schema/loans"
+import { payments } from "@/lib/db/schema/payments"
+import { loanWaivers } from "@/lib/db/schema/loan-waivers"
 import { customers } from "@/lib/db/schema/customers"
 import { auditLog } from "@/lib/db/schema/audit"
 import { user } from "@/lib/db/schema/auth"
 import { getBaseRate } from "@/lib/interest/effective-rate"
+import { rateCorrectionLockReason } from "@/lib/interest/rate-correction-policy"
 import { eq, and, isNull, desc, count, inArray } from "drizzle-orm"
 import { DatabaseError, LoanNotFound, RateChangeRequestNotFound, ValidationError } from "@/lib/errors"
 import { isUniqueConstraintError } from "@/lib/db-errors"
@@ -85,6 +89,47 @@ const APPLIED_RATE_CHANGE_ACTIONS = [
 
 type AppliedRateChangeAction = (typeof APPLIED_RATE_CHANGE_ACTIONS)[number]
 
+function normalizeCorrectedRate(requestedRate: string, currentRate: string): string {
+  const requested = new BigNumber(requestedRate)
+  if (!requested.isFinite() || requested.lte(0) || requested.gte(1)) {
+    throw { _tag: "ValidationError", message: "Rate must be a decimal between 0 and 1", field: "requestedRate" }
+  }
+  const normalized = requested.toFixed(4)
+  const rounded = new BigNumber(normalized)
+  if (rounded.lte(0) || rounded.gte(1)) {
+    throw { _tag: "ValidationError", message: "Rate is invalid at four-decimal precision", field: "requestedRate" }
+  }
+  if (rounded.eq(currentRate)) {
+    throw { _tag: "ValidationError", message: "Requested rate is the same as the current rate", field: "requestedRate" }
+  }
+  return normalized
+}
+
+async function assertRateCorrectionEligible(
+  tx: DrizzleTransaction,
+  loan: { id: string; status: string },
+): Promise<void> {
+  const [payment] = await tx.select({ id: payments.id })
+    .from(payments).where(eq(payments.loanId, loan.id)).limit(1)
+  const [waiver] = await tx.select({ id: loanWaivers.id })
+    .from(loanWaivers).where(eq(loanWaivers.loanId, loan.id)).limit(1)
+  const [successor] = await tx.select({ id: loans.id })
+    .from(loans).where(eq(loans.rolledOverFrom, loan.id)).limit(1)
+  const reason = rateCorrectionLockReason({
+    paymentRecorded: !!payment,
+    waiverRecorded: !!waiver,
+    rolledOver: loan.status === "rolled_over",
+    successorRecorded: !!successor,
+  })
+  if (reason) {
+    throw {
+      _tag: "ValidationError",
+      field: "requestedRate",
+      message: `The rate cannot be changed because a ${reason} has been recorded on this loan`,
+    }
+  }
+}
+
 function parseRateAuditValue(value: string | null): Record<string, unknown> {
   if (!value) return {}
   try {
@@ -120,6 +165,7 @@ export async function getLoanRateForChange(loanId: string): Promise<LoanRateInfo
  * `{ _tag: DUPLICATE_PENDING_TAG }` if one already exists.
  */
 export async function createPendingRateChangeRequest(params: {
+  id?: string
   loanId: string
   requestedRate: string
   currentRate: string
@@ -128,7 +174,13 @@ export async function createPendingRateChangeRequest(params: {
 }): Promise<RateChangeRequest> {
   return db.transaction(async (tx) => {
     const [loan] = await tx
-      .select({ id: loans.id, status: loans.status, deletedAt: loans.deletedAt })
+      .select({
+        id: loans.id,
+        status: loans.status,
+        deletedAt: loans.deletedAt,
+        interestRate: loans.interestRate,
+        interestRateOverride: loans.interestRateOverride,
+      })
       .from(loans)
       .where(eq(loans.id, params.loanId))
       .for("update")
@@ -137,6 +189,17 @@ export async function createPendingRateChangeRequest(params: {
       throw { _tag: "LoanNotFound", id: params.loanId }
     }
     assertLoanOperational(loan)
+    await assertRateCorrectionEligible(tx, loan)
+    const currentRate = getBaseRate(loan)
+    if (!new BigNumber(params.currentRate).isFinite() ||
+        !new BigNumber(params.currentRate).eq(currentRate)) {
+      throw {
+        _tag: "ValidationError",
+        message: "The loan rate changed while requesting; refresh and try again",
+        field: "requestedRate",
+      }
+    }
+    const requestedRate = normalizeCorrectedRate(params.requestedRate, currentRate)
 
     const [existingPending] = await tx
       .select({ id: rateChangeRequests.id })
@@ -156,9 +219,10 @@ export async function createPendingRateChangeRequest(params: {
     const [request] = await tx
       .insert(rateChangeRequests)
       .values({
+        ...(params.id ? { id: params.id } : {}),
         loanId: params.loanId,
-        requestedRate: params.requestedRate,
-        currentRate: params.currentRate,
+        requestedRate,
+        currentRate,
         requestedBy: params.requestedBy,
         requiredApproverRole: params.requiredApproverRole,
         status: "pending",
@@ -191,30 +255,14 @@ export const createRateChangeRequest = (
   currentRate: string
 ): Effect.Effect<RateChangeRequest, LoanNotFound | ValidationError | DatabaseError> =>
   Effect.tryPromise({
-    try: async () => {
-      const [loan] = await db
-        .select()
-        .from(loans)
-        .where(and(eq(loans.id, input.loanId), isNull(loans.deletedAt)))
-
-      if (!loan) throw { _tag: "LoanNotFound", id: input.loanId }
-      assertLoanOperational(loan)
-
-      const [request] = await db
-        .insert(rateChangeRequests)
-        .values({
-          ...(input.id ? { id: input.id } : {}),
-          loanId: input.loanId,
-          requestedRate: input.requestedRate,
-          currentRate,
-          requestedBy,
-          requiredApproverRole,
-          status: "pending",
-        })
-        .returning()
-
-      return request
-    },
+    try: () => createPendingRateChangeRequest({
+      id: input.id,
+      loanId: input.loanId,
+      requestedRate: input.requestedRate,
+      currentRate,
+      requestedBy,
+      requiredApproverRole,
+    }),
     catch: (e) => {
       const err = e as Record<string, unknown>
       if (err?._tag === "LoanNotFound") return new LoanNotFound({ id: err.id as string })
@@ -234,7 +282,7 @@ export const createRateChangeRequest = (
 
 async function applyLoanRateChangeTransaction(
   tx: DrizzleTransaction,
-  params: { loanId: string; newRate: string; actorId: string; action: AppliedRateChangeAction },
+  params: { loanId: string; newRate: string; actorId: string; action: AppliedRateChangeAction; requestId?: string },
 ): Promise<void> {
   const [loan] = await tx
     .select()
@@ -244,24 +292,11 @@ async function applyLoanRateChangeTransaction(
 
   if (!loan) throw { _tag: "LoanNotFound", id: params.loanId }
   assertLoanOperational(loan)
+  await assertRateCorrectionEligible(tx, loan)
 
   const oldRate = getBaseRate(loan)
-  const newRate = new BigNumber(params.newRate)
-  if (!newRate.isFinite() || newRate.isLessThanOrEqualTo(0) || newRate.isGreaterThanOrEqualTo(1)) {
-    throw {
-      _tag: "ValidationError",
-      message: "Rate must be a decimal between 0 and 1",
-      field: "requestedRate",
-    }
-  }
-  if (new BigNumber(oldRate).isEqualTo(newRate)) {
-    throw {
-      _tag: "ValidationError",
-      message: "Requested rate is the same as the current rate",
-      field: "requestedRate",
-    }
-  }
-  const normalizedRate = newRate.toFixed(4)
+  const normalizedRate = normalizeCorrectedRate(params.newRate, oldRate)
+  const correctionId = randomUUID()
 
   await tx
     .update(loans)
@@ -273,6 +308,7 @@ async function applyLoanRateChangeTransaction(
     oldRate,
     newRate: normalizedRate,
     actorId: params.actorId,
+    correctionId,
   })
 
   await writeAuditLog(tx, {
@@ -281,7 +317,13 @@ async function applyLoanRateChangeTransaction(
     entityType: "loan",
     entityId: params.loanId,
     beforeValue: { interestRate: oldRate },
-    afterValue: { interestRateOverride: normalizedRate },
+    afterValue: {
+      interestRateOverride: normalizedRate,
+      ...(params.requestId ? { requestId: params.requestId } : {}),
+      rateSemantics: "correction",
+      effectiveFrom: loan.startDate.toISOString(),
+      correctionId,
+    },
   })
 }
 
@@ -349,18 +391,31 @@ export const listLoanRateChangeHistory = (
         ))
         .orderBy(desc(auditLog.occurredAt))
 
-      return rows.flatMap((row) => {
+      return rows.map((row) => {
         const fromRate = rateFromAuditValue(parseRateAuditValue(row.beforeValue))
-        const toRate = rateFromAuditValue(parseRateAuditValue(row.afterValue))
-        if (!fromRate || !toRate) return []
-        return [{
+        const after = parseRateAuditValue(row.afterValue)
+        const toRate = rateFromAuditValue(after)
+        if (!fromRate || !toRate) {
+          throw new Error(`Applied rate audit ${row.id} has incomplete rate history`)
+        }
+        const markedDate = after.rateSemantics === "correction" && typeof after.effectiveFrom === "string"
+          ? new Date(after.effectiveFrom) : null
+        if (after.rateSemantics != null && after.rateSemantics !== "correction") {
+          throw new Error(`Applied rate audit ${row.id} has an unknown rate-history marker`)
+        }
+        if (after.rateSemantics === "correction" &&
+            (!markedDate || Number.isNaN(markedDate.getTime()))) {
+          throw new Error(`Applied rate audit ${row.id} has no valid effective-from date`)
+        }
+        return {
           id: row.id,
           fromRate,
           toRate,
           actorId: row.actorId,
           actorName: row.actorName,
           changedAt: row.occurredAt,
-        }]
+          ...(markedDate ? { effectiveFrom: markedDate } : {}),
+        }
       })
     },
     catch: (e) => new DatabaseError({ cause: e }),
@@ -420,6 +475,22 @@ export const reviewRequest = (
   Effect.tryPromise({
     try: async () => {
       return await db.transaction(async (tx) => {
+        const [identity] = await tx
+          .select({ loanId: rateChangeRequests.loanId })
+          .from(rateChangeRequests)
+          .where(eq(rateChangeRequests.id, input.requestId))
+
+        if (!identity) throw { _tag: "RateChangeRequestNotFound", id: input.requestId }
+
+        if (input.action === "approved") {
+          const [loan] = await tx
+            .select({ id: loans.id })
+            .from(loans)
+            .where(and(eq(loans.id, identity.loanId), isNull(loans.deletedAt)))
+            .for("update")
+          if (!loan) throw { _tag: "LoanNotFound", id: identity.loanId }
+        }
+
         const [request] = await tx
           .select()
           .from(rateChangeRequests)
@@ -427,12 +498,23 @@ export const reviewRequest = (
           .for("update")
 
         if (!request) throw { _tag: "RateChangeRequestNotFound", id: input.requestId }
+        if (request.loanId !== identity.loanId) {
+          throw { _tag: "ValidationError", message: "Request loan changed during review" }
+        }
 
         if (request.status !== "pending") {
           throw { _tag: "ValidationError", message: "Request has already been reviewed" }
         }
 
-        const now = new Date()
+        if (input.action === "approved") {
+          await applyLoanRateChangeTransaction(tx, {
+            loanId: request.loanId,
+            newRate: request.requestedRate,
+            actorId: reviewerId,
+            action: "loan.rate_change.approved",
+            requestId: request.id,
+          })
+        }
 
         const [updated] = await tx
           .update(rateChangeRequests)
@@ -440,54 +522,12 @@ export const reviewRequest = (
             status: input.action,
             reviewedBy: reviewerId,
             reviewNote: input.reviewNote ?? null,
-            reviewedAt: now,
+            reviewedAt: new Date(),
           })
           .where(eq(rateChangeRequests.id, input.requestId))
           .returning()
 
-        if (input.action === "approved") {
-          const [loan] = await tx
-            .select()
-            .from(loans)
-            .where(and(eq(loans.id, request.loanId), isNull(loans.deletedAt)))
-            .for("update")
-
-          if (!loan) throw { _tag: "LoanNotFound", id: request.loanId }
-          assertLoanOperational(loan)
-
-          const oldRate = getBaseRate(loan)
-          const newRate = new BigNumber(request.requestedRate).toFixed(4)
-          if (new BigNumber(oldRate).isEqualTo(newRate)) {
-            throw {
-              _tag: "ValidationError",
-              message: "Requested rate is the same as the current rate",
-              field: "requestedRate",
-            }
-          }
-
-          // Apply the rate change to the loan
-          await tx
-            .update(loans)
-            .set({ interestRateOverride: newRate, updatedAt: now })
-            .where(eq(loans.id, request.loanId))
-
-          // Reset accrual baseline so next accrual run uses the new rate
-          await autoPostRateChangeAdjustment(tx, {
-            loanId: request.loanId,
-            oldRate,
-            newRate,
-            actorId: reviewerId,
-          })
-
-          await writeAuditLog(tx, {
-            actorId: reviewerId,
-            action: "loan.rate_change.approved",
-            entityType: "loan",
-            entityId: request.loanId,
-            beforeValue: { interestRate: oldRate },
-            afterValue: { interestRateOverride: newRate, requestId: request.id },
-          })
-        } else {
+        if (input.action !== "approved") {
           await writeAuditLog(tx, {
             actorId: reviewerId,
             action: "loan.rate_change.rejected",
