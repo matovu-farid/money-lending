@@ -628,7 +628,7 @@ describe("accrueInterestForLoans — Integration", () => {
     // Seed Interest Receivable category (needed for accrual journal entries)
     await testDb
       .insert(transactionCategories)
-      .values({ name: "Interest Receivable", type: "revenue" as const, isDefault: true })
+      .values({ name: "Interest Receivable", type: "asset" as const, isDefault: true })
       .onConflictDoNothing()
   })
 

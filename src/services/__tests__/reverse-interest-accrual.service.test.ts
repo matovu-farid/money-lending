@@ -34,7 +34,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     // The bug was that it only queried for "interest_accrual", leaving penalty
     // accrual entries unreversed when a payment arrived.
 
-    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "revenue" }
+    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "asset" }
     const earnedCat = { id: "cat-earned", name: "Interest Earned", type: "revenue" }
 
     // Both normal interest and penalty interest accrual entries
@@ -105,7 +105,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     // When some accruals have already been partially reversed, the net should
     // still include both reference types correctly.
 
-    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "revenue" }
+    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "asset" }
     const earnedCat = { id: "cat-earned", name: "Interest Earned", type: "revenue" }
 
     // Mixed scenario: normal accrual DR 20k, penalty accrual DR 8k,
@@ -151,7 +151,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
   })
 
   it("does not post reversal when net accrual is zero (all already reversed)", async () => {
-    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "revenue" }
+    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "asset" }
     const earnedCat = { id: "cat-earned", name: "Interest Earned", type: "revenue" }
 
     // Normal accrual of 10k fully reversed + penalty of 5k fully reversed
@@ -192,7 +192,7 @@ describe("Bug 2: reverseInterestAccrual must include penalty_interest_accrual en
     // Edge case: a loan has ONLY penalty accruals and no normal interest accruals.
     // With the bug, reverseInterestAccrual would find zero rows and do nothing.
 
-    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "revenue" }
+    const receivableCat = { id: "cat-receivable", name: "Interest Receivable", type: "asset" }
     const earnedCat = { id: "cat-earned", name: "Interest Earned", type: "revenue" }
 
     // Only penalty accrual entries

@@ -124,7 +124,7 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
   const exceptions: string[] = [];
   const requiredTypes = new Map([
     ["Cash", "asset"], ["Loans Receivable", "asset"],
-    ["Interest Receivable", "revenue"], ["Interest Earned", "revenue"],
+    ["Interest Receivable", "asset"], ["Interest Earned", "revenue"],
     ["Overpayment Revenue", "revenue"], ["Loan Losses", "expense"],
     ["Issuance Fees", "revenue"],
   ]);

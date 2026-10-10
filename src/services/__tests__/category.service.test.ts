@@ -50,6 +50,37 @@ describe("Category Service", () => {
     expect(mockedDb.insert).toHaveBeenCalledTimes(1)
   })
 
+  it("seeds Interest Receivable as an asset, not revenue", async () => {
+    const { db } = await import("@/lib/db")
+    const { seedDefaultCategories } = await import("@/services/category.service")
+    const mockedDb = vi.mocked(db)
+    mockedDb.select.mockReturnValue({ from: vi.fn().mockResolvedValue([]) } as any)
+    const values = vi.fn().mockResolvedValue(undefined)
+    mockedDb.insert.mockReturnValue({ values } as any)
+
+    await Effect.runPromise(seedDefaultCategories())
+
+    expect(values).toHaveBeenCalledWith(expect.arrayContaining([
+      { name: "Interest Receivable", type: "asset", isDefault: true },
+    ]))
+    expect(values.mock.calls[0][0]).not.toContainEqual(
+      expect.objectContaining({ name: "Interest Receivable", type: "revenue" }),
+    )
+  })
+
+  it("refuses to seed an asset receivable alongside a wrong-type account", async () => {
+    const { db } = await import("@/lib/db")
+    const { seedDefaultCategories } = await import("@/services/category.service")
+    vi.mocked(db).select.mockReturnValue({
+      from: vi.fn().mockResolvedValue([
+        { name: "Interest Receivable", type: "revenue" },
+      ]),
+    } as any)
+
+    await expect(Effect.runPromise(seedDefaultCategories())).rejects.toThrow()
+    expect(db.insert).not.toHaveBeenCalled()
+  })
+
   it("seedDefaultCategories skips when all categories exist", async () => {
     const { db } = await import("@/lib/db")
     const { seedDefaultCategories } = await import("@/services/category.service")
@@ -65,6 +96,7 @@ describe("Category Service", () => {
       { type: "revenue", name: "Bonuses" },
       { type: "revenue", name: "Interest Earned" },
       { type: "revenue", name: "Issuance Fees" },
+      { type: "revenue", name: "Overpayment Revenue" },
       { type: "expense", name: "Rent" },
       { type: "expense", name: "Salaries" },
       { type: "expense", name: "Office Expenses" },
@@ -72,7 +104,8 @@ describe("Category Service", () => {
       { type: "expense", name: "Interest Payable" },
       { type: "expense", name: "DStv" },
       { type: "expense", name: "User Expense" },
-      { type: "revenue", name: "Interest Receivable" },
+      { type: "expense", name: "Loan Losses" },
+      { type: "asset", name: "Interest Receivable" },
       { type: "revenue", name: "User Revenue" },
     ]
 

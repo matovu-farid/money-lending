@@ -335,11 +335,11 @@ export async function autoPostRateChangeAdjustment(
   const increasing = delta.isGreaterThan(0)
   await postJournalEntry(tx, {
     debitCategory: increasing
-      ? { name: "Interest Receivable", type: "revenue" }
+      ? { name: "Interest Receivable", type: "asset" }
       : { name: "Interest Earned", type: "revenue" },
     creditCategory: increasing
       ? { name: "Interest Earned", type: "revenue" }
-      : { name: "Interest Receivable", type: "revenue" },
+      : { name: "Interest Receivable", type: "asset" },
     amount: delta.abs().toFixed(2),
     referenceType: "interest_accrual",
     referenceId: params.loanId,

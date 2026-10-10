@@ -84,6 +84,24 @@ describe("Report Service — Integration", () => {
   // =================================================================
 
   describe("getPnlData", () => {
+    it("treats an unpaid interest accrual as income and an asset", async () => {
+      const cats = await testDb.select().from(transactionCategories)
+      const earned = cats.find((c) => c.name === "Interest Earned")!
+      const receivable = cats.find((c) => c.name === "Interest Receivable")!
+      const date = new Date("2025-01-15T00:00:00.000Z")
+      await insertTransaction("debit", "10000.00", receivable.id, date)
+      await insertTransaction("credit", "10000.00", earned.id, date)
+
+      const pnl = await Effect.runPromise(getPnlData("2025-01"))
+      const balance = await Effect.runPromise(getBalanceSheetData("2025-01"))
+
+      expect(receivable.type).toBe("asset")
+      expect(pnl.totalIncome).toBe("10000.00")
+      expect(pnl.netProfit).toBe("10000.00")
+      expect(balance.assets.interestReceivable).toBe("10000.00")
+      expect(balance.assets.totalAssets).toBe(balance.equity.totalEquity)
+    })
+
     it("returns correct income, expenses, and netProfit for a period with transactions", async () => {
       const cats = await getCategories()
 

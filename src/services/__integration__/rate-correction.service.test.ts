@@ -71,7 +71,7 @@ describe("permanent rate-correction locks", () => {
   beforeEach(async () => {
     await resetDb()
     await testDb.insert(transactionCategories).values([
-      { id: "00000000-0000-4000-a000-000000000001", name: "Interest Receivable", type: "revenue", isDefault: true },
+      { id: "00000000-0000-4000-a000-000000000001", name: "Interest Receivable", type: "asset", isDefault: true },
       { id: "00000000-0000-4000-a000-000000000002", name: "Interest Earned", type: "revenue", isDefault: true },
     ])
   })
@@ -331,7 +331,7 @@ describe("permanent rate-correction locks", () => {
   it("reconciles posted non-cash accrual to corrected statement interest immediately", async () => {
     const loan = await makeLoan()
     await testDb.transaction((tx) => postJournalEntry(tx, {
-      debitCategory: { name: "Interest Receivable", type: "revenue" },
+      debitCategory: { name: "Interest Receivable", type: "asset" },
       creditCategory: { name: "Interest Earned", type: "revenue" },
       amount: "300000.00",
       referenceType: "interest_accrual",
@@ -422,7 +422,7 @@ describe("permanent rate-correction locks", () => {
   it("reduces over-posted interest without editing old journals or touching cash", async () => {
     const loan = await makeLoan()
     await testDb.transaction((tx) => postJournalEntry(tx, {
-      debitCategory: { name: "Interest Receivable", type: "revenue" },
+      debitCategory: { name: "Interest Receivable", type: "asset" },
       creditCategory: { name: "Interest Earned", type: "revenue" },
       amount: "900000.00", referenceType: "interest_accrual", referenceId: loan.id,
       loanId: loan.id, description: "Prior accrual", transactionDate: new Date(), recordedBy: "system",
@@ -484,7 +484,7 @@ describe("permanent rate-correction locks", () => {
   it("keeps accrual reversals attributed to the loan for future earned-interest totals", async () => {
     const loan = await makeLoan()
     await testDb.transaction((tx) => postJournalEntry(tx, {
-      debitCategory: { name: "Interest Receivable", type: "revenue" },
+      debitCategory: { name: "Interest Receivable", type: "asset" },
       creditCategory: { name: "Interest Earned", type: "revenue" },
       amount: "100000.00", referenceType: "interest_accrual", referenceId: loan.id,
       loanId: loan.id, description: "Accrual before payment", transactionDate: new Date(), recordedBy: "system",

@@ -129,6 +129,13 @@ export async function applyHistoricalRateRepair(
     if (categoryId.size !== names.length || categories.length !== names.length) {
       throw new Error("Historical rate repair accounting categories are ambiguous");
     }
+    const categoryTypes = new Map<string, string>([
+      ["Interest Earned", "revenue"], ["Loans Receivable", "asset"],
+      ["Overpayment Revenue", "revenue"], ["Interest Receivable", "asset"],
+    ]);
+    if (categories.some((category) => category.type !== categoryTypes.get(category.name))) {
+      throw new Error("Historical rate repair accounting category type is incorrect");
+    }
     const entries: typeof transactions.$inferInsert[] = [];
     for (const change of current.changes) {
       const deltas = [

@@ -549,7 +549,7 @@ export async function reverseInterestAccrual(
     .where(
       and(
         eq(transactionCategories.name, "Interest Receivable"),
-        eq(transactionCategories.type, "revenue"),
+        eq(transactionCategories.type, "asset"),
       ),
     );
 
@@ -732,7 +732,7 @@ export const accrueInterestForLoans = (
         .where(
           and(
             eq(transactionCategories.name, "Interest Receivable"),
-            eq(transactionCategories.type, "revenue"),
+            eq(transactionCategories.type, "asset"),
           ),
         );
 

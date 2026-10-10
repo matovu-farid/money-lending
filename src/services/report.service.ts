@@ -400,7 +400,7 @@ export const getBalanceSheetData = (
         .where(
           and(
             eq(transactionCategories.name, "Interest Receivable"),
-            eq(transactionCategories.type, "revenue"),
+            eq(transactionCategories.type, "asset"),
           ),
         );
 

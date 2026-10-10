@@ -14,6 +14,7 @@ import type { CreateCategoryInput } from "@/types"
 const DEFAULT_ASSET_CATEGORIES = [
   "Cash",
   "Loans Receivable",
+  "Interest Receivable",
   "Seized Collateral",
 ]
 
@@ -28,7 +29,6 @@ const DEFAULT_EQUITY_CATEGORIES = [
 const DEFAULT_REVENUE_CATEGORIES = [
   "Bonuses",
   "Interest Earned",
-  "Interest Receivable",
   "Issuance Fees",
   "Overpayment Revenue",
   // Sentinel category for user-typed manual income entries (mirrors User Expense).
@@ -53,6 +53,10 @@ export const seedDefaultCategories = (): Effect.Effect<void, DatabaseError> =>
   Effect.tryPromise({
     try: async () => {
       const existing = await db.select().from(transactionCategories)
+      if (existing.some((category) => category.name === "Interest Receivable" &&
+          category.type !== "asset")) {
+        throw new Error("Interest Receivable has a non-asset category; review before seeding")
+      }
       const existingNames = new Set(existing.map((c) => `${c.type}:${c.name}`))
 
       const toInsert: {

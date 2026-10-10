@@ -606,7 +606,7 @@ describe("Auto-Post Service", () => {
       })
       expect(mockReverseInterestAccrual).not.toHaveBeenCalled()
       expect(mockPostJournalEntry).toHaveBeenCalledWith(mockTx, expect.objectContaining({
-        debitCategory: { name: "Interest Receivable", type: "revenue" },
+        debitCategory: { name: "Interest Receivable", type: "asset" },
         creditCategory: { name: "Interest Earned", type: "revenue" },
         referenceType: "interest_accrual",
         referenceId: "loan-1",

@@ -302,7 +302,7 @@ export async function undoLoanWaiver(
 
     if (accrualReversalAmount) {
       await postJournalEntry(tx, {
-        debitCategory: { name: "Interest Receivable", type: "revenue" },
+        debitCategory: { name: "Interest Receivable", type: "asset" },
         creditCategory: { name: "Interest Earned", type: "revenue" },
         amount: accrualReversalAmount,
         referenceType: "loan_waiver_reversal",
