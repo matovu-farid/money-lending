@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   correctionAuditTablesInCatalog,
+  historicalRateAuditTablesInCatalog,
   requireCorrectionAuditTablesInDump,
+  requireHistoricalRateAuditTablesInDump,
   validateCorrectionDatabaseEndpoints,
   validateRolloverSnapshotTarget,
 } from "../rollover-snapshot-guard";
@@ -76,5 +78,29 @@ describe("correction backup schema", () => {
     expect(() => requireCorrectionAuditTablesInDump({})).toThrow(/audit tables/i);
     expect(() => requireCorrectionAuditTablesInDump({ correctionAuditTablesInDump: true }))
       .not.toThrow();
+  });
+});
+
+describe("historical rate backup schema", () => {
+  const catalog = [
+    "247; 1259 19304 TABLE public historical_rate_repair_approvals postgres",
+    "248; 1259 19305 TABLE public historical_rate_repair_runs postgres",
+  ].join("\n");
+
+  it("requires both historical-rate audit tables in the restore catalog", () => {
+    expect(historicalRateAuditTablesInCatalog(catalog)).toBe(true);
+    expect(historicalRateAuditTablesInCatalog(catalog.split("\n")[0])).toBe(false);
+    expect(historicalRateAuditTablesInCatalog(catalog.replace("TABLE public", "TABLE DATA public")))
+      .toBe(false);
+  });
+
+  it("rejects a backup manifest that predates the historical-rate audit tables", () => {
+    expect(() => requireHistoricalRateAuditTablesInDump({})).toThrow(/historical.*audit tables/i);
+    expect(() => requireHistoricalRateAuditTablesInDump({
+      historicalRateAuditTablesInDump: false,
+    })).toThrow(/historical.*audit tables/i);
+    expect(() => requireHistoricalRateAuditTablesInDump({
+      historicalRateAuditTablesInDump: true,
+    })).not.toThrow();
   });
 });

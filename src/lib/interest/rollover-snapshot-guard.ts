@@ -44,6 +44,27 @@ export function requireCorrectionAuditTablesInDump(
   }
 }
 
+/** Historical paid-rate repair has its own durable approval and run tables. */
+export function historicalRateAuditTablesInCatalog(catalog: string): boolean {
+  const tables = new Set(
+    catalog.split(/\r?\n/).flatMap((line) => {
+      const match = /^\d+;\s+\d+\s+\d+\s+TABLE public (historical_rate_repair_(?:runs|approvals))(?:\s|$)/
+        .exec(line);
+      return match ? [match[1]] : [];
+    }),
+  );
+  return tables.has("historical_rate_repair_runs") &&
+    tables.has("historical_rate_repair_approvals");
+}
+
+export function requireHistoricalRateAuditTablesInDump(
+  manifest: { historicalRateAuditTablesInDump?: boolean },
+): void {
+  if (manifest.historicalRateAuditTablesInDump !== true) {
+    throw new Error("Historical rate correction backup must contain both audit tables");
+  }
+}
+
 /** Require an exact database identity and a narrowly scoped backup target. */
 export function validateRolloverSnapshotTarget(
   urlText: string | undefined,

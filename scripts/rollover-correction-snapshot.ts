@@ -6,7 +6,8 @@ import { createReadStream } from "node:fs";
 import { open, stat, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import postgres from "postgres";
-import { correctionAuditTablesInCatalog, validateCorrectionDatabaseEndpoints,
+import { correctionAuditTablesInCatalog, historicalRateAuditTablesInCatalog,
+  validateCorrectionDatabaseEndpoints,
   validateRolloverSnapshotTarget } from
   "../src/lib/interest/rollover-snapshot-guard";
 
@@ -98,6 +99,7 @@ async function main() {
     dumpBytes: details.size,
     dumpSha256: await fileSha256(out),
     correctionAuditTablesInDump: correctionAuditTablesInCatalog(catalog),
+    historicalRateAuditTablesInDump: historicalRateAuditTablesInCatalog(catalog),
   };
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2),
     { flag: "wx", mode: 0o600 });
