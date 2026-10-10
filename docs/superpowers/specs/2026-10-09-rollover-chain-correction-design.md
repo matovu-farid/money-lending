@@ -1,6 +1,7 @@
 # Rollover-chain correction design
 
-**Date:** 2026-10-09  
+**Date:** 2026-10-09
+
 **Status:** Proposed for written review
 
 ## Goal and evidence
