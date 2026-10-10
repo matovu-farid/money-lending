@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   correctionAuditTablesInCatalog,
+  historicalRateDataInCatalog,
   historicalRateAuditTablesInCatalog,
   requireCorrectionAuditTablesInDump,
   requireHistoricalRateAuditTablesInDump,
@@ -92,6 +93,15 @@ describe("historical rate backup schema", () => {
     expect(historicalRateAuditTablesInCatalog(catalog.split("\n")[0])).toBe(false);
     expect(historicalRateAuditTablesInCatalog(catalog.replace("TABLE public", "TABLE DATA public")))
       .toBe(false);
+  });
+
+  it("rejects a schema-only dump even when audit tables exist", () => {
+    expect(historicalRateDataInCatalog(catalog)).toBe(false);
+    const data = ["loans", "payments", "transactions", "audit_log",
+      "historical_rate_repair_approvals", "historical_rate_repair_runs"]
+      .map((name, index) => `${300 + index}; 0 ${400 + index} TABLE DATA public ${name} postgres`);
+    expect(historicalRateDataInCatalog(`${catalog}\n${data.join("\n")}`)).toBe(true);
+    expect(historicalRateDataInCatalog(`${catalog}\n${data.slice(1).join("\n")}`)).toBe(false);
   });
 
   it("rejects a backup manifest that predates the historical-rate audit tables", () => {

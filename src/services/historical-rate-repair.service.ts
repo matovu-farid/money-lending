@@ -310,6 +310,9 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     if (!accrualReferenceTypes.has(row.referenceType ?? "")) {
       exceptions.push(`Interest Receivable journal ${row.id} has an unknown source`);
     }
+    if (row.transactionDate > asOf) {
+      exceptions.push(`Interest Receivable journal ${row.id} is a later accrual than the as-of instant`);
+    }
   }
   const postedAccrual = net(accrualRows.filter((row) =>
     row.transactionDate <= asOf), "debit").toFixed(2);

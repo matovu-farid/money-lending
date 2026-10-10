@@ -57,6 +57,17 @@ export function historicalRateAuditTablesInCatalog(catalog: string): boolean {
     tables.has("historical_rate_repair_approvals");
 }
 
+/** A schema-only archive is not a recoverable loan-ledger backup. */
+export function historicalRateDataInCatalog(catalog: string): boolean {
+  const entries = new Set(catalog.split(/\r?\n/).flatMap((line) => {
+    const match = /^\d+;\s+\d+\s+\d+\s+TABLE DATA public (\S+)(?:\s|$)/.exec(line);
+    return match ? [match[1]] : [];
+  }));
+  return ["loans", "payments", "transactions", "audit_log",
+    "historical_rate_repair_approvals", "historical_rate_repair_runs"]
+    .every((table) => entries.has(table));
+}
+
 export function requireHistoricalRateAuditTablesInDump(
   manifest: { historicalRateAuditTablesInDump?: boolean },
 ): void {
