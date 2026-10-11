@@ -21,6 +21,7 @@ function snapshot(overrides: Partial<PortfolioAccrualSnapshot> = {}): PortfolioA
 describe("portfolio accrual repair planner", () => {
   it("accrues elapsed interest at the closed month end for a backdated start", () => {
     const plan = planPortfolioAccrualRepair(snapshot())
+    expect(plan.policyVersion).toBe("portfolio-accrual-v2")
     expect(plan.classification).toBe("ready")
     expect(plan.entries).toEqual([expect.objectContaining({
       date: janEnd, delta: "100000.00", resultingReceivable: "100000.00",
@@ -50,6 +51,18 @@ describe("portfolio accrual repair planner", () => {
       expect.objectContaining({ date: new Date("2025-02-01T00:00:00.000Z"),
         delta: "-96667.00", resultingReceivable: "3333.00" }),
     ])
+  })
+
+  it("rounds net accrued interest once after a fractional settlement", () => {
+    const source = snapshot({
+      loan: { ...snapshot().loan, principalAmount: "1001.00" },
+      asOf: new Date("2025-02-01T00:00:00.000Z"),
+      payments: [{ id: "fractional-payment",
+        paymentDate: new Date("2025-02-01T00:00:00.000Z"),
+        amount: "0.51", interestPortion: "0.51", principalPortion: "0.00" }],
+    })
+    const plan = planPortfolioAccrualRepair(source)
+    expect(plan.entries.at(-1)?.resultingReceivable).toBe("103.00")
   })
 
   it("is a no-op when a balanced receivable accrual already exists", () => {
@@ -94,6 +107,31 @@ describe("portfolio accrual repair planner", () => {
       expect(plan.classification).toBe("blocked")
       expect(plan.entries).toEqual([])
     }
+  })
+
+  it("blocks a fully paid status that still has one unit of interest due", () => {
+    const source = snapshot({
+      loan: { ...snapshot().loan, principalAmount: "1000.00", status: "fully_paid" },
+      payments: [{ id: "short-payoff",
+        paymentDate: new Date("2025-01-31T00:00:00.000Z"), amount: "1099.00",
+        interestPortion: "99.00", principalPortion: "1000.00" }],
+    })
+    const plan = planPortfolioAccrualRepair(source)
+    expect(plan.classification).toBe("blocked")
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/closing statement/i),
+    ]))
+  })
+
+  it("blocks an undated penalty waiver instead of treating it as retroactive", () => {
+    const source = snapshot({ loan: { ...snapshot().loan,
+      penaltyWaived: true, penaltyWaivedAt: null },
+      asOf: new Date("2025-04-01T00:00:00.000Z") })
+    const plan = planPortfolioAccrualRepair(source)
+    expect(plan.classification).toBe("blocked")
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/waiver.*date/i),
+    ]))
   })
 
   it("blocks a settlement in the start-day interval the statement does not replay", () => {

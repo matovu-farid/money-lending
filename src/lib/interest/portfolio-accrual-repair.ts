@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import BigNumber from "bignumber.js"
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement"
 
-const POLICY_VERSION = "portfolio-accrual-v1"
+const POLICY_VERSION = "portfolio-accrual-v2"
 
 type Payment = Omit<BuildStatementInput["payments"][number], "recorderName"> & { id: string }
 type Waiver = NonNullable<BuildStatementInput["waivers"]>[number] & { id: string }
@@ -102,6 +102,9 @@ export function planPortfolioAccrualRepair(
   if (loan.loanType !== "perpetual") {
     exceptions.push(`Loan type ${loan.loanType} needs its own accrual policy`)
   }
+  if (loan.penaltyWaived && !loan.penaltyWaivedAt) {
+    exceptions.push("Penalty waiver has no effective date")
+  }
   if (loan.rolledOverFrom || loan.status === "rolled_over") {
     exceptions.push("Rollover chain requires a reconciled transfer and closure date")
   }
@@ -170,7 +173,7 @@ export function planPortfolioAccrualRepair(
     const accrued = new BigNumber(statement.finalState.cumulativeInterestAccrued)
     const settled = new BigNumber(statement.finalState.cumulativeInterestPaid)
       .plus(statement.finalState.cumulativeInterestWaived)
-    const desiredBalance = BigNumber.max(accrued.minus(settled), 0)
+    const desiredBalance = new BigNumber(statement.finalState.netAccruedUnpaidInterest)
     const recordedBalance = journals.filter((row) => row.date <= date)
       .reduce((sum, row) => row.type === "debit" ? sum.plus(row.amount) : sum.minus(row.amount),
         new BigNumber(0))
@@ -188,7 +191,7 @@ export function planPortfolioAccrualRepair(
       payments: payments.filter((row) => row.paymentDate <= end)
         .map((row) => ({ ...row, recorderName: "" })),
       waivers: waivers.filter((row) => row.waiverDate <= end) })
-    if (new BigNumber(closing.finalState.totalDue).gt(1)) {
+    if (new BigNumber(closing.finalState.totalDue).gt(0)) {
       const blocked = { loanId: loan.id, asOf, policyVersion: POLICY_VERSION,
         inputFingerprint, classification: "blocked" as const,
         exceptions: ["Fully paid status does not reconcile to the closing statement"],

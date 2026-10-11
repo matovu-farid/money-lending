@@ -94,6 +94,21 @@ describe("buildLoanStatement — basic accrual", () => {
     expect(after.finalState.cumulativeInterestAccrued)
       .toBe(before.finalState.cumulativeInterestAccrued)
   })
+  it("returns to the base rate after a payment cures all overdue interest", () => {
+    const paymentDate = new Date("2026-03-12T00:00:00Z")
+    const before = buildLoanStatement({ loan: baseLoan, payments: [], today: paymentDate })
+    expect(before.finalState.penaltyActive).toBe(true)
+    const payment = { paymentDate, amount: before.finalState.cumulativeInterestAccrued,
+      interestPortion: before.finalState.cumulativeInterestAccrued,
+      principalPortion: "0", recorderName: "Test" }
+    const next = buildLoanStatement({ loan: baseLoan, payments: [payment],
+      today: new Date("2026-03-13T00:00:00Z") })
+    const nextDayInterest = Number(next.finalState.cumulativeInterestAccrued) -
+      Number(before.finalState.cumulativeInterestAccrued)
+    expect(nextDayInterest).toBeGreaterThanOrEqual(3332)
+    expect(nextDayInterest).toBeLessThanOrEqual(3334)
+    expect(next.finalState.penaltyActive).toBe(false)
+  })
   it("charges only eight days of interest on a rollover, including with a minimum override", () => {
     const stmt = buildLoanStatement({
       loan: { ...baseLoan, principalAmount: "10000000", rolledOverFrom: "previous-loan", minPeriodOverride: 45 },

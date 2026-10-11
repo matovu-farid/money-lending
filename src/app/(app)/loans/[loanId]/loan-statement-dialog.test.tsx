@@ -41,6 +41,7 @@ const statement: LoanStatement = {
     cumulativeInterestAccrued: "11275634",
     cumulativeInterestPaid: "5149841",
     cumulativeInterestWaived: "0",
+    netAccruedUnpaidInterest: "6125793",
     minimumInterestAdjustment: "0",
     netUnpaidInterest: "6125793",
     totalDue: "10975634",

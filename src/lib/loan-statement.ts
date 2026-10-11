@@ -144,6 +144,8 @@ export interface LoanStatement {
     cumulativeInterestAccrued: string
     cumulativeInterestPaid: string
     cumulativeInterestWaived: string
+    /** Actual accrued interest less settlements, rounded once; excludes minimum-period settlement uplift. */
+    netAccruedUnpaidInterest: string
     minimumInterestAdjustment: string
     netUnpaidInterest: string
     totalDue: string
@@ -379,8 +381,6 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
     const shouldPenalize =
       daysOverdueBefore >= PENALTY_THRESHOLD_DAYS && !waiverEffective
 
-    if (waiverEffective && penaltyActive) penaltyActive = false
-
     if (shouldPenalize && !penaltyActive) {
       penaltyActive = true
       penaltyActivatedDay = day
@@ -390,6 +390,8 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
         date: dayDate,
         reason: `Days overdue reached ${daysOverdueBefore}, crossing the ${PENALTY_THRESHOLD_DAYS}-day threshold`,
       })
+    } else if (!shouldPenalize) {
+      penaltyActive = false
     }
 
     // 2) Accrue the interval ending today on the balance and rate in force
@@ -578,6 +580,7 @@ export function buildLoanStatement(input: BuildStatementInput): LoanStatement {
       cumulativeInterestAccrued: cumulativeAccrued.toFixed(0),
       cumulativeInterestPaid: cumulativePaid.toFixed(0),
       cumulativeInterestWaived: cumulativeWaived.toFixed(0),
+      netAccruedUnpaidInterest: netUnpaid.toFixed(0),
       minimumInterestAdjustment: minimumInterestAdjustment.toFixed(0),
       netUnpaidInterest: netUnpaidRounded,
       totalDue: receivableReconciled ? "0" : totalDue.toFixed(0),
