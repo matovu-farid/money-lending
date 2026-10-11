@@ -239,6 +239,13 @@
       "when": 1791656556429,
       "tag": "0033_bored_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1791728541961,
+      "tag": "0034_silky_amphibian",
+      "breakpoints": true
     }
   ]
 }
