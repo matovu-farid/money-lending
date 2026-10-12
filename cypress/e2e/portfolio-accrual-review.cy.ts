@@ -20,7 +20,7 @@ describe("Portfolio accrual repair review", () => {
     cy.contains("Approve exact accrual plan").should("not.exist")
   })
 
-  it("shows the dated non-cash plan and records only an admin's exact approval", () => {
+  it("shows the dated non-cash plan without requesting human sign-off", () => {
     cy.createTestUser({ name: "Accrual Admin", role: "superAdmin" }).then(({ userId }) => {
       cy.task("db:seedPortfolioAccrualReview", { actorId: userId }).then((fixture) => {
         const { loanId } = fixture as { loanId: string }
@@ -37,11 +37,11 @@ describe("Portfolio accrual repair review", () => {
               .should("be.visible")
             cy.get('section[aria-label="Dated journal changes"] table tbody tr')
               .should("have.length", 1)
-            cy.contains("button", "Approve exact accrual plan").should("be.disabled")
-            cy.get("#accrual-review-note").type("Checked the January date, UGX 100,000 accrual, and Cash unchanged")
-            cy.contains("button", "Approve exact accrual plan").click()
-            cy.contains("Exact accrual plan approved.").should("be.visible")
-            cy.task("db:countPortfolioAccrualApprovals").should("eq", 1)
+            cy.contains("Agent review and posting happen through the guarded correction operator.")
+              .should("be.visible")
+            cy.contains("button", "Approve exact accrual plan").should("not.exist")
+            cy.get("#accrual-review-note").should("not.exist")
+            cy.task("db:countPortfolioAccrualApprovals").should("eq", 0)
           })
       })
     })

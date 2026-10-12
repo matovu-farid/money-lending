@@ -193,9 +193,9 @@ export async function computeLoanBalanceData(
   // Only newly marked retroactive corrections use their statement accrual path;
   // otherwise preserve the pre-existing balance calculation for those loans.
   // The marker also makes missing allocations a hard error on corrected loans.
-  const overriddenIds = operational
-    .filter((loan) => loan.interestRateOverride !== null)
-    .map((loan) => loan.id);
+  const overriddenLoans = operational.filter((loan) => loan.interestRateOverride !== null);
+  const overriddenIds = overriddenLoans.map((loan) => loan.id);
+  const startDateByLoanId = new Map(overriddenLoans.map((loan) => [loan.id, loan.startDate.toISOString()]));
   const correctedLoanIds = new Set<string>();
   if (overriddenIds.length > 0) {
     const audits = await queryDb.select({
@@ -208,13 +208,15 @@ export async function computeLoanBalanceData(
         "loan.rate_change.immediate",
         "loan.rate_change.approved",
         "loan.rate_change.admin_adjusted",
+        "historical_rate_corrected_by_agent",
       ]),
     ));
     for (const audit of audits) {
       if (!audit.afterValue) continue;
       try {
         const after = JSON.parse(audit.afterValue) as Record<string, unknown>;
-        if (after.rateSemantics === "correction" && typeof after.effectiveFrom === "string") {
+        if (after.rateSemantics === "correction" &&
+            after.effectiveFrom === startDateByLoanId.get(audit.entityId)) {
           correctedLoanIds.add(audit.entityId);
         }
       } catch {

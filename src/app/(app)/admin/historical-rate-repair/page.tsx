@@ -3,7 +3,6 @@ import { buildHistoricalRateRepairReport } from
   "@/lib/interest/historical-rate-repair-report";
 import { loadHistoricalRateRepairPlan } from
   "@/services/historical-rate-repair.service";
-import { ReviewApprovalForm } from "./review-approval-form";
 
 type Query = { [key: string]: string | string[] | undefined };
 
@@ -35,11 +34,11 @@ export default async function HistoricalRateRepairReviewPage({
       asOf > new Date()) {
     return <main className="p-6"><h1>Invalid review date</h1></main>;
   }
-  const plan = await loadHistoricalRateRepairPlan(loanId, asOf, "v1");
+  const plan = await loadHistoricalRateRepairPlan(loanId, asOf, "v2");
   if (plan.classification !== "review" || plan.planHash !== expectedHash ||
       plan.inputFingerprint !== expectedFingerprint) {
     return <main className="p-6"><h1>Reviewed plan has changed</h1>
-      <p>Generate and review a fresh preview before approving anything.</p>
+      <p>Generate and review a fresh preview before applying anything.</p>
     </main>;
   }
   const summary = buildHistoricalRateRepairReport({
@@ -49,7 +48,7 @@ export default async function HistoricalRateRepairReviewPage({
   return <main className="mx-auto max-w-3xl space-y-6 p-4 md:p-6">
     <header className="space-y-2">
       <h1 className="text-2xl font-semibold">Historical rate correction review</h1>
-      <p className="text-muted-foreground">Approval records the exact plan below. It does not change the loan or move cash; a separate backup-gated apply is required.</p>
+      <p className="text-muted-foreground">This preview is read-only. A separate agent checks the exact calculation before a backup-gated agent applies any correction.</p>
     </header>
     <section aria-label="Reviewed correction" className="rounded-lg border p-4">
       <dl className="grid gap-3 sm:grid-cols-2">
@@ -64,7 +63,5 @@ export default async function HistoricalRateRepairReviewPage({
       </dl>
       <p className="mt-4 break-all font-mono text-xs text-muted-foreground">Plan hash: {plan.planHash}</p>
     </section>
-    <ReviewApprovalForm input={{ loanId, asOf: asOfText, policyVersion: "v1",
-      planHash: expectedHash, inputFingerprint: expectedFingerprint }} />
   </main>;
 }

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { eq, sql } from "drizzle-orm";
 import { resetDb, seedCategories, testDb } from "./setup";
 import { customers } from "@/lib/db/schema/customers";
@@ -9,13 +9,24 @@ import { loanWaivers } from "@/lib/db/schema/loan-waivers";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { rolloverCorrectionRuns } from "@/lib/db/schema/rollover-correction-runs";
+import { financialCorrectionAgentReviews } from "@/lib/db/schema/financial-correction-agent-reviews";
+import { hashReviewEvidence } from "@/lib/financial-corrections/agent-review";
+import { verifyRolloverCorrectionBackup } from "@/lib/interest/rollover-backup";
 import { user } from "@/lib/db/schema/auth";
 import { loadRolloverCorrectionPlans } from "../rollover-correction.service";
-import { applyRolloverCorrection, approveRolloverCorrection } from "../rollover-correction-apply.service";
+import { applyRolloverCorrection, reviewRolloverCorrection } from "../rollover-correction-apply.service";
 import { getLoanBalancesFromLedger, getPaymentOverpaymentFromLedger,
   getRolloverInterestSettledFromLedger } from "../ledger-queries.service";
 
 const date = (day: string) => new Date(`${day}T00:00:00Z`);
+vi.mock("@/lib/interest/rollover-backup", () => ({
+  verifyRolloverCorrectionBackup: vi.fn(async () => ({
+    dumpPath: "/private/tmp/integration.dump", dumpSha256: "b".repeat(64),
+  })),
+}));
+const gate = () => ({ manifestPath: "/private/tmp/integration.dump.manifest.json",
+  expectedDumpSha256: "b".repeat(64), primaryUrl: process.env.DATABASE_URL!,
+  directUrl: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL! });
 
 async function seedSamuelChain() {
   await seedCategories();
@@ -93,6 +104,9 @@ describe("rollover correction apply", () => {
   beforeEach(async () => {
     await resetDb();
     await testDb.update(user).set({ role: "superAdmin" }).where(eq(user.id, "actor-1"));
+    vi.mocked(verifyRolloverCorrectionBackup).mockResolvedValue({
+      dumpPath: "/private/tmp/integration.dump", dumpSha256: "b".repeat(64),
+    });
   });
 
   it("corrects the whole chain with balanced non-cash entries and is idempotent", async () => {
@@ -106,8 +120,8 @@ describe("rollover correction apply", () => {
       .filter((row) => row.categoryId === cashCategory.id)
       .map((row) => `${row.type}:${row.amount}`);
 
-    await approveRolloverCorrection(before.plans[0], "actor-1", "Reviewed fixture chain");
-    const first = await applyRolloverCorrection(before.plans[0], "actor-1");
+    await reviewRolloverCorrection(before.plans[0], "agent:reviewer", "review-run-1");
+    const first = await applyRolloverCorrection(before.plans[0], "agent:executor", gate());
     expect(first.applied).toBe(true);
     const corrected = await testDb.select().from(loans);
     expect(chain.slice(1).map((row) => corrected.find((loan) => loan.id === row.id)?.principalAmount))
@@ -132,9 +146,14 @@ describe("rollover correction apply", () => {
     }
     expect([...groups.values()].every((balance) => balance === 0)).toBe(true);
     const count = (await testDb.select().from(transactions)).length;
-    const repeat = await applyRolloverCorrection(before.plans[0], "actor-1");
+    const repeat = await applyRolloverCorrection(before.plans[0], "agent:executor", gate());
     expect(repeat.applied).toBe(false);
     expect((await testDb.select().from(transactions)).length).toBe(count);
+    const [run] = await testDb.select().from(rolloverCorrectionRuns);
+    const [review] = await testDb.select().from(financialCorrectionAgentReviews);
+    expect(run).toEqual(expect.objectContaining({ reviewedBy: null,
+      appliedByAgent: "agent:executor", agentReviewId: review.id }));
+    expect(review.consumedByRunId).toBe(run.id);
     const after = await loadRolloverCorrectionPlans();
     expect(after.plans[0].edges.every((edge) => edge.deltaPrincipal === "0")).toBe(true);
   });
@@ -142,11 +161,11 @@ describe("rollover correction apply", () => {
   it("rejects a stale plan without changing loans, journals, or run history", async () => {
     const chain = await seedSamuelChain();
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed before rate change");
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
     await testDb.update(loans).set({ interestRate: "0.0900" })
       .where(eq(loans.id, chain[0].id));
     const beforeEntries = (await testDb.select().from(transactions)).length;
-    await expect(applyRolloverCorrection(plan, "actor-1")).rejects.toThrow(/stale/);
+    await expect(applyRolloverCorrection(plan, "agent:executor", gate())).rejects.toThrow(/stale/);
     expect((await testDb.select().from(transactions)).length).toBe(beforeEntries);
     expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(0);
     const [unchanged] = await testDb.select().from(loans).where(eq(loans.id, chain[1].id));
@@ -156,14 +175,14 @@ describe("rollover correction apply", () => {
   it("invalidates approval when a source cash journal changes", async () => {
     const chain = await seedSamuelChain();
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed original cash journals");
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
     const [cashCategory] = await testDb.select().from(transactionCategories)
       .where(eq(transactionCategories.name, "Cash"));
     const [cashEntry] = (await testDb.select().from(transactions))
       .filter((row) => row.loanId === chain[0].id && row.categoryId === cashCategory.id);
     await testDb.update(transactions).set({ depositLocation: "strong_room" })
       .where(eq(transactions.id, cashEntry.id));
-    await expect(applyRolloverCorrection(plan, "actor-1")).rejects.toThrow(/stale/);
+    await expect(applyRolloverCorrection(plan, "agent:executor", gate())).rejects.toThrow(/stale/);
     expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(0);
   });
 
@@ -177,7 +196,7 @@ describe("rollover correction apply", () => {
       .where(eq(transactions.id, cashLeg.id));
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
     expect(plan.classification).toBe("ready");
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed complete journal groups");
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
 
     let releaseWriter!: () => void;
     let writerReady!: () => void;
@@ -191,7 +210,7 @@ describe("rollover correction apply", () => {
     });
     await writerReadyPromise;
     let finished = false;
-    const apply = applyRolloverCorrection(plan, "actor-1")
+    const apply = applyRolloverCorrection(plan, "agent:executor", gate())
       .finally(() => { finished = true; });
     try {
       await new Promise((resolve) => setTimeout(resolve, 200));
@@ -207,7 +226,7 @@ describe("rollover correction apply", () => {
   it("returns the first run when an identical retry waited for its source lock", async () => {
     await seedSamuelChain();
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed concurrent retry");
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
 
     let releaseAudit!: () => void;
     let auditReady!: () => void;
@@ -233,12 +252,12 @@ describe("rollover correction apply", () => {
       throw new Error(`Timed out waiting for source lock granted=${granted}`);
     }
 
-    const first = applyRolloverCorrection(plan, "actor-1")
+    const first = applyRolloverCorrection(plan, "agent:executor", gate())
       .then((value) => ({ value }), (error: unknown) => ({ error }));
     let second: typeof first | undefined;
     try {
       await waitForSourceLock(true);
-      second = applyRolloverCorrection(plan, "actor-1")
+      second = applyRolloverCorrection(plan, "agent:executor", gate())
         .then((value) => ({ value }), (error: unknown) => ({ error }));
       await waitForSourceLock(false);
     } finally {
@@ -254,21 +273,50 @@ describe("rollover correction apply", () => {
     expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(1);
   });
 
-  it("rejects a ready plan that has not received explicit approval", async () => {
+  it("rejects a ready plan without an agent review", async () => {
     await seedSamuelChain();
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
-    await expect(applyRolloverCorrection(plan, "actor-1"))
-      .rejects.toThrow(/not been approved/);
+    await expect(applyRolloverCorrection(plan, "agent:executor", gate()))
+      .rejects.toThrow(/agent review/);
   });
 
-  it("requires an administrator for approval and application", async () => {
+  it("refuses a later failed agent review for the same chain", async () => {
     await seedSamuelChain();
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
-    await expect(approveRolloverCorrection(plan, "test-actor", "Not authorized"))
-      .rejects.toThrow(/administrator/);
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed by administrator");
-    await expect(applyRolloverCorrection(plan, "test-actor"))
-      .rejects.toThrow(/administrator/);
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-pass");
+    await testDb.insert(financialCorrectionAgentReviews).values({
+      kind: "rollover_correction", subjectId: plan.edges[0].predecessorId,
+      planHash: plan.planHash, inputFingerprint: plan.inputFingerprint,
+      policyVersion: plan.policyVersion, reviewerAgentId: "agent:reviewer-2",
+      reviewRunId: "review-run-fail", evidenceJson: "{}",
+      evidenceSha256: hashReviewEvidence({}), verdict: "fail",
+      findingsJson: JSON.stringify({ checks: ["source"], issues: ["contradictory evidence"] }),
+      reviewedAt: new Date(Date.now() + 1000),
+    });
+    await expect(applyRolloverCorrection(plan, "agent:executor", gate()))
+      .rejects.toThrow(/passing agent review/i);
+    expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(0);
+  });
+
+  it("rejects an invalid backup inside the apply service", async () => {
+    await seedSamuelChain();
+    const [plan] = (await loadRolloverCorrectionPlans()).plans;
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
+    vi.mocked(verifyRolloverCorrectionBackup)
+      .mockRejectedValueOnce(new Error("Invalid rollover backup"));
+    await expect(applyRolloverCorrection(plan, "agent:executor", gate()))
+      .rejects.toThrow(/backup/i);
+    expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(0);
+  });
+
+  it("requires separate named reviewer and executor agents", async () => {
+    await seedSamuelChain();
+    const [plan] = (await loadRolloverCorrectionPlans()).plans;
+    await expect(reviewRolloverCorrection(plan, "test-actor", "review-run-1"))
+      .rejects.toThrow(/agent/);
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
+    await expect(applyRolloverCorrection(plan, "agent:reviewer", gate()))
+      .rejects.toThrow(/distinct/);
     expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(0);
   });
 
@@ -295,7 +343,8 @@ describe("rollover correction apply", () => {
       await testDb.insert(transactions).values([
         { loanId: last.id, categoryId: category[debitCategory], type: "debit",
           amount, referenceType, referenceId, transactionDate: at,
-          journalGroupId, recordedBy: "actor-1" },
+          journalGroupId, recordedBy: "actor-1",
+          depositLocation: debitCategory === "Cash" ? "cash" : null },
         { loanId: last.id, categoryId: category[creditCategory], type: "credit",
           amount, referenceType, referenceId, transactionDate: at,
           journalGroupId, recordedBy: "actor-1" },
@@ -309,8 +358,8 @@ describe("rollover correction apply", () => {
       .reduce((total, row) => total + (row.type === "debit" ? 1 : -1) * Number(row.amount), 0);
     const lossesBefore = beforeRows.filter((row) => row.categoryId === category["Loan Losses"])
       .reduce((total, row) => total + (row.type === "debit" ? 1 : -1) * Number(row.amount), 0);
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed both settlement allocations");
-    expect((await applyRolloverCorrection(plan, "actor-1")).applied).toBe(true);
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
+    expect((await applyRolloverCorrection(plan, "agent:executor", gate())).applied).toBe(true);
     const rows = await testDb.select().from(transactions);
     const cashAfter = rows.filter((row) => row.categoryId === category.Cash)
       .reduce((total, row) => total + (row.type === "debit" ? 1 : -1) * Number(row.amount), 0);
@@ -347,7 +396,8 @@ describe("rollover correction apply", () => {
       await testDb.insert(transactions).values([
         { loanId: last.id, categoryId: categories.Cash, type: "debit", amount,
           referenceType: "payment", referenceId: payment.id,
-          transactionDate: payment.paymentDate, journalGroupId, recordedBy: "actor-1" },
+          transactionDate: payment.paymentDate, journalGroupId, recordedBy: "actor-1",
+          depositLocation: "cash" },
         { loanId: last.id, categoryId: categories[creditCategory], type: "credit", amount,
           referenceType: "payment", referenceId: payment.id,
           transactionDate: payment.paymentDate, journalGroupId, recordedBy: "actor-1" },
@@ -361,8 +411,8 @@ describe("rollover correction apply", () => {
     const cashBefore = (await testDb.select().from(transactions))
       .filter((row) => row.categoryId === categories.Cash)
       .map((row) => `${row.type}:${row.amount}`);
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed full cash receipt and overpayment");
-    expect((await applyRolloverCorrection(plan, "actor-1")).applied).toBe(true);
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
+    expect((await applyRolloverCorrection(plan, "agent:executor", gate())).applied).toBe(true);
     const cashAfter = (await testDb.select().from(transactions))
       .filter((row) => row.categoryId === categories.Cash)
       .map((row) => `${row.type}:${row.amount}`);
@@ -452,14 +502,14 @@ describe("rollover correction apply", () => {
       oldInterest: "500000.00", newInterest: "1000000.00",
       oldPrincipal: "500000.00", newPrincipal: "0.00",
     }));
-    await approveRolloverCorrection(plan, "actor-1", "Reviewed minimum-interest allocation");
-    expect((await applyRolloverCorrection(plan, "actor-1")).applied).toBe(true);
+    await reviewRolloverCorrection(plan, "agent:reviewer", "review-run-1");
+    expect((await applyRolloverCorrection(plan, "agent:executor", gate())).applied).toBe(true);
     const balances = await getLoanBalancesFromLedger([root.id, next.id]);
     expect(balances.get(root.id)?.toFixed(2)).toBe("0.00");
     expect(balances.get(next.id)?.toFixed(2)).toBe("25500000.00");
     const [after] = (await loadRolloverCorrectionPlans()).plans;
     expect(after.settlementChanges[0].oldInterest).toBe(after.settlementChanges[0].newInterest);
-    expect((await applyRolloverCorrection(plan, "actor-1")).applied).toBe(false);
+    expect((await applyRolloverCorrection(plan, "agent:executor", gate())).applied).toBe(false);
   });
 
   it("blocks a pre-existing receivable discrepancy before any adjustment", async () => {
@@ -479,8 +529,8 @@ describe("rollover correction apply", () => {
     const [plan] = (await loadRolloverCorrectionPlans()).plans;
     expect(plan.classification).toBe("blocked");
     const beforeEntries = (await testDb.select().from(transactions)).length;
-    await expect(applyRolloverCorrection(plan, "actor-1"))
-      .rejects.toThrow(/non-blocked correction plan/);
+    await expect(applyRolloverCorrection(plan, "agent:executor", gate()))
+      .rejects.toThrow(/non-blocked rollover plan/);
     expect((await testDb.select().from(transactions)).length).toBe(beforeEntries);
     expect(await testDb.select().from(rolloverCorrectionRuns)).toHaveLength(0);
     const [unchanged] = await testDb.select().from(loans).where(eq(loans.id, chain[1].id));

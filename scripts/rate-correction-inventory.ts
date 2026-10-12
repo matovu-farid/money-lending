@@ -48,7 +48,7 @@ async function main() {
         WHERE a.entity_type = 'loan'
           AND a.action IN (
             'loan.rate_change.immediate', 'loan.rate_change.approved',
-            'loan.rate_change.admin_adjusted', 'loan.update'
+            'loan.rate_change.admin_adjusted', 'historical_rate_corrected_by_agent', 'loan.update'
           )
       `)
       const [orphan] = await tx.execute(sql`
@@ -58,7 +58,7 @@ async function main() {
         WHERE a.entity_type = 'loan' AND l.id IS NULL
           AND a.action IN (
             'loan.rate_change.immediate', 'loan.rate_change.approved',
-            'loan.rate_change.admin_adjusted', 'loan.update'
+            'loan.rate_change.admin_adjusted', 'historical_rate_corrected_by_agent', 'loan.update'
           )
       `)
       return {

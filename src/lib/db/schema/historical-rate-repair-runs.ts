@@ -36,6 +36,6 @@ export const historicalRateRepairRuns = pgTable("historical_rate_repair_runs", {
     (${table.reviewedBy} IS NOT NULL AND ${table.agentReviewId} IS NULL AND
       ${table.appliedByAgent} IS NULL) OR
     (${table.reviewedBy} IS NULL AND ${table.agentReviewId} IS NOT NULL AND
-      length(${table.appliedByAgent}) > 0)
+      ${table.appliedByAgent} IS NOT NULL AND length(${table.appliedByAgent}) > 0)
   `),
 ]);

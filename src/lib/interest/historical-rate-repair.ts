@@ -17,6 +17,17 @@ export type HistoricalRateSnapshot = {
   correctedRate: string;
   asOf: Date;
   settlements: HistoricalSettlement[];
+  journalLegs: Array<{
+    id: string;
+    loanId: string | null;
+    journalGroupId: string | null;
+    referenceType: string | null;
+    referenceId: string | null;
+    date: Date;
+    categoryName: string;
+    type: "debit" | "credit";
+    amount: string;
+  }>;
   sourceDigest: string;
   sourceExceptions: string[];
   correctionMarked?: boolean;
@@ -61,7 +72,7 @@ function validMoney(value: string): boolean {
 /** Pure preview. The caller must supply a reconciled, fingerprinted snapshot. */
 export function planHistoricalRateRepair(
   snapshot: HistoricalRateSnapshot,
-  policyVersion = "v1",
+  policyVersion = "v2",
 ): HistoricalRatePlan {
   const settlements = [...snapshot.settlements].sort((a, b) =>
     a.date.getTime() - b.date.getTime() || a.id.localeCompare(b.id));
@@ -84,6 +95,9 @@ export function planHistoricalRateRepair(
   const openingPrincipal = new BigNumber(snapshot.loan.principalAmount);
   if (!openingPrincipal.isFinite() || !openingPrincipal.isInteger()) {
     exceptions.push("Fractional UGX opening principal requires a cent-precise replay");
+  }
+  if (snapshot.loan.penaltyWaived && !snapshot.loan.penaltyWaivedAt) {
+    exceptions.push("Penalty waiver has no effective date");
   }
   for (let i = 0; i < settlements.length; i++) {
     const settlement = settlements[i];

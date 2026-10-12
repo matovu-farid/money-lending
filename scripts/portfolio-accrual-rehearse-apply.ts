@@ -3,15 +3,16 @@ import "dotenv/config"
 import { open, readFile } from "node:fs/promises"
 import { eq, inArray } from "drizzle-orm"
 import { db } from "@/lib/db"
-import { user } from "@/lib/db/schema/auth"
 import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { financialSnapshots } from "@/lib/db/schema/financial-snapshots"
 import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs"
+import { isIsolatedPortfolioRehearsalDatabase, verifyPortfolioAccrualBackup } from
+  "@/lib/interest/portfolio-accrual-backup"
 import { loadPortfolioAccrualPlan } from "@/services/portfolio-accrual-repair.service"
-import { approvePortfolioAccrualRepair, applyPortfolioAccrualRepair } from
+import { reviewPortfolioAccrualRepair, applyPortfolioAccrualRepair } from
   "@/services/portfolio-accrual-repair-apply.service"
 
 function option(name: string): string {
@@ -34,13 +35,12 @@ async function stateSignature() {
 }
 
 async function main() {
-  const selected = new URL(process.env.DATABASE_URL ?? "")
-  const direct = new URL(process.env.DATABASE_URL_UNPOOLED ?? "")
-  if (!["localhost", "127.0.0.1", "::1"].includes(selected.hostname) ||
-      !/^money_lending_rehearsal_[a-z0-9_]+$/.test(selected.pathname.slice(1)) ||
-      selected.toString() !== direct.toString()) {
+  const primaryUrl = process.env.DATABASE_URL ?? ""
+  const directUrl = process.env.DATABASE_URL_UNPOOLED ?? ""
+  if (!isIsolatedPortfolioRehearsalDatabase(primaryUrl, directUrl)) {
     throw new Error("Exact-plan rehearsal is limited to one isolated local database")
   }
+  const selected = new URL(primaryUrl)
   const report = JSON.parse(await readFile(option("report"), "utf8")) as {
     asOf: string; plans: Array<{ loanId: string; classification: string;
       planHash: string; inputFingerprint: string; policyVersion: string }>
@@ -48,14 +48,12 @@ async function main() {
   const manifestPath = option("backup-manifest")
   const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as { dumpSha256: string }
   const gate = { manifestPath, expectedDumpSha256: manifest.dumpSha256,
-    primaryUrl: selected.toString(), directUrl: direct.toString() }
+    primaryUrl, directUrl }
+  await verifyPortfolioAccrualBackup(gate)
   const asOf = new Date(report.asOf)
   if (!Number.isFinite(asOf.getTime()) || asOf.toISOString() !== report.asOf) {
     throw new Error("Rehearsal report as-of is invalid")
   }
-  const [actor] = (await db.select({ id: user.id, role: user.role }).from(user))
-    .filter((row) => row.role === "admin" || row.role === "superAdmin")
-  if (!actor) throw new Error("Restored database has no administrator")
   const before = await stateSignature()
   const ready = report.plans.filter((plan) => plan.classification === "ready")
   const applied: Array<{ loanId: string; planHash: string; runId: string }> = []
@@ -66,9 +64,12 @@ async function main() {
         plan.policyVersion !== reviewed.policyVersion) {
       throw new Error(`Local exact plan changed for loan ${reviewed.loanId}`)
     }
-    await approvePortfolioAccrualRepair(plan, actor.id,
-      "Isolated exact-plan rehearsal after a verified full restore")
-    const result = await applyPortfolioAccrualRepair(plan, actor.id, gate)
+    const review = await reviewPortfolioAccrualRepair(plan,
+      "agent:rehearsal-reviewer", `rehearsal:${plan.loanId}:${plan.planHash}`)
+    if (review.verdict !== "pass") {
+      throw new Error(`Rehearsal agent review failed for ${plan.loanId}: ${review.findings.join("; ")}`)
+    }
+    const result = await applyPortfolioAccrualRepair(plan, "agent:rehearsal-executor", gate)
     if (result.alreadyApplied) throw new Error("Rehearsal encountered a prior repair run")
     const after = await loadPortfolioAccrualPlan(plan.loanId, asOf)
     if (after.classification !== "noop") {

@@ -1,6 +1,7 @@
 import { shortId } from "@/lib/utils"
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import { PgDialect } from "drizzle-orm/pg-core"
 
 vi.mock("@/lib/db", () => {
   const mockDb = { select: vi.fn(), insert: vi.fn(), update: vi.fn(), delete: vi.fn(), transaction: vi.fn() }
@@ -262,6 +263,38 @@ describe("Rate Change Request Service", () => {
       { id: "audit-approved", fromRate: "0.10", toRate: "0.11", actorId: "supervisor-1", actorName: "Supervisor User", changedAt: new Date("2026-08-02T12:00:00Z") },
       { id: "audit-immediate", fromRate: "0.09", toRate: "0.10", actorId: "officer-1", actorName: "Loan Officer", changedAt: new Date("2026-08-01T12:00:00Z") },
     ])
+  })
+
+  it("includes a null-actor agent correction in loan rate history", async () => {
+    const { db: mockedDb } = await import("@/lib/db")
+    let whereParams: unknown[] = []
+    ;(mockedDb.select as ReturnType<typeof vi.fn>).mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        leftJoin: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation((condition) => {
+            whereParams = new PgDialect().sqlToQuery(condition).params
+            return { orderBy: vi.fn().mockResolvedValue([{
+              id: "agent-audit", actorId: null, actorName: null,
+              action: "historical_rate_corrected_by_agent",
+              beforeValue: JSON.stringify({ interestRate: "0.10" }),
+              afterValue: JSON.stringify({ interestRateOverride: "0.08", rateSemantics: "correction", effectiveFrom: "2026-03-01T00:00:00.000Z", executorAgentId: "agent:executor-1" }),
+              occurredAt: new Date("2026-10-11T10:00:00.000Z"),
+            }]) }
+          }),
+        }),
+      }),
+    })
+
+    const { listLoanRateChangeHistory } = await import("@/services/rate-change-request.service")
+    const result = await Effect.runPromise(listLoanRateChangeHistory("loan-1"))
+
+    expect(whereParams).toContain("historical_rate_corrected_by_agent")
+    expect(result).toEqual([{
+      id: "agent-audit", fromRate: "0.10", toRate: "0.08",
+      actorId: null, actorName: "agent:executor-1",
+      changedAt: new Date("2026-10-11T10:00:00.000Z"),
+      effectiveFrom: new Date("2026-03-01T00:00:00.000Z"),
+    }])
   })
 
   it.each([

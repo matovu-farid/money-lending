@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { Effect, Exit, Cause } from "effect"
+import { PgDialect } from "drizzle-orm/pg-core"
 
 vi.mock("@/lib/db", () => ({
   db: {
@@ -15,6 +16,27 @@ vi.mock("@/services/audit.service", () => ({
 }))
 
 describe("Transaction Service — DB operations (mocked)", () => {
+  it("recognizes a start-effective agent audit when accruing corrected interest", async () => {
+    const startDate = new Date("2025-02-21T00:00:00.000Z")
+    const audit = {
+      afterValue: JSON.stringify({ interestRateOverride: "0.0800", rateSemantics: "correction", effectiveFrom: startDate.toISOString() }),
+    }
+    const tx = {
+      select: vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockImplementation((condition) => {
+            const params = new PgDialect().sqlToQuery(condition).params
+            return { orderBy: vi.fn().mockReturnValue({ limit: vi.fn().mockResolvedValue(
+              params.includes("historical_rate_corrected_by_agent") ? [audit] : [],
+            ) }) }
+          }),
+        }),
+      }),
+    }
+    const { hasRetroactiveRateCorrectionAudit } = await import("@/services/transaction.service")
+    expect(await hasRetroactiveRateCorrectionAudit(tx as never, { id: "loan-1", startDate })).toBe(true)
+  })
+
   let mockedDb: any
   let mockedWriteAuditLog: any
 
@@ -966,6 +988,7 @@ describe("Transaction Service — DB operations (mocked)", () => {
       "loan", "loan_reversal", "loan_repost",
       "rollover", "collateral_settlement", "fund_transfer",
       "interest_accrual",
+      "portfolio_accrual_repair",
       "loan_waiver", "loan_waiver_reversal",
     ]
 

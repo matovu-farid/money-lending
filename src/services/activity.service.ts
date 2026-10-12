@@ -3,12 +3,17 @@ import { db } from "@/lib/db"
 import { auditLog } from "@/lib/db/schema/audit"
 import { user } from "@/lib/db/schema/auth"
 import { customers } from "@/lib/db/schema/customers"
-import { eq, desc, and, inArray, gte, lte, sql } from "drizzle-orm"
+import { eq, desc, and, or, isNull, inArray, gte, lte, sql } from "drizzle-orm"
 import { DatabaseError } from "@/lib/errors"
 import { ROLE_LEVELS } from "@/types/common"
 import type { UserRole } from "@/types/common"
 import type { ActivityItem, GetActivitiesInput, GetActivitiesResult } from "@/types/activity"
 import BigNumber from "bignumber.js"
+
+const VISIBLE_AGENT_LOAN_ACTIONS = [
+  "historical_rate_corrected_by_agent",
+  "loan.rollover.correction",
+]
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -69,6 +74,12 @@ export function formatActivityDescription(
     case "loan.rate_change.immediate":
     case "loan.rate_change.admin_adjusted":
       return "Loan rate changed"
+
+    case "historical_rate_corrected_by_agent":
+      return "Historical loan rate corrected by agent"
+
+    case "loan.rollover.correction":
+      return "Loan rollover corrected by agent"
 
     case "loan.update":
       return "Loan details updated"
@@ -172,7 +183,16 @@ export const getActivities = (
       }
 
       // Build where conditions
-      const conditions = [inArray(user.role, visibleRoles)]
+      const conditions = [actorId
+        ? inArray(user.role, visibleRoles)
+        : or(
+          inArray(user.role, visibleRoles),
+          and(
+            isNull(auditLog.actorId),
+            eq(auditLog.entityType, "loan"),
+            inArray(auditLog.action, VISIBLE_AGENT_LOAN_ACTIONS),
+          ),
+        )!]
 
       if (actorId) {
         conditions.push(eq(auditLog.actorId, actorId))
@@ -199,7 +219,7 @@ export const getActivities = (
         db
           .select({ count: sql<number>`count(*)` })
           .from(auditLog)
-          .innerJoin(user, eq(auditLog.actorId, user.id))
+          .leftJoin(user, eq(auditLog.actorId, user.id))
           .where(where)
           .then((r) => r[0]),
         db
@@ -216,7 +236,7 @@ export const getActivities = (
             actorRole: user.role,
           })
           .from(auditLog)
-          .innerJoin(user, eq(auditLog.actorId, user.id))
+          .leftJoin(user, eq(auditLog.actorId, user.id))
           .where(where)
           .orderBy(desc(auditLog.occurredAt))
           .limit(pageSize)
@@ -267,10 +287,16 @@ export const getActivities = (
 
         const href = getActivityHref(row.entityType, row.entityId, afterVal, row.action)
 
+        const agentName = typeof afterVal?.appliedByAgent === "string"
+          ? afterVal.appliedByAgent
+          : typeof afterVal?.executorAgentId === "string"
+            ? afterVal.executorAgentId : "Agent"
+        const agentEvent = row.actorId === null && VISIBLE_AGENT_LOAN_ACTIONS.includes(row.action)
+
         return {
           id: row.id,
-          actorName: row.actorName ?? "Unknown",
-          actorRole: row.actorRole ?? "unassigned",
+          actorName: agentEvent ? agentName : row.actorName ?? "Unknown",
+          actorRole: agentEvent ? "agent" : row.actorRole ?? "unassigned",
           action: row.action,
           entityType: row.entityType,
           entityId: row.entityId,

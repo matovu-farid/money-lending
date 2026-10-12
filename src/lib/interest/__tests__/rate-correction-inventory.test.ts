@@ -4,6 +4,16 @@ import { summarizeRateCorrectionInventory } from "../rate-correction-inventory"
 const startDate = new Date("2025-02-21T00:00:00.000Z")
 
 describe("summarizeRateCorrectionInventory", () => {
+  it("counts a start-effective agent correction as marked", () => {
+    const summary = summarizeRateCorrectionInventory([{
+      loanId: "agent-corrected", startDate, status: "active",
+      action: "historical_rate_corrected_by_agent",
+      afterValue: JSON.stringify({ interestRateOverride: "0.0800", rateSemantics: "correction", effectiveFrom: startDate.toISOString() }),
+      paymentRecorded: false, waiverRecorded: false, successorRecorded: false,
+    }])
+    expect(summary.markedCorrections).toBe(1)
+  })
+
   it("counts unique legacy loans and preserves permanent lock reasons", () => {
     const summary = summarizeRateCorrectionInventory([
       { loanId: "eligible", startDate, status: "active", action: "loan.rate_change.immediate", afterValue: '{"interestRateOverride":"0.08"}', paymentRecorded: false, waiverRecorded: false, successorRecorded: false },

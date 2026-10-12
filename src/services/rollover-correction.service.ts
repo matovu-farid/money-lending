@@ -16,10 +16,13 @@ import {
 } from "./ledger-queries.service";
 import {
   planRolloverCorrection,
+  ROLLOVER_CORRECTION_POLICY_VERSION,
   type ChainLoan,
   type ChainSnapshot,
   type CorrectionPlan,
 } from "@/lib/interest/rollover-correction";
+import type { RolloverSourceJournal } from
+  "@/lib/financial-corrections/rollover-verifier";
 import { reconstructRolloverRateHistory, ROLLOVER_RATE_AUDIT_ACTIONS,
   type RolloverRateAudit } from "@/lib/interest/rollover-rate-history";
 
@@ -289,6 +292,8 @@ export function assembleRolloverChains(input: {
         minInterestDays: loan.minInterestDays,
         minPeriodOverride: loan.minPeriodOverride,
         issuanceFee: loan.issuanceFee,
+        disbursementSource: loan.disbursementSource,
+        subLocationId: loan.subLocationId,
         loanType: loan.loanType,
         startDate: loan.startDate,
         createdAt: loan.createdAt,
@@ -309,6 +314,8 @@ export function assembleRolloverChains(input: {
           interestPortion: input.paymentPortions.get(payment.id)?.interestPortion ?? "0",
           principalPortion: input.paymentPortions.get(payment.id)?.principalPortion ?? "0",
           overpaymentPortion: input.paymentOverpayments?.get(payment.id) ?? "0",
+          depositLocation: payment.depositLocation,
+          subLocationId: payment.subLocationId,
           recorderName: "",
         })),
         waivers: waivers.map((waiver) => ({
@@ -328,9 +335,11 @@ export function assembleRolloverChains(input: {
 /** Every query runs inside one repeatable, read-only PostgreSQL transaction. */
 export async function loadRolloverCorrectionPlansInSnapshot(
   queryDb: Pick<typeof db, "select">,
-  policyVersion = "v3",
+  policyVersion = ROLLOVER_CORRECTION_POLICY_VERSION,
 ): Promise<{
   plans: CorrectionPlan[];
+  chains: ChainSnapshot[];
+  sourceJournals: RolloverSourceJournal[];
   liveLinks: number;
   deletedLinks: number;
 }> {
@@ -347,7 +356,8 @@ export async function loadRolloverCorrectionPlansInSnapshot(
       }
     }
     const loanIds = [...relevant];
-    if (!loanIds.length) return { plans: [], liveLinks: 0, deletedLinks: 0 };
+    if (!loanIds.length) return { plans: [], chains: [], sourceJournals: [],
+      liveLinks: 0, deletedLinks: 0 };
     const [paymentRows, waiverRows, rateRows, rateAudits, journalRows] = await Promise.all([
       queryDb.select().from(payments).where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false))),
       queryDb.select().from(loanWaivers).where(and(inArray(loanWaivers.loanId, loanIds), isNull(loanWaivers.deletedAt))),
@@ -401,13 +411,15 @@ export async function loadRolloverCorrectionPlansInSnapshot(
       getPaymentOverpaymentFromLedger(paymentRows.map((p) => p.id), queryDb),
       getWaiverPortionsFromLedger(waiverRows.map((w) => w.id), queryDb),
     ]);
+    const sourceJournals = completeJournalRows.concat(
+      journalRows.filter((row) => !row.journalGroupId));
     const chains = assembleRolloverChains({
       loans: loanRows.filter((loan) => relevant.has(loan.id)),
       payments: paymentRows,
       waivers: waiverRows,
       rates: rateRows,
       rateAudits,
-      journals: completeJournalRows.concat(journalRows.filter((row) => !row.journalGroupId)),
+      journals: sourceJournals,
       paymentPortions,
       paymentOverpayments,
       waiverPortions,
@@ -415,12 +427,15 @@ export async function loadRolloverCorrectionPlansInSnapshot(
     const plans = chains.map((chain) => planRolloverCorrection(chain, policyVersion));
     return {
       plans,
+      chains,
+      sourceJournals,
       liveLinks: loanRows.filter((loan) => loan.rolledOverFrom && !loan.deletedAt).length,
       deletedLinks: loanRows.filter((loan) => loan.rolledOverFrom && loan.deletedAt).length,
     };
 }
 
-export async function loadRolloverCorrectionPlans(policyVersion = "v3") {
+export async function loadRolloverCorrectionPlans(
+  policyVersion = ROLLOVER_CORRECTION_POLICY_VERSION) {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`);
     return loadRolloverCorrectionPlansInSnapshot(tx, policyVersion);

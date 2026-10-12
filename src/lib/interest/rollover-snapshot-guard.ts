@@ -26,56 +26,49 @@ export function validateCorrectionDatabaseEndpoints(
   return { primary, backup };
 }
 
-/** Inspect the restore catalog, not the live database, to verify backup contents. */
+/** Inspect the restore catalog, not the live database, for schema and data entries. */
+function hasTableAndData(catalog: string, table: string): boolean {
+  const lines = catalog.split(/\r?\n/);
+  return ["TABLE", "TABLE DATA"].every((kind) => lines.some((line) =>
+    new RegExp(`^\\d+;\\s+\\d+\\s+\\d+\\s+${kind} public ${table}(?:\\s|$)`)
+      .test(line)));
+}
+
 export function correctionAuditTablesInCatalog(catalog: string): boolean {
-  const tables = new Set(
-    catalog.split(/\r?\n/).flatMap((line) => {
-      const match = /^\d+;\s+\d+\s+\d+\s+TABLE public (rollover_correction_(?:runs|approvals))(?:\s|$)/
-        .exec(line);
-      return match ? [match[1]] : [];
-    }),
-  );
-  return tables.has("rollover_correction_runs") &&
-    tables.has("rollover_correction_approvals");
+  return ["rollover_correction_runs", "rollover_correction_approvals",
+    "financial_correction_agent_reviews"]
+    .every((table) => hasTableAndData(catalog, table));
 }
 
 export function requireCorrectionAuditTablesInDump(
   manifest: { correctionAuditTablesInDump?: boolean },
 ): void {
   if (manifest.correctionAuditTablesInDump !== true) {
-    throw new Error("Correction backup must contain both audit tables");
+    throw new Error("Correction backup must contain rollover and agent review audit tables and data");
   }
 }
 
 /** Historical paid-rate repair has its own durable approval and run tables. */
 export function historicalRateAuditTablesInCatalog(catalog: string): boolean {
-  const tables = new Set(
-    catalog.split(/\r?\n/).flatMap((line) => {
-      const match = /^\d+;\s+\d+\s+\d+\s+TABLE public (historical_rate_repair_(?:runs|approvals))(?:\s|$)/
-        .exec(line);
-      return match ? [match[1]] : [];
-    }),
-  );
-  return tables.has("historical_rate_repair_runs") &&
-    tables.has("historical_rate_repair_approvals");
+  return ["historical_rate_repair_runs", "historical_rate_repair_approvals",
+    "financial_correction_agent_reviews"]
+    .every((table) => hasTableAndData(catalog, table));
 }
 
 /** A schema-only archive is not a recoverable loan-ledger backup. */
 export function historicalRateDataInCatalog(catalog: string): boolean {
-  const entries = new Set(catalog.split(/\r?\n/).flatMap((line) => {
-    const match = /^\d+;\s+\d+\s+\d+\s+TABLE DATA public (\S+)(?:\s|$)/.exec(line);
-    return match ? [match[1]] : [];
-  }));
-  return ["loans", "payments", "transactions", "audit_log",
-    "historical_rate_repair_approvals", "historical_rate_repair_runs"]
-    .every((table) => entries.has(table));
+  return ["loans", "loan_balances", "payments", "loan_waivers", "rate_change_requests",
+    "transactions", "transaction_categories", "audit_log",
+    "historical_rate_repair_approvals", "historical_rate_repair_runs",
+    "financial_correction_agent_reviews"]
+    .every((table) => hasTableAndData(catalog, table));
 }
 
 export function requireHistoricalRateAuditTablesInDump(
   manifest: { historicalRateAuditTablesInDump?: boolean },
 ): void {
   if (manifest.historicalRateAuditTablesInDump !== true) {
-    throw new Error("Historical rate correction backup must contain both audit tables");
+    throw new Error("Historical rate correction backup must contain repair and agent review audit tables and data");
   }
 }
 

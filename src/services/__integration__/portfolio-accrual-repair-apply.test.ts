@@ -10,15 +10,19 @@ import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { portfolioAccrualRepairApprovals, portfolioAccrualRepairRuns } from
   "@/lib/db/schema/portfolio-accrual-repair-runs"
+import { financialCorrectionAgentReviews } from
+  "@/lib/db/schema/financial-correction-agent-reviews"
 import { verifyPortfolioAccrualBackup } from "@/lib/interest/portfolio-accrual-backup"
 import { loadPortfolioAccrualPlan } from "../portfolio-accrual-repair.service"
-import { approvePortfolioAccrualRepair, applyPortfolioAccrualRepair } from
+import { applyPortfolioAccrualRepair,
+  reviewPortfolioAccrualRepair } from
   "../portfolio-accrual-repair-apply.service"
 import { reverseInterestAccrual } from "../transaction.service"
 import { getCashflowData } from "../report.service"
 import { recordPayment } from "../payment.service"
 
 vi.mock("@/lib/interest/portfolio-accrual-backup", () => ({
+  isIsolatedPortfolioRehearsalDatabase: vi.fn(() => true),
   verifyPortfolioAccrualBackup: vi.fn(async () => ({
     dumpPath: "/private/tmp/integration.dump", dumpSha256: "b".repeat(64),
   })),
@@ -72,22 +76,36 @@ describe("portfolio accrual exact-plan approval and apply", () => {
     const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
     const before = await testDb.select().from(transactions)
 
-    await expect(applyPortfolioAccrualRepair(plan, "admin-1", backupGate()))
-      .rejects.toThrow(/approval/i)
+    await expect(applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate()))
+      .rejects.toThrow(/agent review/i)
 
     expect(await testDb.select().from(transactions)).toEqual(before)
+    expect(await testDb.select().from(portfolioAccrualRepairRuns)).toHaveLength(0)
+  })
+
+  it("does not treat a historical human approval as an agent review", async () => {
+    const loan = await seedLoan()
+    const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
+    await testDb.insert(portfolioAccrualRepairApprovals).values({
+      loanId: plan.loanId, planHash: plan.planHash,
+      inputFingerprint: plan.inputFingerprint, policyVersion: plan.policyVersion,
+      approvedBy: "admin-1", reviewNote: "Legacy human approval for history",
+    })
+
+    await expect(applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate()))
+      .rejects.toThrow(/agent review/i)
     expect(await testDb.select().from(portfolioAccrualRepairRuns)).toHaveLength(0)
   })
 
   it("posts exact balanced non-cash journals and is a no-op on replay", async () => {
     const loan = await seedLoan()
     const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
-    await approvePortfolioAccrualRepair(plan, "admin-1", "Reviewed all dates and totals")
+    await reviewPortfolioAccrualRepair(plan, "agent:reviewer-1", "review-run-1")
     const cashBefore = (await testDb.select().from(transactions))
       .filter((row) => row.depositLocation !== null)
 
-    const first = await applyPortfolioAccrualRepair(plan, "admin-1", backupGate())
-    const second = await applyPortfolioAccrualRepair(plan, "admin-1", backupGate())
+    const first = await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
+    const second = await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
 
     expect(first.alreadyApplied).toBe(false)
     expect(second).toEqual({ runId: first.runId, alreadyApplied: true })
@@ -99,14 +117,19 @@ describe("portfolio accrual exact-plan approval and apply", () => {
     const cashflow = await Effect.runPromise(getCashflowData("2025-01"))
     expect(JSON.stringify(cashflow)).not.toContain("Income: Interest Earned")
     expect((await loadPortfolioAccrualPlan(loan.id, asOf, testDb)).classification).toBe("noop")
-    expect(await testDb.select().from(portfolioAccrualRepairRuns)).toHaveLength(1)
+    const [run] = await testDb.select().from(portfolioAccrualRepairRuns)
+    expect(run).toEqual(expect.objectContaining({ approvedBy: null, appliedBy: null,
+      appliedByAgent: "agent:executor-1" }))
+    expect(run.agentReviewId).toBeTruthy()
+    const [review] = await testDb.select().from(financialCorrectionAgentReviews)
+    expect(review.consumedByRunId).toBe(first.runId)
   })
 
   it("reverses repaired receivable when a later payment is made", async () => {
     const loan = await seedLoan()
     const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
-    await approvePortfolioAccrualRepair(plan, "admin-1", "Reviewed all dates and totals")
-    await applyPortfolioAccrualRepair(plan, "admin-1", backupGate())
+    await reviewPortfolioAccrualRepair(plan, "agent:reviewer-1", "review-run-1")
+    await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
 
     await testDb.transaction(async (tx) => {
       await reverseInterestAccrual(tx, {
@@ -119,11 +142,43 @@ describe("portfolio accrual exact-plan approval and apply", () => {
       row.amount === "100000.00")).toHaveLength(1)
   })
 
+  it("does not reverse waived receivable again on a later payment", async () => {
+    const loan = await seedLoan()
+    const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
+    await reviewPortfolioAccrualRepair(plan, "agent:reviewer-1", "review-run-1")
+    await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
+    const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+      .map((row) => [row.name, row.id]))
+    const waiverGroup = randomUUID()
+    const waiverId = randomUUID()
+    const waiverDate = new Date("2025-02-01T00:00:00.000Z")
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "credit",
+        amount: "40000.00", referenceType: "loan_waiver_accrual_reversal",
+        referenceId: waiverId, journalGroupId: waiverGroup,
+        transactionDate: waiverDate, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "debit",
+        amount: "40000.00", referenceType: "loan_waiver_accrual_reversal",
+        referenceId: waiverId, journalGroupId: waiverGroup,
+        transactionDate: waiverDate, recordedBy: "actor-1" },
+    ])
+    await testDb.transaction((tx) => reverseInterestAccrual(tx, {
+      loanId: loan.id, paymentDate: "2025-02-02T00:00:00.000Z",
+      actorId: "actor-1", settledInterestAmount: "70000.00",
+    }))
+    const rows = await testDb.select().from(transactions)
+    const receivable = rows.filter((row) =>
+      row.loanId === loan.id && row.categoryId === categories["Interest Receivable"])
+    const net = receivable.reduce((sum, row) => sum +
+      (row.type === "debit" ? Number(row.amount) : -Number(row.amount)), 0)
+    expect(net).toBe(0)
+  })
+
   it("keeps unpaid repaired interest receivable after a partial cash payment", async () => {
     const loan = await seedLoan()
     const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
-    await approvePortfolioAccrualRepair(plan, "admin-1", "Reviewed all dates and totals")
-    await applyPortfolioAccrualRepair(plan, "admin-1", backupGate())
+    await reviewPortfolioAccrualRepair(plan, "agent:reviewer-1", "review-run-1")
+    await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
 
     const payment = await Effect.runPromise(recordPayment({ loanId: loan.id,
       paymentDate: "2025-02-01T00:00:00.000Z", amount: "50000.00",
@@ -142,10 +197,10 @@ describe("portfolio accrual exact-plan approval and apply", () => {
   it("refuses a stale fingerprint after approval", async () => {
     const loan = await seedLoan()
     const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
-    await approvePortfolioAccrualRepair(plan, "admin-1", "Reviewed all dates and totals")
+    await reviewPortfolioAccrualRepair(plan, "agent:reviewer-1", "review-run-1")
     await testDb.update(loans).set({ interestRate: "0.1200" }).where(eq(loans.id, loan.id))
 
-    await expect(applyPortfolioAccrualRepair(plan, "admin-1", backupGate()))
+    await expect(applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate()))
       .rejects.toThrow(/stale|changed/i)
     expect(await testDb.select().from(portfolioAccrualRepairRuns)).toHaveLength(0)
   })
@@ -153,10 +208,10 @@ describe("portfolio accrual exact-plan approval and apply", () => {
   it("refuses an invalid backup before any journal write", async () => {
     const loan = await seedLoan()
     const plan = await loadPortfolioAccrualPlan(loan.id, asOf, testDb)
-    await approvePortfolioAccrualRepair(plan, "admin-1", "Reviewed all dates and totals")
+    await reviewPortfolioAccrualRepair(plan, "agent:reviewer-1", "review-run-1")
     vi.mocked(verifyPortfolioAccrualBackup).mockRejectedValueOnce(new Error("Invalid backup"))
 
-    await expect(applyPortfolioAccrualRepair(plan, "admin-1", backupGate()))
+    await expect(applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate()))
       .rejects.toThrow(/backup/i)
     expect(await testDb.select().from(portfolioAccrualRepairRuns)).toHaveLength(0)
   })

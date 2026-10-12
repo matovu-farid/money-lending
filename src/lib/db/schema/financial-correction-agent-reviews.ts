@@ -16,12 +16,20 @@ export const financialCorrectionAgentReviews = pgTable("financial_correction_age
   verdict: text("verdict").notNull(),
   findingsJson: text("findings_json").notNull(),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }).defaultNow().notNull(),
+  consumedAt: timestamp("consumed_at", { withTimezone: true }),
+  consumedByRunId: uuid("consumed_by_run_id"),
 }, (table) => [
-  unique("uq_financial_correction_agent_review_plan").on(table.kind, table.planHash),
+  unique("uq_financial_correction_agent_review_attempt")
+    .on(table.kind, table.planHash, table.reviewRunId),
   check("financial_correction_agent_review_verdict", sql`${table.verdict} IN ('pass', 'fail')`),
   check("financial_correction_agent_review_identity", sql`
     length(${table.kind}) > 0 AND length(${table.subjectId}) > 0 AND
     length(${table.reviewerAgentId}) > 0 AND length(${table.reviewRunId}) > 0 AND
     length(${table.evidenceSha256}) = 64
+  `),
+  check("financial_correction_agent_review_consumption", sql`
+    (${table.consumedAt} IS NULL AND ${table.consumedByRunId} IS NULL) OR
+    (${table.consumedAt} IS NOT NULL AND ${table.consumedByRunId} IS NOT NULL AND
+      ${table.verdict} = 'pass')
   `),
 ])

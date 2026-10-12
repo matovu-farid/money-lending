@@ -1,69 +1,90 @@
 import { randomUUID } from "node:crypto"
 import BigNumber from "bignumber.js"
-import { eq, inArray, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm"
 import { db } from "@/lib/db"
-import { user } from "@/lib/db/schema/auth"
 import { loans } from "@/lib/db/schema/loans"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
-import { portfolioAccrualRepairApprovals, portfolioAccrualRepairRuns } from
+import { portfolioAccrualRepairRuns } from
   "@/lib/db/schema/portfolio-accrual-repair-runs"
-import type { PortfolioAccrualPlan } from "@/lib/interest/portfolio-accrual-repair"
+import { financialCorrectionAgentReviews } from
+  "@/lib/db/schema/financial-correction-agent-reviews"
+import { planPortfolioAccrualRepair, type PortfolioAccrualPlan } from
+  "@/lib/interest/portfolio-accrual-repair"
+import { assertMatchingPassingAgentReview, hashReviewEvidence } from
+  "@/lib/financial-corrections/agent-review"
+import { verifyPortfolioAccrualEvidence } from
+  "@/lib/financial-corrections/portfolio-verifier"
 import { isIsolatedPortfolioRehearsalDatabase, verifyPortfolioAccrualBackup } from
   "@/lib/interest/portfolio-accrual-backup"
-import { loadPortfolioAccrualPlan } from "./portfolio-accrual-repair.service"
+import { loadPortfolioAccrualPlan, loadPortfolioAccrualSnapshot } from
+  "./portfolio-accrual-repair.service"
 
-type QueryDb = Pick<typeof db, "select">
+const REVIEW_KIND = "portfolio_accrual"
+
 type BackupGate = Parameters<typeof verifyPortfolioAccrualBackup>[0]
 
-async function assertAdministrator(actorId: string, queryDb: QueryDb): Promise<void> {
-  const [actor] = await queryDb.select({ role: user.role }).from(user)
-    .where(eq(user.id, actorId))
-  if (!actor || !["admin", "superAdmin"].includes(actor.role ?? "")) {
-    throw new Error("Portfolio accrual repair requires an identified administrator")
-  }
-}
-
-/** Called from an authenticated admin review action, never an operator-supplied prod actor. */
-export async function approvePortfolioAccrualRepair(
+/** Record a separate agent's checked evidence; a failed check remains auditable. */
+export async function reviewPortfolioAccrualRepair(
   reviewedPlan: PortfolioAccrualPlan,
-  approvedBy: string,
-  reviewNote: string,
-): Promise<string> {
-  if (!approvedBy || reviewNote.trim().length < 15 ||
-      reviewedPlan.classification !== "ready" || reviewedPlan.asOf > new Date()) {
-    throw new Error("An exact ready plan, administrator, and substantive note are required")
+  reviewerAgentId: string,
+  reviewRunId: string,
+): Promise<{ reviewId: string; verdict: "pass" | "fail"; findings: string[] }> {
+  if (!reviewerAgentId.startsWith("agent:") || reviewerAgentId.trim() === "agent:" ||
+      !reviewRunId.trim() || reviewedPlan.asOf > new Date() ||
+      reviewedPlan.classification !== "ready") {
+    throw new Error("A ready plan and identified reviewing agent run are required")
   }
-  await assertAdministrator(approvedBy, db)
-  const current = await loadPortfolioAccrualPlan(reviewedPlan.loanId, reviewedPlan.asOf)
-  if (current.classification !== "ready" ||
-      current.planHash !== reviewedPlan.planHash ||
+  const snapshot = await loadPortfolioAccrualSnapshot(reviewedPlan.loanId, reviewedPlan.asOf)
+  const current = planPortfolioAccrualRepair(snapshot)
+  if (current.classification !== "ready" || current.planHash !== reviewedPlan.planHash ||
       current.inputFingerprint !== reviewedPlan.inputFingerprint ||
       current.policyVersion !== reviewedPlan.policyVersion) {
-    throw new Error("Portfolio accrual plan changed before approval")
+    throw new Error("Portfolio plan changed before agent review")
   }
-  const [inserted] = await db.insert(portfolioAccrualRepairApprovals).values({
-    loanId: current.loanId, planHash: current.planHash,
+  let evidence: unknown
+  let verdict: "pass" | "fail" = "pass"
+  let findings: string[] = []
+  try {
+    evidence = verifyPortfolioAccrualEvidence(snapshot, current)
+  } catch (error) {
+    verdict = "fail"
+    findings = [error instanceof Error ? error.message : "Independent portfolio check failed"]
+    evidence = { loanId: current.loanId, asOf: current.asOf.toISOString(),
+      planHash: current.planHash, failedCheck: findings[0] }
+  }
+  const evidenceJson = JSON.stringify(evidence)
+  const evidenceSha256 = hashReviewEvidence(evidence)
+  const findingsJson = JSON.stringify({ checks: ["source", "dated checkpoints",
+    "balanced non-cash journals"], issues: findings })
+  const [inserted] = await db.insert(financialCorrectionAgentReviews).values({
+    kind: REVIEW_KIND, subjectId: current.loanId, planHash: current.planHash,
     inputFingerprint: current.inputFingerprint, policyVersion: current.policyVersion,
-    approvedBy, reviewNote: reviewNote.trim(),
-  }).onConflictDoNothing().returning({ id: portfolioAccrualRepairApprovals.id })
-  if (inserted) return inserted.id
-  const [existing] = await db.select({ id: portfolioAccrualRepairApprovals.id })
-    .from(portfolioAccrualRepairApprovals)
-    .where(eq(portfolioAccrualRepairApprovals.planHash, current.planHash))
-  if (!existing) throw new Error("Portfolio accrual approval was not recorded")
-  return existing.id
+    reviewerAgentId, reviewRunId, evidenceSha256, evidenceJson, verdict, findingsJson,
+  }).onConflictDoNothing().returning({ id: financialCorrectionAgentReviews.id })
+  if (inserted) return { reviewId: inserted.id, verdict, findings }
+  const [existing] = await db.select().from(financialCorrectionAgentReviews)
+    .where(and(eq(financialCorrectionAgentReviews.kind, REVIEW_KIND),
+      eq(financialCorrectionAgentReviews.planHash, current.planHash),
+      eq(financialCorrectionAgentReviews.reviewRunId, reviewRunId)))
+  if (!existing || existing.reviewerAgentId !== reviewerAgentId ||
+      existing.evidenceSha256 !== evidenceSha256 || existing.verdict !== verdict ||
+      existing.findingsJson !== findingsJson) {
+    throw new Error("Conflicting agent review attempt already exists")
+  }
+  return { reviewId: existing.id, verdict, findings }
 }
 
 /** Apply one immutable, approved loan plan after verifying a recent full-data backup. */
 export async function applyPortfolioAccrualRepair(
   reviewedPlan: PortfolioAccrualPlan,
-  appliedBy: string,
+  executorAgentId: string,
   backupGate: BackupGate,
 ): Promise<{ runId: string; alreadyApplied: boolean }> {
-  if (!appliedBy || reviewedPlan.classification !== "ready" ||
+  if (!executorAgentId.startsWith("agent:") || executorAgentId.trim() === "agent:" ||
+      reviewedPlan.classification !== "ready" ||
       reviewedPlan.asOf > new Date()) {
-    throw new Error("A ready plan and identified administrator are required")
+    throw new Error("A ready plan and identified executor agent are required")
   }
   if (!process.env.DATABASE_URL ||
       backupGate.primaryUrl !== process.env.DATABASE_URL ||
@@ -71,18 +92,22 @@ export async function applyPortfolioAccrualRepair(
         backupGate.directUrl !== process.env.DATABASE_URL_UNPOOLED)) {
     throw new Error("Backup database identity does not match the configured live connection")
   }
-  await assertAdministrator(appliedBy, db)
-  const [approval] = await db.select().from(portfolioAccrualRepairApprovals)
-    .where(eq(portfolioAccrualRepairApprovals.planHash, reviewedPlan.planHash))
-  if (!approval || approval.loanId !== reviewedPlan.loanId ||
-      approval.inputFingerprint !== reviewedPlan.inputFingerprint ||
-      approval.policyVersion !== reviewedPlan.policyVersion) {
-    throw new Error("Exact portfolio accrual repair approval is required")
-  }
   const [prior] = await db.select({ id: portfolioAccrualRepairRuns.id })
     .from(portfolioAccrualRepairRuns)
     .where(eq(portfolioAccrualRepairRuns.planHash, reviewedPlan.planHash))
   if (prior) return { runId: prior.id, alreadyApplied: true }
+  const [review] = await db.select().from(financialCorrectionAgentReviews)
+    .where(and(eq(financialCorrectionAgentReviews.kind, REVIEW_KIND),
+      eq(financialCorrectionAgentReviews.planHash, reviewedPlan.planHash)))
+    .orderBy(desc(financialCorrectionAgentReviews.reviewedAt),
+      desc(financialCorrectionAgentReviews.id)).limit(1)
+  if (!review) throw new Error("Exact passing agent review is required")
+  assertMatchingPassingAgentReview(review, {
+    kind: REVIEW_KIND, subjectId: reviewedPlan.loanId,
+    planHash: reviewedPlan.planHash,
+    inputFingerprint: reviewedPlan.inputFingerprint,
+    policyVersion: reviewedPlan.policyVersion,
+  }, executorAgentId)
   const rehearsal = isIsolatedPortfolioRehearsalDatabase(
     backupGate.primaryUrl, backupGate.directUrl)
   const backup = await verifyPortfolioAccrualBackup(backupGate, rehearsal ? undefined : {
@@ -102,15 +127,29 @@ export async function applyPortfolioAccrualRepair(
       .from(portfolioAccrualRepairRuns)
       .where(eq(portfolioAccrualRepairRuns.planHash, reviewedPlan.planHash))
     if (existingRun) return { runId: existingRun.id, alreadyApplied: true }
+    const [lockedReview] = await tx.select().from(financialCorrectionAgentReviews)
+      .where(eq(financialCorrectionAgentReviews.id, review.id)).for("update")
+    if (!lockedReview) throw new Error("Agent review disappeared before posting")
+    assertMatchingPassingAgentReview(lockedReview, {
+      kind: REVIEW_KIND, subjectId: reviewedPlan.loanId,
+      planHash: reviewedPlan.planHash,
+      inputFingerprint: reviewedPlan.inputFingerprint,
+      policyVersion: reviewedPlan.policyVersion,
+    }, executorAgentId)
     const [loan] = await tx.select().from(loans)
       .where(eq(loans.id, reviewedPlan.loanId)).for("update")
     if (!loan || loan.deletedAt) throw new Error("Portfolio accrual loan changed")
-    const current = await loadPortfolioAccrualPlan(loan.id, reviewedPlan.asOf, tx)
+    const snapshot = await loadPortfolioAccrualSnapshot(loan.id, reviewedPlan.asOf, tx)
+    const current = planPortfolioAccrualRepair(snapshot)
     if (current.classification !== "ready" ||
         current.planHash !== reviewedPlan.planHash ||
         current.inputFingerprint !== reviewedPlan.inputFingerprint ||
         current.policyVersion !== reviewedPlan.policyVersion) {
       throw new Error("Portfolio accrual plan is stale or source changed")
+    }
+    const evidence = verifyPortfolioAccrualEvidence(snapshot, current)
+    if (hashReviewEvidence(evidence) !== lockedReview.evidenceSha256) {
+      throw new Error("Agent review evidence no longer matches source accounting")
     }
     const categories = await tx.select().from(transactionCategories)
       .where(inArray(transactionCategories.name, ["Interest Receivable", "Interest Earned"]))
@@ -134,26 +173,36 @@ export async function applyPortfolioAccrualRepair(
           categoryId: increasing ? receivable[0].id : earned[0].id,
           referenceType: "portfolio_accrual_repair", referenceId: runId,
           loanId: loan.id, description: `Portfolio interest repair ${runId}`,
-          transactionDate: entry.date, recordedBy: appliedBy, journalGroupId },
+          transactionDate: entry.date, recordedBy: executorAgentId, journalGroupId },
         { type: "credit", amount: delta.abs().toFixed(2),
           categoryId: increasing ? earned[0].id : receivable[0].id,
           referenceType: "portfolio_accrual_repair", referenceId: runId,
           loanId: loan.id, description: `Portfolio interest repair ${runId}`,
-          transactionDate: entry.date, recordedBy: appliedBy, journalGroupId },
+          transactionDate: entry.date, recordedBy: executorAgentId, journalGroupId },
       ])
     }
+    const [consumed] = await tx.update(financialCorrectionAgentReviews).set({
+      consumedAt: new Date(), consumedByRunId: runId,
+    }).where(and(eq(financialCorrectionAgentReviews.id, lockedReview.id),
+      isNull(financialCorrectionAgentReviews.consumedAt)))
+      .returning({ id: financialCorrectionAgentReviews.id })
+    if (!consumed) throw new Error("Agent review was already consumed")
+    await tx.insert(portfolioAccrualRepairRuns).values({
+      id: runId, loanId: loan.id, planHash: current.planHash,
+      inputFingerprint: current.inputFingerprint, policyVersion: current.policyVersion,
+      approvedBy: null, appliedBy: null, agentReviewId: lockedReview.id,
+      appliedByAgent: executorAgentId, backupSha256: backup.dumpSha256,
+      beforeSummary: JSON.stringify({ asOf: current.asOf, entries: current.entries }),
+      afterSummary: JSON.stringify({ classification: "pending" }),
+    })
     const after = await loadPortfolioAccrualPlan(loan.id, current.asOf, tx)
     if (after.classification !== "noop" || after.entries.length !== 0) {
       throw new Error("Portfolio accrual did not reconcile after posting")
     }
-    await tx.insert(portfolioAccrualRepairRuns).values({
-      id: runId, loanId: loan.id, planHash: current.planHash,
-      inputFingerprint: current.inputFingerprint, policyVersion: current.policyVersion,
-      approvedBy: approval.approvedBy, appliedBy, backupSha256: backup.dumpSha256,
-      beforeSummary: JSON.stringify({ asOf: current.asOf, entries: current.entries }),
-      afterSummary: JSON.stringify({ classification: after.classification,
-        inputFingerprint: after.inputFingerprint, planHash: after.planHash }),
-    })
+    await tx.update(portfolioAccrualRepairRuns).set({ afterSummary: JSON.stringify({
+      classification: after.classification, inputFingerprint: after.inputFingerprint,
+      planHash: after.planHash,
+    }) }).where(eq(portfolioAccrualRepairRuns.id, runId))
     return { runId, alreadyApplied: false }
   })
 }

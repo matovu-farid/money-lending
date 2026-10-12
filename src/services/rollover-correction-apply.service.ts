@@ -1,27 +1,27 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import BigNumber from "bignumber.js";
 import { db } from "@/lib/db";
 import { loans } from "@/lib/db/schema/loans";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { rolloverCorrectionRuns } from "@/lib/db/schema/rollover-correction-runs";
-import { rolloverCorrectionApprovals } from "@/lib/db/schema/rollover-correction-runs";
-import { user } from "@/lib/db/schema/auth";
+import { financialCorrectionAgentReviews } from
+  "@/lib/db/schema/financial-correction-agent-reviews";
+import { auditLog } from "@/lib/db/schema/audit";
 import type { CorrectionPlan, SettlementChange } from "@/lib/interest/rollover-correction";
+import { ROLLOVER_CORRECTION_POLICY_VERSION } from "@/lib/interest/rollover-correction";
+import { assertMatchingPassingAgentReview, hashReviewEvidence } from
+  "@/lib/financial-corrections/agent-review";
+import { verifyRolloverCorrectionEvidence } from
+  "@/lib/financial-corrections/rollover-verifier";
+import { verifyRolloverCorrectionBackup } from "@/lib/interest/rollover-backup";
 import { getLoanBalancesFromLedger, getRolloverInterestSettledFromLedger } from "./ledger-queries.service";
 import { loadRolloverCorrectionPlans, loadRolloverCorrectionPlansInSnapshot } from "./rollover-correction.service";
-import { writeAuditLog } from "./audit.service";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-
-async function assertCorrectionActor(actorId: string, queryDb: Pick<typeof db, "select">) {
-  const [actor] = await queryDb.select({ role: user.role }).from(user)
-    .where(eq(user.id, actorId));
-  if (!actor || !["admin", "superAdmin"].includes(actor.role ?? "")) {
-    throw new Error("Rollover correction requires an identified administrator");
-  }
-}
+const REVIEW_KIND = "rollover_correction";
+type BackupGate = Parameters<typeof verifyRolloverCorrectionBackup>[0];
 
 type LedgerRow = {
   loanId: string | null;
@@ -129,69 +129,130 @@ async function postSettlementReclassification(tx: Tx, change: SettlementChange,
   })));
 }
 
-/** Persist explicit review of one immutable, currently valid plan. */
-export async function approveRolloverCorrection(
-  reviewedPlan: CorrectionPlan, approvedBy: string, reviewNote: string,
-): Promise<string> {
-  if (!approvedBy || !reviewNote.trim() || reviewedPlan.classification === "blocked") {
-    throw new Error("A non-blocked plan needs an identified reviewer and review note");
+/** Record one independent agent check of the current, source-reconciled chain. */
+export async function reviewRolloverCorrection(
+  reviewedPlan: CorrectionPlan, reviewerAgentId: string, reviewRunId: string,
+): Promise<{ reviewId: string; verdict: "pass" | "fail"; findings: string[] }> {
+  if (reviewedPlan.policyVersion !== ROLLOVER_CORRECTION_POLICY_VERSION) {
+    throw new Error(`Rollover correction requires policy ${ROLLOVER_CORRECTION_POLICY_VERSION}`);
   }
-  await assertCorrectionActor(approvedBy, db);
-  const currentPortfolio = await loadRolloverCorrectionPlans(reviewedPlan.policyVersion);
-  const current = currentPortfolio.plans.find((plan) => plan.planHash === reviewedPlan.planHash);
-  if (!current || current.inputFingerprint !== reviewedPlan.inputFingerprint) {
-    throw new Error("Rollover correction plan changed before approval");
+  if (!reviewerAgentId.startsWith("agent:") || reviewerAgentId.trim() === "agent:" ||
+      !reviewRunId.trim() || reviewedPlan.classification === "blocked" ||
+      !reviewedPlan.edges.length) {
+    throw new Error("A non-blocked plan and identified reviewing agent run are required");
   }
-  const [existing] = await db.select().from(rolloverCorrectionApprovals)
-    .where(eq(rolloverCorrectionApprovals.planHash, current.planHash));
-  if (existing) return existing.id;
-  const [approval] = await db.insert(rolloverCorrectionApprovals).values({
-    chainRootId: current.edges[0].predecessorId,
-    planHash: current.planHash,
-    inputFingerprint: current.inputFingerprint,
-    policyVersion: current.policyVersion,
-    approvedBy,
-    reviewNote: reviewNote.trim(),
-  }).returning({ id: rolloverCorrectionApprovals.id });
-  return approval.id;
+  const portfolio = await loadRolloverCorrectionPlans(reviewedPlan.policyVersion);
+  const index = portfolio.plans.findIndex((plan) =>
+    plan.edges[0]?.predecessorId === reviewedPlan.edges[0]?.predecessorId);
+  const current = portfolio.plans[index];
+  if (!current || current.classification === "blocked" ||
+      JSON.stringify(current) !== JSON.stringify(reviewedPlan)) {
+    throw new Error("Rollover correction plan changed before agent review");
+  }
+  let evidence: unknown;
+  let verdict: "pass" | "fail" = "pass";
+  let findings: string[] = [];
+  try {
+    evidence = verifyRolloverCorrectionEvidence(portfolio.chains[index], current,
+      portfolio.sourceJournals);
+  } catch (error) {
+    verdict = "fail";
+    findings = [error instanceof Error ? error.message : "Independent rollover check failed"];
+    evidence = { chainRootId: current.edges[0].predecessorId,
+      planHash: current.planHash, failedCheck: findings[0] };
+  }
+  const evidenceJson = JSON.stringify(evidence);
+  const evidenceSha256 = hashReviewEvidence(evidence);
+  const findingsJson = JSON.stringify({ checks: ["source chain", "dated carry",
+    "settlement allocations", "balanced non-cash journal effects"], issues: findings });
+  const [inserted] = await db.insert(financialCorrectionAgentReviews).values({
+    kind: REVIEW_KIND, subjectId: current.edges[0].predecessorId,
+    planHash: current.planHash, inputFingerprint: current.inputFingerprint,
+    policyVersion: current.policyVersion, reviewerAgentId, reviewRunId,
+    evidenceJson, evidenceSha256, verdict, findingsJson,
+  }).onConflictDoNothing().returning({ id: financialCorrectionAgentReviews.id });
+  if (inserted) return { reviewId: inserted.id, verdict, findings };
+  const [existing] = await db.select().from(financialCorrectionAgentReviews)
+    .where(and(eq(financialCorrectionAgentReviews.kind, REVIEW_KIND),
+      eq(financialCorrectionAgentReviews.planHash, current.planHash),
+      eq(financialCorrectionAgentReviews.reviewRunId, reviewRunId)));
+  if (!existing || existing.reviewerAgentId !== reviewerAgentId ||
+      existing.evidenceSha256 !== evidenceSha256 || existing.verdict !== verdict ||
+      existing.findingsJson !== findingsJson) {
+    throw new Error("Conflicting rollover agent review attempt already exists");
+  }
+  return { reviewId: existing.id, verdict, findings };
 }
 
 /**
- * Applies a previously approved and revalidated plan. A blocked chain never
- * reaches this path; a review chain requires its exact fingerprint's approval.
+ * Applies a separately agent-reviewed plan only after a verified full backup.
  */
 export async function applyRolloverCorrection(
   reviewedPlan: CorrectionPlan,
-  reviewedBy: string,
+  executorAgentId: string,
+  backupGate: BackupGate,
 ): Promise<{ applied: boolean; runId: string | null }> {
-  if (!reviewedBy || reviewedPlan.classification === "blocked" ||
+  if (reviewedPlan.policyVersion !== ROLLOVER_CORRECTION_POLICY_VERSION) {
+    throw new Error(`Rollover correction requires policy ${ROLLOVER_CORRECTION_POLICY_VERSION}`);
+  }
+  if (!executorAgentId.startsWith("agent:") || executorAgentId.trim() === "agent:" ||
+      reviewedPlan.classification === "blocked" ||
       !reviewedPlan.edges.length ||
       reviewedPlan.edges.some((edge) => edge.classification === "blocked")) {
-    throw new Error("Only an identified actor may apply a reviewed, non-blocked correction plan");
+    throw new Error("Only an identified executor agent may apply a non-blocked rollover plan");
   }
+  if (!process.env.DATABASE_URL || backupGate.primaryUrl !== process.env.DATABASE_URL ||
+      (process.env.DATABASE_URL_UNPOOLED &&
+        backupGate.directUrl !== process.env.DATABASE_URL_UNPOOLED)) {
+    throw new Error("Rollover backup database identity does not match the live connection");
+  }
+  const [prior] = await db.select({ id: rolloverCorrectionRuns.id })
+    .from(rolloverCorrectionRuns)
+    .where(eq(rolloverCorrectionRuns.planHash, reviewedPlan.planHash));
+  if (prior) return { applied: false, runId: prior.id };
+  const [review] = await db.select().from(financialCorrectionAgentReviews)
+    .where(and(eq(financialCorrectionAgentReviews.kind, REVIEW_KIND),
+      eq(financialCorrectionAgentReviews.subjectId, reviewedPlan.edges[0].predecessorId)))
+    .orderBy(desc(financialCorrectionAgentReviews.reviewedAt),
+      desc(financialCorrectionAgentReviews.id)).limit(1);
+  if (!review) throw new Error("Exact passing rollover agent review is required");
+  const expectedReview = { kind: REVIEW_KIND,
+    subjectId: reviewedPlan.edges[0].predecessorId,
+    planHash: reviewedPlan.planHash,
+    inputFingerprint: reviewedPlan.inputFingerprint,
+    policyVersion: reviewedPlan.policyVersion };
+  assertMatchingPassingAgentReview(review, expectedReview, executorAgentId);
+  const backup = await verifyRolloverCorrectionBackup(backupGate);
   return db.transaction(async (tx) => {
-    await assertCorrectionActor(reviewedBy, tx);
-    const [approval] = await tx.select().from(rolloverCorrectionApprovals)
-      .where(eq(rolloverCorrectionApprovals.planHash, reviewedPlan.planHash));
-    if (!approval || approval.inputFingerprint !== reviewedPlan.inputFingerprint ||
-        approval.policyVersion !== reviewedPlan.policyVersion) {
-      throw new Error("Exact rollover correction plan has not been approved");
+    await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL SERIALIZABLE`);
+    await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
+    // Block every source writer, including null-loan journal counterpart legs,
+    // and review inserts while the latest review and chain are rechecked.
+    await tx.execute(sql`LOCK TABLE loans, payments, loan_waivers,
+      rate_change_requests, transactions, transaction_categories, audit_log,
+      financial_correction_agent_reviews IN SHARE ROW EXCLUSIVE MODE`);
+    const identity = await tx.execute(sql`SELECT current_database() AS name, current_user AS role`);
+    const configured = new URL(backupGate.primaryUrl);
+    if (identity[0]?.name !== decodeURIComponent(configured.pathname.slice(1)) ||
+        identity[0]?.role !== decodeURIComponent(configured.username)) {
+      throw new Error("Rollover backup identity does not match the live database session");
     }
     const [alreadyApplied] = await tx.select().from(rolloverCorrectionRuns)
       .where(eq(rolloverCorrectionRuns.planHash, reviewedPlan.planHash));
     if (alreadyApplied) return { applied: false, runId: alreadyApplied.id };
-
-    // This is a rare, reviewed maintenance write. Quiesce every fingerprinted
-    // source table for its duration, including null-loan counterpart journal
-    // legs and new rows that a row-level lock would miss. Ordinary reads remain
-    // available; concurrent source writes wait or this attempt times out safely.
-    await tx.execute(sql`SET LOCAL lock_timeout = '10s'`);
-    await tx.execute(sql`LOCK TABLE loans, payments, loan_waivers,
-      rate_change_requests, transactions, transaction_categories
-      IN SHARE ROW EXCLUSIVE MODE`);
-    const [appliedWhileWaiting] = await tx.select().from(rolloverCorrectionRuns)
-      .where(eq(rolloverCorrectionRuns.planHash, reviewedPlan.planHash));
-    if (appliedWhileWaiting) return { applied: false, runId: appliedWhileWaiting.id };
+    const [latestReview] = await tx.select({ id: financialCorrectionAgentReviews.id })
+      .from(financialCorrectionAgentReviews)
+      .where(and(eq(financialCorrectionAgentReviews.kind, REVIEW_KIND),
+        eq(financialCorrectionAgentReviews.subjectId, expectedReview.subjectId)))
+      .orderBy(desc(financialCorrectionAgentReviews.reviewedAt),
+        desc(financialCorrectionAgentReviews.id)).limit(1);
+    if (latestReview?.id !== review.id) {
+      throw new Error("Rollover agent review was superseded before posting");
+    }
+    const [lockedReview] = await tx.select().from(financialCorrectionAgentReviews)
+      .where(eq(financialCorrectionAgentReviews.id, review.id)).for("update");
+    if (!lockedReview) throw new Error("Rollover agent review disappeared before posting");
+    assertMatchingPassingAgentReview(lockedReview, expectedReview, executorAgentId);
     const chainIds = [...new Set(reviewedPlan.edges.flatMap((edge) =>
       [edge.predecessorId, edge.successorId]))].sort();
     const locked = await tx.select().from(loans)
@@ -202,12 +263,17 @@ export async function applyRolloverCorrection(
       .orderBy(transactions.id).for("update");
     const byId = new Map(locked.map((loan) => [loan.id, loan]));
     const currentPortfolio = await loadRolloverCorrectionPlansInSnapshot(tx, reviewedPlan.policyVersion);
-    const current = currentPortfolio.plans.find((plan) =>
+    const currentIndex = currentPortfolio.plans.findIndex((plan) =>
       plan.edges[0]?.predecessorId === reviewedPlan.edges[0]?.predecessorId);
-    if (!current || current.inputFingerprint !== reviewedPlan.inputFingerprint ||
-        current.planHash !== reviewedPlan.planHash ||
-        current.classification === "blocked") {
+    const current = currentPortfolio.plans[currentIndex];
+    if (!current || current.classification === "blocked" ||
+        JSON.stringify(current) !== JSON.stringify(reviewedPlan)) {
       throw new Error("Rollover correction plan is stale or now blocked");
+    }
+    const evidence = verifyRolloverCorrectionEvidence(
+      currentPortfolio.chains[currentIndex], current, currentPortfolio.sourceJournals);
+    if (hashReviewEvidence(evidence) !== lockedReview.evidenceSha256) {
+      throw new Error("Rollover agent review evidence no longer matches source accounting");
     }
     if (current.edges.every((edge) => new BigNumber(edge.deltaPrincipal).isZero()) &&
         current.settlementChanges.every((change) => !hasAllocationDelta(change))) {
@@ -234,7 +300,7 @@ export async function applyRolloverCorrection(
     const runId = randomUUID();
     for (const change of current.settlementChanges.filter(hasAllocationDelta)) {
       await postSettlementReclassification(tx, change, {
-        at: change.date, actorId: reviewedBy, receivableId, interestId,
+        at: change.date, actorId: executorAgentId, receivableId, interestId,
         overpaymentId, runId,
       });
     }
@@ -251,7 +317,7 @@ export async function applyRolloverCorrection(
         successorId: edge.successorId,
         amount: interestDelta,
         at: successor.startDate,
-        actorId: reviewedBy,
+        actorId: executorAgentId,
         receivableId,
         interestId,
         runId,
@@ -261,7 +327,7 @@ export async function applyRolloverCorrection(
         successorId: edge.successorId,
         amount: principalDelta,
         at: successor.startDate,
-        actorId: reviewedBy,
+        actorId: executorAgentId,
         receivableId,
         runId,
       });
@@ -270,22 +336,24 @@ export async function applyRolloverCorrection(
         rolloverAmount: edge.proposedRolloverAmount,
         updatedAt: new Date(),
       }).where(eq(loans.id, edge.successorId));
-      await writeAuditLog(tx, {
-        actorId: reviewedBy,
+      await tx.insert(auditLog).values({
+        actorId: null,
         action: "loan.rollover.correction",
         entityType: "loan",
         entityId: edge.successorId,
-        beforeValue: {
+        beforeValue: JSON.stringify({
           principalAmount: edge.originalPrincipal,
           rolloverAmount: edge.originalRolloverAmount,
-        },
-        afterValue: {
+        }),
+        afterValue: JSON.stringify({
           principalAmount: edge.proposedPrincipal,
           rolloverAmount: edge.proposedRolloverAmount,
           settlementChanges: current.settlementChanges.filter((change) =>
             change.loanId === edge.predecessorId || change.loanId === edge.successorId),
-          runId,
-        },
+          runId, agentReviewId: lockedReview.id,
+          reviewerAgentId: lockedReview.reviewerAgentId,
+          executorAgentId,
+        }),
       });
     }
 
@@ -331,14 +399,23 @@ export async function applyRolloverCorrection(
     if (statusesAfter.some((loan) => loan.status !== byId.get(loan.id)?.status)) {
       throw new Error("Loan status changed during rollover correction");
     }
+    const [consumed] = await tx.update(financialCorrectionAgentReviews).set({
+      consumedAt: new Date(), consumedByRunId: runId,
+    }).where(and(eq(financialCorrectionAgentReviews.id, lockedReview.id),
+      isNull(financialCorrectionAgentReviews.consumedAt)))
+      .returning({ id: financialCorrectionAgentReviews.id });
+    if (!consumed) throw new Error("Rollover agent review was already consumed");
     await tx.insert(rolloverCorrectionRuns).values({
       id: runId,
       chainRootId: current.edges[0].predecessorId,
       planHash: current.planHash,
       inputFingerprint: current.inputFingerprint,
       policyVersion: current.policyVersion,
-      reviewedBy,
+      reviewedBy: null,
+      agentReviewId: lockedReview.id,
+      appliedByAgent: executorAgentId,
       beforeSummary: JSON.stringify({
+        backupSha256: backup.dumpSha256,
         loans: current.edges.map((edge) => ({
           loanId: edge.successorId,
           principalAmount: edge.originalPrincipal,

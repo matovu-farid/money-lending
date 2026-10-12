@@ -46,6 +46,7 @@ function snapshot(): HistoricalRateSnapshot {
     ],
     sourceDigest: "a".repeat(64),
     sourceExceptions: [],
+    journalLegs: [],
   };
 }
 

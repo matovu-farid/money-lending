@@ -8,6 +8,11 @@ import { loans } from "@/lib/db/schema/loans"
 import { payments } from "@/lib/db/schema/payments"
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
+import { auditLog } from "@/lib/db/schema/audit"
+import { historicalRateRepairRuns } from "@/lib/db/schema/historical-rate-repair-runs"
+import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs"
+import { financialCorrectionAgentReviews } from
+  "@/lib/db/schema/financial-correction-agent-reviews"
 import { loadPortfolioAccrualPlan } from "../portfolio-accrual-repair.service"
 import { accrueInterestForLoans } from "../transaction.service"
 
@@ -44,6 +49,126 @@ async function seedLoan() {
 describe("portfolio accrual source preview", () => {
   beforeEach(async () => { await resetDb() })
 
+  it("previews a corrected paid-rate loan and invalidates the plan when its run audit changes", async () => {
+    const { loan, categories } = await seedLoan()
+    const paymentDate = new Date("2025-01-16T00:00:00.000Z")
+    const [payment] = await testDb.insert(payments).values({ loanId: loan.id,
+      amount: "50000.00", paymentDate, recordedBy: "actor-1",
+      depositLocation: "cash" }).returning()
+    const paymentGroup = randomUUID()
+    const accrualGroup = randomUUID()
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories.Cash, type: "debit",
+        amount: "50000.00", referenceType: "payment", referenceId: payment.id,
+        depositLocation: "cash", journalGroupId: paymentGroup,
+        transactionDate: paymentDate, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "50000.00", referenceType: "payment", referenceId: payment.id,
+        journalGroupId: paymentGroup, transactionDate: paymentDate, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "debit",
+        amount: "100000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: accrualGroup, transactionDate: januaryEnd, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "100000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: accrualGroup, transactionDate: januaryEnd, recordedBy: "actor-1" },
+    ])
+    await testDb.update(loans).set({ interestRateOverride: "0.1500" })
+      .where(eq(loans.id, loan.id))
+    const reviewId = randomUUID()
+    const runId = randomUUID()
+    const runAsOf = januaryEnd.toISOString()
+    await testDb.insert(financialCorrectionAgentReviews).values({ id: reviewId,
+      kind: "historical_rate", subjectId: loan.id, planHash: "historical-plan",
+      inputFingerprint: "historical-input", policyVersion: "v2",
+      reviewerAgentId: "agent:reviewer", reviewRunId: "review-attempt",
+      evidenceSha256: "a".repeat(64), evidenceJson: "{}", verdict: "pass",
+      findingsJson: "{}", consumedAt: new Date("2025-02-02T00:00:00.000Z"),
+      consumedByRunId: runId })
+    await testDb.insert(historicalRateRepairRuns).values({ id: runId, loanId: loan.id,
+      planHash: "historical-plan", inputFingerprint: "historical-input",
+      policyVersion: "v2", agentReviewId: reviewId,
+      appliedByAgent: "agent:executor", backupSha256: "a".repeat(64),
+      appliedAt: new Date("2025-02-02T00:00:00.000Z"),
+      beforeSummary: JSON.stringify({ loanId: loan.id, classification: "review",
+        planHash: "historical-plan", inputFingerprint: "historical-input",
+        policyVersion: "v2", correctedRate: "0.1500", asOf: runAsOf,
+        changes: [{ id: payment.id, newInterest: "50000.00", newPrincipal: "0.00" }] }),
+      afterSummary: JSON.stringify({ loanId: loan.id, classification: "noop",
+        policyVersion: "v2", correctedRate: "0.1500", asOf: runAsOf,
+        accrualJournalDelta: "0.00", accrualJournalTarget: "100000.00",
+        exceptions: [], endingPrincipal: "1000000.00",
+        changes: [{ id: payment.id, oldInterest: "50000.00",
+          oldPrincipal: "0.00", newInterest: "50000.00", newPrincipal: "0.00" }] }) })
+    const [audit] = await testDb.insert(auditLog).values({ entityType: "loan",
+      entityId: loan.id, action: "historical_rate_corrected_by_agent",
+      beforeValue: JSON.stringify({ interestRateOverride: "0.1500" }),
+      afterValue: JSON.stringify({ interestRateOverride: "0.1500",
+        rateSemantics: "correction", effectiveFrom: loan.startDate.toISOString(),
+        repairedPlanHash: "historical-plan", agentReviewId: reviewId,
+        reviewerAgentId: "agent:reviewer", executorAgentId: "agent:executor",
+        repairRunId: runId }), occurredAt: new Date("2025-02-02T00:00:00.000Z")
+    }).returning()
+    const previewAsOf = new Date("2025-02-28T23:59:59.999Z")
+    const first = await loadPortfolioAccrualPlan(loan.id, previewAsOf, testDb)
+    expect(first.classification).toBe("ready")
+    const portfolioRunId = randomUUID()
+    const portfolioReviewId = randomUUID()
+    const portfolioDate = new Date("2025-01-31T23:59:59.999Z")
+    await testDb.insert(financialCorrectionAgentReviews).values({ id: portfolioReviewId,
+      kind: "portfolio_accrual", subjectId: loan.id, planHash: "portfolio-plan",
+      inputFingerprint: "portfolio-input", policyVersion: "v3",
+      reviewerAgentId: "agent:portfolio-reviewer", reviewRunId: "portfolio-review-attempt",
+      evidenceSha256: "b".repeat(64), evidenceJson: "{}", verdict: "pass",
+      findingsJson: "{}", consumedAt: new Date("2025-02-03T00:00:00.000Z"),
+      consumedByRunId: portfolioRunId })
+    await testDb.insert(portfolioAccrualRepairRuns).values({ id: portfolioRunId,
+      loanId: loan.id, planHash: "portfolio-plan", inputFingerprint: "portfolio-input",
+      policyVersion: "v3", agentReviewId: portfolioReviewId,
+      appliedByAgent: "agent:portfolio-executor", backupSha256: "b".repeat(64),
+      beforeSummary: "{}", afterSummary: "{}",
+      appliedAt: new Date("2025-02-03T00:00:00.000Z") })
+    const portfolioGroup = randomUUID()
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "debit",
+        amount: "50000.00", referenceType: "portfolio_accrual_repair",
+        referenceId: portfolioRunId, journalGroupId: portfolioGroup,
+        transactionDate: portfolioDate, recordedBy: "agent:portfolio-executor" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "50000.00", referenceType: "portfolio_accrual_repair",
+        referenceId: portfolioRunId, journalGroupId: portfolioGroup,
+        transactionDate: portfolioDate, recordedBy: "agent:portfolio-executor" },
+    ])
+    const afterPortfolio = await loadPortfolioAccrualPlan(loan.id, previewAsOf, testDb)
+    expect(afterPortfolio.classification).toBe("ready")
+    await testDb.update(portfolioAccrualRepairRuns).set({
+      appliedAt: new Date("2025-02-01T00:00:00.000Z"),
+    }).where(eq(portfolioAccrualRepairRuns.id, portfolioRunId))
+    expect((await loadPortfolioAccrualPlan(loan.id, previewAsOf, testDb)).classification)
+      .toBe("blocked")
+    await testDb.update(portfolioAccrualRepairRuns).set({
+      appliedAt: new Date("2025-02-03T00:00:00.000Z"),
+    }).where(eq(portfolioAccrualRepairRuns.id, portfolioRunId))
+    const [storedRun] = await testDb.select().from(historicalRateRepairRuns)
+      .where(eq(historicalRateRepairRuns.id, runId))
+    await testDb.update(historicalRateRepairRuns).set({ afterSummary: JSON.stringify({
+      ...JSON.parse(storedRun.afterSummary), accrualJournalTarget: "999999.00",
+    }) }).where(eq(historicalRateRepairRuns.id, runId))
+    const contradictory = await loadPortfolioAccrualPlan(loan.id, previewAsOf, testDb)
+    expect(contradictory.classification).toBe("blocked")
+    expect(contradictory.inputFingerprint).not.toBe(first.inputFingerprint)
+    await testDb.update(historicalRateRepairRuns).set({ afterSummary: storedRun.afterSummary })
+      .where(eq(historicalRateRepairRuns.id, runId))
+    await testDb.update(auditLog).set({ afterValue: JSON.stringify({
+      interestRateOverride: "0.1500", rateSemantics: "correction",
+      effectiveFrom: "2025-01-02T00:00:00.000Z", repairedPlanHash: "historical-plan",
+      agentReviewId: reviewId, reviewerAgentId: "agent:reviewer",
+      executorAgentId: "agent:executor", repairRunId: runId,
+    }) }).where(eq(auditLog.id, audit.id))
+    const stale = await loadPortfolioAccrualPlan(loan.id, previewAsOf, testDb)
+    expect(stale.classification).toBe("blocked")
+    expect(stale.inputFingerprint).not.toBe(first.inputFingerprint)
+  })
+
   it("previews an accrual without changing rows when the asset account is missing", async () => {
     const { loan, categories } = await seedLoan()
     await testDb.delete(transactionCategories)
@@ -55,6 +180,76 @@ describe("portfolio accrual source preview", () => {
     expect(plan.classification).toBe("ready")
     expect(plan.entries).toEqual([expect.objectContaining({ delta: "100000.00" })])
     expect(await testDb.select().from(transactions)).toEqual(before)
+  })
+
+  it("credits an attributed prior pair toward the remaining receivable", async () => {
+    const { loan, categories } = await seedLoan()
+    const group = randomUUID()
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "debit",
+        amount: "50000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "50000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1" },
+    ])
+
+    const plan = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(plan.classification).toBe("ready")
+    expect(plan.entries).toEqual([expect.objectContaining({ delta: "50000.00" })])
+  })
+
+  it.each([
+    ["loan", { loanId: null }],
+    ["reference type", { referenceType: "other_accrual" }],
+    ["reference id", { referenceId: "other-loan" }],
+    ["effective date", { transactionDate: new Date("2025-01-30T23:59:59.999Z") }],
+    ["deposit location", { depositLocation: "cash" as const }],
+  ])("blocks a prior receivable pair with mismatched %s attribution", async (_field, patch) => {
+    const { loan, categories } = await seedLoan()
+    const group = randomUUID()
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "debit",
+        amount: "50000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "50000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1", ...patch },
+    ])
+
+    const plan = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(plan.classification).toBe("blocked")
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/Receivable journal .*counterpart/),
+    ]))
+  })
+
+  it("blocks a prior journal group that also contains another loan's leg", async () => {
+    const { loan, categories } = await seedLoan()
+    const [otherLoan] = await testDb.insert(loans).values({
+      customerId: loan.customerId, principalAmount: "1000.00",
+      interestRate: "0.1000", startDate: start,
+      issuanceFee: "0.00", status: "active", issuedBy: "actor-1",
+      disbursementSource: "cash",
+    }).returning()
+    const group = randomUUID()
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Interest Receivable"], type: "debit",
+        amount: "50000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "50000.00", referenceType: "interest_accrual", referenceId: loan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1" },
+      { loanId: otherLoan.id, categoryId: categories.Cash, type: "debit",
+        amount: "1.00", referenceType: "loan", referenceId: otherLoan.id,
+        journalGroupId: group, transactionDate: januaryEnd, recordedBy: "actor-1" },
+    ])
+
+    const plan = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(plan.classification).toBe("blocked")
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/Receivable journal .*counterpart/),
+    ]))
   })
 
   it("blocks a payment whose Cash journal date differs from its effective date", async () => {

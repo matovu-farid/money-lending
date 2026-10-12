@@ -1,5 +1,10 @@
-import { describe, it, expect } from "vitest"
-import { formatActivityDescription, getActivityHref } from "../activity.service"
+import { describe, it, expect, vi } from "vitest"
+import { Effect } from "effect"
+import { PgDialect } from "drizzle-orm/pg-core"
+import { formatActivityDescription, getActivityHref, getActivities } from "../activity.service"
+
+const { mockSelect } = vi.hoisted(() => ({ mockSelect: vi.fn() }))
+vi.mock("@/lib/db", () => ({ db: { select: mockSelect } }))
 
 describe("formatActivityDescription", () => {
   it("formats loan.create with customer name and amount", () => {
@@ -93,6 +98,12 @@ describe("formatActivityDescription", () => {
     expect(result).toBe("Loan rate changed")
   })
 
+  it("formats an agent's historical rate correction", () => {
+    expect(formatActivityDescription(
+      "historical_rate_corrected_by_agent", "loan", null, {}, new Map(),
+    )).toBe("Historical loan rate corrected by agent")
+  })
+
   it("formats payment.delete", () => {
     const result = formatActivityDescription("payment.delete", "payment", null, {}, new Map())
     expect(result).toBe("Payment deleted")
@@ -116,6 +127,65 @@ describe("formatActivityDescription", () => {
   it("falls back to entityType + action for unknown actions", () => {
     const result = formatActivityDescription("some.unknown", "widget", null, {}, new Map())
     expect(result).toBe("widget some.unknown")
+  })
+})
+
+describe("getActivities", () => {
+  it.each([
+    {
+      action: "historical_rate_corrected_by_agent",
+      afterValue: { interestRateOverride: "0.08", executorAgentId: "agent:executor-1" },
+      description: "Historical loan rate corrected by agent",
+    },
+    {
+      action: "loan.rollover.correction",
+      afterValue: { principalAmount: "1200000", runId: "run-1", reviewerAgentId: "agent:reviewer-1", executorAgentId: "agent:executor-1" },
+      description: "Loan rollover corrected by agent",
+    },
+  ])("counts and displays a null-actor $action event with its executor identity", async ({ action, afterValue, description }) => {
+    const joins: string[] = []
+    const wheres: string[] = []
+    const whereParams: unknown[][] = []
+    mockSelect.mockImplementation(() => ({
+      from: () => ({
+        innerJoin: () => { joins.push("inner"); return query() },
+        leftJoin: () => { joins.push("left"); return query() },
+      }),
+    }))
+    function query() {
+      return {
+        where: (condition: Parameters<PgDialect["sqlToQuery"]>[0]) => {
+          const query = new PgDialect().sqlToQuery(condition)
+          wheres.push(query.sql)
+          whereParams.push(query.params)
+          return {
+            then: (resolve: (rows: { count: number }[]) => unknown) => Promise.resolve([{ count: 1 }]).then(resolve),
+            orderBy: () => ({ limit: () => ({ offset: () => Promise.resolve([{
+              id: "audit-1", actorId: null, actorName: null, actorRole: null,
+              action, entityType: "loan", entityId: "loan-1",
+              beforeValue: JSON.stringify({ interestRate: "0.10" }),
+              afterValue: JSON.stringify(afterValue),
+              occurredAt: new Date("2026-10-11T10:00:00.000Z"),
+            }]) }) }),
+          }
+        },
+      }
+    }
+
+    const result = await Effect.runPromise(getActivities({ viewerRole: "admin", page: 1, pageSize: 20 }))
+
+    expect(joins).toEqual(["left", "left"])
+    expect(wheres).toHaveLength(2)
+    expect(wheres[0]).toBe(wheres[1])
+    expect(wheres[0]).toContain("actor_id")
+    expect(whereParams[0]).toContain("historical_rate_corrected_by_agent")
+    expect(whereParams[0]).toContain("loan.rollover.correction")
+    expect(whereParams[0]).toContain("loan")
+    expect(result.total).toBe(1)
+    expect(result.items).toEqual([expect.objectContaining({
+      actorName: "agent:executor-1", actorRole: "agent",
+      description, href: "/loans/loan-1",
+    })])
   })
 })
 

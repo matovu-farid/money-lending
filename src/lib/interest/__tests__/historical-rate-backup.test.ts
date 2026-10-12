@@ -1,12 +1,51 @@
 import { describe, expect, it } from "vitest";
 import { randomUUID, createHash } from "node:crypto";
 import { writeFile, unlink, symlink } from "node:fs/promises";
-import { verifyHistoricalRateBackup } from "../historical-rate-backup";
+import { validHistoricalRestoreProof, verifyHistoricalRateBackup } from "../historical-rate-backup";
 import { correctionTempDirectory } from "../rollover-snapshot-guard";
 
 const localUrl = "postgresql://faridmatovu@127.0.0.1:55439/money_lending_integration_test";
 
 describe("historical rate repair backup gate", () => {
+  it("requires a fresh matching isolated restore with historical source counts", () => {
+    const expected = { dumpSha256: "a".repeat(64), sourceHost: "db.example",
+      sourceDatabase: "money" };
+    const proof = { ...expected, restoredAt: new Date().toISOString(),
+      restoredDatabase: "money_lending_rehearsal_historical_abc123",
+      auditTablesPresent: true, loanRows: 2, paymentRows: 3,
+      transactionRows: 8, waiverRows: 0, rateRequestRows: 1,
+      categoryRows: 7, auditRows: 2,
+      targetLoanId: "11111111-1111-4111-8111-111111111111",
+      asOf: "2026-10-10T20:59:59.999Z", policyVersion: "v2",
+      planHash: "b".repeat(64), inputFingerprint: "c".repeat(64),
+      rehearsalRunId: "22222222-2222-4222-8222-222222222222",
+      postPlanHash: "d".repeat(64), postClassification: "noop",
+      endingPrincipal: "120000.00", postEndingPrincipal: "120000.00",
+      postAccrualDelta: "0.00", paymentsUnchanged: true,
+      cashUnchanged: true, journalGroupsBalanced: true,
+      nonCashCorrection: true };
+    expect(validHistoricalRestoreProof(proof, expected)).toBe(true);
+    for (const altered of [
+      { dumpSha256: "b".repeat(64) }, { sourceHost: "elsewhere" },
+      { restoredDatabase: "money" }, { sourceDatabase: proof.restoredDatabase },
+      { auditTablesPresent: false },
+      { restoredAt: "2000-01-01T00:00:00.000Z" },
+      { loanRows: 0 }, { transactionRows: 0 }, { rateRequestRows: -1 },
+      { categoryRows: 0 }, { waiverRows: undefined },
+      { targetLoanId: undefined }, { asOf: "bad" },
+      { planHash: undefined }, { inputFingerprint: undefined },
+      { rehearsalRunId: undefined }, { postClassification: "review" },
+      { postAccrualDelta: "1.00" }, { endingPrincipal: "120000.00", postEndingPrincipal: "120001.00" },
+      { paymentsUnchanged: false }, { cashUnchanged: false },
+      { journalGroupsBalanced: false }, { nonCashCorrection: false },
+    ]) {
+      expect(validHistoricalRestoreProof({ ...proof, ...altered }, expected)).toBe(false);
+    }
+    const countsOnly = { ...proof } as Record<string, unknown>;
+    delete countsOnly.rehearsalRunId;
+    expect(validHistoricalRestoreProof(countsOnly, expected)).toBe(false);
+  });
+
   it("rejects a broad or missing backup path", async () => {
     await expect(verifyHistoricalRateBackup({
       manifestPath: `${correctionTempDirectory}/nested/backup.dump.manifest.json`,

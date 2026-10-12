@@ -3,11 +3,16 @@ import BigNumber from "bignumber.js";
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement";
 import { quoteRolloverCarry } from "./rollover-carry";
 
+/** Changed penalty-cure statement semantics invalidate prior correction plans. */
+export const ROLLOVER_CORRECTION_POLICY_VERSION = "v4";
+
 export type ChainLoan = BuildStatementInput["loan"] & {
   rolledOverFrom: string | null;
   rolloverAmount: string | null;
   status: string;
   deletedAt: Date | null;
+  disbursementSource?: string;
+  subLocationId?: string | null;
   payments: Array<BuildStatementInput["payments"][number] & {
     id: string; overpaymentPortion?: string;
   }>;

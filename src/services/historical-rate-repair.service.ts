@@ -12,6 +12,8 @@ import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { planHistoricalRateRepair, type HistoricalRatePlan,
   type HistoricalRateSnapshot } from "@/lib/interest/historical-rate-repair";
 import { ROLLOVER_RATE_AUDIT_ACTIONS } from "@/lib/interest/rollover-rate-history";
+import { verifyExcludedHistoricalReceipt, verifyExcludedHistoricalWaiver } from
+  "@/lib/financial-corrections/historical-rate-verifier";
 import { getPaymentPortionsFromLedger, getPaymentOverpaymentFromLedger,
   getWaiverPortionsFromLedger } from "./ledger-queries.service";
 
@@ -51,12 +53,11 @@ function sameMoney(a: BigNumber, b: string): boolean {
 }
 
 /** Load one complete, fingerprinted loan snapshot without writing to the database. */
-export async function loadHistoricalRateRepairPlanInSnapshot(
+export async function loadHistoricalRateSnapshotInSnapshot(
   queryDb: QueryDb,
   loanId: string,
   asOf: Date,
-  policyVersion = "v1",
-): Promise<HistoricalRatePlan> {
+): Promise<HistoricalRateSnapshot> {
   const [loan] = await queryDb.select().from(loans).where(eq(loans.id, loanId));
   if (!loan) throw new Error("Historical rate repair loan not found");
 
@@ -122,6 +123,31 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
   ]);
 
   const exceptions: string[] = [];
+  for (const payment of paymentRows.filter((row) => row.deletedAt || row.markedWrong)) {
+    try {
+      verifyExcludedHistoricalReceipt({
+        id: payment.id, loanId, date: payment.paymentDate, amount: payment.amount,
+        depositLocation: payment.depositLocation,
+        subLocationId: payment.subLocationId,
+      }, journalRows.filter((row) => row.referenceId === payment.id)
+        .map((row) => ({ ...row, date: row.transactionDate })));
+    } catch (error) {
+      exceptions.push(error instanceof Error ? error.message :
+        `Excluded receipt ${payment.id} journal could not be checked`);
+    }
+  }
+  for (const waiver of waiverRows.filter((row) => row.deletedAt)) {
+    try {
+      verifyExcludedHistoricalWaiver({
+        id: waiver.id, loanId, date: waiver.waiverDate,
+        deletedAt: waiver.deletedAt!, amount: waiver.amount,
+      }, journalRows.filter((row) => row.referenceId === waiver.id)
+        .map((row) => ({ ...row, date: row.transactionDate })));
+    } catch (error) {
+      exceptions.push(error instanceof Error ? error.message :
+        `Excluded waiver ${waiver.id} journal could not be checked`);
+    }
+  }
   const requiredTypes = new Map([
     ["Cash", "asset"], ["Loans Receivable", "asset"],
     ["Interest Receivable", "asset"], ["Interest Earned", "revenue"],
@@ -143,6 +169,9 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     }
   }
   if (loan.deletedAt) exceptions.push("Loan is deleted");
+  if (loan.status !== "active") {
+    exceptions.push("Historical rate repair requires an active loan");
+  }
   if (loan.rolledOverFrom || successorRows.length) {
     exceptions.push("Loan is part of a rollover chain; chain-level repair is required");
   }
@@ -327,7 +356,7 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
     journalRows: journalRows.sort((a, b) => a.id.localeCompare(b.id)),
     relevantCategoryRows: relevantCategoryRows.sort((a, b) => a.id.localeCompare(b.id)),
   });
-  return planHistoricalRateRepair({
+  return {
     loan: {
       id: loan.id, principalAmount: loan.principalAmount,
       interestRate: loan.interestRate, interestRateOverride: loan.interestRateOverride,
@@ -340,14 +369,25 @@ export async function loadHistoricalRateRepairPlanInSnapshot(
       startDate: loan.startDate, createdAt: loan.createdAt,
     },
     correctedRate: currentRate.toFixed(4), asOf, settlements,
+    journalLegs: journalRows.map((row) => ({ id: row.id, loanId: row.loanId,
+      journalGroupId: row.journalGroupId, referenceType: row.referenceType,
+      referenceId: row.referenceId, date: row.transactionDate,
+      categoryName: row.categoryName, type: row.type, amount: row.amount })),
     sourceDigest, sourceExceptions: exceptions, correctionMarked, postedAccrual,
-  }, policyVersion);
+  };
+}
+
+export async function loadHistoricalRateRepairPlanInSnapshot(
+  queryDb: QueryDb, loanId: string, asOf: Date, policyVersion = "v2",
+): Promise<HistoricalRatePlan> {
+  const snapshot = await loadHistoricalRateSnapshotInSnapshot(queryDb, loanId, asOf);
+  return planHistoricalRateRepair(snapshot, policyVersion);
 }
 
 export async function loadHistoricalRateRepairPlan(
   loanId: string,
   asOf: Date,
-  policyVersion = "v1",
+  policyVersion = "v2",
 ): Promise<HistoricalRatePlan> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY`);

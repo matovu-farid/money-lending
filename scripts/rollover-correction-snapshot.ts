@@ -7,9 +7,12 @@ import { open, stat, unlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import postgres from "postgres";
 import { correctionAuditTablesInCatalog, historicalRateAuditTablesInCatalog,
+  historicalRateDataInCatalog,
   validateCorrectionDatabaseEndpoints,
   validateRolloverSnapshotTarget } from
   "../src/lib/interest/rollover-snapshot-guard";
+import { rolloverCorrectionDataInCatalog } from
+  "../src/lib/interest/rollover-backup";
 import { portfolioAccrualDataInCatalog } from
   "../src/lib/interest/portfolio-accrual-backup";
 
@@ -85,6 +88,12 @@ async function main() {
   const { stdout: catalog } = await execFileAsync("pg_restore", ["--list", out], {
     env: dumpEnv, maxBuffer: 10 * 1024 * 1024,
   });
+  const rolloverAuditTablesInDump = correctionAuditTablesInCatalog(catalog);
+  const historicalAuditTablesInDump = historicalRateAuditTablesInCatalog(catalog);
+  if (!rolloverAuditTablesInDump || !historicalAuditTablesInDump ||
+      !rolloverCorrectionDataInCatalog(catalog) || !historicalRateDataInCatalog(catalog)) {
+    throw new Error("Snapshot lacks ledger, correction, or agent review TABLE and TABLE DATA entries");
+  }
   const details = await stat(out);
   if (!details.size || (details.mode & 0o077) !== 0) {
     throw new Error("Snapshot is empty or accessible to other users");
@@ -100,8 +109,8 @@ async function main() {
     dumpPath: out,
     dumpBytes: details.size,
     dumpSha256: await fileSha256(out),
-    correctionAuditTablesInDump: correctionAuditTablesInCatalog(catalog),
-    historicalRateAuditTablesInDump: historicalRateAuditTablesInCatalog(catalog),
+    correctionAuditTablesInDump: rolloverAuditTablesInDump,
+    historicalRateAuditTablesInDump: historicalAuditTablesInDump,
     portfolioAccrualAuditTablesInDump: portfolioAccrualDataInCatalog(catalog),
   };
   await writeFile(manifestPath, JSON.stringify(manifest, null, 2),

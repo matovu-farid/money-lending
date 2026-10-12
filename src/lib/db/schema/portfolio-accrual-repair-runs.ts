@@ -37,6 +37,7 @@ export const portfolioAccrualRepairRuns = pgTable("portfolio_accrual_repair_runs
     (${table.approvedBy} IS NOT NULL AND ${table.appliedBy} IS NOT NULL AND
       ${table.agentReviewId} IS NULL AND ${table.appliedByAgent} IS NULL) OR
     (${table.approvedBy} IS NULL AND ${table.appliedBy} IS NULL AND
-      ${table.agentReviewId} IS NOT NULL AND length(${table.appliedByAgent}) > 0)
+      ${table.agentReviewId} IS NOT NULL AND ${table.appliedByAgent} IS NOT NULL AND
+      length(${table.appliedByAgent}) > 0)
   `),
 ])

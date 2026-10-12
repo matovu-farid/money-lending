@@ -182,6 +182,88 @@ describe("historical rate repair source preview", () => {
     ]));
   });
 
+  it.each(["deleted", "marked wrong"] as const)(
+    "blocks a %s receipt whose balanced cash/revenue journal was never reversed",
+    async (state) => {
+      const { loan } = await seedPaidLoan();
+      const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+        .map((row) => [row.name, row.id]));
+      const receiptDate = day("2026-01-15");
+      const [excluded] = await testDb.insert(payments).values({
+        loanId: loan.id, amount: "100", paymentDate: receiptDate,
+        recordedBy: "actor-1", depositLocation: "cash",
+        ...(state === "deleted" ? { deletedAt: day("2026-02-01") } : { markedWrong: true }),
+      }).returning();
+      const group = randomUUID();
+      await testDb.insert(transactions).values([
+        { loanId: loan.id, categoryId: categories.Cash, type: "debit",
+          amount: "100", referenceType: "payment", referenceId: excluded.id,
+          depositLocation: "cash", journalGroupId: group,
+          transactionDate: receiptDate, recordedBy: "actor-1" },
+        { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+          amount: "100", referenceType: "payment", referenceId: excluded.id,
+          journalGroupId: group, transactionDate: receiptDate, recordedBy: "actor-1" },
+      ]);
+
+      const plan = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+      expect(plan.classification).toBe("blocked");
+      expect(plan.exceptions.join(" ")).toMatch(/excluded|reversal|receipt/i);
+
+      const reversalGroup = randomUUID();
+      await testDb.insert(transactions).values([
+        { loanId: loan.id, categoryId: categories.Cash, type: "credit",
+          amount: "100", referenceType: "payment_reversal", referenceId: excluded.id,
+          depositLocation: "cash", journalGroupId: reversalGroup,
+          transactionDate: receiptDate, recordedBy: "actor-1" },
+        { loanId: loan.id, categoryId: categories["Interest Earned"], type: "debit",
+          amount: "100", referenceType: "payment_reversal", referenceId: excluded.id,
+          journalGroupId: reversalGroup,
+          transactionDate: receiptDate, recordedBy: "actor-1" },
+      ]);
+      const reversed = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+      expect(reversed.classification).toBe("review");
+    },
+  );
+
+  it("blocks a deleted waiver whose loss and revenue journal was never reversed", async () => {
+    const { loan } = await seedPaidLoan();
+    const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+      .map((row) => [row.name, row.id]));
+    const waiverDate = day("2026-01-15");
+    const [waiver] = await testDb.insert(loanWaivers).values({
+      loanId: loan.id, amount: "100", waiverDate,
+      reason: "Excluded historical waiver", recordedBy: "actor-1",
+      deletedAt: day("2026-02-01"),
+    }).returning();
+    const group = randomUUID();
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Loan Losses"], type: "debit",
+        amount: "100", referenceType: "loan_waiver", referenceId: waiver.id,
+        journalGroupId: group, transactionDate: waiverDate, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "100", referenceType: "loan_waiver", referenceId: waiver.id,
+        journalGroupId: group, transactionDate: waiverDate, recordedBy: "actor-1" },
+    ]);
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions.join(" ")).toMatch(/excluded|waiver|reversal/i);
+
+    const reversalGroup = randomUUID();
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories["Loan Losses"], type: "credit",
+        amount: "100", referenceType: "loan_waiver_reversal", referenceId: waiver.id,
+        journalGroupId: reversalGroup, transactionDate: day("2026-02-01"),
+        recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "debit",
+        amount: "100", referenceType: "loan_waiver_reversal", referenceId: waiver.id,
+        journalGroupId: reversalGroup, transactionDate: day("2026-02-01"),
+        recordedBy: "actor-1" },
+    ]);
+    const reversed = await loadHistoricalRateRepairPlan(loan.id, day("2026-02-10"));
+    expect(reversed.classification).toBe("review");
+  });
+
   it("blocks a journal whose category changed from asset to liability", async () => {
     const { loan } = await seedPaidLoan();
     await testDb.update(transactionCategories).set({ type: "liability" })

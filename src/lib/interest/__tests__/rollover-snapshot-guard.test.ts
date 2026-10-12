@@ -66,13 +66,19 @@ describe("correction backup schema", () => {
   const catalog = [
     "246; 1259 19303 TABLE public rollover_correction_approvals postgres",
     "245; 1259 17540 TABLE public rollover_correction_runs postgres",
+    "249; 1259 17541 TABLE public financial_correction_agent_reviews postgres",
+    "346; 0 19303 TABLE DATA public rollover_correction_approvals postgres",
+    "345; 0 17540 TABLE DATA public rollover_correction_runs postgres",
+    "349; 0 17541 TABLE DATA public financial_correction_agent_reviews postgres",
   ].join("\n");
 
-  it("recognizes both audit tables in the actual pg_restore catalog", () => {
+  it("requires rollover and agent review TABLE and TABLE DATA entries", () => {
     expect(correctionAuditTablesInCatalog(catalog)).toBe(true);
     expect(correctionAuditTablesInCatalog(catalog.split("\n")[0])).toBe(false);
     expect(correctionAuditTablesInCatalog(catalog.replace("TABLE public", "TABLE DATA public")))
       .toBe(false);
+    expect(correctionAuditTablesInCatalog(catalog.replace(
+      /349;[^\n]*financial_correction_agent_reviews[^\n]*/, ""))).toBe(false);
   });
 
   it("rejects a pre-migration or legacy backup manifest for correction", () => {
@@ -88,22 +94,42 @@ describe("historical rate backup schema", () => {
   const catalog = [
     "247; 1259 19304 TABLE public historical_rate_repair_approvals postgres",
     "248; 1259 19305 TABLE public historical_rate_repair_runs postgres",
+    "249; 1259 19306 TABLE public financial_correction_agent_reviews postgres",
+    "347; 0 19304 TABLE DATA public historical_rate_repair_approvals postgres",
+    "348; 0 19305 TABLE DATA public historical_rate_repair_runs postgres",
+    "349; 0 19306 TABLE DATA public financial_correction_agent_reviews postgres",
   ].join("\n");
 
-  it("requires both historical-rate audit tables in the restore catalog", () => {
+  it("requires historical and agent review tables in the restore catalog", () => {
     expect(historicalRateAuditTablesInCatalog(catalog)).toBe(true);
     expect(historicalRateAuditTablesInCatalog(catalog.split("\n")[0])).toBe(false);
     expect(historicalRateAuditTablesInCatalog(catalog.replace("TABLE public", "TABLE DATA public")))
       .toBe(false);
+    expect(historicalRateAuditTablesInCatalog(catalog.replace(
+      /349;[^\n]*financial_correction_agent_reviews[^\n]*/, ""))).toBe(false);
   });
 
   it("rejects a schema-only dump even when audit tables exist", () => {
     expect(historicalRateDataInCatalog(catalog)).toBe(false);
-    const data = ["loans", "payments", "transactions", "audit_log",
-      "historical_rate_repair_approvals", "historical_rate_repair_runs"]
-      .map((name, index) => `${300 + index}; 0 ${400 + index} TABLE DATA public ${name} postgres`);
-    expect(historicalRateDataInCatalog(`${catalog}\n${data.join("\n")}`)).toBe(true);
-    expect(historicalRateDataInCatalog(`${catalog}\n${data.slice(1).join("\n")}`)).toBe(false);
+    const sources = ["loans", "loan_balances", "payments", "loan_waivers", "rate_change_requests",
+      "transactions", "transaction_categories", "audit_log"];
+    const data = [...sources,
+      "historical_rate_repair_approvals", "historical_rate_repair_runs",
+      "financial_correction_agent_reviews"]
+      .flatMap((name, index) => [
+        `${200 + index}; 1259 ${400 + index} TABLE public ${name} postgres`,
+        `${300 + index}; 0 ${400 + index} TABLE DATA public ${name} postgres`,
+      ]);
+    const full = `${catalog}\n${data.join("\n")}`;
+    expect(historicalRateDataInCatalog(full)).toBe(true);
+    for (const source of sources) {
+      expect(historicalRateDataInCatalog(full.replace(
+        new RegExp(`^\\d+;[^\\n]*TABLE DATA public ${source} postgres$`, "m"), "")))
+        .toBe(false);
+      expect(historicalRateDataInCatalog(full.replace(
+        new RegExp(`^\\d+;[^\\n]*TABLE public ${source} postgres$`, "m"), "")))
+        .toBe(false);
+    }
   });
 
   it("rejects a backup manifest that predates the historical-rate audit tables", () => {

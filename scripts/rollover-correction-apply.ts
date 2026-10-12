@@ -7,9 +7,8 @@ import { dirname, resolve } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../src/lib/db";
 import { rolloverCorrectionRuns } from "../src/lib/db/schema/rollover-correction-runs";
-import { user } from "../src/lib/db/schema/auth";
 import {
-  approveRolloverCorrection,
+  reviewRolloverCorrection,
   applyRolloverCorrection,
 } from "../src/services/rollover-correction-apply.service";
 import { loadRolloverCorrectionPlans } from
@@ -19,7 +18,8 @@ import { requireCorrectionAuditTablesInDump, validateCorrectionDatabaseEndpoints
 
 const allowed = new Set([
   "mode", "expect-host", "expect-database", "report", "report-sha256",
-  "snapshot-manifest", "plan-hash", "input-fingerprint", "actor-id", "review-note",
+  "snapshot-manifest", "plan-hash", "input-fingerprint", "reviewer-agent-id",
+  "executor-agent-id", "review-run-id", "expected-dump-sha256",
 ]);
 
 function option(name: string): string | undefined {
@@ -62,8 +62,8 @@ async function main() {
     }
   }
   const mode = option("mode");
-  if (mode !== "approve" && mode !== "apply") {
-    throw new Error("Choose exactly one mode: approve or apply");
+  if (mode !== "review" && mode !== "apply") {
+    throw new Error("Choose exactly one mode: review or apply");
   }
   const urlText = process.env.DATABASE_URL;
   const expectedHost = option("expect-host");
@@ -132,12 +132,10 @@ async function main() {
   }
   requireCorrectionAuditTablesInDump(manifest);
 
-  const actorId = option("actor-id");
-  if (!actorId) throw new Error("An identified administrator actor is required");
-  const [actor] = await db.select({ role: user.role }).from(user)
-    .where(eq(user.id, actorId));
-  if (!actor || !["admin", "superAdmin"].includes(actor.role ?? "")) {
-    throw new Error("Rollover correction requires an identified administrator");
+  const expectedDumpSha256 = option("expected-dump-sha256");
+  if (!/^[a-f0-9]{64}$/.test(expectedDumpSha256 ?? "") ||
+      expectedDumpSha256 !== manifest.dumpSha256) {
+    throw new Error("Explicit backup SHA-256 does not match the verified manifest");
   }
   if (mode === "apply") {
     const [priorRun] = await db.select({ id: rolloverCorrectionRuns.id })
@@ -160,13 +158,21 @@ async function main() {
       current.classification === "blocked") {
     throw new Error("Target chain changed since the reviewed report");
   }
-  if (mode === "approve") {
-    const note = option("review-note");
-    if (!note?.trim()) throw new Error("A substantive review note is required");
-    const approvalId = await approveRolloverCorrection(current, actorId, note);
-    console.log(`Approved exact plan ${planHash}; approval ID ${approvalId}`);
+  if (mode === "review") {
+    const reviewerAgentId = option("reviewer-agent-id");
+    const reviewRunId = option("review-run-id");
+    if (!reviewerAgentId || !reviewRunId) {
+      throw new Error("Named reviewer agent and review run are required");
+    }
+    const result = await reviewRolloverCorrection(current, reviewerAgentId, reviewRunId);
+    console.log(JSON.stringify({ planHash, ...result }));
   } else {
-    const result = await applyRolloverCorrection(current, actorId);
+    const executorAgentId = option("executor-agent-id");
+    if (!executorAgentId) throw new Error("Named executor agent is required");
+    const result = await applyRolloverCorrection(current, executorAgentId, {
+      manifestPath, expectedDumpSha256: expectedDumpSha256!,
+      primaryUrl: urlText, directUrl: process.env.DATABASE_URL_UNPOOLED ?? urlText,
+    });
     console.log(JSON.stringify({ planHash, ...result }));
   }
 }

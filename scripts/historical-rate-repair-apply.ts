@@ -10,12 +10,12 @@ import { correctionTempDirectory } from
   "../src/lib/interest/rollover-snapshot-guard";
 import { loadHistoricalRateRepairPlan } from
   "../src/services/historical-rate-repair.service";
-import { approveHistoricalRateRepair, applyHistoricalRateRepair } from
+import { reviewHistoricalRateRepair, applyHistoricalRateRepair } from
   "../src/services/historical-rate-repair-apply.service";
 
 const allowed = new Set([
-  "mode", "expect-host", "expect-database", "report", "actor-id",
-  "review-note", "backup-manifest", "backup-sha256",
+  "mode", "expect-host", "expect-database", "report", "reviewer-agent-id",
+  "review-run-id", "executor-agent-id", "backup-manifest", "backup-sha256",
 ]);
 function option(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -38,24 +38,19 @@ async function main() {
     }
   }
   const mode = option("mode");
-  if (mode !== "approve" && mode !== "apply") {
-    throw new Error("Explicit --mode=approve or --mode=apply is required");
+  if (mode !== "review" && mode !== "apply") {
+    throw new Error("Explicit --mode=review or --mode=apply is required");
   }
   const expectedHost = option("expect-host");
   const expectedDatabase = option("expect-database");
   const urlText = process.env.DATABASE_URL;
-  const actorId = option("actor-id");
-  if (!urlText || !expectedHost || !expectedDatabase || !actorId) {
-    throw new Error("Explicit database identity and administrator ID are required");
+  if (!urlText || !expectedHost || !expectedDatabase) {
+    throw new Error("Explicit database identity is required");
   }
   const url = new URL(urlText);
   if (url.hostname !== expectedHost ||
       decodeURIComponent(url.pathname.slice(1)) !== expectedDatabase) {
     throw new Error("Database identity does not match the requested target");
-  }
-  if (mode === "approve" &&
-      !["localhost", "127.0.0.1", "::1"].includes(expectedHost)) {
-    throw new Error("Production approval requires an authenticated administrator review, not an operator-supplied actor ID");
   }
   const identity = await db.execute(sql`SELECT current_database() AS name`);
   if (identity[0]?.name !== expectedDatabase) {
@@ -94,11 +89,12 @@ async function main() {
   if (JSON.stringify(currentReport) !== JSON.stringify(report)) {
     throw new Error("Reviewed report is stale or does not match current database state");
   }
-  if (mode === "approve") {
-    const note = option("review-note");
-    if (!note) throw new Error("A substantive --review-note is required");
-    const approvalId = await approveHistoricalRateRepair(plan, actorId, note);
-    console.log(JSON.stringify({ approvalId, loanId: plan.loanId, planHash: plan.planHash }));
+  if (mode === "review") {
+    const reviewer = option("reviewer-agent-id");
+    const run = option("review-run-id");
+    if (!reviewer || !run) throw new Error("Reviewer agent and review run IDs are required");
+    const result = await reviewHistoricalRateRepair(plan, reviewer, run);
+    console.log(JSON.stringify({ ...result, loanId: plan.loanId, planHash: plan.planHash }));
     return;
   }
   const manifestPath = option("backup-manifest");
@@ -106,7 +102,9 @@ async function main() {
   if (!manifestPath || !expectedDumpSha256 || !process.env.DATABASE_URL_UNPOOLED) {
     throw new Error("An exact backup manifest, SHA-256, and direct database URL are required");
   }
-  const result = await applyHistoricalRateRepair(plan, actorId, {
+  const executor = option("executor-agent-id");
+  if (!executor) throw new Error("Executor agent ID is required");
+  const result = await applyHistoricalRateRepair(plan, executor, {
     manifestPath, expectedDumpSha256,
     primaryUrl: urlText, directUrl: process.env.DATABASE_URL_UNPOOLED,
   });

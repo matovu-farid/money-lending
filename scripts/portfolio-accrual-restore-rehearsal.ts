@@ -3,8 +3,9 @@ import "dotenv/config"
 import { execFileSync, spawnSync } from "node:child_process"
 import { open, readFile } from "node:fs/promises"
 import postgres from "postgres"
-import { verifyHistoricalRateBackup } from "@/lib/interest/historical-rate-backup"
-import { portfolioAccrualDataInCatalog, validPortfolioRestoreProof } from
+import { verifyHistoricalRateArchive } from "@/lib/interest/historical-rate-backup"
+import { portfolioAccrualDataInCatalog, portfolioApplicationBuildSha256,
+  portfolioSchemaSha256, validPortfolioRestoreProof } from
   "@/lib/interest/portfolio-accrual-backup"
 import { validateCorrectionDatabaseEndpoints } from
   "@/lib/interest/rollover-snapshot-guard"
@@ -31,7 +32,7 @@ async function main() {
     primaryUrl: process.env.DATABASE_URL ?? "",
     directUrl: process.env.DATABASE_URL_UNPOOLED ?? "",
   }
-  const verified = await verifyHistoricalRateBackup(gate)
+  const verified = await verifyHistoricalRateArchive(gate)
   const manifest = JSON.parse(await readFile(gate.manifestPath, "utf8")) as Record<string, unknown>
   if (manifest.portfolioAccrualAuditTablesInDump !== true) {
     throw new Error("Archive predates the portfolio repair tables")
@@ -72,24 +73,31 @@ async function main() {
   try {
     const [row] = await restored<{
       loan_rows: number; payment_rows: number; transaction_rows: number;
-      snapshot_rows: number; approvals_table: string | null; runs_table: string | null
+      snapshot_rows: number; approvals_table: string | null; runs_table: string | null;
+      agent_reviews_table: string | null
     }[]>`SELECT
       (SELECT count(*)::int FROM loans) AS loan_rows,
       (SELECT count(*)::int FROM payments) AS payment_rows,
       (SELECT count(*)::int FROM transactions) AS transaction_rows,
       (SELECT count(*)::int FROM financial_snapshots) AS snapshot_rows,
       to_regclass('public.portfolio_accrual_repair_approvals')::text AS approvals_table,
-      to_regclass('public.portfolio_accrual_repair_runs')::text AS runs_table`
+      to_regclass('public.portfolio_accrual_repair_runs')::text AS runs_table,
+      to_regclass('public.financial_correction_agent_reviews')::text AS agent_reviews_table`
     counts = { loanRows: row.loan_rows, paymentRows: row.payment_rows,
       transactionRows: row.transaction_rows, snapshotRows: row.snapshot_rows,
-      auditTablesPresent: !!row.approvals_table && !!row.runs_table }
+      auditTablesPresent: !!row.approvals_table && !!row.runs_table &&
+        !!row.agent_reviews_table }
   } finally {
     await restored.end()
   }
   const { backup } = validateCorrectionDatabaseEndpoints(gate.primaryUrl, gate.directUrl)
+  const [applicationBuildSha256, schemaSha256] = await Promise.all([
+    portfolioApplicationBuildSha256(), portfolioSchemaSha256(local.toString()),
+  ])
   const proof = { dumpSha256: verified.dumpSha256, sourceHost: backup.hostname,
     sourceDatabase: decodeURIComponent(backup.pathname.slice(1)),
-    restoredDatabase: databaseName, restoredAt: new Date().toISOString(), ...counts }
+    restoredDatabase: databaseName, restoredAt: new Date().toISOString(),
+    applicationBuildSha256, schemaSha256, ...counts }
   if (!validPortfolioRestoreProof(proof, proof)) {
     throw new Error("Restored database did not pass the portfolio proof checks")
   }

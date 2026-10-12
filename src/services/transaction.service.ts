@@ -52,6 +52,28 @@ import { loadPortfolioAccrualPlan } from "./portfolio-accrual-repair.service";
 
 type DrizzleTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
+export async function hasRetroactiveRateCorrectionAudit(
+  tx: Pick<DrizzleTransaction, "select">,
+  loan: { id: string; startDate: Date },
+): Promise<boolean> {
+  const [latestRateAudit] = await tx.select({ afterValue: auditLog.afterValue })
+    .from(auditLog).where(and(
+      eq(auditLog.entityType, "loan"), eq(auditLog.entityId, loan.id),
+      inArray(auditLog.action, [
+        "loan.rate_change.immediate", "loan.rate_change.approved", "loan.rate_change.admin_adjusted",
+        "historical_rate_corrected_by_agent",
+      ]),
+    )).orderBy(desc(auditLog.occurredAt)).limit(1);
+  if (!latestRateAudit?.afterValue) return false;
+  try {
+    const after = JSON.parse(latestRateAudit.afterValue);
+    return after?.rateSemantics === "correction" &&
+      after.effectiveFrom === loan.startDate.toISOString();
+  } catch {
+    throw new Error("Rate-change audit cannot be parsed for accrual");
+  }
+}
+
 type CategoryType = "asset" | "liability" | "equity" | "revenue" | "expense";
 
 // Module-level cache of resolved category IDs. Categories are seeded at install
@@ -477,6 +499,7 @@ export const deleteTransaction = (
         "collateral_settlement",
         "fund_transfer",
         "interest_accrual",
+        "portfolio_accrual_repair",
         "loan_waiver",
         "loan_waiver_accrual_reversal",
         "loan_waiver_reversal",
@@ -579,6 +602,7 @@ export async function reverseInterestAccrual(
           "interest_accrual",
           "penalty_interest_accrual",
           "portfolio_accrual_repair",
+          "loan_waiver_accrual_reversal",
         ]),
         eq(transactions.loanId, params.loanId),
         eq(transactions.categoryId, receivableCat.id),
@@ -812,21 +836,7 @@ export const accrueInterestForLoans = (
             ? await getPaymentPortionsFromLedger(paymentRows.map((row) => row.id), tx)
             : new Map<string, { interestPortion: string; principalPortion: string }>();
           const earned = (await getInterestEarnedFromLedger([loan.id], asOfDate, tx)).get(loan.id) ?? new BigNumber(0);
-          const [latestRateAudit] = await tx.select({ afterValue: auditLog.afterValue })
-            .from(auditLog).where(and(
-              eq(auditLog.entityType, "loan"), eq(auditLog.entityId, loan.id),
-              inArray(auditLog.action, [
-                "loan.rate_change.immediate", "loan.rate_change.approved", "loan.rate_change.admin_adjusted",
-              ]),
-            )).orderBy(desc(auditLog.occurredAt)).limit(1);
-          let corrected = false;
-          if (latestRateAudit?.afterValue) {
-            try {
-              corrected = JSON.parse(latestRateAudit.afterValue)?.rateSemantics === "correction";
-            } catch {
-              throw new Error("Rate-change audit cannot be parsed for accrual");
-            }
-          }
+          const corrected = await hasRetroactiveRateCorrectionAudit(tx, loan);
 
           let baseAmount = new BigNumber(0);
           let penaltyAmount = new BigNumber(0);

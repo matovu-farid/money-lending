@@ -1,4 +1,4 @@
-/** Explicit, backup-gated one-account install or one-approved-loan apply. */
+/** Explicit, backup-gated account install, one-loan agent review, or one-loan apply. */
 import "dotenv/config"
 import { lstat, readFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
@@ -12,11 +12,12 @@ import { installInterestReceivableAsset } from
   "@/services/interest-receivable-install.service"
 import { loadPortfolioAccrualPlan } from
   "@/services/portfolio-accrual-repair.service"
-import { applyPortfolioAccrualRepair } from
+import { applyPortfolioAccrualRepair, reviewPortfolioAccrualRepair } from
   "@/services/portfolio-accrual-repair-apply.service"
 
 const allowed = new Set(["mode", "expect-host", "expect-database", "backup-manifest",
-  "backup-sha256", "report", "loan-id", "actor-id"])
+  "backup-sha256", "report", "loan-id", "reviewer-agent-id", "review-run-id",
+  "executor-agent-id"])
 
 function option(name: string): string | undefined {
   const prefix = `--${name}=`
@@ -50,8 +51,8 @@ async function main() {
     }
   }
   const mode = option("mode")
-  if (mode !== "install-account" && mode !== "apply-loan") {
-    throw new Error("Explicit install-account or apply-loan mode is required")
+  if (mode !== "install-account" && mode !== "review-loan" && mode !== "apply-loan") {
+    throw new Error("Explicit install-account, review-loan, or apply-loan mode is required")
   }
   const { primary, backup } = validateCorrectionDatabaseEndpoints(
     process.env.DATABASE_URL, process.env.DATABASE_URL_UNPOOLED)
@@ -77,8 +78,9 @@ async function main() {
   await verifyPortfolioAccrualBackup(gate)
 
   if (mode === "install-account") {
-    if (option("loan-id") || option("report") || option("actor-id")) {
-      throw new Error("Account installation accepts no loan or actor arguments")
+    if (option("loan-id") || option("report") || option("reviewer-agent-id") ||
+        option("review-run-id") || option("executor-agent-id")) {
+      throw new Error("Account installation accepts no loan or agent arguments")
     }
     const result = await installInterestReceivableAsset()
     console.log(JSON.stringify({ mode, database: expectedDatabase,
@@ -86,9 +88,8 @@ async function main() {
     return
   }
   const loanId = option("loan-id")
-  const actorId = option("actor-id")
-  if (!loanId || !/^[a-f0-9-]{36}$/i.test(loanId) || !actorId) {
-    throw new Error("One exact loan and applying administrator are required")
+  if (!loanId || !/^[a-f0-9-]{36}$/i.test(loanId)) {
+    throw new Error("One exact loan is required")
   }
   const report = await privateReport(option("report"))
   if (report.database?.host !== expectedHost || report.database?.name !== expectedDatabase) {
@@ -108,7 +109,21 @@ async function main() {
       current.policyVersion !== matching[0].policyVersion) {
     throw new Error("Reviewed loan plan changed; generate a fresh preview")
   }
-  const result = await applyPortfolioAccrualRepair(current, actorId, gate)
+  if (mode === "review-loan") {
+    const reviewerAgentId = option("reviewer-agent-id")
+    const reviewRunId = option("review-run-id")
+    if (!reviewerAgentId || !reviewRunId || option("executor-agent-id")) {
+      throw new Error("A reviewer agent and review run, but no executor, are required")
+    }
+    const result = await reviewPortfolioAccrualRepair(current, reviewerAgentId, reviewRunId)
+    console.log(JSON.stringify({ mode, loanId, planHash: current.planHash, ...result }))
+    return
+  }
+  const executorAgentId = option("executor-agent-id")
+  if (!executorAgentId || option("reviewer-agent-id") || option("review-run-id")) {
+    throw new Error("A distinct executor agent, but no reviewer, is required")
+  }
+  const result = await applyPortfolioAccrualRepair(current, executorAgentId, gate)
   console.log(JSON.stringify({ mode, loanId, planHash: current.planHash, ...result }))
 }
 

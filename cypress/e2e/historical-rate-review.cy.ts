@@ -7,7 +7,7 @@ describe("Historical rate repair review", () => {
     cy.contains("Approve exact correction").should("not.exist");
   });
 
-  it("requires an exact loan, date, and hash before offering approval", () => {
+  it("requires an exact loan, date, and hash and never offers human approval", () => {
     cy.task("db:reset");
     cy.createTestUser({ name: "Repair Admin", role: "superAdmin" });
     cy.visit("/admin/historical-rate-repair");

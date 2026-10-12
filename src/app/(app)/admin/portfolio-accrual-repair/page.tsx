@@ -1,7 +1,6 @@
 import BigNumber from "bignumber.js"
 import { getSession } from "@/lib/action-utils"
 import { loadPortfolioAccrualPlan } from "@/services/portfolio-accrual-repair.service"
-import { ReviewApprovalForm } from "./review-approval-form"
 
 type Query = { [key: string]: string | string[] | undefined }
 
@@ -40,7 +39,7 @@ export default async function PortfolioAccrualReviewPage({
   if (plan.classification !== "ready" || plan.planHash !== expectedHash ||
       plan.inputFingerprint !== expectedFingerprint) {
     return <main className="p-6"><h1>Reviewed plan has changed</h1>
-      <p>Generate a fresh read-only preview before approving anything.</p>
+      <p>Generate a fresh read-only preview before the agent reviews it.</p>
     </main>
   }
   const increases = plan.entries.reduce((sum, entry) => {
@@ -56,7 +55,7 @@ export default async function PortfolioAccrualReviewPage({
   return <main className="mx-auto max-w-5xl space-y-6 p-4 md:p-6">
     <header className="space-y-2">
       <h1 className="text-2xl font-semibold">Portfolio interest accrual review</h1>
-      <p className="text-muted-foreground">This approval records the exact non-cash journal plan below. It does not apply it. Applying still requires a verified backup and separate operator step.</p>
+      <p className="text-muted-foreground">This is a read-only non-cash journal preview. Agent review and posting happen through the guarded correction operator.</p>
     </header>
     <section aria-label="Reviewed accrual totals" className="rounded-lg border p-4">
       <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -91,8 +90,9 @@ export default async function PortfolioAccrualReviewPage({
         </table>
       </div>
     </section>
-    <ReviewApprovalForm input={{ loanId, asOf: asOfText,
-      policyVersion: plan.policyVersion, planHash: expectedHash,
-      inputFingerprint: expectedFingerprint }} />
+    <p className="rounded-lg border p-4 text-sm">
+      Agent review and posting happen through the guarded correction operator.
+      No administrator sign-off is needed on this page.
+    </p>
   </main>
 }

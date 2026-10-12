@@ -4,6 +4,7 @@ export const ROLLOVER_RATE_AUDIT_ACTIONS = [
   "loan.rate_change.approved",
   "loan.rate_change.immediate",
   "loan.rate_change.admin_adjusted",
+  "historical_rate_corrected_by_agent",
   "loan.update",
 ];
 

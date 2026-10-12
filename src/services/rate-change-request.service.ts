@@ -87,6 +87,11 @@ const APPLIED_RATE_CHANGE_ACTIONS = [
   "loan.rate_change.admin_adjusted",
 ] as const
 
+const RATE_HISTORY_ACTIONS = [
+  ...APPLIED_RATE_CHANGE_ACTIONS,
+  "historical_rate_corrected_by_agent",
+] as const
+
 type AppliedRateChangeAction = (typeof APPLIED_RATE_CHANGE_ACTIONS)[number]
 
 function normalizeCorrectedRate(requestedRate: string, currentRate: string): string {
@@ -387,7 +392,7 @@ export const listLoanRateChangeHistory = (
         .where(and(
           eq(auditLog.entityType, "loan"),
           eq(auditLog.entityId, loanId),
-          inArray(auditLog.action, APPLIED_RATE_CHANGE_ACTIONS),
+          inArray(auditLog.action, RATE_HISTORY_ACTIONS),
         ))
         .orderBy(desc(auditLog.occurredAt))
 
@@ -412,7 +417,9 @@ export const listLoanRateChangeHistory = (
           fromRate,
           toRate,
           actorId: row.actorId,
-          actorName: row.actorName,
+          actorName: row.actorName ?? (row.action === "historical_rate_corrected_by_agent"
+            ? typeof after.executorAgentId === "string" ? after.executorAgentId : "Agent"
+            : null),
           changedAt: row.occurredAt,
           ...(markedDate ? { effectiveFrom: markedDate } : {}),
         }

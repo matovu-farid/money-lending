@@ -2,10 +2,27 @@ import { createHash } from "node:crypto"
 import BigNumber from "bignumber.js"
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement"
 
-const POLICY_VERSION = "portfolio-accrual-v2"
+const POLICY_VERSION = "portfolio-accrual-v3"
 
 type Payment = Omit<BuildStatementInput["payments"][number], "recorderName"> & { id: string }
 type Waiver = NonNullable<BuildStatementInput["waivers"]>[number] & { id: string }
+
+export type HistoricalRateCorrectionEvidence = {
+  run: {
+    id: string; loanId: string; planHash: string; inputFingerprint: string
+    policyVersion: string; agentReviewId: string | null; appliedByAgent: string | null
+    backupSha256: string; appliedAt: Date; beforeSummary: string; afterSummary: string
+  }
+  review: {
+    id: string; kind: string; subjectId: string; planHash: string
+    inputFingerprint: string; policyVersion: string; verdict: string
+    reviewerAgentId: string; consumedByRunId: string | null; consumedAt: Date | null
+  }
+  audit: {
+    id: string; action: string; entityType: string; entityId: string
+    occurredAt: Date; beforeValue: string | null; afterValue: string | null
+  }
+}
 
 export type PortfolioAccrualSnapshot = {
   loan: Omit<BuildStatementInput["loan"], "createdAt"> & { status: string }
@@ -21,6 +38,8 @@ export type PortfolioAccrualSnapshot = {
     earnedCounterpartType: "debit" | "credit" | null
   }>
   receivableCategory: { id: string; type: string } | null
+  historicalRateCorrection?: HistoricalRateCorrectionEvidence
+  sourceDigest?: string
   sourceExceptions: string[]
   asOf: Date
 }
@@ -63,6 +82,107 @@ function validAmount(value: string): boolean {
   return amount.isFinite() && amount.gte(0) && (amount.decimalPlaces() ?? Infinity) <= 2
 }
 
+function record(value: string | null): Record<string, unknown> | null {
+  if (!value) return null
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown> : null
+  } catch { return null }
+}
+
+function sameRate(value: unknown, expected: string): boolean {
+  return (typeof value === "string" || typeof value === "number") &&
+    new BigNumber(value).isFinite() && new BigNumber(value).eq(expected)
+}
+
+function sameAmount(value: unknown, expected: string): boolean {
+  return (typeof value === "string" || typeof value === "number") &&
+    new BigNumber(value).isFinite() && new BigNumber(value).eq(expected)
+}
+
+/** Check the stored run against current terms and reconciled settlement allocations. */
+export function historicalRateCorrectionExceptions(
+  snapshot: PortfolioAccrualSnapshot,
+): string[] {
+  const proof = snapshot.historicalRateCorrection
+  if (!proof) return snapshot.loan.interestRateOverride
+    ? ["Paid-rate loan requires a completed historical-rate correction run"] : []
+  const { run, review, audit } = proof
+  const before = record(run.beforeSummary)
+  const after = record(run.afterSummary)
+  const auditAfter = record(audit.afterValue)
+  const rate = snapshot.loan.interestRateOverride
+  const runAsOf = after?.asOf
+  const beforeChanges = Array.isArray(before?.changes) ? before.changes : null
+  const afterChanges = Array.isArray(after?.changes) ? after.changes : null
+  const settlements = [...snapshot.payments, ...snapshot.waivers]
+  const corrected = !!rate &&
+    run.loanId === snapshot.loan.id && !!run.id && !!run.planHash &&
+    !!run.inputFingerprint && run.policyVersion === "v2" &&
+    !!run.agentReviewId && !!run.appliedByAgent?.startsWith("agent:") &&
+    /^[a-f0-9]{64}$/.test(run.backupSha256) &&
+    run.appliedAt instanceof Date && Number.isFinite(run.appliedAt.getTime()) &&
+    review.id === run.agentReviewId && review.kind === "historical_rate" &&
+    review.subjectId === run.loanId && review.planHash === run.planHash &&
+    review.inputFingerprint === run.inputFingerprint &&
+    review.policyVersion === run.policyVersion && review.verdict === "pass" &&
+    review.reviewerAgentId.startsWith("agent:") &&
+    review.reviewerAgentId !== run.appliedByAgent &&
+    review.consumedByRunId === run.id && review.consumedAt instanceof Date &&
+    Number.isFinite(review.consumedAt.getTime()) &&
+    audit.action === "historical_rate_corrected_by_agent" &&
+    audit.entityType === "loan" && audit.entityId === run.loanId &&
+    audit.occurredAt instanceof Date && Number.isFinite(audit.occurredAt.getTime()) &&
+    auditAfter?.rateSemantics === "correction" &&
+    auditAfter.effectiveFrom === snapshot.loan.startDate.toISOString() &&
+    auditAfter.repairRunId === run.id && auditAfter.repairedPlanHash === run.planHash &&
+    auditAfter.agentReviewId === review.id &&
+    auditAfter.reviewerAgentId === review.reviewerAgentId &&
+    auditAfter.executorAgentId === run.appliedByAgent &&
+    sameRate(auditAfter.interestRateOverride, rate) &&
+    before?.loanId === run.loanId && before.classification === "review" &&
+    before.planHash === run.planHash &&
+    before.inputFingerprint === run.inputFingerprint &&
+    before.policyVersion === run.policyVersion &&
+    sameRate(before.correctedRate, rate) &&
+    after?.loanId === run.loanId && after.classification === "noop" &&
+    after.policyVersion === run.policyVersion &&
+    sameRate(after.correctedRate, rate) &&
+    after.accrualJournalDelta === "0.00" &&
+    typeof after.accrualJournalTarget === "string" &&
+    validAmount(after.accrualJournalTarget) &&
+    typeof after.endingPrincipal === "string" &&
+    validAmount(after.endingPrincipal) &&
+    Array.isArray(after.exceptions) && after.exceptions.length === 0 &&
+    typeof runAsOf === "string" && Number.isFinite(Date.parse(runAsOf)) &&
+    runAsOf <= snapshot.asOf.toISOString() &&
+    runAsOf === before.asOf && !!beforeChanges && !!afterChanges &&
+    beforeChanges.length === afterChanges.length &&
+    new Set(afterChanges.map((value) => value && typeof value === "object"
+      ? (value as Record<string, unknown>).id : null)).size === afterChanges.length &&
+    afterChanges.every((value) => {
+      if (!value || typeof value !== "object") return false
+      const change = value as Record<string, unknown>
+      const prior = beforeChanges.find((candidate) => candidate &&
+        typeof candidate === "object" && (candidate as Record<string, unknown>).id === change.id)
+      if (!prior || typeof prior !== "object") return false
+      const old = prior as Record<string, unknown>
+      const settlement = settlements.find((row) => row.id === change.id)
+      return !!settlement &&
+        sameAmount(change.oldInterest, settlement.interestPortion) &&
+        sameAmount(change.oldPrincipal, settlement.principalPortion) &&
+        sameAmount(change.newInterest, settlement.interestPortion) &&
+        sameAmount(change.newPrincipal, settlement.principalPortion) &&
+        sameAmount(old.newInterest, settlement.interestPortion) &&
+        sameAmount(old.newPrincipal, settlement.principalPortion)
+    }) &&
+    settlements.filter((row) => row instanceof Object &&
+      ("paymentDate" in row ? row.paymentDate : row.waiverDate) <= new Date(runAsOf))
+      .length === afterChanges.length
+  return corrected ? [] : ["Historical-rate correction run is missing, stale, or contradictory"]
+}
+
 function monthEnd(year: number, month: number): Date {
   return new Date(Date.UTC(year, month + 1, 1) - 1)
 }
@@ -93,6 +213,7 @@ export function planPortfolioAccrualRepair(
     sourceExceptions: [...snapshot.sourceExceptions].sort() }
   const inputFingerprint = digest({ policyVersion: POLICY_VERSION, normalized })
   const exceptions = [...normalized.sourceExceptions]
+  exceptions.push(...historicalRateCorrectionExceptions(snapshot))
   const { loan, asOf } = snapshot
   if (snapshot.receivableCategory && snapshot.receivableCategory.type !== "asset") {
     exceptions.push("Interest Receivable account is not an asset")

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import BigNumber from "bignumber.js"
+import { PgDialect } from "drizzle-orm/pg-core"
 
 const mockFindMany = vi.fn()
 const mockSelect = vi.fn()
@@ -303,6 +304,7 @@ describe("loanBalanceData", () => {
     "uses the statement's penalty-aware accrued interest for corrected %s loans",
     async (loanType) => {
       mockSelect.mockReset()
+      let auditWhereParams: unknown[] = []
       const loanRow = {
         id: "loan-1",
         status: "active",
@@ -344,10 +346,14 @@ describe("loanBalanceData", () => {
         })
         .mockReturnValueOnce({
           from: vi.fn().mockReturnValue({
-            where: vi.fn().mockResolvedValue([{
-              entityId: loanRow.id,
-              afterValue: JSON.stringify({ rateSemantics: "correction", effectiveFrom: loanRow.startDate.toISOString() }),
-            }]),
+            where: vi.fn().mockImplementation((condition) => {
+              auditWhereParams = new PgDialect().sqlToQuery(condition).params
+              return Promise.resolve([{
+                entityId: loanRow.id,
+                action: "historical_rate_corrected_by_agent",
+                afterValue: JSON.stringify({ rateSemantics: "correction", effectiveFrom: loanRow.startDate.toISOString() }),
+              }])
+            }),
           }),
         })
       mockGetLastSettlementEventsForLoans.mockResolvedValue(new Map())
@@ -360,6 +366,7 @@ describe("loanBalanceData", () => {
 
       await computeSingleLoanBalanceData(loanRow.id, asOf)
 
+      expect(auditWhereParams).toContain("historical_rate_corrected_by_agent")
       expect(statement.finalState.penaltyActive).toBe(true)
       expect(mockComputeLoanOverdueInfo).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -370,7 +377,12 @@ describe("loanBalanceData", () => {
     },
   )
 
-  it("preserves the legacy fixed-loan balance calculation without a correction marker", async () => {
+  it.each([
+    { description: "without a correction marker", afterValue: { interestRateOverride: "0.0800" } },
+    { description: "with a correction marker after loan start", afterValue: {
+      interestRateOverride: "0.0800", rateSemantics: "correction", effectiveFrom: "2026-02-01T00:00:00.000Z",
+    } },
+  ])("preserves the legacy fixed-loan balance calculation $description", async ({ afterValue }) => {
     mockSelect.mockReset()
     const loanRow = {
       id: "loan-1", status: "active", principalAmount: "1000000.00",
@@ -390,7 +402,7 @@ describe("loanBalanceData", () => {
       }) }) })
       .mockReturnValueOnce({ from: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue([{
         entityId: loanRow.id,
-        afterValue: JSON.stringify({ interestRateOverride: "0.0800" }),
+        afterValue: JSON.stringify(afterValue),
       }]) }) })
     const { computeSingleLoanBalanceData } = await import("../loanBalanceData")
     await computeSingleLoanBalanceData(loanRow.id, new Date("2026-04-15T00:00:00.000Z"))

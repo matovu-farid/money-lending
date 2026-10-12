@@ -204,6 +204,7 @@ export default defineConfig({
               DELETE FROM historical_rate_repair_approvals;
               DELETE FROM rollover_correction_runs;
               DELETE FROM rollover_correction_approvals;
+              DELETE FROM financial_correction_agent_reviews;
               DELETE FROM transactions;
               DELETE FROM transaction_categories;
               DELETE FROM fund_transfers;
@@ -218,6 +219,7 @@ export default defineConfig({
               DELETE FROM account;
               DELETE FROM verification;
               DELETE FROM audit_log;
+              DELETE FROM loan_waivers;
               DELETE FROM payments;
               DELETE FROM collateral;
               DELETE FROM loans;

@@ -38,6 +38,7 @@ export async function resetDb() {
   }
   await db.execute(sql`
     TRUNCATE TABLE
+      financial_correction_agent_reviews,
       transactions,
       transaction_categories,
       financial_snapshots,
