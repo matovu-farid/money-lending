@@ -77,6 +77,7 @@ export function planHistoricalRateRepair(
   const settlements = [...snapshot.settlements].sort((a, b) =>
     a.date.getTime() - b.date.getTime() || a.id.localeCompare(b.id));
   const normalized = { ...snapshot, settlements,
+    journalLegs: snapshot.journalLegs.toSorted((a, b) => a.id.localeCompare(b.id)),
     sourceExceptions: [...snapshot.sourceExceptions].sort() };
   const inputFingerprint = hash({ policyVersion, snapshot: normalized });
   const exceptions = [...normalized.sourceExceptions];

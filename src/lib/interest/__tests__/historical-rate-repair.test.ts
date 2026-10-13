@@ -51,6 +51,26 @@ function snapshot(): HistoricalRateSnapshot {
 }
 
 describe("historical paid-rate repair preview", () => {
+  it("fingerprints the same journal evidence regardless of leg order", () => {
+    const input = snapshot();
+    const common = {
+      loanId: input.loan.id, journalGroupId: "group-1",
+      referenceType: "portfolio_accrual_repair", referenceId: "run-1",
+      date: day("2026-01-31"), amount: "125.00",
+    };
+    input.journalLegs = [
+      { ...common, id: "journal-b", categoryName: "Interest Earned", type: "credit" },
+      { ...common, id: "journal-a", categoryName: "Interest Receivable", type: "debit" },
+    ];
+
+    const first = planHistoricalRateRepair(input);
+    const permuted = planHistoricalRateRepair({ ...input,
+      journalLegs: [...input.journalLegs].reverse() });
+
+    expect(permuted.inputFingerprint).toBe(first.inputFingerprint);
+    expect(permuted.planHash).toBe(first.planHash);
+  });
+
   it("replays each receipt at the corrected rate from loan start without changing cash", () => {
     const plan = planHistoricalRateRepair(snapshot());
 

@@ -381,13 +381,14 @@ export async function loadHistoricalRateSnapshotInSnapshot(
     row.transactionDate <= asOf), "debit").toFixed(2);
   const correctionMarked = finalAuditValue?.rateSemantics === "correction" &&
     finalAuditValue.effectiveFrom === loan.startDate.toISOString();
+  const sortedJournalRows = journalRows.toSorted((a, b) => a.id.localeCompare(b.id));
   const sourceDigest = digest({
     loan, paymentRows: paymentRows.toSorted((a, b) => a.id.localeCompare(b.id)),
     waiverRows: waiverRows.toSorted((a, b) => a.id.localeCompare(b.id)),
     rateRows: rateRows.toSorted((a, b) => a.id.localeCompare(b.id)),
     rateAudits: rateAudits.toSorted((a, b) => a.id.localeCompare(b.id)),
     linkedRows: [...successorRows, ...linkedRows].sort((a, b) => a.id.localeCompare(b.id)),
-    journalRows: journalRows.toSorted((a, b) => a.id.localeCompare(b.id)),
+    journalRows: sortedJournalRows,
     portfolioRuns: portfolioRuns.toSorted((a, b) => a.id.localeCompare(b.id)),
     portfolioReviews: portfolioReviews.toSorted((a, b) => a.id.localeCompare(b.id)),
     relevantCategoryRows: relevantCategoryRows.sort((a, b) => a.id.localeCompare(b.id)),
@@ -405,7 +406,7 @@ export async function loadHistoricalRateSnapshotInSnapshot(
       startDate: loan.startDate, createdAt: loan.createdAt,
     },
     correctedRate: currentRate.toFixed(4), asOf, settlements,
-    journalLegs: journalRows.map((row) => ({ id: row.id, loanId: row.loanId,
+    journalLegs: sortedJournalRows.map((row) => ({ id: row.id, loanId: row.loanId,
       journalGroupId: row.journalGroupId, referenceType: row.referenceType,
       referenceId: row.referenceId, date: row.transactionDate,
       categoryName: row.categoryName, type: row.type, amount: row.amount })),
