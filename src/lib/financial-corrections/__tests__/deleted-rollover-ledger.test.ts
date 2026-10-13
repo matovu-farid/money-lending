@@ -67,10 +67,12 @@ function source() {
       startDate: new Date("2024-11-28T00:00:00.000Z"), deletedAt: predecessorDeletedAt },
     successor: { id: successorId, rolledOverFrom: predecessorId,
       startDate: rolloverAt, deletedAt: successorDeletedAt },
-    payments: [], waivers: [], journals,
+    payments: [], waivers: [], rateChanges: [], journals,
     audits: [
       { action: "loan.create", entityId: predecessorId, occurredAt: issued },
-      { action: "loan.rollover", entityId: predecessorId, occurredAt: issued },
+      { action: "loan.rollover", entityId: predecessorId, occurredAt: issued,
+        afterValue: JSON.stringify({ rolledIntoLoanId: successorId,
+          carriedInterest: "3636606.34" }) },
       { action: "loan.create", entityId: successorId, occurredAt: issued },
       { action: "loan.delete", entityId: successorId, occurredAt: successorDeletedAt },
       { action: "loan.unroll", entityId: predecessorId, occurredAt: successorDeletedAt },
@@ -122,6 +124,16 @@ describe("deleted rollover ledger repair", () => {
     expect(plan.legs).toEqual([])
   })
 
+  it("blocks a malformed carry counterpart date without throwing", () => {
+    const input = source()
+    const counterpart = input.journals.find((row) => row.journalGroupId === "interest-carry" &&
+      row.categoryName === "Loans Receivable")!
+    counterpart.transactionDate = null as unknown as Date
+    const plan = planDeletedRolloverLedgerRepair(input)
+    expect(plan.classification).toBe("blocked")
+    expect(plan.legs).toEqual([])
+  })
+
   it("blocks a rollover audit recorded after the successor was deleted", () => {
     const input = source()
     const rolloverAudit = input.audits.find((row) => row.action === "loan.rollover")!
@@ -129,6 +141,25 @@ describe("deleted rollover ledger repair", () => {
     const plan = planDeletedRolloverLedgerRepair(input)
     expect(plan.classification).toBe("blocked")
     expect(plan.legs).toEqual([])
+  })
+
+  it("blocks a rollover audit for another successor or carried-interest amount", () => {
+    for (const afterValue of [
+      { rolledIntoLoanId: predecessorId, carriedInterest: "3636606.34" },
+      { rolledIntoLoanId: successorId, carriedInterest: "3636606.33" },
+    ]) {
+      const input = source()
+      input.audits.find((row) => row.action === "loan.rollover")!.afterValue =
+        JSON.stringify(afterValue)
+      expect(planDeletedRolloverLedgerRepair(input).classification).toBe("blocked")
+    }
+  })
+
+  it("blocks interest unroll legs referencing the wrong deletion", () => {
+    const input = source()
+    input.journals.find((row) => row.journalGroupId === "successor-unroll-interest" &&
+      row.type === "credit")!.referenceId = predecessorId
+    expect(planDeletedRolloverLedgerRepair(input).classification).toBe("blocked")
   })
 
   it("binds the plan to a digest of full source rows", () => {

@@ -38,8 +38,10 @@ export type DeletedRolloverSource = {
   successor: Loan
   payments: Settlement[]
   waivers: Settlement[]
+  rateChanges: Array<{ id: string; loanId: string; status: string }>
   journals: DeletedRolloverJournal[]
-  audits: Array<{ action: string; entityId: string; occurredAt: Date }>
+  audits: Array<{ action: string; entityId: string; occurredAt: Date;
+    afterValue?: string | null }>
 }
 
 type Leg = {
@@ -104,6 +106,22 @@ function hasAudit(source: DeletedRolloverSource, action: string, entityId: strin
     (!at || row.occurredAt.getTime() === at.getTime()))
 }
 
+function rolloverAuditMatches(source: DeletedRolloverSource, amount: BigNumber): boolean {
+  const audits = source.audits.filter((row) => row.action === "loan.rollover" &&
+    row.entityId === source.predecessor.id)
+  if (audits.length !== 1) return false
+  try {
+    const after = JSON.parse(audits[0].afterValue ?? "null") as unknown
+    if (!after || typeof after !== "object") return false
+    const value = after as Record<string, unknown>
+    return value.rolledIntoLoanId === source.successor.id &&
+      typeof value.carriedInterest === "string" &&
+      new BigNumber(value.carriedInterest).eq(amount)
+  } catch {
+    return false
+  }
+}
+
 /** A fail-closed proposal to undo one provable duplicate non-cash deletion group. */
 export function planDeletedRolloverLedgerRepair(
   source: DeletedRolloverSource,
@@ -114,6 +132,7 @@ export function planDeletedRolloverLedgerRepair(
     predecessor, successor,
     payments: [...source.payments].sort((a, b) => a.id.localeCompare(b.id)),
     waivers: [...source.waivers].sort((a, b) => a.id.localeCompare(b.id)),
+    rateChanges: [...source.rateChanges].sort((a, b) => a.id.localeCompare(b.id)),
     journals: orderedJournals,
     audits: [...source.audits].sort((a, b) => a.action.localeCompare(b.action) ||
       a.entityId.localeCompare(b.entityId) || a.occurredAt.getTime() - b.occurredAt.getTime()),
@@ -203,6 +222,9 @@ export function planDeletedRolloverLedgerRepair(
       !candidate[1].every((row) => new BigNumber(row.amount).eq(candidateAmount)))) {
     exceptions.push("Later reversal legs do not have the same amount")
   }
+  if (candidateAmount && !rolloverAuditMatches(source, candidateAmount)) {
+    exceptions.push("Rollover audit successor or carried interest does not match the duplicate")
+  }
   const originalCarry = orderedJournals.filter((row) =>
     row.loanId === successor.id && row.referenceType === "rollover" &&
     row.referenceId === predecessor.id && row.categoryName === "Interest Earned" &&
@@ -221,6 +243,21 @@ export function planDeletedRolloverLedgerRepair(
         row.transactionDate.getTime() === successor.startDate.getTime() &&
         new BigNumber(row.amount).eq(candidateAmount))) {
       exceptions.push("Original carried interest lacks its receivable debit")
+    }
+  }
+  if (candidateAmount && validDate(successor.deletedAt) &&
+      validDate(successor.startDate)) {
+    const unrollGroups = [...groups.values()].filter((rows) => rows.length === 2 &&
+      rows.every((row) => row.loanId === successor.id &&
+        row.referenceType === "loan_deletion_reversal" &&
+        row.referenceId === successor.id &&
+        row.createdAt.getTime() === successor.deletedAt!.getTime() &&
+        row.transactionDate.getTime() === successor.startDate.getTime() &&
+        new BigNumber(row.amount).eq(candidateAmount)) &&
+      rows.some((row) => row.categoryName === "Interest Earned" && row.type === "debit") &&
+      rows.some((row) => row.categoryName === "Loans Receivable" && row.type === "credit"))
+    if (unrollGroups.length !== 1) {
+      exceptions.push("Successor deletion did not reverse the original carried interest exactly once")
     }
   }
   if (validDate(successor.deletedAt)) {
