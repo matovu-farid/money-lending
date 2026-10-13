@@ -13,11 +13,346 @@ import { historicalRateRepairRuns } from "@/lib/db/schema/historical-rate-repair
 import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs"
 import { financialCorrectionAgentReviews } from
   "@/lib/db/schema/financial-correction-agent-reviews"
-import { loadPortfolioAccrualPlan } from "../portfolio-accrual-repair.service"
+import { hashReviewEvidence } from "@/lib/financial-corrections/agent-review"
+import { loadPortfolioAccrualPlan, provePaymentJournalHistory,
+  unresolvedPaymentJournalExceptions,
+  validatePaymentSettlementHistory } from
+  "../portfolio-accrual-repair.service"
 import { accrueInterestForLoans } from "../transaction.service"
 
 const start = new Date("2025-01-01T00:00:00.000Z")
 const januaryEnd = new Date("2025-01-31T23:59:59.999Z")
+
+const historyLoanId = "11111111-1111-4111-8111-111111111111"
+const historyPaymentId = "22222222-2222-4222-8222-222222222222"
+const historyOldDate = new Date("2025-01-16T12:00:00.000Z")
+const historyNewDate = new Date("2025-01-20T09:00:00.000Z")
+const historyDeletedAt = new Date("2025-01-21T09:00:00.000Z")
+
+function historyPayment(date = historyNewDate, deletedAt: Date | null = null) {
+  return { id: historyPaymentId, loanId: historyLoanId, amount: "100.00",
+    paymentDate: date, deletedAt, markedWrong: false,
+    depositLocation: "cash", subLocationId: null }
+}
+
+function historyPair(referenceType: "payment" | "payment_reversal",
+  date: Date, amount: string, categoryId: string, groupId: string,
+  createdAt: Date) {
+  const reversed = referenceType === "payment_reversal"
+  const common = { loanId: historyLoanId, referenceType,
+    referenceId: historyPaymentId, journalGroupId: groupId, date,
+    amount, createdAt }
+  return [
+    { ...common, id: `${groupId}-cash`, categoryId: "cash", categoryName: "Cash",
+      categoryType: "asset",
+      type: (reversed ? "credit" : "debit") as "debit" | "credit",
+      depositLocation: "cash", subLocationId: null },
+    { ...common, id: `${groupId}-offset`, categoryId,
+      categoryName: categoryId === "interest" ? "Interest Earned" : "Loans Receivable",
+      categoryType: categoryId === "interest" ? "revenue" : "asset",
+      type: (reversed ? "debit" : "credit") as "debit" | "credit",
+      depositLocation: null, subLocationId: null },
+  ]
+}
+
+function historyAudit(action: string, before: object | null, after: object,
+  occurredAt: Date) {
+  return { id: randomUUID(), entityType: "payment", entityId: historyPaymentId,
+    action, beforeValue: before && JSON.stringify(before),
+    afterValue: JSON.stringify(after), occurredAt }
+}
+
+function historyFixture(kind: "deleted" | "edited") {
+  const old = historyPayment(historyOldDate)
+  const current = kind === "deleted"
+    ? historyPayment(historyOldDate, historyDeletedAt) : historyPayment()
+  const originalAt = new Date("2025-01-17T00:00:00.000Z")
+  const reversalAt = new Date("2025-01-19T00:00:00.000Z")
+  const repostAt = new Date("2025-01-20T10:00:00.000Z")
+  const rows = [
+    ...historyPair("payment", historyOldDate, "30.00", "interest",
+      "original-interest", originalAt),
+    ...historyPair("payment", historyOldDate, "70.00", "principal",
+      "original-principal", originalAt),
+    ...historyPair("payment_reversal", historyOldDate, "30.00", "interest",
+      "reversal-interest", reversalAt),
+    ...historyPair("payment_reversal", historyOldDate, "70.00", "principal",
+      "reversal-principal", reversalAt),
+    ...(kind === "edited" ? [
+      ...historyPair("payment", historyNewDate, "40.00", "interest",
+        "current-interest", repostAt),
+      ...historyPair("payment", historyNewDate, "60.00", "principal",
+        "current-principal", repostAt),
+    ] : []),
+  ]
+  const auditRows = kind === "deleted"
+    ? [historyAudit("payment.delete", old, current, historyDeletedAt)]
+    : [historyAudit("payment.update", old, current, repostAt)]
+  return { payment: current, journalRows: rows, groupRows: rows, auditRows }
+}
+
+type HistoryFixture = ReturnType<typeof historyFixture>
+function proveHistory(input: HistoryFixture): string[] {
+  return provePaymentJournalHistory(input)
+}
+
+function paidRateHistoryFixture() {
+  const payment = historyPayment()
+  const cashRows = historyPair("payment", historyNewDate, "100.00",
+    "principal", "paid-rate-cash", historyNewDate)
+  const correctionAt = new Date("2025-02-01T00:00:00.000Z")
+  const correction = [
+    { ...cashRows[1], id: "rate-principal", journalGroupId: "rate-reclassification",
+      amount: "20.00", type: "debit" as const, createdAt: correctionAt,
+      description: "Historical rate repair reviewed-plan", recordedBy: "agent:executor" },
+    { ...cashRows[1], id: "rate-interest", journalGroupId: "rate-reclassification",
+      categoryId: "interest", categoryName: "Interest Earned",
+      categoryType: "revenue", amount: "20.00", type: "credit" as const,
+      createdAt: correctionAt,
+      description: "Historical rate repair reviewed-plan", recordedBy: "agent:executor" },
+  ]
+  const expectedEntries = [
+    { categoryName: "Interest Earned", type: "credit", amount: "20.00",
+      referenceType: "payment", referenceId: payment.id,
+      date: payment.paymentDate.toISOString() },
+    { categoryName: "Loans Receivable", type: "debit", amount: "20.00",
+      referenceType: "payment", referenceId: payment.id,
+      date: payment.paymentDate.toISOString() },
+  ]
+  const evidence = { loanId: payment.loanId, expectedEntries }
+  const rateProof = {
+    run: { id: "rate-run", loanId: payment.loanId, planHash: "reviewed-plan",
+      inputFingerprint: "reviewed-input", policyVersion: "v2",
+      agentReviewId: "rate-review", appliedByAgent: "agent:executor",
+      appliedAt: correctionAt, beforeSummary: JSON.stringify({
+        loanId: payment.loanId, planHash: "reviewed-plan",
+        inputFingerprint: "reviewed-input", policyVersion: "v2",
+        classification: "review",
+        changes: [{ id: payment.id, kind: "payment", date: payment.paymentDate,
+          amount: payment.amount, oldInterest: "0.00", oldPrincipal: "100.00",
+          oldOverpayment: "0.00", newInterest: "20.00",
+          newPrincipal: "80.00", newOverpayment: "0.00" }],
+      }) },
+    review: { id: "rate-review", kind: "historical_rate", subjectId: payment.loanId,
+      planHash: "reviewed-plan", inputFingerprint: "reviewed-input",
+      policyVersion: "v2", verdict: "pass", consumedByRunId: "rate-run",
+      consumedAt: correctionAt, reviewerAgentId: "agent:reviewer",
+      evidenceJson: JSON.stringify(evidence),
+      evidenceSha256: hashReviewEvidence(evidence) },
+  }
+  const journalRows = [...cashRows, ...correction]
+  return { payment, journalRows, groupRows: journalRows, auditRows: [], rateProof }
+}
+
+describe("portfolio settlement history proof without database writes", () => {
+  it.each(["payment", "payment_reversal"] as const)(
+    "rejects a %s journal on this loan with no loaded payment row", (referenceType) => {
+      const rows = historyPair(referenceType, historyNewDate, "100.00",
+        "principal", "orphan-group", historyNewDate).map((row) => ({ ...row,
+        referenceId: "33333333-3333-4333-8333-333333333333" }))
+      expect(unresolvedPaymentJournalExceptions(historyLoanId,
+        [historyPaymentId], rows)).not.toEqual([])
+    },
+  )
+
+  it("keeps an ordinary paid-rate Cash payment valid beside its non-Cash reclassification", () => {
+    expect(validatePaymentSettlementHistory(paidRateHistoryFixture())).toEqual([])
+  })
+
+  it("rejects an unsupported balanced non-Cash reclassification", () => {
+    const fixture = paidRateHistoryFixture()
+    for (const row of fixture.journalRows.filter((item) =>
+      item.journalGroupId === "rate-reclassification")) row.amount = "21.00"
+    expect(validatePaymentSettlementHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects a duplicate non-Cash reclassification despite a valid rate review", () => {
+    const fixture = paidRateHistoryFixture()
+    fixture.journalRows.push(...fixture.journalRows.filter((row) =>
+      row.journalGroupId === "rate-reclassification").map((row) => ({ ...row,
+        id: `duplicate-${row.id}`, journalGroupId: "duplicate-rate-group" })))
+    expect(validatePaymentSettlementHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects non-Cash reclassification without a linked rate review", () => {
+    const { payment, journalRows, groupRows, auditRows } = paidRateHistoryFixture()
+    expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows,
+      auditRows })).not.toEqual([])
+  })
+
+  it("rejects reclassification when reviewed evidence digest is wrong", () => {
+    const fixture = paidRateHistoryFixture()
+    fixture.rateProof.review.evidenceSha256 = "0".repeat(64)
+    expect(validatePaymentSettlementHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects reclassification not bound to the completed rate run", () => {
+    const fixture = paidRateHistoryFixture()
+    fixture.rateProof.review.consumedByRunId = "another-run"
+    expect(validatePaymentSettlementHistory(fixture)).not.toEqual([])
+  })
+
+  it("does not bypass an incomplete same-day reversal beside a rate reclassification", () => {
+    const fixture = paidRateHistoryFixture()
+    fixture.journalRows.push(historyPair("payment_reversal", historyNewDate,
+      "100.00", "principal", "incomplete-reversal", historyDeletedAt)[0])
+    expect(validatePaymentSettlementHistory(fixture)).not.toEqual([])
+  })
+
+  it("does not bypass a wrong Cash location beside a rate reclassification", () => {
+    const fixture = paidRateHistoryFixture()
+    fixture.journalRows[0].depositLocation = "bank"
+    expect(validatePaymentSettlementHistory(fixture)).not.toEqual([])
+  })
+
+  it("accepts an ordinary active payment with current-date journals and no audit", () => {
+    const payment = historyPayment()
+    const journalRows = historyPair("payment", historyNewDate, "100.00",
+      "principal", "ordinary-payment", historyNewDate)
+    expect(proveHistory({ payment, journalRows, groupRows: journalRows,
+      auditRows: [] })).toEqual([])
+  })
+
+  it("accepts a deleted payment with an audit and exactly reversed journals", () => {
+    expect(proveHistory(historyFixture("deleted"))).toEqual([])
+  })
+
+  it("rejects a deleted payment audited at B when all Cash was posted at A", () => {
+    const fixture = historyFixture("deleted")
+    fixture.payment.paymentDate = historyNewDate
+    fixture.auditRows[0].beforeValue = JSON.stringify(historyPayment(historyNewDate))
+    fixture.auditRows[0].afterValue = JSON.stringify(fixture.payment)
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("conservatively blocks edit-then-delete until its full audit chain is proved", () => {
+    const fixture = historyFixture("deleted")
+    fixture.auditRows.unshift(historyAudit("payment.update",
+      historyPayment(historyOldDate), historyPayment(historyNewDate), historyNewDate))
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("accepts an audited date edit with exactly canceled old journals", () => {
+    expect(proveHistory(historyFixture("edited"))).toEqual([])
+  })
+
+  it("rejects a deleted payment whose reversed cash was less than the payment row", () => {
+    const fixture = historyFixture("deleted")
+    for (const row of fixture.journalRows.filter((item) =>
+      item.categoryId === "principal")) row.amount = "60.00"
+    for (const row of fixture.journalRows.filter((item) =>
+      item.categoryId === "cash" && item.journalGroupId?.includes("principal"))) {
+      row.amount = "60.00"
+    }
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects an edited payment whose old cash does not match its audit", () => {
+    const fixture = historyFixture("edited")
+    for (const row of fixture.journalRows.filter((item) =>
+      item.journalGroupId?.includes("principal") &&
+      item.date.getTime() === historyOldDate.getTime())) {
+      row.amount = "60.00"
+    }
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects an exactly reversed posting to an unexpected account", () => {
+    const fixture = historyFixture("deleted")
+    for (const row of fixture.journalRows.filter((item) =>
+      item.categoryId === "principal")) {
+      row.categoryId = "suspense"
+      row.categoryName = "Suspense"
+    }
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects a wrong-type account even when its journal reverses exactly", () => {
+    const fixture = historyFixture("deleted")
+    for (const row of fixture.journalRows.filter((item) =>
+      item.categoryId === "interest")) row.categoryType = "asset"
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("keeps marked-wrong payments blocked", () => {
+    const fixture = historyFixture("edited")
+    fixture.payment.markedWrong = true
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects a deleted payment without a matching delete audit", () => {
+    const fixture = historyFixture("deleted")
+    fixture.auditRows = []
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects a deleted payment with a contradictory delete audit", () => {
+    const fixture = historyFixture("deleted")
+    fixture.auditRows[0].afterValue = JSON.stringify({
+      ...fixture.payment, amount: "101.00",
+    })
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects an active date edit without an update audit", () => {
+    const fixture = historyFixture("edited")
+    fixture.auditRows = []
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects an active date edit whose audit ends at another date", () => {
+    const fixture = historyFixture("edited")
+    fixture.auditRows[0].afterValue = JSON.stringify({
+      ...fixture.payment, paymentDate: historyOldDate,
+    })
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects a partial reversal even when each remaining group balances", () => {
+    const fixture = historyFixture("deleted")
+    const rows = fixture.journalRows.filter((row) =>
+      row.journalGroupId !== "reversal-principal")
+    fixture.journalRows = rows
+    fixture.groupRows = rows
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it("rejects a duplicate reversal", () => {
+    const fixture = historyFixture("deleted")
+    const duplicate = historyPair("payment_reversal", historyOldDate, "30.00",
+      "interest", "duplicate-reversal", historyDeletedAt)
+    fixture.journalRows.push(...duplicate)
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+
+  it.each([
+    ["amount", (row: ReturnType<typeof historyPair>[number]) => {
+      row.amount = "31.00"
+    }],
+    ["date", (row: ReturnType<typeof historyPair>[number]) => {
+      row.date = historyNewDate
+    }],
+    ["category", (row: ReturnType<typeof historyPair>[number]) => {
+      row.categoryId = "suspense"
+      row.categoryName = "Suspense"
+    }],
+    ["loan", (row: ReturnType<typeof historyPair>[number]) => {
+      row.loanId = "33333333-3333-4333-8333-333333333333"
+    }],
+    ["location", (row: ReturnType<typeof historyPair>[number]) => {
+      row.depositLocation = "bank"
+    }],
+    ["group", (row: ReturnType<typeof historyPair>[number]) => {
+      row.journalGroupId = "wrong-group"
+    }],
+  ])("rejects a reversal with the wrong %s", (_field, mutate) => {
+    const fixture = historyFixture("deleted")
+    const cash = fixture.journalRows.find((row) =>
+      row.journalGroupId === "reversal-interest" && row.categoryName === "Cash")!
+    mutate(cash)
+    expect(proveHistory(fixture)).not.toEqual([])
+  })
+})
 
 async function seedLoan() {
   await seedCategories()

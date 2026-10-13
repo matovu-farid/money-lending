@@ -82,7 +82,7 @@ describe("portfolio accrual repair planner", () => {
   })
   it("accrues elapsed interest at the closed month end for a backdated start", () => {
     const plan = planPortfolioAccrualRepair(snapshot())
-    expect(plan.policyVersion).toBe("portfolio-accrual-v3")
+    expect(plan.policyVersion).toBe("portfolio-accrual-v4")
     expect(plan.classification).toBe("ready")
     expect(plan.entries).toEqual([expect.objectContaining({
       date: janEnd, delta: "100000.00", resultingReceivable: "100000.00",

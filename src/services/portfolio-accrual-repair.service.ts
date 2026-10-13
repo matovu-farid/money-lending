@@ -13,6 +13,9 @@ import { financialCorrectionAgentReviews } from
 import { transactions } from "@/lib/db/schema/transactions"
 import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { buildLoanStatement } from "@/lib/loan-statement"
+import { hashReviewEvidence } from "@/lib/financial-corrections/agent-review"
+import { normalizedHistoricalJournalEffects, type HistoricalRateEvidence } from
+  "@/lib/financial-corrections/historical-rate-verifier"
 import { planPortfolioAccrualRepair, type PortfolioAccrualPlan } from
   "@/lib/interest/portfolio-accrual-repair"
 import { historicalRateCorrectionExceptions } from
@@ -42,6 +45,354 @@ function rateTermsEdited(value: string | null): boolean {
         "penaltyMultiplier", "penaltyWaived", "minInterestDays"].some((key) =>
         Object.hasOwn(parsed, key))
   } catch { return true }
+}
+
+type HistoryPayment = {
+  id: string; loanId: string; amount: string; paymentDate: Date
+  deletedAt: Date | null; markedWrong: boolean
+  depositLocation: string; subLocationId: string | null
+}
+
+type HistoryJournal = {
+  id: string; loanId: string | null; referenceType: string | null
+  referenceId: string | null; journalGroupId: string | null
+  date: Date; createdAt: Date; type: "debit" | "credit"; amount: string
+  categoryId: string; categoryName: string; categoryType: string
+  depositLocation: string | null; subLocationId: string | null
+  description?: string | null; recordedBy?: string
+}
+
+type HistoryAudit = {
+  action: string; entityType: string; entityId: string
+  beforeValue: string | null; afterValue: string | null; occurredAt: Date
+}
+
+type PaymentHistoryInput = {
+  payment: HistoryPayment; journalRows: HistoryJournal[]
+  groupRows: HistoryJournal[]; auditRows: HistoryAudit[]
+  rateProof?: RateReclassificationProof
+}
+
+type RateReclassificationProof = {
+  run: { id: string; loanId: string; planHash: string; inputFingerprint: string
+    policyVersion: string; agentReviewId: string | null; appliedByAgent: string | null
+    appliedAt: Date; beforeSummary: string }
+  review: { id: string; kind: string; subjectId: string; planHash: string
+    inputFingerprint: string; policyVersion: string; verdict: string
+    reviewerAgentId: string; consumedAt: Date | null; consumedByRunId: string | null
+    evidenceJson: string; evidenceSha256: string }
+}
+
+type RateEffect = HistoricalRateEvidence["expectedEntries"][number]
+
+type AuditedPayment = {
+  id: string; loanId: string; amount: string; paymentDate: string
+  deletedAt: string | null; depositLocation: string; subLocationId: string | null
+}
+
+function auditedPayment(value: string | null): AuditedPayment | null {
+  if (!value) return null
+  try {
+    const row: unknown = JSON.parse(value)
+    if (!row || typeof row !== "object" || Array.isArray(row)) return null
+    const data = row as Record<string, unknown>
+    if (typeof data.id !== "string" || typeof data.loanId !== "string" ||
+        typeof data.amount !== "string" || typeof data.paymentDate !== "string" ||
+        typeof data.depositLocation !== "string" ||
+        !(data.deletedAt === null || typeof data.deletedAt === "string") ||
+        !(data.subLocationId === null || typeof data.subLocationId === "string")) {
+      return null
+    }
+    return data as AuditedPayment
+  } catch { return null }
+}
+
+function sameAuditedPayment(a: AuditedPayment, b: AuditedPayment): boolean {
+  return a.id === b.id && a.loanId === b.loanId &&
+    new BigNumber(a.amount).eq(b.amount) && a.paymentDate === b.paymentDate &&
+    a.depositLocation === b.depositLocation && a.subLocationId === b.subLocationId
+}
+
+function paymentAuditMatches(row: AuditedPayment, payment: HistoryPayment): boolean {
+  return row.id === payment.id && row.loanId === payment.loanId &&
+    new BigNumber(row.amount).eq(payment.amount) &&
+    row.paymentDate === payment.paymentDate.toISOString() &&
+    row.depositLocation === payment.depositLocation &&
+    row.subLocationId === payment.subLocationId
+}
+
+function opposite(a: HistoryJournal, b: HistoryJournal): boolean {
+  return a.loanId === b.loanId && a.referenceId === b.referenceId &&
+    a.categoryId === b.categoryId && a.date.getTime() === b.date.getTime() &&
+    a.depositLocation === b.depositLocation && a.subLocationId === b.subLocationId &&
+    new BigNumber(a.amount).eq(b.amount) && a.type !== b.type
+}
+
+/** Prove a payment's superseded journals cancel exactly before accepting its current facts. */
+export function provePaymentJournalHistory(input: PaymentHistoryInput): string[] {
+  const { payment, groupRows } = input
+  const rows = input.journalRows.filter((row) => row.referenceId === payment.id)
+  const issues: string[] = []
+  if (payment.markedWrong) return ["Marked-wrong payment requires historical review"]
+  if (!rows.length || rows.some((row) => row.loanId !== payment.loanId ||
+      !["payment", "payment_reversal"].includes(row.referenceType ?? ""))) {
+    return ["Payment journal history is missing or misattributed"]
+  }
+  for (const row of rows) {
+    const group = groupRows.filter((item) => item.journalGroupId === row.journalGroupId)
+    const cash = group.find((item) => item.categoryName === "Cash")
+    if (!row.journalGroupId || group.length !== 2 || !cash ||
+        group.some((item) => item.loanId !== payment.loanId ||
+          item.referenceId !== payment.id || item.referenceType !== row.referenceType ||
+          item.date.getTime() !== row.date.getTime() ||
+          !new BigNumber(item.amount).eq(row.amount)) ||
+        group[0].type === group[1].type ||
+        group[0].categoryId === group[1].categoryId ||
+        group.some((item) => item.categoryName === "Cash"
+          ? item.categoryType !== "asset"
+          : item.categoryName === "Loans Receivable"
+            ? item.categoryType !== "asset" : item.categoryType !== "revenue") ||
+        group.some((item) => item.categoryName !== "Cash" &&
+          !["Interest Earned", "Loans Receivable", "Overpayment Revenue"]
+            .includes(item.categoryName)) ||
+        cash.type !== (row.referenceType === "payment" ? "debit" : "credit") ||
+        cash.depositLocation !== payment.depositLocation ||
+        cash.subLocationId !== payment.subLocationId ||
+        group.some((item) => item.categoryName !== "Cash" &&
+          (item.depositLocation !== null || item.subLocationId !== null))) {
+      issues.push(`Payment journal group ${row.journalGroupId ?? row.id} is not an attributed pair`)
+    }
+  }
+  const original = rows.filter((row) => row.referenceType === "payment")
+  const reversals = rows.filter((row) => row.referenceType === "payment_reversal")
+    .toSorted((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  const remaining = [...original]
+  for (const reversal of reversals) {
+    const index = remaining.findIndex((row) =>
+      row.createdAt <= reversal.createdAt && opposite(row, reversal))
+    if (index < 0) issues.push(`Payment reversal ${reversal.id} has no exact original`)
+    else remaining.splice(index, 1)
+  }
+  const audits = input.auditRows.filter((row) => row.entityType === "payment" &&
+    row.entityId === payment.id)
+  if (payment.deletedAt) {
+    const deletions = audits.filter((row) => row.action === "payment.delete")
+    const deletion = deletions.length === 1 ? deletions[0] : null
+    const before = auditedPayment(deletion?.beforeValue ?? null)
+    const after = auditedPayment(deletion?.afterValue ?? null)
+    if (!deletion || !before || !after || before.deletedAt !== null ||
+        after.deletedAt !== payment.deletedAt.toISOString() ||
+        !sameAuditedPayment(before, after) ||
+        !paymentAuditMatches(after, payment)) {
+      issues.push("Deleted payment has no matching payment.delete audit")
+    }
+    if (!original.length || !reversals.length || remaining.length) {
+      issues.push("Deleted payment journal is not exactly reversed")
+    }
+    // Edit-then-delete remains blocked until the entire audit/journal chain can be proved.
+    if (audits.some((row) => row.action === "payment.update") ||
+        rows.some((row) => row.date.getTime() !== payment.paymentDate.getTime())) {
+      issues.push("Deleted payment has edited or off-date history requiring separate review")
+    }
+    if (!net(original.filter((row) => row.categoryName === "Cash"))
+      .eq(payment.amount)) {
+      issues.push("Deleted payment original Cash does not match its amount")
+    }
+  } else {
+    const offDates = [...new Set(rows.filter((row) =>
+      row.date.getTime() !== payment.paymentDate.getTime())
+      .map((row) => row.date.toISOString()))]
+    if (offDates.length) {
+      const updates = audits.filter((row) => row.action === "payment.update")
+        .toSorted((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      const parsed = updates.map((row) => ({
+        before: auditedPayment(row.beforeValue), after: auditedPayment(row.afterValue),
+      }))
+      if (!parsed.length || parsed.some((row) => !row.before || !row.after ||
+          row.before.deletedAt !== null || row.after.deletedAt !== null ||
+          row.before.id !== payment.id || row.after.id !== payment.id ||
+          row.before.loanId !== payment.loanId || row.after.loanId !== payment.loanId ||
+          row.before.depositLocation !== payment.depositLocation ||
+          row.after.depositLocation !== payment.depositLocation ||
+          row.before.subLocationId !== payment.subLocationId ||
+          row.after.subLocationId !== payment.subLocationId) ||
+          parsed.some((row, index) => index > 0 &&
+            !sameAuditedPayment(parsed[index - 1].after!, row.before!)) ||
+          !paymentAuditMatches(parsed.at(-1)!.after!, payment) ||
+          offDates.some((date) => !parsed.some((row) =>
+            row.before?.paymentDate === date || row.after?.paymentDate === date))) {
+        issues.push("Payment date history has no coherent payment.update audit")
+      }
+      for (const date of offDates) {
+        const originalCash = original.filter((row) =>
+          row.categoryName === "Cash" && row.date.toISOString() === date)
+        if (!parsed.some((row) => row.before?.paymentDate === date &&
+            net(originalCash).eq(row.before.amount))) {
+          issues.push(`Payment historical Cash at ${date} does not match its audit`)
+        }
+      }
+    }
+    if (!remaining.length || remaining.some((row) =>
+      row.date.getTime() !== payment.paymentDate.getTime()) ||
+        remaining.filter((row) => row.categoryName === "Cash")
+          .some((row) => row.type !== "debit") ||
+        !net(remaining.filter((row) => row.categoryName === "Cash"))
+          .eq(payment.amount)) {
+      issues.push("Payment Cash journal does not match amount and effective date")
+    }
+  }
+  return issues
+}
+
+/** Every payment journal on this loan must resolve to a loaded payment record. */
+export function unresolvedPaymentJournalExceptions(
+  loanId: string,
+  paymentIds: string[],
+  journalRows: Array<{ id: string; loanId: string | null;
+    referenceType: string | null; referenceId: string | null }>,
+): string[] {
+  const known = new Set(paymentIds)
+  return journalRows.filter((row) => row.loanId === loanId &&
+    (row.referenceType === "payment" || row.referenceType === "payment_reversal") &&
+    (!row.referenceId || !known.has(row.referenceId)))
+    .map((row) => `Payment journal ${row.id} has no loaded payment row`)
+}
+
+function reviewedRatePaymentEffects(
+  payment: HistoryPayment, proof: RateReclassificationProof,
+): RateEffect[] | null {
+  const { run, review } = proof
+  if (run.loanId !== payment.loanId || run.policyVersion !== "v2" ||
+      !run.planHash || !run.inputFingerprint || !run.appliedByAgent?.startsWith("agent:") ||
+      !(run.appliedAt instanceof Date) || !Number.isFinite(run.appliedAt.getTime()) ||
+      review.id !== run.agentReviewId || review.kind !== "historical_rate" ||
+      review.subjectId !== run.loanId || review.planHash !== run.planHash ||
+      review.inputFingerprint !== run.inputFingerprint ||
+      review.policyVersion !== run.policyVersion || review.verdict !== "pass" ||
+      !review.reviewerAgentId.startsWith("agent:") ||
+      review.reviewerAgentId === run.appliedByAgent ||
+      review.consumedByRunId !== run.id ||
+      !(review.consumedAt instanceof Date) ||
+      !Number.isFinite(review.consumedAt.getTime())) return null
+  try {
+    const evidence: unknown = JSON.parse(review.evidenceJson)
+    const before: unknown = JSON.parse(run.beforeSummary)
+    if (hashReviewEvidence(evidence) !== review.evidenceSha256 ||
+        !evidence || typeof evidence !== "object" || Array.isArray(evidence) ||
+        !before || typeof before !== "object" || Array.isArray(before)) return null
+    const reviewed = evidence as Record<string, unknown>
+    const plan = before as Record<string, unknown>
+    if (reviewed.loanId !== payment.loanId ||
+        !Array.isArray(reviewed.expectedEntries) ||
+        plan.loanId !== run.loanId || plan.planHash !== run.planHash ||
+        plan.inputFingerprint !== run.inputFingerprint ||
+        plan.policyVersion !== run.policyVersion || plan.classification !== "review" ||
+        !Array.isArray(plan.changes)) return null
+    const expected: RateEffect[] = []
+    for (const value of reviewed.expectedEntries) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null
+      const entry = value as Record<string, unknown>
+      if (typeof entry.categoryName !== "string" ||
+          (entry.type !== "debit" && entry.type !== "credit") ||
+          typeof entry.amount !== "string" || typeof entry.referenceType !== "string" ||
+          typeof entry.referenceId !== "string" || typeof entry.date !== "string") return null
+      if (entry.referenceType === "payment") expected.push(entry as RateEffect)
+    }
+    const derived: RateEffect[] = []
+    const seen = new Set<string>()
+    for (const value of plan.changes) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return null
+      const change = value as Record<string, unknown>
+      if (change.kind !== "payment" && change.kind !== "waiver") return null
+      if (change.kind !== "payment") continue
+      if (typeof change.id !== "string" || seen.has(change.id) ||
+          typeof change.date !== "string" || !Number.isFinite(Date.parse(change.date)) ||
+          new Date(change.date).toISOString() !== change.date ||
+          typeof change.amount !== "string") return null
+      seen.add(change.id)
+      const oldValues = [change.oldInterest, change.oldPrincipal, change.oldOverpayment]
+      const newValues = [change.newInterest, change.newPrincipal, change.newOverpayment]
+      if ([...oldValues, ...newValues].some((part) => typeof part !== "string" ||
+          !new BigNumber(part).isFinite() || new BigNumber(part).lt(0) ||
+          (new BigNumber(part).decimalPlaces() ?? Infinity) > 2)) return null
+      const oldTotal = oldValues.reduce<BigNumber>((sum, part) =>
+        sum.plus(part as string), new BigNumber(0))
+      const newTotal = newValues.reduce<BigNumber>((sum, part) =>
+        sum.plus(part as string), new BigNumber(0))
+      if (!oldTotal.eq(change.amount) || !newTotal.eq(change.amount)) return null
+      if (change.id === payment.id &&
+          (!newTotal.eq(payment.amount) || change.date !== payment.paymentDate.toISOString())) {
+        return null
+      }
+      for (const [index, categoryName] of ["Interest Earned", "Loans Receivable",
+        "Overpayment Revenue"].entries()) {
+        const delta = new BigNumber(newValues[index] as string)
+          .minus(oldValues[index] as string)
+        if (delta.isZero()) continue
+        derived.push({ categoryName, type: delta.gt(0) ? "credit" : "debit",
+          amount: delta.abs().toFixed(2), referenceType: "payment",
+          referenceId: change.id, date: change.date })
+      }
+    }
+    if (JSON.stringify(normalizedHistoricalJournalEffects(expected)) !==
+        JSON.stringify(normalizedHistoricalJournalEffects(derived))) return null
+    return expected.filter((row) => row.referenceId === payment.id)
+  } catch { return null }
+}
+
+function rateReclassificationExceptions(
+  input: PaymentHistoryInput, rows: HistoryJournal[],
+): string[] {
+  const { payment, rateProof } = input
+  if (!rows.length) return []
+  const expected = rateProof && reviewedRatePaymentEffects(payment, rateProof)
+  if (!expected) return ["Non-Cash payment journals lack linked reviewed rate effects"]
+  const groups = new Set(rows.map((row) => row.journalGroupId))
+  for (const groupId of groups) {
+    const group = input.groupRows.filter((row) => row.journalGroupId === groupId)
+    const matching = rows.filter((row) => row.journalGroupId === groupId)
+    if (!groupId || group.length !== matching.length ||
+        group.length < 2 || group.length > 3 ||
+        !net(group).isZero() ||
+        new Set(group.map((row) => row.categoryId)).size !== group.length ||
+        group.some((row) => row.loanId !== payment.loanId ||
+          row.referenceType !== "payment" || row.referenceId !== payment.id ||
+          row.date.getTime() !== payment.paymentDate.getTime() ||
+          row.depositLocation !== null || row.subLocationId !== null ||
+          row.recordedBy !== rateProof!.run.appliedByAgent ||
+          row.description !== `Historical rate repair ${rateProof!.run.planHash}` ||
+          row.createdAt.getTime() !== rateProof!.run.appliedAt.getTime() ||
+          !(["Loans Receivable", "Interest Earned", "Overpayment Revenue"]
+            .includes(row.categoryName)) ||
+          row.categoryType !== (row.categoryName === "Loans Receivable"
+            ? "asset" : "revenue"))) {
+      return [`Non-Cash payment group ${groupId ?? "missing"} is not the reviewed rate posting`]
+    }
+  }
+  const actual: RateEffect[] = rows.map((row) => ({ categoryName: row.categoryName,
+    type: row.type, amount: row.amount, referenceType: "payment",
+    referenceId: payment.id, date: row.date.toISOString() }))
+  return JSON.stringify(normalizedHistoricalJournalEffects(actual)) ===
+    JSON.stringify(normalizedHistoricalJournalEffects(expected))
+    ? [] : ["Non-Cash payment effects differ from the reviewed rate run"]
+}
+
+/** Keep strict reversal/date proof; exclude only ordinary non-Cash rate reclassifications. */
+export function validatePaymentSettlementHistory(input: PaymentHistoryInput): string[] {
+  const { payment, journalRows } = input
+  const rows = journalRows.filter((row) => row.referenceId === payment.id)
+  const cashRows = rows.filter((row) => row.categoryName === "Cash")
+  if (payment.deletedAt || payment.markedWrong ||
+      rows.some((row) => row.referenceType === "payment_reversal") ||
+      cashRows.some((row) => row.date.getTime() !== payment.paymentDate.getTime())) {
+    return provePaymentJournalHistory(input)
+  }
+  const cashGroupIds = new Set(cashRows.map((row) => row.journalGroupId))
+  return [...provePaymentJournalHistory({ ...input,
+    journalRows: rows.filter((row) => cashGroupIds.has(row.journalGroupId)),
+    groupRows: input.groupRows.filter((row) => cashGroupIds.has(row.journalGroupId)),
+  }), ...rateReclassificationExceptions(input,
+    rows.filter((row) => !cashGroupIds.has(row.journalGroupId)))]
 }
 
 /** Load one loan's reconciled accounting facts without changing the database. */
@@ -112,18 +463,24 @@ export async function loadPortfolioAccrualSnapshot(
 
   const activePayments = paymentRows.filter((row) => !row.deletedAt && !row.markedWrong)
   const activeWaivers = waiverRows.filter((row) => !row.deletedAt)
-  if (paymentRows.length !== activePayments.length || waiverRows.length !== activeWaivers.length) {
-    exceptions.push("Deleted or marked-wrong settlement needs separate historical review")
+  if (paymentRows.some((row) => row.markedWrong) ||
+      waiverRows.length !== activeWaivers.length) {
+    exceptions.push("Marked-wrong payment or deleted waiver needs separate historical review")
   }
+  const paymentAuditRows = paymentRows.length ? await queryDb.select().from(auditLog)
+    .where(and(eq(auditLog.entityType, "payment"),
+      inArray(auditLog.entityId, paymentRows.map((row) => row.id)))) : []
   const settlementIds = [...paymentRows.map((row) => row.id),
     ...waiverRows.map((row) => row.id)]
   const journalRows = await queryDb.select({
     id: transactions.id, loanId: transactions.loanId,
     referenceType: transactions.referenceType, referenceId: transactions.referenceId,
     journalGroupId: transactions.journalGroupId,
+    categoryId: transactions.categoryId, createdAt: transactions.createdAt,
     date: transactions.transactionDate, type: transactions.type,
     amount: transactions.amount, categoryName: transactionCategories.name,
     categoryType: transactionCategories.type,
+    description: transactions.description, recordedBy: transactions.recordedBy,
     depositLocation: transactions.depositLocation,
     subLocationId: transactions.subLocationId,
   }).from(transactions)
@@ -138,13 +495,6 @@ export async function loadPortfolioAccrualSnapshot(
   const mappedPayments = activePayments.map((row) => {
     const portions = paymentPortions.get(row.id)
     if (!portions) exceptions.push(`Payment ${row.id} has no reconciled allocation`)
-    const cashRows = journalRows.filter((journal) => journal.referenceId === row.id &&
-      ["payment", "payment_reversal"].includes(journal.referenceType ?? "") &&
-      journal.categoryName === "Cash")
-    if (!net(cashRows).eq(row.amount) ||
-        cashRows.some((journal) => journal.date.getTime() !== row.paymentDate.getTime())) {
-      exceptions.push(`Payment ${row.id} Cash journal does not match amount and effective date`)
-    }
     return { id: row.id, paymentDate: row.paymentDate, amount: row.amount,
       interestPortion: portions?.interestPortion ?? "0.00",
       principalPortion: portions?.principalPortion ?? "0.00" }
@@ -162,9 +512,11 @@ export async function loadPortfolioAccrualSnapshot(
     id: transactions.id, loanId: transactions.loanId,
     referenceType: transactions.referenceType, referenceId: transactions.referenceId,
     journalGroupId: transactions.journalGroupId,
+    categoryId: transactions.categoryId, createdAt: transactions.createdAt,
     date: transactions.transactionDate, type: transactions.type,
     amount: transactions.amount, categoryName: transactionCategories.name,
     categoryType: transactionCategories.type,
+    description: transactions.description, recordedBy: transactions.recordedBy,
     depositLocation: transactions.depositLocation,
     subLocationId: transactions.subLocationId,
   }).from(transactions)
@@ -179,6 +531,8 @@ export async function loadPortfolioAccrualSnapshot(
   }
   const settlementTypes = new Set(["payment", "payment_reversal", "loan_waiver",
     "loan_waiver_reversal", "loan_waiver_accrual_reversal"])
+  exceptions.push(...unresolvedPaymentJournalExceptions(loanId,
+    paymentRows.map((row) => row.id), journalRows))
   for (const row of journalRows.filter((item) => settlementTypes.has(item.referenceType ?? ""))) {
     const group = row.journalGroupId ? groups.get(row.journalGroupId) ?? [] : []
     if (!row.journalGroupId || group.length < 2 ||
@@ -188,6 +542,11 @@ export async function loadPortfolioAccrualSnapshot(
           item.date.getTime() !== row.date.getTime())) {
       exceptions.push(`Transaction ${row.id} has an unbalanced payment or waiver journal`)
     }
+  }
+  for (const payment of paymentRows) {
+    exceptions.push(...validatePaymentSettlementHistory({ payment, journalRows, groupRows,
+      auditRows: paymentAuditRows, rateProof: historicalRateCorrection })
+      .map((issue) => `Payment ${payment.id}: ${issue}`))
   }
   const receivableJournals: AttributedPortfolioAccrualSnapshot["receivableJournals"] = []
   for (const row of journalRows.filter((journal) => journal.categoryName === "Interest Receivable")) {
@@ -294,6 +653,7 @@ export async function loadPortfolioAccrualSnapshot(
     historicalRateCorrection,
     sourceDigest: digest({ loan,
       paymentRows: paymentRows.toSorted((a, b) => a.id.localeCompare(b.id)),
+      paymentAuditRows: paymentAuditRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       waiverRows: waiverRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       auditRows: auditRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       successors: successors.toSorted((a, b) => a.id.localeCompare(b.id)),

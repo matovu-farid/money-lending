@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import BigNumber from "bignumber.js"
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement"
 
-const POLICY_VERSION = "portfolio-accrual-v3"
+const POLICY_VERSION = "portfolio-accrual-v4"
 
 type Payment = Omit<BuildStatementInput["payments"][number], "recorderName"> & { id: string }
 type Waiver = NonNullable<BuildStatementInput["waivers"]>[number] & { id: string }
