@@ -65,7 +65,7 @@ async function getInterestReceivableBalance() {
     .where(
       and(
         eq(transactionCategories.name, "Interest Receivable"),
-        eq(transactionCategories.type, "revenue"),
+        eq(transactionCategories.type, "asset"),
       ),
     );
 
@@ -404,6 +404,7 @@ describe(
           type: transactions.type,
           amount: transactions.amount,
           referenceType: transactions.referenceType,
+          loanId: transactions.loanId,
         })
         .from(transactions)
         .innerJoin(
@@ -413,6 +414,27 @@ describe(
         .where(eq(transactions.referenceId, waiverResult.waiver.id));
       const reversals = reversalRows.filter(
         (row) => row.referenceType === "loan_waiver_reversal",
+      );
+
+      const restoringAccrualRows = reversals.filter(
+        (row) =>
+          (row.categoryName === "Interest Receivable" && row.type === "debit") ||
+          (row.categoryName === "Interest Earned" && row.type === "credit"),
+      );
+      expect(restoringAccrualRows).toHaveLength(2);
+      expect(restoringAccrualRows).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            categoryName: "Interest Receivable",
+            type: "debit",
+            loanId: loan.id,
+          }),
+          expect.objectContaining({
+            categoryName: "Interest Earned",
+            type: "credit",
+            loanId: loan.id,
+          }),
+        ]),
       );
 
       expect(reversals).toEqual(

@@ -311,6 +311,7 @@ export async function undoLoanWaiver(
         description: `Reversal - accrued interest correction for loan ${loanRef}: ${reason}`,
         transactionDate: reversalDate,
         recordedBy: actorId,
+        loanId: loan.id,
       });
     }
 
