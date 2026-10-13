@@ -27,6 +27,7 @@ export type PortfolioJournalRow = {
 
 const checkpointKeys = ["date", "period", "accrued", "settled",
   "existingReceivable", "delta", "resultingReceivable"] as const;
+const clockFixUpperBound = new Date("2026-10-13T05:39:51.000Z");
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -105,6 +106,19 @@ export function verifyPortfolioAccrualRunProof({ loanId, asOf, run, review, jour
   if (reviewEvidence) {
     try { evidenceHash = hashReviewEvidence(reviewEvidence); } catch { /* Reject below. */ }
   }
+  const appliedAt = run.appliedAt.getTime();
+  const reviewedAt = review?.reviewedAt?.getTime();
+  const consumedAt = review?.consumedAt?.getTime();
+  const validReviewTiming = Number.isFinite(appliedAt) &&
+    typeof reviewedAt === "number" && Number.isFinite(reviewedAt) &&
+    reviewedAt <= appliedAt &&
+    typeof consumedAt === "number" && Number.isFinite(consumedAt) &&
+    (consumedAt === appliedAt ||
+      (appliedAt < clockFixUpperBound.getTime() && consumedAt > appliedAt &&
+        consumedAt - appliedAt <= 60_000));
+  if (review && !validReviewTiming) {
+    exceptions.push(`Portfolio accrual run ${run.id} has invalid review timing proof`);
+  }
   if (!review || !run.agentReviewId || review.id !== run.agentReviewId ||
       !run.appliedByAgent?.startsWith("agent:") || run.appliedByAgent.trim() === "agent:" ||
       !review.reviewerAgentId.startsWith("agent:") ||
@@ -120,7 +134,6 @@ export function verifyPortfolioAccrualRunProof({ loanId, asOf, run, review, jour
       review.policyVersion !== run.policyVersion || review.verdict !== "pass" ||
       review.reviewerAgentId === run.appliedByAgent ||
       review.consumedByRunId !== run.id ||
-      review.consumedAt?.getTime() !== run.appliedAt.getTime() ||
       evidenceHash !== review.evidenceSha256) {
     exceptions.push(`Portfolio accrual run ${run.id} has no matching consumed review proof`);
   }

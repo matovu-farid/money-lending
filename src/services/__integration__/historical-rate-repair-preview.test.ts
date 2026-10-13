@@ -19,7 +19,13 @@ const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
 const portfolioAsOf = day("2026-02-10");
 const portfolioAppliedAt = day("2026-02-12");
 
-async function seedReviewedPortfolioAccrual(loanId: string) {
+async function seedReviewedPortfolioAccrual(loanId: string, options: {
+  appliedAt?: Date;
+  reviewedAt?: Date;
+  consumedAt?: Date | null;
+} = {}) {
+  const appliedAt = options.appliedAt ?? portfolioAppliedAt;
+  const consumedAt = options.consumedAt === undefined ? appliedAt : options.consumedAt;
   const entry = {
     date: day("2026-01-31"), period: "2026-01", accrued: "125.00",
     settled: "0.00", existingReceivable: "0.00", delta: "125.00",
@@ -37,24 +43,24 @@ async function seedReviewedPortfolioAccrual(loanId: string) {
     evidenceJson: JSON.stringify(evidence), evidenceSha256: hashReviewEvidence(evidence),
     verdict: "pass", findingsJson: JSON.stringify({ checks: ["source", "dated checkpoints",
       "balanced non-cash journals"], issues: [] }),
-    reviewedAt: day("2026-02-11"),
+    reviewedAt: options.reviewedAt ?? day("2026-02-11"),
   }).returning();
   const [run] = await testDb.insert(portfolioAccrualRepairRuns).values({
     loanId, planHash, inputFingerprint, policyVersion,
     agentReviewId: review.id, appliedByAgent: "agent:portfolio-executor",
-    backupSha256: "b".repeat(64), appliedAt: portfolioAppliedAt,
+    backupSha256: "b".repeat(64), appliedAt,
     beforeSummary: JSON.stringify({ asOf: portfolioAsOf, entries: [entry] }),
     afterSummary: JSON.stringify({ classification: "pending" }),
   }).returning();
   await testDb.update(financialCorrectionAgentReviews)
-    .set({ consumedByRunId: run.id, consumedAt: portfolioAppliedAt })
+    .set({ consumedByRunId: consumedAt === null ? null : run.id, consumedAt })
     .where(eq(financialCorrectionAgentReviews.id, review.id));
   const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
     .map((row) => [row.name, row.id]));
   const journalGroupId = randomUUID();
   const common = { loanId, referenceType: "portfolio_accrual_repair",
     referenceId: run.id, description: `Portfolio interest repair ${run.id}`,
-    transactionDate: entry.date, createdAt: portfolioAppliedAt,
+    transactionDate: entry.date, createdAt: appliedAt,
     recordedBy: "agent:portfolio-executor", journalGroupId,
     amount: entry.delta };
   const journal = await testDb.insert(transactions).values([
@@ -68,6 +74,13 @@ function expectBlockedPortfolioProof(plan: Awaited<ReturnType<typeof loadHistori
   expect(plan.classification).toBe("blocked");
   expect(plan.exceptions.join(" ")).toMatch(/portfolio|reviewed.*(?:journal|proof)/i);
   expect(plan.exceptions.join(" ")).not.toMatch(/unknown source/i);
+}
+
+function expectBlockedReviewTiming(plan: Awaited<ReturnType<typeof loadHistoricalRateRepairPlan>>) {
+  expect(plan.classification).toBe("blocked");
+  expect(plan.exceptions).toEqual(expect.arrayContaining([
+    expect.stringMatching(/portfolio accrual run .* invalid review timing proof/i),
+  ]));
 }
 
 async function seedPaidLoan(issuanceFee = "0") {
@@ -379,6 +392,65 @@ describe("historical rate repair source preview", () => {
     expect(plan.classification, plan.exceptions.join("; ")).toBe("review");
     expect(plan.exceptions).toEqual([]);
     expect(plan.inputFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  const oldAppliedAt = new Date("2026-10-12T19:54:20.439Z");
+  const clockFixCutoff = new Date("2026-10-13T05:39:51.000Z");
+
+  it.each([
+    ["15 seconds", new Date(oldAppliedAt.getTime() + 15_000)],
+    ["60,000 milliseconds", new Date(oldAppliedAt.getTime() + 60_000)],
+  ])("accepts a fully proved pre-clock-fix run consumed %s after application", async (_gap, consumedAt) => {
+    const { loan } = await seedPaidLoan();
+    await seedReviewedPortfolioAccrual(loan.id, { appliedAt: oldAppliedAt, consumedAt });
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    expect(plan.classification, plan.exceptions.join("; ")).toBe("review");
+    expect(plan.exceptions).toEqual([]);
+  });
+
+  it.each([
+    ["60,001 milliseconds", oldAppliedAt, new Date(oldAppliedAt.getTime() + 60_001)],
+    ["before application", oldAppliedAt, new Date(oldAppliedAt.getTime() - 1)],
+    ["at the cutoff", clockFixCutoff, new Date(clockFixCutoff.getTime() + 15_000)],
+    ["after the cutoff", new Date(clockFixCutoff.getTime() + 1),
+      new Date(clockFixCutoff.getTime() + 15_001)],
+  ])("blocks consumption %s with a review-timing proof error", async (_case, appliedAt, consumedAt) => {
+    const { loan } = await seedPaidLoan();
+    await seedReviewedPortfolioAccrual(loan.id, { appliedAt, consumedAt });
+
+    expectBlockedReviewTiming(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks missing consumption with a review-timing proof error", async () => {
+    const { loan } = await seedPaidLoan();
+    await seedReviewedPortfolioAccrual(loan.id, { appliedAt: oldAppliedAt, consumedAt: null });
+
+    expectBlockedReviewTiming(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it.each([
+    ["before", oldAppliedAt],
+    ["at", clockFixCutoff],
+    ["after", new Date(clockFixCutoff.getTime() + 1)],
+  ])("accepts exact consumption %s the cutoff with an earlier review", async (_case, appliedAt) => {
+    const { loan } = await seedPaidLoan();
+    await seedReviewedPortfolioAccrual(loan.id, { appliedAt, consumedAt: appliedAt });
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    expect(plan.classification, plan.exceptions.join("; ")).toBe("review");
+    expect(plan.exceptions).toEqual([]);
+  });
+
+  it("blocks a review completed after application despite exact consumption", async () => {
+    const { loan } = await seedPaidLoan();
+    await seedReviewedPortfolioAccrual(loan.id, {
+      appliedAt: oldAppliedAt,
+      reviewedAt: new Date(oldAppliedAt.getTime() + 1),
+      consumedAt: oldAppliedAt,
+    });
+
+    expectBlockedReviewTiming(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
   });
 
   it("blocks portfolio journals whose referenced run is absent", async () => {
