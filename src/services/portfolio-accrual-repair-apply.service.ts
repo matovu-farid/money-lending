@@ -160,6 +160,13 @@ export async function applyPortfolioAccrualRepair(
     if (categories.length !== 2 || receivable.length !== 1 || earned.length !== 1) {
       throw new Error("Portfolio accrual accounting categories are missing or ambiguous")
     }
+    // One application-clock instant binds the run, its review consumption, and
+    // every journal leg. A database clock may differ from the operator clock;
+    // its default now() must not make a reviewed as-of appear to be in the future.
+    const appliedAt = new Date()
+    if (current.asOf > appliedAt || lockedReview.reviewedAt > appliedAt) {
+      throw new Error("Portfolio application time precedes the reviewed source")
+    }
     const runId = randomUUID()
     for (const entry of current.entries) {
       const delta = new BigNumber(entry.delta)
@@ -173,16 +180,18 @@ export async function applyPortfolioAccrualRepair(
           categoryId: increasing ? receivable[0].id : earned[0].id,
           referenceType: "portfolio_accrual_repair", referenceId: runId,
           loanId: loan.id, description: `Portfolio interest repair ${runId}`,
-          transactionDate: entry.date, recordedBy: executorAgentId, journalGroupId },
+          transactionDate: entry.date, createdAt: appliedAt,
+          recordedBy: executorAgentId, journalGroupId },
         { type: "credit", amount: delta.abs().toFixed(2),
           categoryId: increasing ? earned[0].id : receivable[0].id,
           referenceType: "portfolio_accrual_repair", referenceId: runId,
           loanId: loan.id, description: `Portfolio interest repair ${runId}`,
-          transactionDate: entry.date, recordedBy: executorAgentId, journalGroupId },
+          transactionDate: entry.date, createdAt: appliedAt,
+          recordedBy: executorAgentId, journalGroupId },
       ])
     }
     const [consumed] = await tx.update(financialCorrectionAgentReviews).set({
-      consumedAt: new Date(), consumedByRunId: runId,
+      consumedAt: appliedAt, consumedByRunId: runId,
     }).where(and(eq(financialCorrectionAgentReviews.id, lockedReview.id),
       isNull(financialCorrectionAgentReviews.consumedAt)))
       .returning({ id: financialCorrectionAgentReviews.id })
@@ -194,6 +203,7 @@ export async function applyPortfolioAccrualRepair(
       appliedByAgent: executorAgentId, backupSha256: backup.dumpSha256,
       beforeSummary: JSON.stringify({ asOf: current.asOf, entries: current.entries }),
       afterSummary: JSON.stringify({ classification: "pending" }),
+      appliedAt,
     })
     const after = await loadPortfolioAccrualPlan(loan.id, current.asOf, tx)
     if (after.classification !== "noop" || after.entries.length !== 0) {

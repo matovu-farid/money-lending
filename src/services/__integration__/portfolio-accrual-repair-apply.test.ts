@@ -104,6 +104,7 @@ describe("portfolio accrual exact-plan approval and apply", () => {
     const cashBefore = (await testDb.select().from(transactions))
       .filter((row) => row.depositLocation !== null)
 
+    const applicationStartedAt = Date.now()
     const first = await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
     const second = await applyPortfolioAccrualRepair(plan, "agent:executor-1", backupGate())
 
@@ -120,9 +121,14 @@ describe("portfolio accrual exact-plan approval and apply", () => {
     const [run] = await testDb.select().from(portfolioAccrualRepairRuns)
     expect(run).toEqual(expect.objectContaining({ approvedBy: null, appliedBy: null,
       appliedByAgent: "agent:executor-1" }))
+    expect(run.appliedAt.getTime()).toBeGreaterThanOrEqual(applicationStartedAt - 1000)
+    expect(run.appliedAt.getTime()).toBeLessThanOrEqual(Date.now() + 1000)
+    expect(rows.filter((row) => row.referenceType === "portfolio_accrual_repair")
+      .every((row) => row.createdAt.getTime() === run.appliedAt.getTime())).toBe(true)
     expect(run.agentReviewId).toBeTruthy()
     const [review] = await testDb.select().from(financialCorrectionAgentReviews)
     expect(review.consumedByRunId).toBe(first.runId)
+    expect(review.consumedAt?.getTime()).toBe(run.appliedAt.getTime())
   })
 
   it("reverses repaired receivable when a later payment is made", async () => {
