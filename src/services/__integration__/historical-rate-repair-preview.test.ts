@@ -9,10 +9,66 @@ import { loanWaivers } from "@/lib/db/schema/loan-waivers";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { auditLog } from "@/lib/db/schema/audit";
+import { financialCorrectionAgentReviews } from "@/lib/db/schema/financial-correction-agent-reviews";
+import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs";
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests";
+import { hashReviewEvidence } from "@/lib/financial-corrections/agent-review";
 import { loadHistoricalRateRepairPlan } from "../historical-rate-repair.service";
 
 const day = (value: string) => new Date(`${value}T00:00:00.000Z`);
+const portfolioAsOf = day("2026-02-10");
+const portfolioAppliedAt = day("2026-02-12");
+
+async function seedReviewedPortfolioAccrual(loanId: string) {
+  const entry = {
+    date: day("2026-01-31"), period: "2026-01", accrued: "125.00",
+    settled: "0.00", existingReceivable: "0.00", delta: "125.00",
+    resultingReceivable: "125.00",
+  };
+  const evidence = { loanId, asOf: portfolioAsOf.toISOString(),
+    checkpoints: [{ ...entry, date: entry.date.toISOString() }] };
+  const planHash = "c".repeat(64);
+  const inputFingerprint = "a".repeat(64);
+  const policyVersion = "v2";
+  const [review] = await testDb.insert(financialCorrectionAgentReviews).values({
+    kind: "portfolio_accrual", subjectId: loanId, planHash,
+    inputFingerprint, policyVersion,
+    reviewerAgentId: "agent:portfolio-reviewer", reviewRunId: randomUUID(),
+    evidenceJson: JSON.stringify(evidence), evidenceSha256: hashReviewEvidence(evidence),
+    verdict: "pass", findingsJson: JSON.stringify({ checks: ["source", "dated checkpoints",
+      "balanced non-cash journals"], issues: [] }),
+    reviewedAt: day("2026-02-11"),
+  }).returning();
+  const [run] = await testDb.insert(portfolioAccrualRepairRuns).values({
+    loanId, planHash, inputFingerprint, policyVersion,
+    agentReviewId: review.id, appliedByAgent: "agent:portfolio-executor",
+    backupSha256: "b".repeat(64), appliedAt: portfolioAppliedAt,
+    beforeSummary: JSON.stringify({ asOf: portfolioAsOf, entries: [entry] }),
+    afterSummary: JSON.stringify({ classification: "pending" }),
+  }).returning();
+  await testDb.update(financialCorrectionAgentReviews)
+    .set({ consumedByRunId: run.id, consumedAt: portfolioAppliedAt })
+    .where(eq(financialCorrectionAgentReviews.id, review.id));
+  const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+    .map((row) => [row.name, row.id]));
+  const journalGroupId = randomUUID();
+  const common = { loanId, referenceType: "portfolio_accrual_repair",
+    referenceId: run.id, description: `Portfolio interest repair ${run.id}`,
+    transactionDate: entry.date, createdAt: portfolioAppliedAt,
+    recordedBy: "agent:portfolio-executor", journalGroupId,
+    amount: entry.delta };
+  const journal = await testDb.insert(transactions).values([
+    { ...common, categoryId: categories["Interest Receivable"], type: "debit" },
+    { ...common, categoryId: categories["Interest Earned"], type: "credit" },
+  ]).returning();
+  return { run, review, entry, journal, categories, common };
+}
+
+function expectBlockedPortfolioProof(plan: Awaited<ReturnType<typeof loadHistoricalRateRepairPlan>>) {
+  expect(plan.classification).toBe("blocked");
+  expect(plan.exceptions.join(" ")).toMatch(/portfolio|reviewed.*(?:journal|proof)/i);
+  expect(plan.exceptions.join(" ")).not.toMatch(/unknown source/i);
+}
 
 async function seedPaidLoan(issuanceFee = "0") {
   await seedCategories();
@@ -313,4 +369,162 @@ describe("historical rate repair source preview", () => {
     expect(plan.accrualJournalTarget).toBe("925.00");
     expect(plan.accrualJournalDelta).toBe("925.00");
   });
+
+  it("recognizes an exact reviewed same-loan portfolio accrual pair", async () => {
+    const { loan } = await seedPaidLoan();
+    await seedReviewedPortfolioAccrual(loan.id);
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+
+    expect(plan.classification, plan.exceptions.join("; ")).toBe("review");
+    expect(plan.exceptions).toEqual([]);
+    expect(plan.inputFingerprint).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("blocks portfolio journals whose referenced run is absent", async () => {
+    const { loan } = await seedPaidLoan();
+    const { run } = await seedReviewedPortfolioAccrual(loan.id);
+    await testDb.delete(portfolioAccrualRepairRuns)
+      .where(eq(portfolioAccrualRepairRuns.id, run.id));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks portfolio journals without a run reference ID", async () => {
+    const { loan } = await seedPaidLoan();
+    const { journal } = await seedReviewedPortfolioAccrual(loan.id);
+    await testDb.update(transactions).set({ referenceId: null })
+      .where(eq(transactions.id, journal[0].id));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks portfolio journals whose run belongs to another loan", async () => {
+    const { loan } = await seedPaidLoan();
+    const { run } = await seedReviewedPortfolioAccrual(loan.id);
+    const [otherCustomer] = await testDb.insert(customers).values({
+      fullName: "Other Portfolio Customer", nin: "C1234567890999",
+      contact: "+256700000999", address: "Kampala",
+    }).returning();
+    const [otherLoan] = await testDb.insert(loans).values({
+      customerId: otherCustomer.id, principalAmount: "30000", issuanceFee: "0",
+      interestRate: "0.1000", startDate: day("2026-01-01"),
+      issuedBy: "actor-1", disbursementSource: "cash",
+    }).returning();
+    await testDb.update(portfolioAccrualRepairRuns).set({ loanId: otherLoan.id })
+      .where(eq(portfolioAccrualRepairRuns.id, run.id));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks a portfolio group with a missing earned counterpart", async () => {
+    const { loan } = await seedPaidLoan();
+    const { journal } = await seedReviewedPortfolioAccrual(loan.id);
+    await testDb.delete(transactions).where(eq(transactions.id, journal[1].id));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks a balanced portfolio pair with altered counterpart attribution", async () => {
+    const { loan } = await seedPaidLoan();
+    const { journal } = await seedReviewedPortfolioAccrual(loan.id);
+    await testDb.update(transactions).set({ recordedBy: "agent:wrong-executor" })
+      .where(eq(transactions.id, journal[1].id));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks an extra balanced portfolio journal group absent from the run summary", async () => {
+    const { loan } = await seedPaidLoan();
+    const { common, categories } = await seedReviewedPortfolioAccrual(loan.id);
+    const extra = { ...common, journalGroupId: randomUUID() };
+    await testDb.insert(transactions).values([
+      { ...extra, categoryId: categories["Interest Receivable"], type: "debit" },
+      { ...extra, categoryId: categories["Interest Earned"], type: "credit" },
+    ]);
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks a changed run summary even when both journal amounts change with it", async () => {
+    const { loan } = await seedPaidLoan();
+    const { run, common } = await seedReviewedPortfolioAccrual(loan.id);
+    const before = JSON.parse(run.beforeSummary) as { asOf: string;
+      entries: Array<{ delta: string; resultingReceivable: string }> };
+    before.entries[0].delta = "150.00";
+    before.entries[0].resultingReceivable = "150.00";
+    await testDb.update(portfolioAccrualRepairRuns)
+      .set({ beforeSummary: JSON.stringify(before) })
+      .where(eq(portfolioAccrualRepairRuns.id, run.id));
+    await testDb.update(transactions).set({ amount: "150.00" })
+      .where(eq(transactions.journalGroupId, common.journalGroupId));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it("blocks a portfolio entry dated later than the requested as-of instant", async () => {
+    const { loan } = await seedPaidLoan();
+    const { run, journal } = await seedReviewedPortfolioAccrual(loan.id);
+    const later = day("2026-02-11");
+    const before = JSON.parse(run.beforeSummary) as { asOf: string;
+      entries: Array<{ date: string; period: string }> };
+    before.entries[0].date = later.toISOString();
+    before.entries[0].period = "2026-02";
+    await testDb.update(portfolioAccrualRepairRuns)
+      .set({ beforeSummary: JSON.stringify(before) })
+      .where(eq(portfolioAccrualRepairRuns.id, run.id));
+    await testDb.update(transactions).set({ transactionDate: later })
+      .where(eq(transactions.journalGroupId, journal[0].journalGroupId!));
+
+    const plan = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions.join(" ")).toMatch(/later|as-of|portfolio/i);
+  });
+
+  it("keeps a stable fingerprint and changes it for run and review provenance edits", async () => {
+    const { loan } = await seedPaidLoan();
+    const { run, review } = await seedReviewedPortfolioAccrual(loan.id);
+    const first = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    const repeated = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    expect(first.classification, first.exceptions.join("; ")).toBe("review");
+    expect(repeated.inputFingerprint).toBe(first.inputFingerprint);
+
+    await testDb.update(portfolioAccrualRepairRuns)
+      .set({ afterSummary: JSON.stringify({ classification: "posted" }) })
+      .where(eq(portfolioAccrualRepairRuns.id, run.id));
+    const changedRun = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    expect(changedRun.classification, changedRun.exceptions.join("; ")).toBe("review");
+    expect(changedRun.inputFingerprint).not.toBe(first.inputFingerprint);
+
+    await testDb.update(financialCorrectionAgentReviews).set({ reviewRunId: randomUUID() })
+      .where(eq(financialCorrectionAgentReviews.id, review.id));
+    const changedReview = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
+    expect(changedReview.classification, changedReview.exceptions.join("; ")).toBe("review");
+    expect(changedReview.inputFingerprint).not.toBe(changedRun.inputFingerprint);
+  });
+
+  it("blocks a review whose as-of differs from the run's before summary", async () => {
+    const { loan } = await seedPaidLoan();
+    const { review } = await seedReviewedPortfolioAccrual(loan.id);
+    const evidence = JSON.parse(review.evidenceJson) as { asOf: string };
+    evidence.asOf = day("2026-02-09").toISOString();
+    await testDb.update(financialCorrectionAgentReviews).set({
+      evidenceJson: JSON.stringify(evidence), evidenceSha256: hashReviewEvidence(evidence),
+    }).where(eq(financialCorrectionAgentReviews.id, review.id));
+
+    expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+  });
+
+  it.each(["g".repeat(64), "a".repeat(63)])(
+    "blocks a malformed optional review source digest (%s)", async (sourceDigest) => {
+      const { loan } = await seedPaidLoan();
+      const { review } = await seedReviewedPortfolioAccrual(loan.id);
+      const evidence = { ...JSON.parse(review.evidenceJson), sourceDigest };
+      await testDb.update(financialCorrectionAgentReviews).set({
+        evidenceJson: JSON.stringify(evidence), evidenceSha256: hashReviewEvidence(evidence),
+      }).where(eq(financialCorrectionAgentReviews.id, review.id));
+
+      expectBlockedPortfolioProof(await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf));
+    },
+  );
 });
