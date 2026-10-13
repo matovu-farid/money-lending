@@ -7,6 +7,8 @@ import { payments } from "@/lib/db/schema/payments";
 import { loanWaivers } from "@/lib/db/schema/loan-waivers";
 import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests";
 import { auditLog } from "@/lib/db/schema/audit";
+import { financialCorrectionAgentReviews } from "@/lib/db/schema/financial-correction-agent-reviews";
+import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs";
 import { transactions } from "@/lib/db/schema/transactions";
 import { transactionCategories } from "@/lib/db/schema/transaction-categories";
 import { planHistoricalRateRepair, type HistoricalRatePlan,
@@ -14,6 +16,8 @@ import { planHistoricalRateRepair, type HistoricalRatePlan,
 import { ROLLOVER_RATE_AUDIT_ACTIONS } from "@/lib/interest/rollover-rate-history";
 import { verifyExcludedHistoricalReceipt, verifyExcludedHistoricalWaiver } from
   "@/lib/financial-corrections/historical-rate-verifier";
+import { verifyPortfolioAccrualRunProof } from
+  "@/lib/financial-corrections/portfolio-accrual-run-proof";
 import { getPaymentPortionsFromLedger, getPaymentOverpaymentFromLedger,
   getWaiverPortionsFromLedger } from "./ledger-queries.service";
 
@@ -76,7 +80,7 @@ export async function loadHistoricalRateSnapshotInSnapshot(
   const activeWaivers = waiverRows.filter((row) => !row.deletedAt);
   const settlementIds = [...paymentRows.map((row) => row.id),
     ...waiverRows.map((row) => row.id)];
-  const directJournalRows = await queryDb.select({
+  const journalSelection = {
     id: transactions.id,
     loanId: transactions.loanId,
     referenceType: transactions.referenceType,
@@ -90,32 +94,49 @@ export async function loadHistoricalRateSnapshotInSnapshot(
     categoryId: transactions.categoryId,
     categoryName: transactionCategories.name,
     categoryType: transactionCategories.type,
-  }).from(transactions)
+    createdAt: transactions.createdAt,
+    recordedBy: transactions.recordedBy,
+    description: transactions.description,
+  };
+  const directJournalRows = await queryDb.select(journalSelection).from(transactions)
     .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
     .where(settlementIds.length
       ? or(eq(transactions.loanId, loanId), inArray(transactions.referenceId, settlementIds))
       : eq(transactions.loanId, loanId));
   const groupIds = [...new Set(directJournalRows.map((row) => row.journalGroupId)
     .filter((id): id is string => !!id))];
-  const groupRows = groupIds.length ? await queryDb.select({
-    id: transactions.id,
-    loanId: transactions.loanId,
-    referenceType: transactions.referenceType,
-    referenceId: transactions.referenceId,
-    journalGroupId: transactions.journalGroupId,
-    transactionDate: transactions.transactionDate,
-    depositLocation: transactions.depositLocation,
-    subLocationId: transactions.subLocationId,
-    amount: transactions.amount,
-    type: transactions.type,
-    categoryId: transactions.categoryId,
-    categoryName: transactionCategories.name,
-    categoryType: transactionCategories.type,
-  }).from(transactions)
+  const groupRows = groupIds.length ? await queryDb.select(journalSelection).from(transactions)
     .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
     .where(inArray(transactions.journalGroupId, groupIds)) : [];
-  const journalRows = [...new Map([...directJournalRows, ...groupRows]
+  const initialRows = [...new Map([...directJournalRows, ...groupRows]
     .map((row) => [row.id, row])).values()];
+  const portfolioReferenceIds = [...new Set(initialRows.filter((row) =>
+    row.referenceType === "portfolio_accrual_repair" && row.referenceId)
+    .map((row) => row.referenceId!))];
+  const portfolioRuns = await queryDb.select().from(portfolioAccrualRepairRuns)
+    .where(portfolioReferenceIds.length
+      ? or(eq(portfolioAccrualRepairRuns.loanId, loanId),
+        inArray(portfolioAccrualRepairRuns.id, portfolioReferenceIds))
+      : eq(portfolioAccrualRepairRuns.loanId, loanId));
+  const allRunIds = [...new Set([...portfolioReferenceIds,
+    ...portfolioRuns.map((run) => run.id)])];
+  const runJournalRows = allRunIds.length
+    ? await queryDb.select(journalSelection).from(transactions)
+      .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+      .where(inArray(transactions.referenceId, allRunIds)) : [];
+  const additionalGroupIds = [...new Set(runJournalRows.map((row) => row.journalGroupId)
+    .filter((id): id is string => !!id && !groupIds.includes(id)))];
+  const additionalGroupRows = additionalGroupIds.length
+    ? await queryDb.select(journalSelection).from(transactions)
+      .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+      .where(inArray(transactions.journalGroupId, additionalGroupIds)) : [];
+  const journalRows = [...new Map([...initialRows, ...runJournalRows, ...additionalGroupRows]
+    .map((row) => [row.id, row])).values()];
+  const portfolioReviewIds = portfolioRuns.map((run) => run.agentReviewId)
+    .filter((id): id is string => !!id);
+  const portfolioReviews = portfolioReviewIds.length
+    ? await queryDb.select().from(financialCorrectionAgentReviews)
+      .where(inArray(financialCorrectionAgentReviews.id, portfolioReviewIds)) : [];
   const [paymentPortions, paymentOverpayments, waiverPortions] = await Promise.all([
     getPaymentPortionsFromLedger(activePayments.map((row) => row.id), queryDb),
     getPaymentOverpaymentFromLedger(activePayments.map((row) => row.id), queryDb),
@@ -327,9 +348,22 @@ export async function loadHistoricalRateSnapshotInSnapshot(
     exceptions.push("Loans receivable does not reconcile to recorded settlements");
   }
   const waiverIds = new Set(waiverRows.map((row) => row.id));
+  const portfolioRows = journalRows.filter((row) =>
+    row.referenceType === "portfolio_accrual_repair");
+  for (const row of portfolioRows) {
+    if (!row.referenceId || !portfolioRuns.some((run) => run.id === row.referenceId)) {
+      exceptions.push(`Portfolio accrual journal ${row.id} has no recorded run`);
+    }
+  }
+  for (const run of portfolioRuns) {
+    exceptions.push(...verifyPortfolioAccrualRunProof({ loanId, asOf, run,
+      review: portfolioReviews.find((row) => row.id === run.agentReviewId) ?? null,
+      journalRows }));
+  }
   const accrualReferenceTypes = new Set([
     "interest_accrual", "penalty_interest_accrual",
     "loan_waiver_accrual_reversal", "loan_waiver_reversal",
+    "portfolio_accrual_repair",
   ]);
   const accrualRows = journalRows.filter((row) =>
     row.categoryName === "Interest Receivable" &&
@@ -353,7 +387,9 @@ export async function loadHistoricalRateSnapshotInSnapshot(
     rateRows: rateRows.toSorted((a, b) => a.id.localeCompare(b.id)),
     rateAudits: rateAudits.toSorted((a, b) => a.id.localeCompare(b.id)),
     linkedRows: [...successorRows, ...linkedRows].sort((a, b) => a.id.localeCompare(b.id)),
-    journalRows: journalRows.sort((a, b) => a.id.localeCompare(b.id)),
+    journalRows: journalRows.toSorted((a, b) => a.id.localeCompare(b.id)),
+    portfolioRuns: portfolioRuns.toSorted((a, b) => a.id.localeCompare(b.id)),
+    portfolioReviews: portfolioReviews.toSorted((a, b) => a.id.localeCompare(b.id)),
     relevantCategoryRows: relevantCategoryRows.sort((a, b) => a.id.localeCompare(b.id)),
   });
   return {
