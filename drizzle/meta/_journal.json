@@ -253,6 +253,13 @@
       "when": 1791736167902,
       "tag": "0035_natural_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1791874895077,
+      "tag": "0036_white_anthem",
+      "breakpoints": true
     }
   ]
 }

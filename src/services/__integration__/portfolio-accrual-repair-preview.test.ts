@@ -190,6 +190,19 @@ describe("portfolio settlement history proof without database writes", () => {
       auditRows, rolloverGroupIds: new Set(["another-group"]) })).not.toEqual([])
   })
 
+  it("accepts only the independently proven allocation group beside unchanged Cash", () => {
+    const { payment, journalRows, groupRows, auditRows } = paidRateHistoryFixture()
+    expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows,
+      auditRows, allocationGroupIds: new Set(["rate-reclassification"]) })).toEqual([])
+    expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows,
+      auditRows, allocationGroupIds: new Set(["another-group"]) })).not.toEqual([])
+    journalRows.push(...journalRows.filter((row) =>
+      row.journalGroupId === "rate-reclassification").map((row) => ({ ...row,
+      id: `extra-${row.id}`, journalGroupId: "unreviewed-group" })))
+    expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows: journalRows,
+      auditRows, allocationGroupIds: new Set(["rate-reclassification"]) })).not.toEqual([])
+  })
+
   it("rejects reclassification when reviewed evidence digest is wrong", () => {
     const fixture = paidRateHistoryFixture()
     fixture.rateProof.review.evidenceSha256 = "0".repeat(64)

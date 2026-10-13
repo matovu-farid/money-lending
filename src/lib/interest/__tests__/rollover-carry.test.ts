@@ -86,6 +86,23 @@ describe("quoteRolloverCarry", () => {
     ).toThrow(/after.*effective date/i);
   });
 
+  it("does not silently include a same-day noon payment in a midnight rollover", () => {
+    expect(() =>
+      quoteRolloverCarry({
+        loan: baseLoan,
+        asOf: new Date("2026-09-18T00:00:00Z"),
+        payments: [{
+          paymentDate: new Date("2026-09-18T12:00:00Z"),
+          amount: "100000",
+          interestPortion: "100000",
+          principalPortion: "0",
+          recorderName: "",
+        }],
+        waivers: [],
+      }),
+    ).toThrow(/after.*effective date/i);
+  });
+
   it("does not apply perpetual accrual to a scheduled loan", () => {
     expect(() => quoteRolloverCarry({
       loan: { ...baseLoan, loanType: "fixed_rate" },
