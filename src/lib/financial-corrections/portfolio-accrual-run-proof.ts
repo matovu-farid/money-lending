@@ -27,6 +27,7 @@ export type PortfolioJournalRow = {
 
 const checkpointKeys = ["date", "period", "accrued", "settled",
   "existingReceivable", "delta", "resultingReceivable"] as const;
+// Commit 8a7e29c unified posting clocks; earlier runs may have a bounded gap.
 const clockFixUpperBound = new Date("2026-10-13T05:39:51.000Z");
 
 function record(value: unknown): Record<string, unknown> | null {
