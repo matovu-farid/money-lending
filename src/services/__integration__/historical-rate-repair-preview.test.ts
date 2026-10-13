@@ -464,21 +464,31 @@ describe("historical rate repair source preview", () => {
 
   it("blocks a portfolio entry dated later than the requested as-of instant", async () => {
     const { loan } = await seedPaidLoan();
-    const { run, journal } = await seedReviewedPortfolioAccrual(loan.id);
+    const { run, review, journal } = await seedReviewedPortfolioAccrual(loan.id);
     const later = day("2026-02-11");
     const before = JSON.parse(run.beforeSummary) as { asOf: string;
       entries: Array<{ date: string; period: string }> };
     before.entries[0].date = later.toISOString();
     before.entries[0].period = "2026-02";
+    const evidence = JSON.parse(review.evidenceJson) as { checkpoints:
+      Array<{ date: string; period: string }> };
+    evidence.checkpoints[0].date = later.toISOString();
+    evidence.checkpoints[0].period = "2026-02";
     await testDb.update(portfolioAccrualRepairRuns)
       .set({ beforeSummary: JSON.stringify(before) })
       .where(eq(portfolioAccrualRepairRuns.id, run.id));
+    await testDb.update(financialCorrectionAgentReviews).set({
+      evidenceJson: JSON.stringify(evidence), evidenceSha256: hashReviewEvidence(evidence),
+    }).where(eq(financialCorrectionAgentReviews.id, review.id));
     await testDb.update(transactions).set({ transactionDate: later })
       .where(eq(transactions.journalGroupId, journal[0].journalGroupId!));
 
     const plan = await loadHistoricalRateRepairPlan(loan.id, portfolioAsOf);
     expect(plan.classification).toBe("blocked");
-    expect(plan.exceptions.join(" ")).toMatch(/later|as-of|portfolio/i);
+    expect(plan.exceptions).toEqual(expect.arrayContaining([
+      expect.stringMatching(/later accrual than the as-of instant/i),
+    ]));
+    expect(plan.exceptions.join(" ")).not.toMatch(/unknown source/i);
   });
 
   it("keeps a stable fingerprint and changes it for run and review provenance edits", async () => {
