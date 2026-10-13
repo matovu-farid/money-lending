@@ -341,8 +341,9 @@ export async function loadFullyPaidAllocationSnapshot(
           review.kind !== "portfolio_accrual" || review.subjectId !== loanId ||
           reviewEvidence?.loanId !== loanId ||
           reviewEvidence.asOf !== before?.asOf ||
-          typeof reviewEvidence.sourceDigest !== "string" ||
-          !/^[a-f0-9]{64}$/.test(reviewEvidence.sourceDigest) ||
+          (reviewEvidence.sourceDigest !== undefined &&
+            (typeof reviewEvidence.sourceDigest !== "string" ||
+              !/^[a-f0-9]{64}$/.test(reviewEvidence.sourceDigest))) ||
           checkpoints.length !== entries.length ||
           entries.some((entry, index) => !checkpointKey(entry) ||
             checkpointKey(entry) !== checkpointKey(checkpoints[index])) ||

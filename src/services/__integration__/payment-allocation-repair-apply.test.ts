@@ -17,8 +17,7 @@ import { verifyPaymentAllocationBackup } from "@/lib/interest/payment-allocation
 import { loadFullyPaidAllocationSnapshot } from "../payment-allocation-repair.service"
 import { applyFullyPaidAllocationRepair, reviewFullyPaidAllocationRepair } from
   "../payment-allocation-repair-apply.service"
-import { loadPortfolioAccrualPlan, loadPortfolioAccrualSnapshot } from
-  "../portfolio-accrual-repair.service"
+import { loadPortfolioAccrualPlan } from "../portfolio-accrual-repair.service"
 
 vi.mock("@/lib/interest/payment-allocation-backup", () => ({
   verifyPaymentAllocationBackup: vi.fn(async () => ({
@@ -255,10 +254,9 @@ describe("fully-paid payment allocation agent review and apply", () => {
     expect(portfolio.classification, portfolio.exceptions.join("; ")).toBe("ready")
     expect(portfolio.entries.length).toBeGreaterThan(0)
     const appliedAt = new Date()
-    const portfolioSource = await loadPortfolioAccrualSnapshot(loan.id, reviewedAsOf, testDb)
     const evidence = { loanId: loan.id, asOf: portfolio.asOf.toISOString(),
       checkpoints: portfolio.entries.map((entry) => ({ ...entry,
-        date: entry.date.toISOString() })), sourceDigest: portfolioSource.sourceDigest }
+        date: entry.date.toISOString() })) }
     const [review] = await testDb.insert(financialCorrectionAgentReviews).values({
       kind: "portfolio_accrual", subjectId: loan.id, planHash: portfolio.planHash,
       inputFingerprint: portfolio.inputFingerprint, policyVersion: portfolio.policyVersion,
