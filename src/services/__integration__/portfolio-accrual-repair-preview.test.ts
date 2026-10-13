@@ -11,6 +11,8 @@ import { transactionCategories } from "@/lib/db/schema/transaction-categories"
 import { auditLog } from "@/lib/db/schema/audit"
 import { historicalRateRepairRuns } from "@/lib/db/schema/historical-rate-repair-runs"
 import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs"
+import { rolloverCorrectionRuns } from "@/lib/db/schema/rollover-correction-runs"
+import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { financialCorrectionAgentReviews } from
   "@/lib/db/schema/financial-correction-agent-reviews"
 import { hashReviewEvidence } from "@/lib/financial-corrections/agent-review"
@@ -178,6 +180,14 @@ describe("portfolio settlement history proof without database writes", () => {
     const { payment, journalRows, groupRows, auditRows } = paidRateHistoryFixture()
     expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows,
       auditRows })).not.toEqual([])
+  })
+
+  it("accepts only an exactly pre-proven rollover correction group beside unchanged Cash", () => {
+    const { payment, journalRows, groupRows, auditRows } = paidRateHistoryFixture()
+    expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows,
+      auditRows, rolloverGroupIds: new Set(["rate-reclassification"]) })).toEqual([])
+    expect(validatePaymentSettlementHistory({ payment, journalRows, groupRows,
+      auditRows, rolloverGroupIds: new Set(["another-group"]) })).not.toEqual([])
   })
 
   it("rejects reclassification when reviewed evidence digest is wrong", () => {
@@ -383,6 +393,57 @@ async function seedLoan() {
 
 describe("portfolio accrual source preview", () => {
   beforeEach(async () => { await resetDb() })
+
+  it("unblocks only an exactly audited interest-only payment within the loan start day", async () => {
+    const { loan, categories } = await seedLoan()
+    const paymentDate = new Date("2025-01-01T12:00:00.000Z")
+    const [payment] = await testDb.insert(payments).values({ loanId: loan.id,
+      amount: "1000.00", paymentDate, recordedBy: "actor-1",
+      depositLocation: "cash" }).returning()
+    const group = randomUUID()
+    await testDb.insert(transactions).values([
+      { loanId: loan.id, categoryId: categories.Cash, type: "debit",
+        amount: "1000.00", referenceType: "payment", referenceId: payment.id,
+        depositLocation: "cash", journalGroupId: group,
+        transactionDate: paymentDate, recordedBy: "actor-1" },
+      { loanId: loan.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "1000.00", referenceType: "payment", referenceId: payment.id,
+        journalGroupId: group, transactionDate: paymentDate,
+        recordedBy: "actor-1" },
+    ])
+    const withoutAudit = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(withoutAudit.classification).toBe("blocked")
+    expect(withoutAudit.exceptions).toEqual(expect.arrayContaining([
+      expect.stringContaining("start-day"),
+    ]))
+
+    await testDb.insert(auditLog).values({ entityType: "payment", entityId: payment.id,
+      action: "payment.create", beforeValue: null,
+      afterValue: JSON.stringify(payment), occurredAt: payment.createdAt })
+    const audited = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(audited.classification).toBe("ready")
+    expect(audited.exceptions).toEqual([])
+    expect(audited.policyVersion).toBe("portfolio-accrual-startday-v1")
+
+    const [editAudit] = await testDb.insert(auditLog).values({
+      entityType: "payment", entityId: payment.id, action: "payment.update",
+      beforeValue: JSON.stringify(payment), afterValue: JSON.stringify(payment),
+      occurredAt: new Date(),
+    }).returning()
+    const edited = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(edited.classification).toBe("blocked")
+    await testDb.delete(auditLog).where(eq(auditLog.id, editAudit.id))
+
+    await testDb.insert(rateChangeRequests).values({ loanId: loan.id,
+      currentRate: "0.1000", requestedRate: "0.1500", requestedBy: "actor-1",
+      requiredApproverRole: "admin", status: "approved",
+      reviewedBy: "actor-1", reviewedAt: new Date() })
+    const missingRateAudit = await loadPortfolioAccrualPlan(loan.id, januaryEnd, testDb)
+    expect(missingRateAudit.classification).toBe("blocked")
+    expect(missingRateAudit.exceptions).toEqual(expect.arrayContaining([
+      expect.stringContaining("Rate history requires exactly one"),
+    ]))
+  })
 
   it("previews a corrected paid-rate loan and invalidates the plan when its run audit changes", async () => {
     const { loan, categories } = await seedLoan()
@@ -683,5 +744,91 @@ describe("portfolio accrual source preview", () => {
 
   it("fails closed when the accrual accounts are absent", async () => {
     await expect(Effect.runPromise(accrueInterestForLoans(januaryEnd))).rejects.toThrow()
+  })
+})
+
+describe("proof-gated rollover portfolio preview", () => {
+  beforeEach(async () => { await resetDb() })
+
+  it("previews predecessor closure and successor opening from an archived correction run", async () => {
+    await seedCategories()
+    const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+      .map((row) => [row.name, row.id]))
+    const [customer] = await testDb.insert(customers).values({
+      fullName: "Synthetic Rollover Fixture", nin: "C9876543210123",
+      contact: "+256700000099", address: "Test only",
+    }).returning()
+    const rootDate = new Date("2026-08-28T00:00:00.000Z")
+    const issueDate = new Date("2026-09-18T00:00:00.000Z")
+    const appliedAt = new Date("2026-10-09T16:09:51.000Z")
+    const [root] = await testDb.insert(loans).values({ customerId: customer.id,
+      principalAmount: "15000000.00", interestRate: "0.1000", startDate: rootDate,
+      issuanceFee: "0.00", status: "rolled_over", issuedBy: "actor-1",
+      disbursementSource: "cash" }).returning()
+    const [next] = await testDb.insert(loans).values({ customerId: customer.id,
+      principalAmount: "26500000.00", rolloverAmount: "16500000.00",
+      rolledOverFrom: root.id, interestRate: "0.1000", startDate: issueDate,
+      issuanceFee: "0.00", status: "active", issuedBy: "actor-1",
+      disbursementSource: "cash" }).returning()
+    const runId = randomUUID()
+    const journal = (group: string, loanId: string | null, category: string,
+      type: "debit" | "credit", amount: string, referenceType: string,
+      referenceId: string, transactionDate: Date, correction = false) => ({
+      loanId, categoryId: categories[category], type, amount, referenceType,
+      referenceId, journalGroupId: group, transactionDate,
+      description: correction ? `Non-cash rollover correction ${runId}` : "Source journal",
+      recordedBy: correction ? "test-actor" : "actor-1",
+      createdAt: correction ? appliedAt : transactionDate,
+      ...(category === "Cash" ? { depositLocation: "cash" as const } : {}),
+    })
+    const rootIssue = randomUUID()
+    const nextIssue = randomUUID()
+    const transfer = randomUUID()
+    const interest = randomUUID()
+    const correction = randomUUID()
+    await testDb.insert(transactions).values([
+      journal(rootIssue, root.id, "Loans Receivable", "debit", "15000000.00",
+        "loan", root.id, rootDate),
+      journal(rootIssue, null, "Cash", "credit", "15000000.00",
+        "loan", root.id, rootDate),
+      journal(nextIssue, next.id, "Loans Receivable", "debit", "10000000.00",
+        "loan", next.id, issueDate),
+      journal(nextIssue, null, "Cash", "credit", "10000000.00",
+        "loan", next.id, issueDate),
+      journal(transfer, next.id, "Loans Receivable", "debit", "15000000.00",
+        "rollover", root.id, issueDate),
+      journal(transfer, root.id, "Loans Receivable", "credit", "15000000.00",
+        "rollover", next.id, issueDate),
+      journal(interest, next.id, "Loans Receivable", "debit", "1550000.00",
+        "rollover", root.id, issueDate),
+      journal(interest, next.id, "Interest Earned", "credit", "1550000.00",
+        "rollover", root.id, issueDate),
+      journal(correction, next.id, "Loans Receivable", "credit", "50000.00",
+        "rollover", root.id, issueDate, true),
+      journal(correction, next.id, "Interest Earned", "debit", "50000.00",
+        "rollover", root.id, issueDate, true),
+    ])
+    await testDb.insert(rolloverCorrectionRuns).values({ id: runId,
+      chainRootId: root.id, planHash: "b".repeat(64), inputFingerprint: "c".repeat(64),
+      policyVersion: "v1", reviewedBy: "test-actor", appliedAt,
+      beforeSummary: JSON.stringify({ loans: [{ loanId: next.id,
+        principalAmount: "26550000.00", rolloverAmount: "16550000.00" }],
+      settlements: [] }),
+      afterSummary: JSON.stringify({ loans: [{ loanId: next.id,
+        principalAmount: "26500000.00", rolloverAmount: "16500000.00" }],
+      settlements: [] }),
+    })
+    const asOf = new Date("2026-10-13T00:00:00.000Z")
+    const predecessor = await loadPortfolioAccrualPlan(root.id, asOf, testDb)
+    const successor = await loadPortfolioAccrualPlan(next.id, asOf, testDb)
+    expect(predecessor.classification).toBe("ready")
+    expect(successor.classification).toBe("ready")
+    expect(predecessor.policyVersion).toBe("portfolio-accrual-rollover-v1")
+    expect(successor.entries.at(-1)?.resultingReceivable).toBe("2208333.00")
+    await testDb.update(rolloverCorrectionRuns).set({ afterSummary: "{}" })
+      .where(eq(rolloverCorrectionRuns.id, runId))
+    const blocked = await loadPortfolioAccrualPlan(root.id, asOf, testDb)
+    expect(blocked.classification).toBe("blocked")
+    expect(blocked.inputFingerprint).not.toBe(predecessor.inputFingerprint)
   })
 })

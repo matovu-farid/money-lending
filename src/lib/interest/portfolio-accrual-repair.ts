@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto"
 import BigNumber from "bignumber.js"
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement"
+import { proveStartDayInterestOnlyReplay } from "./portfolio-start-day-interest-proof"
+import { provePortfolioRolloverSource, ROLLOVER_PORTFOLIO_POLICY_VERSION,
+  type PortfolioRolloverProof, type PortfolioRolloverSource } from
+  "./portfolio-rollover-proof"
 
 const POLICY_VERSION = "portfolio-accrual-v4"
+const START_DAY_POLICY_VERSION = "portfolio-accrual-startday-v1"
 
 type Payment = Omit<BuildStatementInput["payments"][number], "recorderName"> & { id: string }
 type Waiver = NonNullable<BuildStatementInput["waivers"]>[number] & { id: string }
@@ -39,6 +44,11 @@ export type PortfolioAccrualSnapshot = {
   }>
   receivableCategory: { id: string; type: string } | null
   historicalRateCorrection?: HistoricalRateCorrectionEvidence
+  rolloverSource?: PortfolioRolloverSource
+  /** True only when the source audit scan proves no rate or accrual-term edit. */
+  rateHistoryProvenAbsent?: boolean
+  /** Exact active payment IDs whose sole creation audit matches their effective facts. */
+  startDayAuditedPaymentIds?: string[]
   sourceDigest?: string
   sourceExceptions: string[]
   asOf: Date
@@ -52,6 +62,8 @@ export type PortfolioAccrualEntry = {
   existingReceivable: string
   delta: string
   resultingReceivable: string
+  /** Actual accrued receivable capitalized at a proven rollover, never cash or minimum uplift. */
+  capitalized?: string
 }
 
 export type PortfolioAccrualPlan = {
@@ -206,15 +218,77 @@ function checkpoints(start: Date, end: Date, settlements: Date[]): Date[] {
 export function planPortfolioAccrualRepair(
   snapshot: PortfolioAccrualSnapshot,
 ): PortfolioAccrualPlan {
+  const rollover = !!(snapshot.loan.rolledOverFrom || snapshot.loan.status === "rolled_over" ||
+    snapshot.rolloverSource)
   const payments = sortDateId(snapshot.payments, (row) => row.paymentDate)
   const waivers = sortDateId(snapshot.waivers, (row) => row.waiverDate)
+  const startDay = !rollover && [...payments.map((row) => row.paymentDate),
+    ...waivers.map((row) => row.waiverDate)].some((date) =>
+    date >= snapshot.loan.startDate &&
+    date.getTime() - snapshot.loan.startDate.getTime() < 86_400_000)
+  const policyVersion = rollover ? ROLLOVER_PORTFOLIO_POLICY_VERSION :
+    startDay ? START_DAY_POLICY_VERSION : POLICY_VERSION
   const journals = sortDateId(snapshot.receivableJournals, (row) => row.date)
   const normalized = { ...snapshot, payments, waivers, receivableJournals: journals,
+    ...(!startDay ? { rateHistoryProvenAbsent: undefined,
+      startDayAuditedPaymentIds: undefined } : {
+      startDayAuditedPaymentIds: [...snapshot.startDayAuditedPaymentIds ?? []].sort(),
+    }),
+    ...(snapshot.rolloverSource ? { rolloverSource: {
+      chain: { loans: [...snapshot.rolloverSource.chain.loans].map((loan) => ({ ...loan,
+        payments: [...loan.payments].sort((a, b) => a.id.localeCompare(b.id)),
+        waivers: [...loan.waivers].sort((a, b) => (a.id ?? "").localeCompare(b.id ?? "")),
+        rateChanges: [...loan.rateChanges].sort((a, b) =>
+          a.effectiveDate.getTime() - b.effectiveDate.getTime()),
+      })).sort((a, b) => a.id.localeCompare(b.id)) },
+      journals: [...snapshot.rolloverSource.journals].sort((a, b) => a.id.localeCompare(b.id)),
+      runs: [...snapshot.rolloverSource.runs].sort((a, b) => a.id.localeCompare(b.id)),
+      reviews: [...snapshot.rolloverSource.reviews].sort((a, b) => a.id.localeCompare(b.id)),
+    } } : {}),
     sourceExceptions: [...snapshot.sourceExceptions].sort() }
-  const inputFingerprint = digest({ policyVersion: POLICY_VERSION, normalized })
+  const inputFingerprint = digest({ policyVersion, normalized })
   const exceptions = [...normalized.sourceExceptions]
   exceptions.push(...historicalRateCorrectionExceptions(snapshot))
   const { loan, asOf } = snapshot
+  let rolloverProof: PortfolioRolloverProof | null = null
+  if (rollover) {
+    if (!snapshot.rolloverSource) {
+      exceptions.push("Rollover chain requires exact archived source proof")
+    } else {
+      try {
+        rolloverProof = provePortfolioRolloverSource(snapshot.rolloverSource, loan.id, asOf)
+        const chainLoan = snapshot.rolloverSource.chain.loans.find((row) => row.id === loan.id)
+        const samePayments = chainLoan && chainLoan.payments.length === payments.length &&
+          chainLoan.payments.every((row) => payments.some((payment) =>
+            payment.id === row.id &&
+            payment.paymentDate.getTime() === row.paymentDate.getTime() &&
+            new BigNumber(payment.amount).eq(row.amount) &&
+            new BigNumber(payment.interestPortion).eq(row.interestPortion) &&
+            new BigNumber(payment.principalPortion).eq(row.principalPortion)))
+        const sameWaivers = chainLoan && chainLoan.waivers.length === waivers.length &&
+          chainLoan.waivers.every((row) => waivers.some((waiver) =>
+            waiver.id === row.id && waiver.waiverDate.getTime() === row.waiverDate.getTime() &&
+            new BigNumber(waiver.amount).eq(row.amount) &&
+            new BigNumber(waiver.interestPortion).eq(row.interestPortion) &&
+            new BigNumber(waiver.principalPortion).eq(row.principalPortion)))
+        if (!chainLoan || chainLoan.startDate.getTime() !== loan.startDate.getTime() ||
+            chainLoan.status !== loan.status || chainLoan.rolledOverFrom !== loan.rolledOverFrom ||
+            !new BigNumber(chainLoan.principalAmount).eq(loan.principalAmount) ||
+            !new BigNumber(chainLoan.interestRate).eq(loan.interestRate) ||
+            chainLoan.interestRateOverride !== loan.interestRateOverride ||
+            chainLoan.minInterestDays !== loan.minInterestDays ||
+            chainLoan.minPeriodOverride !== loan.minPeriodOverride ||
+            chainLoan.penaltyMultiplier !== loan.penaltyMultiplier ||
+            chainLoan.penaltyWaived !== loan.penaltyWaived ||
+            chainLoan.penaltyWaivedAt?.getTime() !== loan.penaltyWaivedAt?.getTime() ||
+            !samePayments || !sameWaivers) {
+          exceptions.push("Rollover proof loan terms differ from portfolio snapshot")
+        }
+      } catch (error) {
+        exceptions.push(error instanceof Error ? error.message : "Rollover source proof failed")
+      }
+    }
+  }
   if (snapshot.receivableCategory && snapshot.receivableCategory.type !== "asset") {
     exceptions.push("Interest Receivable account is not an asset")
   }
@@ -226,17 +300,16 @@ export function planPortfolioAccrualRepair(
   if (loan.penaltyWaived && !loan.penaltyWaivedAt) {
     exceptions.push("Penalty waiver has no effective date")
   }
-  if (loan.rolledOverFrom || loan.status === "rolled_over") {
-    exceptions.push("Rollover chain requires a reconciled transfer and closure date")
-  }
   if (loan.status !== "active" && loan.status !== "fully_paid" &&
       loan.status !== "rolled_over") {
     exceptions.push(`Loan status ${loan.status} needs a reconciled closure date`)
   }
   const settlements = [
-    ...payments.map((row) => ({ id: row.id, date: row.paymentDate, amount: row.amount,
+    ...payments.map((row) => ({ kind: "payment" as const,
+      id: row.id, date: row.paymentDate, amount: row.amount,
       interest: row.interestPortion, principal: row.principalPortion })),
-    ...waivers.map((row) => ({ id: row.id, date: row.waiverDate, amount: row.amount,
+    ...waivers.map((row) => ({ kind: "waiver" as const,
+      id: row.id, date: row.waiverDate, amount: row.amount,
       interest: row.interestPortion, principal: row.principalPortion })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime() || a.id.localeCompare(b.id))
   for (let index = 0; index < settlements.length; index++) {
@@ -249,7 +322,14 @@ export function planPortfolioAccrualRepair(
     }
     if (row.date >= loan.startDate &&
         row.date.getTime() - loan.startDate.getTime() < 24 * 60 * 60 * 1000) {
-      exceptions.push(`Settlement ${row.id} falls in the loan start-day interval`)
+      const proven = row.kind === "payment" &&
+        snapshot.rateHistoryProvenAbsent === true &&
+        snapshot.startDayAuditedPaymentIds?.includes(row.id) === true &&
+        proveStartDayInterestOnlyReplay({ loanStart: loan.startDate, asOf,
+          paymentId: row.id, payments, waivers,
+          penaltyWaivedAt: loan.penaltyWaivedAt ?? null,
+          rateEvents: [], sourceExceptions: snapshot.sourceExceptions })
+      if (!proven) exceptions.push(`Settlement ${row.id} falls in the loan start-day interval`)
     }
     if (index > 0 && row.date.getTime() === settlements[index - 1].date.getTime()) {
       exceptions.push(`Settlements ${settlements[index - 1].id} and ${row.id} share an effective instant`)
@@ -267,16 +347,17 @@ export function planPortfolioAccrualRepair(
     exceptions.push("Fully paid loan has no dated settlement")
   }
   if (exceptions.length) {
-    const plan = { loanId: loan.id, asOf, policyVersion: POLICY_VERSION,
+    const plan = { loanId: loan.id, asOf, policyVersion,
       inputFingerprint, classification: "blocked" as const,
       exceptions: [...new Set(exceptions)].sort(), entries: [] }
     return { ...plan, planHash: digest(plan) }
   }
 
-  const closure = loan.status === "fully_paid" ? settlements.at(-1)!.date : asOf
+  const closure = rolloverProof?.closureDate ??
+    (loan.status === "fully_paid" ? settlements.at(-1)!.date : asOf)
   const end = closure < asOf ? closure : asOf
   if (journals.some((row) => row.date > end)) {
-    const plan = { loanId: loan.id, asOf, policyVersion: POLICY_VERSION,
+    const plan = { loanId: loan.id, asOf, policyVersion,
       inputFingerprint, classification: "blocked" as const,
       exceptions: ["Receivable journal occurs after loan closure"], entries: [] }
     return { ...plan, planHash: digest(plan) }
@@ -294,7 +375,22 @@ export function planPortfolioAccrualRepair(
     const accrued = new BigNumber(statement.finalState.cumulativeInterestAccrued)
     const settled = new BigNumber(statement.finalState.cumulativeInterestPaid)
       .plus(statement.finalState.cumulativeInterestWaived)
-    const desiredBalance = new BigNumber(statement.finalState.netAccruedUnpaidInterest)
+    const atRollover = rolloverProof?.closureDate?.getTime() === date.getTime()
+    const capitalized = atRollover
+      ? new BigNumber(statement.finalState.netAccruedUnpaidInterest) : null
+    if (atRollover && (!capitalized || !rolloverProof?.accruedBeforeRollover ||
+        !rolloverProof.carriedInterest || !rolloverProof.minimumUplift ||
+        !capitalized.eq(rolloverProof.accruedBeforeRollover) ||
+        !capitalized.plus(rolloverProof.minimumUplift)
+          .eq(rolloverProof.carriedInterest))) {
+      const blocked = { loanId: loan.id, asOf, policyVersion, inputFingerprint,
+        classification: "blocked" as const,
+        exceptions: ["Rollover closure does not reconcile accrued and carried interest"],
+        entries: [] }
+      return { ...blocked, planHash: digest(blocked) }
+    }
+    const desiredBalance = atRollover ? new BigNumber(0) :
+      new BigNumber(statement.finalState.netAccruedUnpaidInterest)
     const recordedBalance = journals.filter((row) => row.date <= date)
       .reduce((sum, row) => row.type === "debit" ? sum.plus(row.amount) : sum.minus(row.amount),
         new BigNumber(0))
@@ -304,7 +400,8 @@ export function planPortfolioAccrualRepair(
     entries.push({ date, period: date.toISOString().slice(0, 7),
       accrued: money(accrued), settled: money(settled),
       existingReceivable: money(existingReceivable), delta: money(delta),
-      resultingReceivable: money(desiredBalance) })
+      resultingReceivable: money(desiredBalance),
+      ...(capitalized ? { capitalized: money(capitalized) } : {}) })
     plannedBalance = plannedBalance.plus(delta)
   }
   if (loan.status === "fully_paid") {
@@ -313,14 +410,14 @@ export function planPortfolioAccrualRepair(
         .map((row) => ({ ...row, recorderName: "" })),
       waivers: waivers.filter((row) => row.waiverDate <= end) })
     if (new BigNumber(closing.finalState.totalDue).gt(0)) {
-      const blocked = { loanId: loan.id, asOf, policyVersion: POLICY_VERSION,
+      const blocked = { loanId: loan.id, asOf, policyVersion,
         inputFingerprint, classification: "blocked" as const,
         exceptions: ["Fully paid status does not reconcile to the closing statement"],
         entries: [] }
       return { ...blocked, planHash: digest(blocked) }
     }
   }
-  const plan = { loanId: loan.id, asOf, policyVersion: POLICY_VERSION,
+  const plan = { loanId: loan.id, asOf, policyVersion,
     inputFingerprint, classification: entries.length ? "ready" as const : "noop" as const,
     exceptions: [], entries }
   return { ...plan, planHash: digest(plan) }

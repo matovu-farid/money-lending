@@ -4,6 +4,8 @@ import { historicalRateCorrectionExceptions, planPortfolioAccrualRepair,
   type PortfolioAccrualEntry,
   type PortfolioAccrualPlan, type PortfolioAccrualSnapshot } from
   "@/lib/interest/portfolio-accrual-repair"
+import { provePortfolioRolloverSource, ROLLOVER_PORTFOLIO_POLICY_VERSION } from
+  "@/lib/interest/portfolio-rollover-proof"
 
 const DAY_MS = 86_400_000
 const Decimal = BigNumber.clone({ DECIMAL_PLACES: 10, ROUNDING_MODE: BigNumber.ROUND_HALF_UP })
@@ -15,6 +17,9 @@ export type PortfolioAccrualEvidence = {
   checkedSettlementCount: number
   checkedPriorJournalCount: number
   historicalCorrectionRunId?: string
+  rolloverCorrectionRunIds?: string[]
+  /** Attribution only; backup bytes are verified by the operator gate. */
+  rolloverBackupSha256s?: string[]
   sourceDigest?: string
 }
 
@@ -127,10 +132,19 @@ export function verifyPortfolioAccrualEvidence(
   plan: PortfolioAccrualPlan,
 ): PortfolioAccrualEvidence {
   const current = planPortfolioAccrualRepair(snapshot)
+  const rollover = !!(snapshot.loan.rolledOverFrom || snapshot.loan.status === "rolled_over" ||
+    snapshot.rolloverSource)
   if (plan.classification !== "ready" || current.classification !== "ready" ||
-      snapshot.sourceExceptions.length || snapshot.loan.loanType !== "perpetual" ||
-      snapshot.loan.rolledOverFrom || snapshot.loan.status === "rolled_over") {
+      snapshot.sourceExceptions.length || snapshot.loan.loanType !== "perpetual") {
     throw new Error("Only a ready, source-reconciled portfolio plan can receive agent review")
+  }
+  const rolloverProof = rollover && snapshot.rolloverSource
+    ? provePortfolioRolloverSource(snapshot.rolloverSource, snapshot.loan.id, snapshot.asOf)
+    : null
+  if (rollover && (!rolloverProof ||
+      plan.policyVersion !== ROLLOVER_PORTFOLIO_POLICY_VERSION ||
+      !/^[a-f0-9]{64}$/.test(snapshot.sourceDigest ?? ""))) {
+    throw new Error("Rollover source digest or correction proof is incomplete")
   }
   if (plan.loanId !== snapshot.loan.id || plan.asOf.getTime() !== snapshot.asOf.getTime() ||
       plan.planHash !== current.planHash ||
@@ -168,15 +182,26 @@ export function verifyPortfolioAccrualEvidence(
   }
   const settlements = [...snapshot.payments.map((row) => row.paymentDate),
     ...snapshot.waivers.map((row) => row.waiverDate)]
-  const end = snapshot.loan.status === "fully_paid"
+  const end = rolloverProof?.closureDate ?? (snapshot.loan.status === "fully_paid"
     ? new Date(Math.min(snapshot.asOf.getTime(), Math.max(...settlements.map((date) => date.getTime()))))
-    : snapshot.asOf
+    : snapshot.asOf)
   const expected: PortfolioAccrualEntry[] = []
   let plannedBalance = new Decimal(0)
   for (const date of checkpointDates(snapshot, end)) {
     const state = independentlyAccruedAt(snapshot, date)
     const settled = whole(state.paid).plus(whole(state.waived))
-    const desired = whole(Decimal.max(state.accrued.minus(state.paid).minus(state.waived), 0))
+    const atRollover = rolloverProof?.closureDate?.getTime() === date.getTime()
+    const capitalized = atRollover
+      ? whole(Decimal.max(state.accrued.minus(state.paid).minus(state.waived), 0)) : null
+    if (atRollover && (!capitalized || !rolloverProof?.accruedBeforeRollover ||
+        !rolloverProof.carriedInterest || !rolloverProof.minimumUplift ||
+        !capitalized.eq(rolloverProof.accruedBeforeRollover) ||
+        !capitalized.plus(rolloverProof.minimumUplift)
+          .eq(rolloverProof.carriedInterest))) {
+      throw new Error("Rollover closure does not reconcile accrued and carried interest")
+    }
+    const desired = atRollover ? new Decimal(0) :
+      whole(Decimal.max(state.accrued.minus(state.paid).minus(state.waived), 0))
     const recorded = snapshot.receivableJournals.filter((row) => row.date <= date)
       .reduce((sum, row) => row.type === "debit"
         ? sum.plus(row.amount) : sum.minus(row.amount), new Decimal(0))
@@ -186,7 +211,8 @@ export function verifyPortfolioAccrualEvidence(
     expected.push({ date, period: date.toISOString().slice(0, 7),
       accrued: money(whole(state.accrued)), settled: money(settled),
       existingReceivable: money(before), delta: money(delta),
-      resultingReceivable: money(desired) })
+      resultingReceivable: money(desired),
+      ...(capitalized ? { capitalized: money(capitalized) } : {}) })
     plannedBalance = plannedBalance.plus(delta)
   }
   if (expected.length !== plan.entries.length || expected.some((entry, index) => {
@@ -194,6 +220,7 @@ export function verifyPortfolioAccrualEvidence(
     return !proposed || entry.date.getTime() !== proposed.date.getTime() ||
       entry.period !== proposed.period || entry.accrued !== proposed.accrued ||
       entry.settled !== proposed.settled ||
+      entry.capitalized !== proposed.capitalized ||
       entry.existingReceivable !== proposed.existingReceivable ||
       entry.delta !== proposed.delta ||
       entry.resultingReceivable !== proposed.resultingReceivable
@@ -207,5 +234,8 @@ export function verifyPortfolioAccrualEvidence(
     ...(snapshot.historicalRateCorrection ? {
       historicalCorrectionRunId: snapshot.historicalRateCorrection.run.id,
       sourceDigest: snapshot.sourceDigest,
-    } : {}) }
+    } : {}),
+    ...(rolloverProof ? { rolloverCorrectionRunIds: rolloverProof.correctionRunIds,
+      rolloverBackupSha256s: rolloverProof.backupSha256s,
+      sourceDigest: snapshot.sourceDigest } : {}) }
 }

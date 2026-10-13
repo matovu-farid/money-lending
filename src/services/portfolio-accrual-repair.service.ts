@@ -8,6 +8,8 @@ import { loanWaivers } from "@/lib/db/schema/loan-waivers"
 import { auditLog } from "@/lib/db/schema/audit"
 import { historicalRateRepairRuns } from "@/lib/db/schema/historical-rate-repair-runs"
 import { portfolioAccrualRepairRuns } from "@/lib/db/schema/portfolio-accrual-repair-runs"
+import { rolloverCorrectionRuns } from "@/lib/db/schema/rollover-correction-runs"
+import { rateChangeRequests } from "@/lib/db/schema/rate-change-requests"
 import { financialCorrectionAgentReviews } from
   "@/lib/db/schema/financial-correction-agent-reviews"
 import { transactions } from "@/lib/db/schema/transactions"
@@ -20,10 +22,13 @@ import { planPortfolioAccrualRepair, type PortfolioAccrualPlan } from
   "@/lib/interest/portfolio-accrual-repair"
 import { historicalRateCorrectionExceptions } from
   "@/lib/interest/portfolio-accrual-repair"
+import { provePortfolioRolloverSource, type PortfolioRolloverSource } from
+  "@/lib/interest/portfolio-rollover-proof"
 import type { AttributedPortfolioAccrualSnapshot } from
   "@/lib/financial-corrections/portfolio-verifier"
 import { getLoanBalanceFromLedger, getPaymentPortionsFromLedger,
   getWaiverPortionsFromLedger } from "./ledger-queries.service"
+import { loadRolloverCorrectionPlansInSnapshot } from "./rollover-correction.service"
 
 type QueryDb = Pick<typeof db, "select">
 
@@ -71,6 +76,7 @@ type PaymentHistoryInput = {
   payment: HistoryPayment; journalRows: HistoryJournal[]
   groupRows: HistoryJournal[]; auditRows: HistoryAudit[]
   rateProof?: RateReclassificationProof
+  rolloverGroupIds?: Set<string>
 }
 
 type RateReclassificationProof = {
@@ -388,11 +394,74 @@ export function validatePaymentSettlementHistory(input: PaymentHistoryInput): st
     return provePaymentJournalHistory(input)
   }
   const cashGroupIds = new Set(cashRows.map((row) => row.journalGroupId))
+  const provenRolloverGroups = input.rolloverGroupIds ?? new Set<string>()
   return [...provePaymentJournalHistory({ ...input,
     journalRows: rows.filter((row) => cashGroupIds.has(row.journalGroupId)),
     groupRows: input.groupRows.filter((row) => cashGroupIds.has(row.journalGroupId)),
   }), ...rateReclassificationExceptions(input,
-    rows.filter((row) => !cashGroupIds.has(row.journalGroupId)))]
+    rows.filter((row) => !cashGroupIds.has(row.journalGroupId) &&
+      !provenRolloverGroups.has(row.journalGroupId ?? "")))]
+}
+
+async function loadPortfolioRolloverSource(loanId: string, queryDb: QueryDb):
+  Promise<PortfolioRolloverSource> {
+  const portfolio = await loadRolloverCorrectionPlansInSnapshot(queryDb)
+  const chain = portfolio.chains.find((value) =>
+    value.loans.some((loan) => loan.id === loanId))
+  if (!chain) throw new Error("Complete rollover chain is missing")
+  const chainIds = chain.loans.map((loan) => loan.id)
+  const referenceIds = [...new Set([...chainIds, ...chain.loans.flatMap((loan) => [
+    ...loan.payments.map((payment) => payment.id),
+    ...loan.waivers.map((waiver) => waiver.id).filter((id): id is string => !!id),
+  ])])]
+  const root = chain.loans.find((loan) => !loan.rolledOverFrom)
+  if (!root) throw new Error("Rollover chain root is missing")
+  const runs = await queryDb.select().from(rolloverCorrectionRuns)
+    .where(eq(rolloverCorrectionRuns.chainRootId, root.id))
+  const reviewIds = runs.map((run) => run.agentReviewId)
+    .filter((id): id is string => !!id)
+  const reviews = reviewIds.length ? await queryDb.select()
+    .from(financialCorrectionAgentReviews)
+    .where(inArray(financialCorrectionAgentReviews.id, reviewIds)) : []
+  const portfolioRuns = await queryDb.select().from(portfolioAccrualRepairRuns)
+    .where(inArray(portfolioAccrualRepairRuns.loanId, chainIds))
+  const portfolioReviewIds = portfolioRuns.map((run) => run.agentReviewId)
+    .filter((id): id is string => !!id)
+  const portfolioReviews = portfolioReviewIds.length ? await queryDb.select()
+    .from(financialCorrectionAgentReviews)
+    .where(inArray(financialCorrectionAgentReviews.id, portfolioReviewIds)) : []
+  const selection = {
+    id: transactions.id, loanId: transactions.loanId,
+    referenceType: transactions.referenceType, referenceId: transactions.referenceId,
+    journalGroupId: transactions.journalGroupId,
+    categoryName: transactionCategories.name, categoryType: transactionCategories.type,
+    type: transactions.type, amount: transactions.amount,
+    transactionDate: transactions.transactionDate, createdAt: transactions.createdAt,
+    description: transactions.description, recordedBy: transactions.recordedBy,
+    depositLocation: transactions.depositLocation,
+    subLocationId: transactions.subLocationId,
+  }
+  const direct = await queryDb.select(selection).from(transactions)
+    .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+    .where(or(inArray(transactions.loanId, chainIds),
+      inArray(transactions.referenceId, [...referenceIds,
+        ...portfolioRuns.map((run) => run.id)])))
+  const groupIds = [...new Set(direct.map((row) => row.journalGroupId)
+    .filter((id): id is string => !!id))]
+  const journals = groupIds.length ? await queryDb.select(selection).from(transactions)
+    .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+    .where(inArray(transactions.journalGroupId, groupIds)) : []
+  return { chain: { loans: chain.loans.map((loan) => ({ ...loan,
+    payments: [...loan.payments].sort((a, b) => a.id.localeCompare(b.id)),
+    waivers: [...loan.waivers].sort((a, b) => (a.id ?? "").localeCompare(b.id ?? "")),
+    rateChanges: [...loan.rateChanges].sort((a, b) =>
+      a.effectiveDate.getTime() - b.effectiveDate.getTime()),
+  })).sort((a, b) => a.id.localeCompare(b.id)) },
+  journals: journals.sort((a, b) => a.id.localeCompare(b.id)),
+  runs: runs.sort((a, b) => a.id.localeCompare(b.id)),
+  reviews: reviews.sort((a, b) => a.id.localeCompare(b.id)),
+  portfolioRuns: portfolioRuns.sort((a, b) => a.id.localeCompare(b.id)),
+  portfolioReviews: portfolioReviews.sort((a, b) => a.id.localeCompare(b.id)) }
 }
 
 /** Load one loan's reconciled accounting facts without changing the database. */
@@ -404,6 +473,7 @@ export async function loadPortfolioAccrualSnapshot(
   const [loan] = await queryDb.select().from(loans).where(eq(loans.id, loanId))
   if (!loan) throw new Error("Portfolio accrual loan not found")
   const [paymentRows, waiverRows, auditRows, successors, categoryRows, runs,
+    rateRequestRows,
     portfolioRuns] = await Promise.all([
     queryDb.select().from(payments).where(eq(payments.loanId, loanId)),
     queryDb.select().from(loanWaivers).where(eq(loanWaivers.loanId, loanId)),
@@ -414,13 +484,29 @@ export async function loadPortfolioAccrualSnapshot(
       ["Interest Receivable", "Interest Earned", "Cash", "Loans Receivable"])),
     queryDb.select().from(historicalRateRepairRuns)
       .where(eq(historicalRateRepairRuns.loanId, loanId)),
+    queryDb.select().from(rateChangeRequests)
+      .where(eq(rateChangeRequests.loanId, loanId)),
     queryDb.select().from(portfolioAccrualRepairRuns)
       .where(eq(portfolioAccrualRepairRuns.loanId, loanId)),
   ])
   const exceptions: string[] = []
   if (loan.deletedAt) exceptions.push("Loan is deleted")
-  if (successors.length) exceptions.push("Loan has a rollover successor")
+  const needsRolloverProof = !!(loan.rolledOverFrom || successors.length ||
+    loan.status === "rolled_over")
+  let rolloverSource: PortfolioRolloverSource | undefined
+  let rolloverGroupIds: Set<string> | undefined
+  if (needsRolloverProof) {
+    try {
+      rolloverSource = await loadPortfolioRolloverSource(loanId, queryDb)
+      const proof = provePortfolioRolloverSource(rolloverSource, loanId, asOf)
+      rolloverGroupIds = new Set(proof.settlementCorrectionGroupIds)
+    } catch (error) {
+      exceptions.push(error instanceof Error ? error.message :
+        "Rollover source proof could not be completed")
+    }
+  }
   const rateHistory = !!loan.interestRateOverride || runs.length > 0 ||
+    rateRequestRows.some((row) => row.status === "approved") ||
     auditRows.some((row) => row.action.includes("rate_change") ||
       row.action === "historical_rate_corrected_by_agent" ||
       row.action === "loan.update" &&
@@ -470,6 +556,15 @@ export async function loadPortfolioAccrualSnapshot(
   const paymentAuditRows = paymentRows.length ? await queryDb.select().from(auditLog)
     .where(and(eq(auditLog.entityType, "payment"),
       inArray(auditLog.entityId, paymentRows.map((row) => row.id)))) : []
+  const startDayAuditedPaymentIds = activePayments.filter((payment) => {
+    const elapsed = payment.paymentDate.getTime() - loan.startDate.getTime()
+    if (elapsed < 0 || elapsed >= 86_400_000) return false
+    const audits = paymentAuditRows.filter((row) => row.entityId === payment.id)
+    if (audits.length !== 1 || audits[0].action !== "payment.create" ||
+        audits[0].beforeValue !== null) return false
+    const created = auditedPayment(audits[0].afterValue)
+    return !!created && paymentAuditMatches(created, payment)
+  }).map((payment) => payment.id).sort()
   const settlementIds = [...paymentRows.map((row) => row.id),
     ...waiverRows.map((row) => row.id)]
   const journalRows = await queryDb.select({
@@ -529,6 +624,26 @@ export async function loadPortfolioAccrualSnapshot(
     group.push(row)
     groups.set(row.journalGroupId, group)
   }
+  if (rolloverSource && rolloverGroupIds) {
+    const identity = (row: Pick<HistoryJournal,
+      "id" | "loanId" | "referenceType" | "referenceId" | "categoryName" |
+      "categoryType" | "type" | "amount" | "date" | "createdAt" |
+      "description" | "recordedBy" | "depositLocation" | "subLocationId">) => [row.id, row.loanId,
+      row.referenceType, row.referenceId, row.categoryName, row.categoryType,
+      row.type, row.amount, row.date.toISOString(), row.createdAt.toISOString(),
+      row.description, row.recordedBy, row.depositLocation, row.subLocationId]
+    for (const groupId of rolloverGroupIds) {
+      const proven = rolloverSource.journals.filter((row) =>
+        row.journalGroupId === groupId && row.loanId === loanId)
+      if (!proven.length) continue
+      const current = groups.get(groupId) ?? []
+      if (JSON.stringify(proven.map((row) => identity({ ...row,
+        date: row.transactionDate })).sort()) !==
+          JSON.stringify(current.map(identity).sort())) {
+        exceptions.push(`Rollover settlement journal group ${groupId} changed during source load`)
+      }
+    }
+  }
   const settlementTypes = new Set(["payment", "payment_reversal", "loan_waiver",
     "loan_waiver_reversal", "loan_waiver_accrual_reversal"])
   exceptions.push(...unresolvedPaymentJournalExceptions(loanId,
@@ -545,7 +660,8 @@ export async function loadPortfolioAccrualSnapshot(
   }
   for (const payment of paymentRows) {
     exceptions.push(...validatePaymentSettlementHistory({ payment, journalRows, groupRows,
-      auditRows: paymentAuditRows, rateProof: historicalRateCorrection })
+      auditRows: paymentAuditRows, rateProof: historicalRateCorrection,
+      rolloverGroupIds })
       .map((issue) => `Payment ${payment.id}: ${issue}`))
   }
   const receivableJournals: AttributedPortfolioAccrualSnapshot["receivableJournals"] = []
@@ -651,6 +767,9 @@ export async function loadPortfolioAccrualSnapshot(
     receivableCategory: receivableRows.length === 1
       ? { id: receivableRows[0].id, type: receivableRows[0].type } : null,
     historicalRateCorrection,
+    rolloverSource,
+    rateHistoryProvenAbsent: !rateHistory,
+    startDayAuditedPaymentIds,
     sourceDigest: digest({ loan,
       paymentRows: paymentRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       paymentAuditRows: paymentAuditRows.toSorted((a, b) => a.id.localeCompare(b.id)),
@@ -659,10 +778,12 @@ export async function loadPortfolioAccrualSnapshot(
       successors: successors.toSorted((a, b) => a.id.localeCompare(b.id)),
       categoryRows: categoryRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       runs: runs.toSorted((a, b) => a.id.localeCompare(b.id)),
+      rateRequestRows: rateRequestRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       portfolioRuns: portfolioRuns.toSorted((a, b) => a.id.localeCompare(b.id)), review,
       journalRows: journalRows.toSorted((a, b) => a.id.localeCompare(b.id)),
       groupRows: groupRows.toSorted((a, b) => a.id.localeCompare(b.id)),
-      mappedPayments, mappedWaivers, principal: principal?.toFixed(2) ?? null }),
+      mappedPayments, mappedWaivers, principal: principal?.toFixed(2) ?? null,
+      ...(rolloverSource ? { rolloverSource } : {}) }),
     sourceExceptions: exceptions, asOf,
   }
   if (historicalRateCorrection) {

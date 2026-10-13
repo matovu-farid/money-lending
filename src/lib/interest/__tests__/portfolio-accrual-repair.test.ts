@@ -206,6 +206,24 @@ describe("portfolio accrual repair planner", () => {
     ]))
   })
 
+  it("permits only a reconciled, rate-stable start-day interest-only payment", () => {
+    const payment = { id: "payment-day-zero",
+      paymentDate: new Date("2025-01-01T12:00:00.000Z"),
+      amount: "1000.00", interestPortion: "1000.00", principalPortion: "0.00" }
+    const safe = snapshot({ payments: [payment], rateHistoryProvenAbsent: true,
+      startDayAuditedPaymentIds: [payment.id] })
+    expect(planPortfolioAccrualRepair(safe).classification).toBe("ready")
+    const principal = snapshot({ payments: [{ ...payment,
+      interestPortion: "999.00", principalPortion: "1.00" }],
+    rateHistoryProvenAbsent: true, startDayAuditedPaymentIds: [payment.id] })
+    expect(planPortfolioAccrualRepair(principal).classification).toBe("blocked")
+    expect(planPortfolioAccrualRepair(snapshot({ payments: [payment],
+      rateHistoryProvenAbsent: false, startDayAuditedPaymentIds: [payment.id] }))
+      .classification).toBe("blocked")
+    expect(planPortfolioAccrualRepair(snapshot({ payments: [payment],
+      rateHistoryProvenAbsent: true })).classification).toBe("blocked")
+  })
+
   it("has the same fingerprint regardless of source-row input order", () => {
     const a = { id: "a", paymentDate: new Date("2025-01-10T00:00:00.000Z"),
       amount: "100.00", interestPortion: "100.00", principalPortion: "0.00" }
