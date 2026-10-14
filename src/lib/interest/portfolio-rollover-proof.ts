@@ -3,7 +3,9 @@ import { buildLoanStatement } from "@/lib/loan-statement"
 import { hashReviewEvidence } from "@/lib/financial-corrections/agent-review"
 import { verifyRolloverCorrectionEvidence } from
   "@/lib/financial-corrections/rollover-verifier"
-import { planRolloverCorrection, type ChainSnapshot } from "./rollover-correction"
+import { planRolloverCorrection, ROLLOVER_CORRECTION_POLICY_VERSION,
+  type ChainSnapshot } from "./rollover-correction"
+import { rolloverPaymentCutoff } from "./rollover-payment-boundary"
 
 export const ROLLOVER_PORTFOLIO_POLICY_VERSION = "portfolio-accrual-rollover-v1"
 
@@ -348,7 +350,7 @@ export function provePortfolioRolloverSource(
     new Set(byId.keys()), asOf)
   const carryJournals = journals.filter((row) =>
     row.referenceType !== "portfolio_accrual_repair")
-  const plan = planRolloverCorrection(chain, "v4")
+  const plan = planRolloverCorrection(chain, ROLLOVER_CORRECTION_POLICY_VERSION)
   const evidence = verifyRolloverCorrectionEvidence(chain, plan, carryJournals)
   for (const [edgeIndex, edge] of evidence.edges.entries()) {
     const predecessor = ordered[edgeIndex]
@@ -356,7 +358,7 @@ export function provePortfolioRolloverSource(
     const statement = buildLoanStatement({ loan: { ...predecessor,
       createdAt: predecessor.createdAt }, payments: predecessor.payments.map((row) =>
       ({ ...row, recorderName: "" })), waivers: predecessor.waivers,
-    today: rolloverDate })
+    today: rolloverPaymentCutoff(predecessor.startDate, rolloverDate) })
     if (!edge.carriedInterest) throw new Error("Rollover interest carry is missing")
     assertRolloverCarryCoversAccrued(edge.carriedInterest,
       statement.finalState.netAccruedUnpaidInterest)
@@ -377,8 +379,8 @@ export function provePortfolioRolloverSource(
       runs.some((run, index) => index > 0 &&
         run.appliedAt <= runs[index - 1].appliedAt) ||
       runs.some((run) => run.chainRootId !== rootId ||
-        !["v1", "v2", "v3", "v4"].includes(run.policyVersion) ||
-        (run.policyVersion === "v4") !== !!run.agentReviewId ||
+        !["v1", "v2", "v3", "v4", "v5"].includes(run.policyVersion) ||
+        (["v4", "v5"].includes(run.policyVersion)) !== !!run.agentReviewId ||
         !/^[a-f0-9]{64}$/.test(run.planHash) ||
         !/^[a-f0-9]{64}$/.test(run.inputFingerprint) ||
         !Number.isFinite(run.appliedAt.getTime()) || run.appliedAt > asOf ||
@@ -495,7 +497,7 @@ export function provePortfolioRolloverSource(
     }
     const before = summary(run.beforeSummary, successorIds, new Set(settlementById.keys()))
     const after = summary(run.afterSummary, successorIds, new Set(settlementById.keys()))
-    if (run.policyVersion === "v4" &&
+    if (["v4", "v5"].includes(run.policyVersion) &&
         !/^[a-f0-9]{64}$/.test((JSON.parse(run.beforeSummary) as {
           backupSha256?: string }).backupSha256 ?? "")) {
       throw new Error("Agent rollover run has no verified backup attribution")
@@ -616,7 +618,8 @@ export function provePortfolioRolloverSource(
   if (closureDate && carriedInterest) {
     const statement = buildLoanStatement({ loan: { ...loan, createdAt: loan.createdAt },
       payments: loan.payments.map((row) => ({ ...row, recorderName: "" })),
-      waivers: loan.waivers, today: closureDate })
+      waivers: loan.waivers,
+      today: rolloverPaymentCutoff(loan.startDate, closureDate) })
     accruedBeforeRollover = money(statement.finalState.netAccruedUnpaidInterest)
     minimumUplift = assertRolloverCarryCoversAccrued(carriedInterest,
       accruedBeforeRollover)
@@ -628,6 +631,6 @@ export function provePortfolioRolloverSource(
       rows[0].referenceType === "payment" || rows[0].referenceType === "loan_waiver")
       .map(([groupId]) => groupId).sort(),
     backupSha256s: [...portfolioBackups, ...runs.filter((run) =>
-      run.policyVersion === "v4").map((run) =>
+      ["v4", "v5"].includes(run.policyVersion)).map((run) =>
       (JSON.parse(run.beforeSummary) as { backupSha256: string }).backupSha256)].sort() }
 }

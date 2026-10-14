@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import BigNumber from "bignumber.js";
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement";
 import { quoteRolloverCarry } from "./rollover-carry";
+import { paymentAfterRollover, rolloverPaymentCutoff } from "./rollover-payment-boundary";
 
-/** Changed penalty-cure statement semantics invalidate prior correction plans. */
-export const ROLLOVER_CORRECTION_POLICY_VERSION = "v4";
+/** Same-day predecessor settlement policy invalidates prior correction plans. */
+export const ROLLOVER_CORRECTION_POLICY_VERSION = "v5";
 
 export type ChainLoan = BuildStatementInput["loan"] & {
   rolledOverFrom: string | null;
@@ -82,7 +83,7 @@ function replaySettlements(loan: ChainLoan, principal: string, before?: Date): {
   const settlements = [
     ...loan.payments.map((event) => ({ kind: "payment" as const, date: event.paymentDate, event })),
     ...loan.waivers.map((event) => ({ kind: "waiver" as const, date: event.waiverDate, event })),
-  ].filter((event) => !before || event.date < before)
+  ].filter((event) => !before || event.date <= before)
     .sort((a, b) => a.date.getTime() - b.date.getTime() ||
       a.kind.localeCompare(b.kind) || (a.event.id ?? "").localeCompare(b.event.id ?? ""));
 
@@ -227,13 +228,15 @@ export function planRolloverCorrection(
       edgeExceptions.push("Stored rollover amount exceeds successor principal");
     }
     if (predecessor && !edgeExceptions.length) {
+      const paymentCutoff = rolloverPaymentCutoff(predecessor.startDate, loan.startDate);
       const correctedPredecessor = {
         ...predecessor,
         principalAmount: proposedById.get(predecessor.id) ?? predecessor.principalAmount,
         interestRate: predecessor.rateChanges[0]?.fromRate ?? predecessor.interestRate,
         interestRateOverride: predecessor.rateChanges.length ? null : predecessor.interestRateOverride,
       };
-      for (const payment of predecessor.payments.filter((p) => p.paymentDate >= loan.startDate)) {
+      for (const payment of predecessor.payments.filter((p) => paymentAfterRollover(
+        predecessor.startDate, loan.startDate, p.paymentDate))) {
         edgeExceptions.push(`Predecessor payment ${payment.id} amount ${payment.amount} dated ` +
           `${payment.paymentDate.toISOString().slice(0, 10)} on or after successor effective ` +
           `${loan.startDate.toISOString().slice(0, 10)} needs attribution review`);
@@ -250,7 +253,7 @@ export function planRolloverCorrection(
       }
       if (!edgeExceptions.length) {
         const replay = replaySettlements(correctedPredecessor,
-          correctedPredecessor.principalAmount, loan.startDate);
+          correctedPredecessor.principalAmount, paymentCutoff);
         edgeExceptions.push(...replay.exceptions);
         settlementChanges = replay.changes;
         allSettlementChanges.push(...replay.changes);

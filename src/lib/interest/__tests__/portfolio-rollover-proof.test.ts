@@ -141,7 +141,78 @@ function fourLoanSource(): PortfolioRolloverSource {
   return value
 }
 
+function sameDayCorrectedSource(): PortfolioRolloverSource {
+  const value = source()
+  const receiptDate = new Date("2026-09-18T12:00:00.000Z")
+  value.chain.loans[0].payments = [Object.assign({ id: "same-day-root", paymentDate: receiptDate,
+    amount: "1000000", interestPortion: "1000000", principalPortion: "0",
+    recorderName: "" }, { depositLocation: "cash", subLocationId: null })]
+  value.chain.loans[1].principalAmount = "25500000"
+  value.chain.loans[1].rolloverAmount = "15500000"
+  const originalAmounts = new Map([
+    ["t1", "14500000"], ["t2", "14500000"],
+    ["i1", "2050000"], ["i2", "2050000"],
+    ["c1", "1550000"], ["c2", "1550000"],
+  ])
+  for (const row of value.journals) row.amount = originalAmounts.get(row.id) ?? row.amount
+  const add = (id: string, group: string, loanId: string, categoryName: string,
+    type: "debit" | "credit", amount: string, referenceType: string,
+    referenceId: string, at: Date, correction: boolean) => {
+    const sample = value.journals[0]
+    value.journals.push({ ...sample, id, journalGroupId: group, loanId,
+      categoryName, categoryType: categoryName === "Interest Earned" ? "revenue" : "asset",
+      type, amount, referenceType, referenceId, transactionDate: at,
+      createdAt: correction ? appliedAt : at,
+      description: correction ? "Non-cash settlement reclassification run-1" : "Receipt",
+      depositLocation: categoryName === "Cash" ? "cash" : null })
+  }
+  add("p-cash", "receipt", "root", "Cash", "debit", "1000000", "payment",
+    "same-day-root", receiptDate, false)
+  add("p-interest", "receipt", "root", "Interest Earned", "credit", "500000",
+    "payment", "same-day-root", receiptDate, false)
+  add("p-principal", "receipt", "root", "Loans Receivable", "credit", "500000",
+    "payment", "same-day-root", receiptDate, false)
+  add("p-fix-interest", "receipt-fix", "root", "Interest Earned", "credit", "500000",
+    "payment", "same-day-root", receiptDate, true)
+  add("p-fix-principal", "receipt-fix", "root", "Loans Receivable", "debit", "500000",
+    "payment", "same-day-root", receiptDate, true)
+  // The principal transfer rises by the principal no longer paid in cash.
+  const prior = value.journals[0]
+  value.journals.push(
+    { ...prior, id: "transfer-fix-in", journalGroupId: "transfer-fix",
+      loanId: "next", categoryName: "Loans Receivable", type: "debit",
+      amount: "500000", referenceType: "rollover", referenceId: "root",
+      transactionDate: day("2026-09-18"), createdAt: appliedAt,
+      description: "Non-cash rollover correction run-1", depositLocation: null },
+    { ...prior, id: "transfer-fix-out", journalGroupId: "transfer-fix",
+      loanId: "root", categoryName: "Loans Receivable", type: "credit",
+      amount: "500000", referenceType: "rollover", referenceId: "next",
+      transactionDate: day("2026-09-18"), createdAt: appliedAt,
+      description: "Non-cash rollover correction run-1", depositLocation: null },
+  )
+  value.runs[0].beforeSummary = JSON.stringify({ loans: [{ loanId: "next",
+    principalAmount: "26550000.00", rolloverAmount: "16550000.00" }],
+  settlements: [{ id: "same-day-root", loanId: "root", kind: "payment",
+    interestPortion: "500000.00", principalPortion: "500000.00",
+    overpaymentPortion: "0.00" }] })
+  value.runs[0].afterSummary = JSON.stringify({ loans: [{ loanId: "next",
+    principalAmount: "25500000.00", rolloverAmount: "15500000.00" }],
+  settlements: [{ id: "same-day-root", loanId: "root", kind: "payment",
+    interestPortion: "1000000.00", principalPortion: "0.00",
+    overpaymentPortion: "0.00" }] })
+  return value
+}
+
 describe("portfolio rollover source proof", () => {
+  it("proves corrected same-day predecessor cash before closing the loan", () => {
+    const value = sameDayCorrectedSource()
+    const proof = provePortfolioRolloverSource(value, "root", day("2026-10-13"))
+    expect(proof.carriedInterest).toBe("500000.00")
+    expect(proof.accruedBeforeRollover).toBe("50000.00")
+    expect(proof.minimumUplift).toBe("450000.00")
+    expect(proof.settlementCorrectionGroupIds).toContain("receipt-fix")
+  })
+
   it("re-proves the archived correction and keeps minimum interest at the rollover instant", () => {
     const proof = provePortfolioRolloverSource(source(), "root", day("2026-10-13"))
     expect(proof.closureDate).toEqual(day("2026-09-18"))
@@ -186,10 +257,10 @@ describe("portfolio rollover source proof", () => {
     expect(planPortfolioAccrualRepair(portfolio(value, "middle")).classification).toBe("noop")
   })
 
-  it("re-proves an agent-attributed run and rejects a stale or false review", () => {
+  it.each(["v4", "v5"])("re-proves an agent-attributed %s run and rejects a stale or false review", (policyVersion) => {
     const value = source()
     const run = value.runs[0]
-    run.policyVersion = "v4"
+    run.policyVersion = policyVersion
     run.reviewedBy = null
     run.agentReviewId = "review-1"
     run.appliedByAgent = "agent:executor"
@@ -201,7 +272,7 @@ describe("portfolio rollover source proof", () => {
     const evidence = { chainRootId: "root", checked: true }
     value.reviews.push({ id: "review-1", kind: "rollover_correction",
       subjectId: "root", planHash: run.planHash, inputFingerprint: run.inputFingerprint,
-      policyVersion: "v4", verdict: "pass", reviewerAgentId: "agent:reviewer",
+      policyVersion, verdict: "pass", reviewerAgentId: "agent:reviewer",
       reviewedAt: new Date("2026-10-08T00:00:00.000Z"),
       consumedByRunId: run.id,
       consumedAt: new Date(appliedAt.getTime() + 8_000),

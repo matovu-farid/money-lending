@@ -25,6 +25,9 @@ function queryDb(rateAudits: unknown[] = []) {
   const query = {
     select: () => ({
       from: (table: unknown) => ({
+        innerJoin: () => ({
+          where: () => Promise.resolve([]),
+        }),
         where: () => {
           const rows = table === auditLog ? rateAudits : [];
           return {

@@ -1,4 +1,5 @@
 import { buildLoanStatement, type BuildStatementInput } from "@/lib/loan-statement";
+import { paymentAfterRollover, rolloverPaymentCutoff } from "./rollover-payment-boundary";
 
 /** A non-cash transfer quote at the successor's effective date. */
 export function quoteRolloverCarry(input: {
@@ -18,8 +19,10 @@ export function quoteRolloverCarry(input: {
   if (input.asOf.getTime() < input.loan.startDate.getTime()) {
     throw new Error("Rollover date precedes the predecessor's start date");
   }
+  const paymentCutoff = rolloverPaymentCutoff(input.loan.startDate, input.asOf);
   if (
-    input.payments.some((p) => p.paymentDate >= input.asOf) ||
+    input.payments.some((p) => paymentAfterRollover(
+      input.loan.startDate, input.asOf, p.paymentDate)) ||
     input.waivers.some((w) => w.waiverDate >= input.asOf) ||
     input.rateChanges?.some((r) => r.effectiveDate >= input.asOf)
   ) {
@@ -27,7 +30,7 @@ export function quoteRolloverCarry(input: {
   }
   const statement = buildLoanStatement({
     ...input,
-    today: input.asOf,
+    today: paymentCutoff,
   });
   return {
     carriedPrincipal: statement.finalState.principalBalance,

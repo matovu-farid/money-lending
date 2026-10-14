@@ -109,6 +109,86 @@ describe("rollover correction apply", () => {
     });
   });
 
+  it("corrects a same-day predecessor receipt without moving its cash or loan attribution", async () => {
+    const chain = await seedSamuelChain();
+    const predecessor = chain[0];
+    const successor = chain[1];
+    const receiptDate = new Date("2026-09-18T12:00:00.000Z");
+    const categories = Object.fromEntries((await testDb.select().from(transactionCategories))
+      .map((row) => [row.name, row.id]));
+    const [payment] = await testDb.insert(payments).values({
+      loanId: predecessor.id, paymentDate: receiptDate, amount: "1000000",
+      recordedBy: "actor-1", depositLocation: "cash",
+    }).returning();
+    const group = randomUUID();
+    await testDb.insert(transactions).values([
+      { loanId: predecessor.id, categoryId: categories.Cash, type: "debit",
+        amount: "1000000", referenceType: "payment", referenceId: payment.id,
+        transactionDate: receiptDate, journalGroupId: group, recordedBy: "actor-1",
+        depositLocation: "cash" },
+      { loanId: predecessor.id, categoryId: categories["Interest Earned"], type: "credit",
+        amount: "500000", referenceType: "payment", referenceId: payment.id,
+        transactionDate: receiptDate, journalGroupId: group, recordedBy: "actor-1" },
+      { loanId: predecessor.id, categoryId: categories["Loans Receivable"], type: "credit",
+        amount: "500000", referenceType: "payment", referenceId: payment.id,
+        transactionDate: receiptDate, journalGroupId: group, recordedBy: "actor-1" },
+    ]);
+    const rolloverRows = (await testDb.select().from(transactions)).filter((row) =>
+      row.referenceType === "rollover" && row.transactionDate.getTime() ===
+        successor.startDate.getTime() &&
+      [predecessor.id, successor.id].includes(row.loanId ?? ""));
+    expect(rolloverRows).toHaveLength(4);
+    for (const row of rolloverRows) {
+      await testDb.update(transactions).set({ amount: row.amount === "15000000.00"
+        ? "14500000.00" : "2050000.00" }).where(eq(transactions.id, row.id));
+    }
+    const cashBefore = (await testDb.select().from(transactions))
+      .filter((row) => row.categoryId === categories.Cash)
+      .map((row) => `${row.id}:${row.loanId}:${row.amount}:${row.transactionDate.toISOString()}`);
+    const [plan] = (await loadRolloverCorrectionPlans()).plans;
+    expect(plan.classification).toBe("review");
+    expect(plan.settlementChanges).toContainEqual(expect.objectContaining({
+      id: payment.id, loanId: predecessor.id, newInterest: "1000000.00",
+      newPrincipal: "0.00" }));
+    await reviewRolloverCorrection(plan, "agent:reviewer", "same-day-review");
+    expect((await applyRolloverCorrection(plan, "agent:executor", gate())).applied).toBe(true);
+    const [storedPayment] = await testDb.select().from(payments).where(eq(payments.id, payment.id));
+    expect(storedPayment.loanId).toBe(predecessor.id);
+    expect(storedPayment.paymentDate).toEqual(receiptDate);
+    expect(storedPayment.amount).toBe("1000000.00");
+    const cashAfter = (await testDb.select().from(transactions))
+      .filter((row) => row.categoryId === categories.Cash)
+      .map((row) => `${row.id}:${row.loanId}:${row.amount}:${row.transactionDate.toISOString()}`);
+    expect(cashAfter).toEqual(cashBefore);
+    const balances = await getLoanBalancesFromLedger(chain.map((loan) => loan.id));
+    expect(balances.get(predecessor.id)?.toFixed(2)).toBe("0.00");
+    const [correctedSuccessor] = await testDb.select().from(loans)
+      .where(eq(loans.id, successor.id));
+    expect(correctedSuccessor.principalAmount).toBe("25500000.00");
+    const [after] = (await loadRolloverCorrectionPlans()).plans;
+    expect(after.edges.every((edge) => edge.deltaPrincipal === "0")).toBe(true);
+    expect(after.settlementChanges.every((change) =>
+      change.oldInterest === change.newInterest &&
+      change.oldPrincipal === change.newPrincipal)).toBe(true);
+    // A balanced payment group with no chain loan ID must still be discovered
+    // by its receipt reference and invalidate the supposedly settled source.
+    const disconnectedGroup = randomUUID();
+    await testDb.insert(transactions).values([
+      { loanId: null, categoryId: categories["Loans Receivable"], type: "debit", amount: "100",
+        referenceType: "payment", referenceId: payment.id,
+        transactionDate: receiptDate, journalGroupId: disconnectedGroup,
+        recordedBy: "actor-1" },
+      { loanId: null, categoryId: categories["Loans Receivable"], type: "credit",
+        amount: "100", referenceType: "payment", referenceId: payment.id,
+        transactionDate: receiptDate, journalGroupId: disconnectedGroup,
+        recordedBy: "actor-1" },
+    ]);
+    const [tampered] = (await loadRolloverCorrectionPlans()).plans;
+    expect(tampered.classification).toBe("blocked");
+    expect(tampered.exceptions).toContainEqual(expect.stringMatching(
+      /same-day.*journal.*predecessor/i));
+  });
+
   it("corrects the whole chain with balanced non-cash entries and is idempotent", async () => {
     const chain = await seedSamuelChain();
     const before = await loadRolloverCorrectionPlans();

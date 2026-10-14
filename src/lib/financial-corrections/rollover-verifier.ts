@@ -2,6 +2,8 @@ import BigNumber from "bignumber.js";
 import { PENALTY_THRESHOLD_DAYS } from "@/lib/interest/effective-rate";
 import type { ChainLoan, ChainSnapshot, CorrectionPlan, SettlementChange } from
   "@/lib/interest/rollover-correction";
+import { paymentAfterRollover, rolloverPaymentCutoff } from
+  "@/lib/interest/rollover-payment-boundary";
 
 const money = (value: BigNumber.Value) => new BigNumber(value).toFixed(2);
 const whole = (value: BigNumber.Value) => new BigNumber(value).toFixed(0);
@@ -23,10 +25,16 @@ function sourceRowsForChain(snapshot: ChainSnapshot,
   journals: RolloverSourceJournal[]): RolloverSourceJournal[] {
   const ids = new Set(snapshot.loans.map((loan) => loan.id));
   const direct = journals.filter((row) => row.loanId && ids.has(row.loanId));
-  if (!direct.length || direct.some((row) => !row.journalGroupId)) {
+  const paymentIds = new Set(snapshot.loans.flatMap((loan) =>
+    loan.payments.map((payment) => payment.id)));
+  const discovered = journals.filter((row) =>
+    row.loanId && ids.has(row.loanId) ||
+    ["payment", "payment_reversal"].includes(row.referenceType ?? "") &&
+      paymentIds.has(row.referenceId ?? ""));
+  if (!direct.length || discovered.some((row) => !row.journalGroupId)) {
     throw new Error("Rollover source journals are missing or ungrouped");
   }
-  const groups = new Set(direct.map((row) => row.journalGroupId));
+  const groups = new Set(discovered.map((row) => row.journalGroupId));
   const rows = journals.filter((row) => row.journalGroupId && groups.has(row.journalGroupId));
   for (const group of groups) {
     const members = rows.filter((row) => row.journalGroupId === group);
@@ -163,7 +171,12 @@ function assertSourceReconciles(snapshot: ChainSnapshot, rows: RolloverSourceJou
         loan.rolledOverFrom, loan.id);
       const principal = journalNet(rows, "Loans Receivable", "credit", "rollover",
         loan.id, loan.rolledOverFrom);
-      if (!incoming.eq(carried) || !principal.plus(interest).eq(carried)) {
+      // The loan stores whole UGX while the original journal may retain cents.
+      // Only the stored-vs-journal comparison is rounded; journal legs must
+      // still reconcile to each other exactly.
+      if (!carried.isFinite() || !carried.isInteger() ||
+          !incoming.isFinite() || !principal.plus(interest).eq(incoming) ||
+          !new BigNumber(incoming.toFixed(0, BigNumber.ROUND_HALF_UP)).eq(carried)) {
         throw new Error(`Rollover source transfer does not reconcile: ${loan.id}`);
       }
       const rolloverRows = rows.filter((row) => row.referenceType === "rollover" &&
@@ -177,6 +190,12 @@ function assertSourceReconciles(snapshot: ChainSnapshot, rows: RolloverSourceJou
     for (const payment of loan.payments) {
       const currentRows = assertDatedSettlement(rows, payment.id,
         ["payment", "payment_reversal"], payment.paymentDate, `payment ${payment.id}`);
+      const successor = snapshot.loans.find((candidate) => candidate.rolledOverFrom === loan.id);
+      if (successor && payment.paymentDate >= successor.startDate &&
+          payment.paymentDate <= rolloverPaymentCutoff(loan.startDate, successor.startDate) &&
+          currentRows.some((row) => row.loanId !== loan.id)) {
+        throw new Error(`Same-day predecessor payment ${payment.id} has another loan's journal leg`);
+      }
       const sourcePayment = payment as typeof payment & {
         depositLocation?: string; subLocationId?: string | null;
       };
@@ -311,7 +330,7 @@ function replay(loan: ChainLoan, principal: string, before?: Date): Replayed {
   const events = [
     ...loan.payments.map((row) => ({ kind: "payment" as const, date: row.paymentDate, row })),
     ...loan.waivers.map((row) => ({ kind: "waiver" as const, date: row.waiverDate, row })),
-  ].filter((event) => !before || event.date < before)
+  ].filter((event) => !before || event.date <= before)
     .sort((a, b) => a.date.getTime() - b.date.getTime() ||
       a.kind.localeCompare(b.kind) || (a.row.id ?? "").localeCompare(b.row.id ?? ""));
   for (const [index, event] of events.entries()) {
@@ -451,20 +470,22 @@ export function verifyRolloverCorrectionEvidence(
       throw new Error("Rollover source path or effective dates changed");
     }
     const principal = corrected.get(predecessor.id) ?? predecessor.principalAmount;
-    if (predecessor.payments.some((p) => p.paymentDate >= successor.startDate) ||
+    const paymentCutoff = rolloverPaymentCutoff(predecessor.startDate, successor.startDate);
+    if (predecessor.payments.some((p) => paymentAfterRollover(
+      predecessor.startDate, successor.startDate, p.paymentDate)) ||
         predecessor.waivers.some((w) => w.waiverDate >= successor.startDate) ||
         predecessor.rateChanges.some((r) => r.effectiveDate >= successor.startDate) ||
         (predecessor.penaltyWaivedAt && predecessor.penaltyWaivedAt >= successor.startDate)) {
       throw new Error("Rollover predecessor has an event on or after effective date");
     }
-    const replayed = replay(predecessor, principal, successor.startDate);
+    const replayed = replay(predecessor, principal, paymentCutoff);
     allChanges.push(...replayed.changes);
     const state = independentlyDue(
       { ...predecessor,
         interestRate: predecessor.rateChanges[0]?.fromRate ?? predecessor.interestRate,
         interestRateOverride: predecessor.rateChanges.length ? null
           : predecessor.interestRateOverride },
-      principal, successor.startDate, replayed.payments, replayed.waivers);
+      principal, paymentCutoff, replayed.payments, replayed.waivers);
     const freshCash = new BigNumber(successor.principalAmount)
       .minus(successor.rolloverAmount ?? "0");
     const carriedPrincipal = state.principal;

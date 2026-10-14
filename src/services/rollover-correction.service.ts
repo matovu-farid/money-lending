@@ -21,6 +21,7 @@ import {
   type ChainSnapshot,
   type CorrectionPlan,
 } from "@/lib/interest/rollover-correction";
+import { rolloverPaymentCutoff } from "@/lib/interest/rollover-payment-boundary";
 import type { RolloverSourceJournal } from
   "@/lib/financial-corrections/rollover-verifier";
 import { reconstructRolloverRateHistory, ROLLOVER_RATE_AUDIT_ACTIONS,
@@ -186,6 +187,16 @@ export function assembleRolloverChains(input: {
       }
 
       for (const payment of loanPayments) {
+        const successor = successors.find((candidate) => candidate.rolledOverFrom === id);
+        if (successor && payment.paymentDate >= successor.startDate &&
+            payment.paymentDate <= rolloverPaymentCutoff(loan.startDate, successor.startDate)) {
+          const datedLegs = input.journals.filter((row) => row.referenceId === payment.id &&
+            ["payment", "payment_reversal"].includes(row.referenceType ?? ""));
+          if (!datedLegs.length || datedLegs.some((row) => row.loanId !== id ||
+              row.transactionDate?.getTime() !== payment.paymentDate.getTime())) {
+            sourceExceptions.push(`Same-day payment ${payment.id} has a journal not attributable to its predecessor`);
+          }
+        }
         const allocation = input.paymentPortions.get(payment.id);
         if (!allocation) {
           sourceExceptions.push(`Missing payment allocation ${payment.id}`);
@@ -358,6 +369,19 @@ export async function loadRolloverCorrectionPlansInSnapshot(
     const loanIds = [...relevant];
     if (!loanIds.length) return { plans: [], chains: [], sourceJournals: [],
       liveLinks: 0, deletedLinks: 0 };
+    const journalSelection = {
+      id: transactions.id,
+      loanId: transactions.loanId,
+      referenceType: transactions.referenceType,
+      referenceId: transactions.referenceId,
+      categoryName: transactionCategories.name,
+      type: transactions.type,
+      amount: transactions.amount,
+      journalGroupId: transactions.journalGroupId,
+      transactionDate: transactions.transactionDate,
+      depositLocation: transactions.depositLocation,
+      subLocationId: transactions.subLocationId,
+    };
     const [paymentRows, waiverRows, rateRows, rateAudits, journalRows] = await Promise.all([
       queryDb.select().from(payments).where(and(inArray(payments.loanId, loanIds), isNull(payments.deletedAt), eq(payments.markedWrong, false))),
       queryDb.select().from(loanWaivers).where(and(inArray(loanWaivers.loanId, loanIds), isNull(loanWaivers.deletedAt))),
@@ -374,36 +398,22 @@ export async function loadRolloverCorrectionPlansInSnapshot(
         inArray(auditLog.entityId, loanIds),
         inArray(auditLog.action, ROLLOVER_RATE_AUDIT_ACTIONS),
       )),
-      queryDb.select({
-        id: transactions.id,
-        loanId: transactions.loanId,
-        referenceType: transactions.referenceType,
-        referenceId: transactions.referenceId,
-        categoryName: transactionCategories.name,
-        type: transactions.type,
-        amount: transactions.amount,
-        journalGroupId: transactions.journalGroupId,
-        transactionDate: transactions.transactionDate,
-        depositLocation: transactions.depositLocation,
-        subLocationId: transactions.subLocationId,
-      }).from(transactions).innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
+      queryDb.select(journalSelection).from(transactions)
+        .innerJoin(transactionCategories, eq(transactions.categoryId, transactionCategories.id))
         .where(inArray(transactions.loanId, loanIds)),
     ]);
-    const groupIds = [...new Set(journalRows.map((row) => row.journalGroupId)
+    const paymentIds = paymentRows.map((row) => row.id);
+    const referencedPaymentRows = paymentIds.length ? await queryDb.select(journalSelection)
+      .from(transactions).innerJoin(transactionCategories,
+        eq(transactions.categoryId, transactionCategories.id))
+      .where(and(inArray(transactions.referenceId, paymentIds),
+        inArray(transactions.referenceType, ["payment", "payment_reversal"]))) : [];
+    const discoveredRows = [...new Map([...journalRows, ...referencedPaymentRows]
+      .map((row) => [row.id, row])).values()];
+    const groupIds = [...new Set(discoveredRows.map((row) => row.journalGroupId)
       .filter((id): id is string => !!id))];
-    const completeJournalRows = groupIds.length ? await queryDb.select({
-      id: transactions.id,
-      loanId: transactions.loanId,
-      referenceType: transactions.referenceType,
-      referenceId: transactions.referenceId,
-      categoryName: transactionCategories.name,
-      type: transactions.type,
-      amount: transactions.amount,
-      journalGroupId: transactions.journalGroupId,
-      transactionDate: transactions.transactionDate,
-      depositLocation: transactions.depositLocation,
-      subLocationId: transactions.subLocationId,
-    }).from(transactions).innerJoin(transactionCategories,
+    const completeJournalRows = groupIds.length ? await queryDb.select(journalSelection)
+      .from(transactions).innerJoin(transactionCategories,
       eq(transactions.categoryId, transactionCategories.id))
       .where(inArray(transactions.journalGroupId, groupIds)) : [];
     const [paymentPortions, paymentOverpayments, waiverPortions] = await Promise.all([
@@ -412,7 +422,7 @@ export async function loadRolloverCorrectionPlansInSnapshot(
       getWaiverPortionsFromLedger(waiverRows.map((w) => w.id), queryDb),
     ]);
     const sourceJournals = completeJournalRows.concat(
-      journalRows.filter((row) => !row.journalGroupId));
+      discoveredRows.filter((row) => !row.journalGroupId));
     const chains = assembleRolloverChains({
       loans: loanRows.filter((loan) => relevant.has(loan.id)),
       payments: paymentRows,

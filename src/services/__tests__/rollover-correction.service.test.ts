@@ -53,6 +53,37 @@ function assemble(rows = journals) {
 }
 
 describe("rollover correction snapshot assembly", () => {
+  it("requires same-day receipt journal legs to stay on the predecessor", () => {
+    const receipt = { id: "same-day", loanId: "root", amount: "1000000.00",
+      paymentDate: new Date("2026-09-18T12:00:00Z") } as Payment;
+    const rows = [
+      ...journals.map((row) => row.journalGroupId === "principal"
+        ? { ...row, amount: "14500000.00" }
+        : row.journalGroupId === "interest" ? { ...row, amount: "2050000.00" } : row),
+      { loanId: "root", referenceType: "payment", referenceId: receipt.id,
+        categoryName: "Cash", type: "debit" as const, amount: "1000000.00",
+        journalGroupId: "same-day", depositLocation: "cash", transactionDate: receipt.paymentDate },
+      { loanId: "root", referenceType: "payment", referenceId: receipt.id,
+        categoryName: "Interest Earned", type: "credit" as const, amount: "500000.00",
+        journalGroupId: "same-day", transactionDate: receipt.paymentDate },
+      { loanId: "root", referenceType: "payment", referenceId: receipt.id,
+        categoryName: "Loans Receivable", type: "credit" as const, amount: "500000.00",
+        journalGroupId: "same-day", transactionDate: receipt.paymentDate },
+    ];
+    const assembleReceipt = (sourceRows: typeof rows) => assembleRolloverChains({
+      loans: [root, successor], payments: [receipt], waivers: [], rates: [],
+      journals: sourceRows,
+      paymentPortions: new Map([[receipt.id,
+        { interestPortion: "500000.00", principalPortion: "500000.00" }]]),
+      waiverPortions: new Map(),
+    });
+    expect(assembleReceipt(rows)[0].loans[0].sourceExceptions).toEqual([]);
+    const misattributed = rows.map((row) => row.referenceId === receipt.id &&
+      row.categoryName === "Interest Earned" ? { ...row, loanId: "next" } : row);
+    expect(assembleReceipt(misattributed)[0].loans[0].sourceExceptions)
+      .toContainEqual(expect.stringMatching(/same-day.*journal.*predecessor/i));
+  });
+
   it("matches each original rollover leg using the correct predecessor/successor reference", () => {
     const chains = assemble();
     expect(chains).toHaveLength(1);

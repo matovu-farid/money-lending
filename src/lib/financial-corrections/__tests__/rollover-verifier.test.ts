@@ -41,6 +41,88 @@ const source: DatedJournal[] = [
 ];
 
 describe("independent rollover evidence", () => {
+  it("accepts sub-shilling journal rounding only when transfer legs still balance", () => {
+    const plan = planRolloverCorrection(snapshot, "v5");
+    const rounded = source.map((row) => row.journalGroupId === "interest"
+      ? { ...row, amount: "1550000.40" } : row);
+    expect(verifyRolloverCorrectionEvidence(snapshot, plan, rounded).edges)
+      .toHaveLength(1);
+    const roundedDown = source.map((row) => row.journalGroupId === "interest"
+      ? { ...row, amount: "1549999.71" } : row);
+    expect(verifyRolloverCorrectionEvidence(snapshot, plan, roundedDown).edges)
+      .toHaveLength(1);
+    const validTie = source.map((row) => row.journalGroupId === "interest"
+      ? { ...row, amount: "1549999.50" } : row);
+    expect(verifyRolloverCorrectionEvidence(snapshot, plan, validTie).edges)
+      .toHaveLength(1);
+    const wrongTie = source.map((row) => row.journalGroupId === "interest"
+      ? { ...row, amount: "1550000.50" } : row);
+    expect(() => verifyRolloverCorrectionEvidence(snapshot, plan, wrongTie))
+      .toThrow(/source transfer does not reconcile/i);
+    const material = source.map((row) => row.journalGroupId === "interest"
+      ? { ...row, amount: "1550001.00" } : row);
+    expect(() => verifyRolloverCorrectionEvidence(snapshot, plan, material))
+      .toThrow(/source transfer does not reconcile/i);
+    const unbalanced = rounded.map((row) => row.categoryName === "Interest Earned" &&
+      row.journalGroupId === "interest" ? { ...row, amount: "1550000.39" } : row);
+    expect(() => verifyRolloverCorrectionEvidence(snapshot, plan, unbalanced))
+      .toThrow(/source transfer does not reconcile|journal/i);
+    const fractional = structuredClone(snapshot);
+    fractional.loans[1].rolloverAmount = "16550000.40";
+    fractional.loans[1].principalAmount = "26550000.40";
+    expect(() => verifyRolloverCorrectionEvidence(fractional,
+      planRolloverCorrection(fractional, "v5"), rounded))
+      .toThrow(/source transfer does not reconcile/i);
+    const mismatched = source.map((row) => row.journalGroupId === "transfer" &&
+      row.type === "debit" ? { ...row, amount: "15000000.40" } : row);
+    mismatched.push(journal("transfer", "root", "Loans Receivable", "credit", "0.40",
+      "rollover", "unrelated"));
+    expect(() => verifyRolloverCorrectionEvidence(snapshot, plan, mismatched))
+      .toThrow(/source transfer does not reconcile/i);
+  });
+
+  it("independently verifies a same-day predecessor receipt and its correction journals", () => {
+    const withReceipt = structuredClone(snapshot);
+    withReceipt.loans[0].payments = [Object.assign({
+      id: "same-day-root", paymentDate: new Date("2026-09-18T12:00:00Z"),
+      amount: "1000000", interestPortion: "500000", principalPortion: "500000",
+      recorderName: "",
+    }, { depositLocation: "cash", subLocationId: null })];
+    const receiptRows = [
+      journal("same-day-receipt", "root", "Cash", "debit", "1000000",
+        "payment", "same-day-root", new Date("2026-09-18T12:00:00Z")),
+      journal("same-day-receipt", "root", "Interest Earned", "credit", "500000",
+        "payment", "same-day-root", new Date("2026-09-18T12:00:00Z")),
+      journal("same-day-receipt", "root", "Loans Receivable", "credit", "500000",
+        "payment", "same-day-root", new Date("2026-09-18T12:00:00Z")),
+    ];
+    const datedSource = [
+      ...source.map((row) => row.journalGroupId === "transfer"
+        ? { ...row, amount: "14500000" }
+        : row.journalGroupId === "interest" ? { ...row, amount: "2050000" } : row),
+      ...receiptRows,
+    ];
+    const plan = planRolloverCorrection(withReceipt, "v5");
+    expect(plan.classification).toBe("review");
+    const evidence = verifyRolloverCorrectionEvidence(withReceipt, plan, datedSource);
+    expect(evidence.edges[0]).toEqual(expect.objectContaining({
+      carriedPrincipal: "15000000.00", carriedInterest: "500000.00" }));
+    expect(evidence.projectedJournalGroups.every((group) =>
+      group.legs.every((leg) => leg.category !== "Cash"))).toBe(true);
+    const misattributed = datedSource.map((row) => row.referenceId === "same-day-root" &&
+      row.categoryName === "Interest Earned" ? { ...row, loanId: "next" } : row);
+    expect(() => verifyRolloverCorrectionEvidence(withReceipt, plan, misattributed))
+      .toThrow(/payment.*reconcile|predecessor|loan/i);
+    const disconnected = [
+      { ...receiptRows[0], journalGroupId: "disconnected", loanId: null,
+        categoryName: "Loans Receivable", type: "debit" as const, amount: "100" },
+      { ...receiptRows[0], journalGroupId: "disconnected", loanId: null,
+        categoryName: "Loans Receivable", type: "credit" as const, amount: "100" },
+    ];
+    expect(() => verifyRolloverCorrectionEvidence(withReceipt, plan,
+      [...datedSource, ...disconnected])).toThrow(/predecessor|journal/i);
+  });
+
   it("recomputes the effective-date carry from source terms", () => {
     const plan = planRolloverCorrection(snapshot, "v3");
     const evidence = verifyRolloverCorrectionEvidence(snapshot, plan, source);

@@ -8,13 +8,13 @@ const oldPlan = { policyVersion: "v3", classification: "ready",
   edges: [{ predecessorId: "root", successorId: "next", classification: "ready" }] } as CorrectionPlan;
 
 describe("rollover correction policy gate", () => {
-  it("uses v4 and rejects old v3 review and apply attempts", async () => {
-    expect(ROLLOVER_CORRECTION_POLICY_VERSION).toBe("v4");
+  it("uses v5 and rejects old v3 review and apply attempts", async () => {
+    expect(ROLLOVER_CORRECTION_POLICY_VERSION).toBe("v5");
     await expect(reviewRolloverCorrection(oldPlan, "agent:reviewer", "run-v3"))
-      .rejects.toThrow(/policy v4/i);
+      .rejects.toThrow(/policy v5/i);
     await expect(applyRolloverCorrection(oldPlan, "agent:executor", {
       manifestPath: "/private/tmp/unused.dump.manifest.json",
       expectedDumpSha256: "a".repeat(64), primaryUrl: "", directUrl: "",
-    })).rejects.toThrow(/policy v4/i);
+    })).rejects.toThrow(/policy v5/i);
   });
 });

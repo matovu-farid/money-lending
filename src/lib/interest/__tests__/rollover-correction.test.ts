@@ -67,6 +67,47 @@ describe("planRolloverCorrection", () => {
       /payment late.*100000.*2026-09-19.*after.*effective.*2026-09-18/i));
   });
 
+  it("replays a same-day predecessor receipt before a date-only rollover", () => {
+    const snapshot: ChainSnapshot = { loans: [
+      { ...structuredClone(samuel.loans[0]), id: "pred", principalAmount: "15000000",
+        startDate: start("2026-08-28"), payments: [{ id: "same-day",
+          paymentDate: new Date("2026-09-18T12:00:00Z"), amount: "1000000",
+          interestPortion: "500000", principalPortion: "500000", recorderName: "" }] },
+      { ...structuredClone(samuel.loans[1]), id: "succ", rolledOverFrom: "pred",
+        principalAmount: "26550000", rolloverAmount: "16550000",
+        startDate: start("2026-09-18"), status: "active" },
+    ] };
+    const plan = planRolloverCorrection(snapshot, "v5");
+    expect(plan.classification).toBe("review");
+    expect(plan.settlementChanges).toEqual([expect.objectContaining({
+      id: "same-day", loanId: "pred", newInterest: "1000000.00",
+      newPrincipal: "0.00" })]);
+    expect(plan.edges[0]).toEqual(expect.objectContaining({
+      carriedPrincipal: "15000000", carriedInterest: "500000",
+      proposedPrincipal: "25500000" }));
+
+    const corrected = structuredClone(snapshot);
+    corrected.loans[0].payments[0].interestPortion = "1000000.00";
+    corrected.loans[0].payments[0].principalPortion = "0.00";
+    corrected.loans[1].principalAmount = plan.edges[0].proposedPrincipal;
+    corrected.loans[1].rolloverAmount = plan.edges[0].proposedRolloverAmount;
+    const repeated = planRolloverCorrection(corrected, "v5");
+    expect(repeated.edges[0].deltaPrincipal).toBe("0");
+    expect(repeated.settlementChanges[0].newInterest).toBe("1000000.00");
+    expect(repeated.settlementChanges[0].oldInterest).toBe("1000000.00");
+  });
+
+  it("does not extend the same-day exception to a non-midnight predecessor", () => {
+    const snapshot = structuredClone(samuel);
+    snapshot.loans[0].startDate = new Date("2026-08-28T12:00:00Z");
+    snapshot.loans[0].payments.push({ id: "ambiguous",
+      paymentDate: new Date("2026-09-18T12:00:00Z"), amount: "100000",
+      interestPortion: "100000", principalPortion: "0", recorderName: "" });
+    const plan = planRolloverCorrection(snapshot, "v5");
+    expect(plan.classification).toBe("blocked");
+    expect(plan.exceptions).toContainEqual(expect.stringMatching(/ambiguous.*attribution review/i));
+  });
+
   it("blocks a deleted successor and a paid status with no settlement evidence", () => {
     const deleted = structuredClone(samuel);
     deleted.loans[3].deletedAt = start("2026-10-09");
