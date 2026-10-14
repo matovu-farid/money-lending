@@ -8,7 +8,7 @@ describe("Logged-out home landing page", () => {
     cy.visit("/home")
 
     cy.contains("Lending, with clarity").should("be.visible")
-    cy.get("h1").should("contain", "Make every shilling move with purpose")
+    cy.get("h1").should("contain", "Every loan.").and("contain", "Every payment.").and("contain", "One clear view.")
     cy.contains("Portfolio visibility").should("be.visible")
     cy.contains("Record the loan").should("be.visible")
     cy.get("footer").should("contain", "Kaks Credit")

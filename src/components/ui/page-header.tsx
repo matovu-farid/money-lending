@@ -7,9 +7,10 @@ interface PageHeaderProps {
   breadcrumbs?: BreadcrumbItem[]
   children?: React.ReactNode
   className?: string
+  headingAs?: "h1" | "h2"
 }
 
-export function PageHeader({ title, subtitle, breadcrumbs, children, className }: PageHeaderProps) {
+export function PageHeader({ title, subtitle, breadcrumbs, children, className, headingAs: Heading = "h1" }: PageHeaderProps) {
   if (children) {
     return (
       <div
@@ -20,7 +21,7 @@ export function PageHeader({ title, subtitle, breadcrumbs, children, className }
       >
         <div className="min-w-0">
           {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
-          <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+          <Heading className="text-2xl font-bold tracking-tight">{title}</Heading>
           {subtitle && (
             typeof subtitle === "string" ? (
               <p className="text-sm text-muted-foreground mt-1">
@@ -41,7 +42,7 @@ export function PageHeader({ title, subtitle, breadcrumbs, children, className }
   return (
     <div className={className}>
       {breadcrumbs && <Breadcrumb items={breadcrumbs} />}
-      <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+      <Heading className="text-2xl font-bold tracking-tight">{title}</Heading>
       {subtitle && (
         typeof subtitle === "string" ? (
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mt-1">

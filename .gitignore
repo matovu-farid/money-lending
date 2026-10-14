@@ -53,3 +53,6 @@ next-env.d.ts
 .planning/
 graphify-out/
 docs/superpowers/plans/
+
+# Private local demo: raw dump, database, credentials, and local reports
+/.local-demo/
